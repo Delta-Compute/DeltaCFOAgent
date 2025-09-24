@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta CFO Agent - Files</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <h2>🏦 Delta CFO Agent - Advanced</h2>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">📊 Dashboard</a>
+                <a href="/files" class="nav-link active">📁 Files</a>
+                <a href="/api/stats" class="nav-link">📈 API</a>
+            </div>
+        </nav>
+
+        <div class="main-layout">
+            <div class="dashboard-content">
+                <header>
+                    <h1>📁 File Management</h1>
+                </header>
+
+                <!-- Upload Section -->
+                <div class="filter-section">
+                    <h2>📤 Upload New CSV Files</h2>
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-content">
+                            <div class="upload-icon">📁</div>
+                            <h3>Drag & Drop CSV Files Here</h3>
+                            <p>Or click to select files</p>
+                            <input type="file" id="fileInput" multiple accept=".csv" style="display: none;">
+                            <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                                Choose Files
+                            </button>
+                        </div>
+                        <div class="upload-progress" id="uploadProgress" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="progressFill"></div>
+                            </div>
+                            <div class="progress-text" id="progressText">Processing...</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Files Section -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>📋 CSV Files</h2>
+                        <div class="table-info">
+                            <span>{{ files|length }} files found</span>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>File Name</th>
+                                    <th>Size</th>
+                                    <th>Modified</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for file in files %}
+                                <tr>
+                                    <td>{{ file.name }}</td>
+                                    <td>{{ "%.1f"|format(file.size / 1024) }} KB</td>
+                                    <td>{{ file.modified }}</td>
+                                    <td>
+                                        <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')">
+                                            View
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Drag and drop functionality
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Highlight drop area when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            uploadArea.classList.add('dragover');
+        }
+
+        function unhighlight(e) {
+            uploadArea.classList.remove('dragover');
+        }
+
+        // Handle dropped files
+        uploadArea.addEventListener('drop', handleDrop, false);
+        fileInput.addEventListener('change', handleFileSelect, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+
+        async function handleFiles(files) {
+            [...files].forEach(uploadFile);
+        }
+
+        async function uploadFile(file) {
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showToast('Only CSV files are allowed', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                showProgress();
+                updateProgress(0, 'Uploading file...');
+
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                updateProgress(50, 'Processing transactions...');
+
+                const result = await response.json();
+
+                if (result.success) {
+                    updateProgress(100, 'Complete!');
+                    showToast(`Successfully processed ${file.name}`, 'success');
+
+                    // Refresh the page to show new files
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Upload failed');
+                }
+
+            } catch (error) {
+                console.error('Upload error:', error);
+                showToast('Upload failed: ' + error.message, 'error');
+            } finally {
+                setTimeout(hideProgress, 2000);
+            }
+        }
+
+        function showProgress() {
+            document.querySelector('.upload-content').style.display = 'none';
+            uploadProgress.style.display = 'block';
+        }
+
+        function hideProgress() {
+            document.querySelector('.upload-content').style.display = 'block';
+            uploadProgress.style.display = 'none';
+        }
+
+        function updateProgress(percent, text) {
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text;
+        }
+
+        function viewFile(filename) {
+            // Open file details or download
+            window.open(`/api/download/${filename}`, '_blank');
+        }
+
+        function showToast(message, type = 'success') {
+            // Create toast notification
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: white;
+                padding: 1rem 1.5rem;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                border-left: 4px solid ${type === 'error' ? '#e53e3e' : '#38a169'};
+                z-index: 1000;
+                max-width: 300px;
+            `;
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                document.body.removeChild(toast);
+            }, 5000);
+        }
+    </script>
+
+    <style>
+        .upload-area {
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            background: #f7fafc;
+            transition: all 0.3s;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #ebf8ff;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .upload-content h3 {
+            margin-bottom: 0.5rem;
+            color: #2d3748;
+        }
+
+        .upload-content p {
+            color: #718096;
+            margin-bottom: 1rem;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .progress-text {
+            color: #4a5568;
+            font-weight: 500;
+        }
+
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+        }
+    </style>
+</body>
+</html>

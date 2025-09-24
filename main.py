@@ -277,11 +277,19 @@ class DeltaCFOAgent:
 
         return False
 
+    def safe_float(self, value):
+        """Safely convert value to float, returning 0 if conversion fails"""
+        try:
+            return float(value) if value else 0
+        except (ValueError, TypeError):
+            print(f"⚠️  Warning: Could not convert '{value}' to float, using 0")
+            return 0
+
     def detect_intercompany_transaction(self, description, entity, account, amount):
         """Detect intercompany transactions for consolidation elimination"""
 
         description_upper = str(description).upper()
-        amount_float = float(amount) if amount else 0
+        amount_float = self.safe_float(amount)
 
         # Default non-intercompany transaction
         default_result = {
@@ -483,9 +491,23 @@ class DeltaCFOAgent:
         crypto_converted = 0
 
         for idx, row in df.iterrows():
-            description = str(row.get('Description', ''))
-            amount = float(row.get('Amount', 0))
-            date_str = str(pd.to_datetime(row.get('Date')).date())
+            description = str(row['Description'] if 'Description' in row else '')
+            amount = self.safe_float(row['Amount'] if 'Amount' in row and pd.notna(row['Amount']) else 0)
+
+            # Handle both standardized and non-standardized date columns
+            date_value = None
+            if 'Date' in row:
+                date_value = row['Date']
+            elif 'Transaction Date' in row:
+                date_value = row['Transaction Date']
+            elif 'Details' in row:
+                date_value = row['Details']
+
+            if date_value and pd.notna(date_value):
+                date_str = str(pd.to_datetime(date_value).date())
+            else:
+                # Skip row if no valid date
+                continue
 
             # Detect crypto currency from description
             currency = 'USD'
@@ -743,7 +765,7 @@ class DeltaCFOAgent:
         df['Amount_USD'] = 0.0
 
         for idx, row in df.iterrows():
-            amount = float(row.get('Amount', 0))
+            amount = self.safe_float(row.get('Amount', 0))
             description = str(row.get('Description', ''))
             transaction_date = row.get('Date', '')
             amount_usd = 0.0
@@ -996,22 +1018,174 @@ class DeltaCFOAgent:
             return 'Delta Mining Paraguay S.A.', 1.0, 'Client revenue from EXOS'
         elif 'ALPS BLOCKCHAIN' in description_upper:
             return 'Delta Mining Paraguay S.A.', 1.0, 'Client revenue from Alps'
-        elif ('PARAGUAY' in description_upper or 'ASUNCION' in description_upper) and float(amount) > 1000:
+        elif ('PARAGUAY' in description_upper or 'ASUNCION' in description_upper) and self.safe_float(amount) > 1000:
             return 'Delta Mining Paraguay S.A.', 0.95, 'Wire transfer to Paraguay operations'
 
         # Default classification based on amount
-        if float(amount) > 0:
+        if self.safe_float(amount) > 0:
             return 'Unclassified Revenue', 0.5, 'Unknown revenue source'
         else:
             return 'Unclassified Expense', 0.5, 'Unknown expense'
 
-    def process_file(self, file_path, enhance=False):
+    def _continue_processing_from_dataframe(self, df, file_path, enhance):
+        """Continue processing from a DataFrame after smart ingestion handles column mapping"""
+        try:
+            # Assume smart ingestion has standardized columns: Date, Description, Amount
+            date_col = 'Date'
+            desc_col = 'Description'
+            amount_col = 'Amount'
+
+            print(f"   📊 DEBUG: DataFrame columns from smart ingestion: {list(df.columns)}")
+            print(f"   📊 DEBUG: Using standardized columns - Date: {date_col}, Desc: {desc_col}, Amount: {amount_col}")
+            if len(df) > 0:
+                print(f"   📊 DEBUG: First row amount value: {repr(df.iloc[0][amount_col] if amount_col in df.columns else 'MISSING')}")
+
+            # Continue with classification and processing
+            return self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
+
+        except Exception as e:
+            print(f"❌ Error in smart ingestion continuation: {e}")
+            return None
+
+    def _classify_and_process_dataframe(self, df, file_path, date_col, desc_col, amount_col, enhance):
+        """Classify and process a DataFrame with known column mapping"""
+        # This contains the classification logic from the original process_file method
+
+        # Detect account from column names
+        account = ''
+        for col in df.columns:
+            if 'Account' in col and any(char.isdigit() for char in col):
+                account = ''.join(filter(str.isdigit, col))[-4:]
+                break
+
+        # Detect currency for crypto files
+        currency_col = next((col for col in df.columns if 'currency' in col.lower() or 'coin' in col.lower() or 'crypto' in col.lower()), None)
+
+        # Detect withdrawal address for crypto withdrawal files
+        withdrawal_address_col = next((col for col in df.columns if 'withdrawal address' in col.lower() or 'address' in col.lower()), None)
+
+        # Classify each transaction
+        classifications = []
+
+        for _, row in df.iterrows():
+            description = row[desc_col] if desc_col in df.columns else ''
+            amount = row[amount_col] if amount_col in df.columns else 0
+            currency = row[currency_col] if currency_col and currency_col in df.columns else ''
+            withdrawal_address = row[withdrawal_address_col] if withdrawal_address_col and withdrawal_address_col in df.columns else ''
+
+            # Use the existing classification logic
+            entity, confidence, reason = self.classify_transaction(description, amount, account, currency, withdrawal_address)
+
+            # Use existing intercompany detection
+            intercompany_info = self.detect_intercompany_transaction(description, entity, account, amount)
+
+            classifications.append({
+                'classified_entity': entity,
+                'confidence': confidence,
+                'classification_reason': reason,
+                'needs_review': confidence < 0.8,
+                'source_file': os.path.basename(file_path),
+                'date_processed': datetime.now().isoformat(),
+                'Business_Unit': entity,
+                'Justification': reason,
+                'From_Entity': intercompany_info['from_entity'],
+                'To_Entity': intercompany_info['to_entity'],
+                'Intercompany_Type': intercompany_info['type'],
+                'Elimination_Required': intercompany_info['elimination_required'],
+                'Elimination_Amount': intercompany_info['elimination_amount']
+            })
+
+        # Add classification data to DataFrame
+        for key in classifications[0].keys():
+            df[key] = [c[key] for c in classifications]
+
+        # Generate unique transaction IDs
+        for idx, row in df.iterrows():
+            if 'transaction_id' not in df.columns or pd.isna(row.get('transaction_id')):
+                # Generate transaction_id from date + description + amount
+                date_str = str(row[date_col]) if date_col in df.columns else ''
+                desc_str = str(row[desc_col]) if desc_col in df.columns else ''
+                amount_str = str(row[amount_col]) if amount_col in df.columns else ''
+                identifier = f"{date_str}{desc_str}{amount_str}"
+                transaction_id = hashlib.md5(identifier.encode()).hexdigest()[:12]
+                df.at[idx, 'transaction_id'] = transaction_id
+
+        # Run enhanced processing pipeline if requested
+        if enhance:
+            print("\n🔄 Running enhanced processing pipeline...")
+
+            # Fetch crypto prices
+            print("💰 Fetching crypto prices...")
+            self.fetch_crypto_prices()
+
+            # Add USD equivalents for crypto amounts
+            print("💵 Adding USD equivalents...")
+            df = self.add_usd_equivalents(df)
+
+            # Extract keywords
+            print("🔍 Extracting keywords...")
+            df = self.extract_keywords(df)
+
+            # Enhance transaction structure
+            print("🔧 Enhancing transaction structure...")
+            df = self.enhance_transaction_structure(df)
+
+            # Add USD conversion using historic crypto prices
+            print("💰 Adding USD conversion using historic crypto prices...")
+            df = self.add_usd_conversion(df)
+
+            # Fix account identifiers
+            print("🏦 Fixing account identifiers...")
+            df = self.fix_account_identifiers(df)
+
+            print("✅ Enhanced processing completed")
+
+        # Generate summary and save file
+        print(f"\n   📈 Classification Summary:")
+        entity_counts = df['classified_entity'].value_counts()
+        for entity, count in entity_counts.head(5).items():
+            print(f"      {entity}: {count} transactions")
+
+        # Calculate metrics
+        avg_confidence = df['confidence'].mean()
+        review_count = len(df[df['needs_review'] == True])
+
+        print(f"\n   📊 Metrics:")
+        print(f"      Average confidence: {avg_confidence:.1%}")
+        print(f"      Needs review: {review_count} transactions")
+
+        # Save classified file
+        filename = os.path.basename(file_path)
+        output_file = f"classified_transactions/classified_{filename}"
+        df.to_csv(output_file, index=False)
+        print(f"      Saved to: {output_file}")
+
+        return df
+
+    def process_file(self, file_path, enhance=False, use_smart_ingestion=False):
         """Process any transaction file (CSV, Excel)"""
 
         print(f"\n📄 Processing: {os.path.basename(file_path)}")
         if enhance:
             print("🚀 Enhanced processing mode enabled")
 
+        # Try smart ingestion first if enabled
+        if use_smart_ingestion:
+            try:
+                from smart_ingestion import smart_process_file
+                df = smart_process_file(file_path, enhance)
+                if df is not None:
+                    print("✅ Used smart ingestion system")
+                    # Skip to classification - smart ingestion handles column mapping
+                    return self._continue_processing_from_dataframe(df, file_path, enhance)
+                else:
+                    print("⚠️  Smart ingestion failed, falling back to manual processing")
+            except ImportError:
+                print("⚠️  Smart ingestion not available, using manual processing")
+            except Exception as e:
+                print(f"⚠️  Smart ingestion error: {e}, falling back to manual processing")
+
+        # Manual file reading (existing logic)
         # Read file
         if file_path.lower().endswith(('.csv', '.CSV')):
             # Try different encodings
@@ -1044,11 +1218,11 @@ class DeltaCFOAgent:
 
         # Handle misaligned Chase CSV format where headers are shifted
         if 'Details' in df.columns and 'Posting Date' in df.columns and 'Description' in df.columns:
-            # Chase CSV format has shifted headers - use positional mapping
-            date_col = 'Details'  # Actually contains dates
-            desc_col = 'Posting Date'  # Actually contains descriptions
-            amount_col = 'Description'  # Actually contains amounts
-            print(f"   🔧 Using Chase-specific column mapping")
+            # Chase CSV format has shifted headers - use positional mapping based on actual data
+            date_col = 'Details'       # Actually contains dates like "09/16/2025"
+            desc_col = 'Posting Date'  # Actually contains descriptions like "Payment to Chase card..."
+            amount_col = 'Description' # Actually contains amounts like "-500.00"
+            print(f"   🔧 Using Chase-specific column mapping for misaligned CSV")
         else:
             # Standard column detection
             date_col = next((col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()), df.columns[0])
@@ -1068,6 +1242,34 @@ class DeltaCFOAgent:
 
         print(f"   📋 Using: Date={date_col}, Desc={desc_col}, Amount={amount_col}")
 
+        # For Chase CSV files, standardize column names immediately after mapping
+        print(f"   🔍 CHECKING CHASE CONDITION: Details={'Details' in df.columns}, Posting Date={'Posting Date' in df.columns}, Description={'Description' in df.columns}")
+        if 'Details' in df.columns and 'Posting Date' in df.columns and 'Description' in df.columns:
+            print(f"   🔧 APPLYING CHASE STANDARDIZATION NOW...")
+            print(f"   🔍 BEFORE: {amount_col} contains: {repr(df.iloc[0][amount_col])}")
+
+            # Create a standardized DataFrame with correct data mapping
+            standardized_df = pd.DataFrame()
+            standardized_df['Date'] = df[date_col]
+            standardized_df['Description'] = df[desc_col]
+            standardized_df['Amount'] = df[amount_col]
+
+            print(f"   🔍 AFTER MAPPING: Amount contains: {repr(standardized_df.iloc[0]['Amount'])}")
+
+            # Copy over other columns except original amount column
+            for col in df.columns:
+                if col not in [date_col, desc_col, amount_col] and col not in ['Date', 'Description', 'Amount']:
+                    standardized_df[col] = df[col]
+
+            df = standardized_df
+            print(f"   🔍 FINAL CHECK: Amount contains: {repr(df.iloc[0]['Amount'])}")
+
+            # Update column references for the rest of the processing
+            date_col = 'Date'
+            desc_col = 'Description'
+            amount_col = 'Amount'
+            print(f"   ✅ Standardized Chase CSV - Amount column now has numeric data")
+
         # Detect account from column names
         account = ''
         for col in df.columns:
@@ -1083,6 +1285,11 @@ class DeltaCFOAgent:
 
         # Classify each transaction
         classifications = []
+        print(f"   📊 DEBUG: DataFrame columns at classification: {list(df.columns)}")
+        print(f"   📊 DEBUG: Using column mapping - Date: {date_col}, Desc: {desc_col}, Amount: {amount_col}")
+        if len(df) > 0:
+            print(f"   📊 DEBUG: First row amount value: {repr(df.iloc[0][amount_col] if amount_col in df.columns else 'MISSING')}")
+
         for _, row in df.iterrows():
             description = row[desc_col] if desc_col in df.columns else ''
             amount = row[amount_col] if amount_col in df.columns else 0
