@@ -1,0 +1,16 @@
+# Delta CFO Agent - Required Dependencies
+
+# Web Framework
+Flask>=2.0.0
+
+# Data Processing
+pandas>=1.3.0
+
+# AI Integration
+anthropic>=0.3.0
+
+# HTTP Requests
+requests>=2.25.0
+
+# Utilities
+python-dateutil>=2.8.0
