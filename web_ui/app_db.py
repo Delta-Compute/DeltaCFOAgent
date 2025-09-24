@@ -953,47 +953,72 @@ def upload_file():
         # Save the uploaded file
         file.save(filepath)
 
-        # Process the file using DeltaCFOAgent
+        # Create backup first
+        backup_path = f"{filepath}.backup"
+        shutil.copy2(filepath, backup_path)
+
+        # Process the file in a simpler way to avoid subprocess issues
         try:
-            print(f"🔄 Starting processing for {filename}")
+            # Use a subprocess to run the processing in a separate Python instance
+            import subprocess
 
-            # Import and run the main processor
-            sys.path.append(parent_dir)
-            from main import DeltaCFOAgent
+            processing_script = f"""
+import sys
+import os
+sys.path.append('{parent_dir}')
+os.chdir('{parent_dir}')
 
-            # Create backup first
-            backup_path = f"{filepath}.backup"
-            shutil.copy2(filepath, backup_path)
-            print(f"✅ Created backup: {backup_path}")
+from main import DeltaCFOAgent
 
-            # Process the file
-            print(f"🚀 Initializing DeltaCFOAgent...")
-            agent = DeltaCFOAgent()
-            print(f"📄 Processing file: {filepath}")
-            result = agent.process_file(filepath, enhance=True, use_smart_ingestion=True)
-            print(f"✅ Processing completed, result type: {type(result)}")
+agent = DeltaCFOAgent()
+result = agent.process_file('{filename}', enhance=True, use_smart_ingestion=True)
 
-            # After processing, we need to sync the CSV data to the database
-            print(f"🔄 Syncing to database...")
+if result is not None:
+    print(f'PROCESSED_COUNT:{{len(result)}}')
+else:
+    print('PROCESSED_COUNT:0')
+"""
+
+            # Run the processing script
+            process_result = subprocess.run(
+                [sys.executable, '-c', processing_script],
+                capture_output=True,
+                text=True,
+                cwd=parent_dir,
+                timeout=60
+            )
+
+            # Extract transaction count from output
+            transactions_processed = 0
+            if 'PROCESSED_COUNT:' in process_result.stdout:
+                count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
+                transactions_processed = int(count_str)
+
+            # Now sync to database
             sync_result = sync_csv_to_database(filename)
-            print(f"✅ Sync result: {sync_result}")
 
-            # Extract transaction count from DataFrame
-            transactions_processed = len(result) if result is not None and hasattr(result, '__len__') else 0
-            print(f"📊 Transactions processed: {transactions_processed}")
+            if sync_result:
+                return jsonify({
+                    'success': True,
+                    'message': f'Successfully processed {filename}',
+                    'transactions_processed': transactions_processed,
+                    'sync_result': sync_result
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Processing succeeded but database sync failed',
+                    'transactions_processed': transactions_processed
+                }), 500
 
+        except subprocess.TimeoutExpired:
             return jsonify({
-                'success': True,
-                'message': f'Successfully processed {filename}',
-                'transactions_processed': transactions_processed
-            })
-
+                'success': False,
+                'error': 'Processing timeout - file too large or complex'
+            }), 500
         except Exception as processing_error:
-            # If processing fails, at least keep the uploaded file
             import traceback
             error_details = traceback.format_exc()
-            print(f"❌ Processing error: {processing_error}")
-            print(f"❌ Error details: {error_details}")
             return jsonify({
                 'success': False,
                 'error': f'Processing failed: {str(processing_error)}',
@@ -1001,7 +1026,11 @@ def upload_file():
             }), 500
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/api/download/<filename>')
 def download_file(filename):

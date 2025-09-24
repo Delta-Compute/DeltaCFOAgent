@@ -17,10 +17,20 @@ class SmartDocumentIngestion:
     def _init_claude_client(self):
         """Initialize Claude API client"""
         try:
+            # Check environment variable first
             api_key = os.getenv('ANTHROPIC_API_KEY')
+
+            # Check for .anthropic_api_key file if env var not found
+            if not api_key:
+                key_file = '.anthropic_api_key'
+                if os.path.exists(key_file):
+                    with open(key_file, 'r') as f:
+                        api_key = f.read().strip()
+
             if not api_key:
                 print("⚠️  No ANTHROPIC_API_KEY found - smart ingestion disabled")
                 return None
+
             return anthropic.Anthropic(api_key=api_key)
         except Exception as e:
             print(f"❌ Error initializing Claude API: {e}")

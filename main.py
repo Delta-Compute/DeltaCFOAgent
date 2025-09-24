@@ -1127,8 +1127,8 @@ class DeltaCFOAgent:
             df = self.extract_keywords(df)
 
             # Enhance transaction structure
-            print("🔧 Enhancing transaction structure...")
-            df = self.enhance_transaction_structure(df)
+            # print("🔧 Enhancing transaction structure...")
+            # df = self.enhance_transaction_structure(df)  # Method not implemented yet
 
             # Add USD conversion using historic crypto prices
             print("💰 Adding USD conversion using historic crypto prices...")
