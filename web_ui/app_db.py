@@ -457,12 +457,37 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             """,
 
             'classified_entity': f"""
-            Based on this transaction:
-            - Description: {context.get('description', '')}
-            - Current entity: {current_value}
+            You are a financial analyst specializing in entity classification for crypto/trading businesses.
 
-            Suggest 3-5 business entities this could belong to from: Delta LLC, Delta Prop Shop LLC, Infinity Validator, Delta Mining Paraguay S.A., Delta Brazil, Personal.
-            Return only the entity names, one per line.
+            TRANSACTION DETAILS:
+            - Description: {context.get('description', '')}
+            - Amount: ${context.get('amount', '')}
+            - Source File: {context.get('source_file', '')}
+            - Date: {context.get('date', '')}
+
+            ENTITY CLASSIFICATION RULES:
+            • Delta LLC: US-based trading operations, exchanges, brokers, US banking
+            • Delta Prop Shop LLC: Proprietary trading, DeFi protocols, yield farming, liquid staking
+            • Infinity Validator: Blockchain validation, staking rewards, node operations
+            • Delta Mining Paraguay S.A.: Mining operations, equipment, Paraguay-based transactions
+            • Delta Brazil Operations: Brazil-based activities, regulatory compliance, local operations
+            • Personal: Individual expenses, personal transfers, non-business transactions
+            • Internal Transfer: Movements between company entities/wallets
+
+            CONTEXT CLUES:
+            - Bank descriptions often contain merchant/institution names
+            - ACH/WIRE patterns indicate specific business relationships
+            - Amount patterns may suggest recurring services vs one-time purchases
+            - Geographic indicators (Paraguay, Brazil references)
+
+            Based on the transaction description and amount, suggest 3-5 most likely entities.
+            Prioritize based on:
+            1. Specific merchant/institution mentioned
+            2. Transaction type (ACH, WIRE, etc.)
+            3. Geographic/regulatory context
+            4. Amount patterns
+
+            Return only the entity names, one per line, ranked by confidence.
             """,
 
             'justification': f"""
@@ -632,6 +657,16 @@ def sync_csv_to_database(csv_filename=None):
         return False
 
 @app.route('/')
+def homepage():
+    """Homepage with platform overview"""
+    try:
+        stats = get_dashboard_stats()
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('homepage.html', stats=stats, cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading homepage: {str(e)}", 500
+
+@app.route('/dashboard')
 def dashboard():
     """Main dashboard page"""
     try:
@@ -640,6 +675,16 @@ def dashboard():
         return render_template('dashboard_advanced.html', stats=stats, cache_buster=cache_buster)
     except Exception as e:
         return f"Error loading dashboard: {str(e)}", 500
+
+@app.route('/revenue')
+def revenue():
+    """Revenue Recognition dashboard page"""
+    try:
+        stats = get_dashboard_stats()
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('revenue.html', stats=stats, cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading revenue dashboard: {str(e)}", 500
 
 @app.route('/api/transactions')
 def api_transactions():
@@ -707,6 +752,76 @@ def api_update_transaction():
             return jsonify({'success': True, 'message': 'Transaction updated successfully'})
         else:
             return jsonify({'error': 'Failed to update transaction'}), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update_entity_bulk', methods=['POST'])
+def api_update_entity_bulk():
+    """API endpoint to update entity for multiple transactions"""
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+        new_entity = data.get('new_entity')
+
+        if not transaction_ids or not new_entity:
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        # Update each transaction
+        conn = get_db_connection()
+        updated_count = 0
+
+        for transaction_id in transaction_ids:
+            result = conn.execute(
+                "UPDATE transactions SET classified_entity = ? WHERE transaction_id = ?",
+                (new_entity, transaction_id)
+            )
+            if result.rowcount > 0:
+                updated_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Updated {updated_count} transactions',
+            'updated_count': updated_count
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update_category_bulk', methods=['POST'])
+def api_update_category_bulk():
+    """API endpoint to update accounting category for multiple transactions"""
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+        new_category = data.get('new_category')
+
+        if not transaction_ids or not new_category:
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        # Update each transaction
+        conn = get_db_connection()
+        updated_count = 0
+
+        for transaction_id in transaction_ids:
+            result = conn.execute(
+                "UPDATE transactions SET accounting_category = ? WHERE transaction_id = ?",
+                (new_category, transaction_id)
+            )
+            if result.rowcount > 0:
+                updated_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Updated {updated_count} transactions',
+            'updated_count': updated_count
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

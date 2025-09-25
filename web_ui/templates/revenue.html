@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta CFO Agent - Revenue Recognition</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <h2>🚀 Delta CFO Agent</h2>
+                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">🏠 Home</a>
+                <a href="/dashboard" class="nav-link">💸 Expenses</a>
+                <a href="/revenue" class="nav-link active">💰 Revenue Recognition</a>
+                <a href="/files" class="nav-link">📂 File Manager</a>
+                <a href="/api/stats" class="nav-link">📈 API</a>
+            </div>
+        </nav>
+
+        <div class="main-layout">
+            <div class="dashboard-content">
+                <header>
+                    <h1>💰 Revenue Recognition Dashboard</h1>
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <h3>Total Revenue</h3>
+                            <div class="stat-number positive">${{ "%.2f"|format(stats.total_revenue or 0) }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Revenue Transactions</h3>
+                            <div class="stat-number">{{ stats.revenue_transactions or 0 }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>ARR (Estimated)</h3>
+                            <div class="stat-number positive">${{ "%.2f"|format((stats.total_revenue or 0) * 12) }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Avg Monthly Revenue</h3>
+                            <div class="stat-number positive">${{ "%.2f"|format((stats.total_revenue or 0) / 12 if stats.total_revenue else 0) }}</div>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Revenue Recognition Coming Soon Section -->
+                <div class="filter-section" style="text-align: center; padding: 3rem;">
+                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 3rem; border-radius: 12px;">
+                        <h2 style="font-size: 2.5rem; margin-bottom: 1rem;">🚧 Coming Soon</h2>
+                        <p style="font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9;">
+                            Advanced Revenue Recognition Dashboard
+                        </p>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin: 2rem 0;">
+                            <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 8px;">
+                                <h4 style="margin-bottom: 0.5rem;">📊 ASC 606 Compliance</h4>
+                                <p style="font-size: 0.9rem; opacity: 0.8;">Automated revenue recognition following accounting standards</p>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 8px;">
+                                <h4 style="margin-bottom: 0.5rem;">💸 ARR Tracking</h4>
+                                <p style="font-size: 0.9rem; opacity: 0.8;">Annual Recurring Revenue analytics and forecasting</p>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 8px;">
+                                <h4 style="margin-bottom: 0.5rem;">📈 Revenue Forecasting</h4>
+                                <p style="font-size: 0.9rem; opacity: 0.8;">AI-powered revenue predictions and trend analysis</p>
+                            </div>
+                            <div style="background: rgba(255,255,255,0.1); padding: 1.5rem; border-radius: 8px;">
+                                <h4 style="margin-bottom: 0.5rem;">🧾 Invoice Processing</h4>
+                                <p style="font-size: 0.9rem; opacity: 0.8;">Automated invoice recognition and revenue allocation</p>
+                            </div>
+                        </div>
+                        <div style="margin-top: 2rem;">
+                            <p style="opacity: 0.8; font-size: 0.9rem;">
+                                📅 Planned for Phase 3 Development<br>
+                                Currently in design and planning phase
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Revenue Data Preview -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>💰 Current Revenue Transactions</h2>
+                        <div class="table-info">
+                            <span>Preview of revenue-classified transactions</span>
+                            <a href="/dashboard" class="btn-secondary">View All in Expenses Dashboard</a>
+                        </div>
+                    </div>
+
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Amount</th>
+                                    <th>Entity</th>
+                                    <th>Category</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td colspan="6" class="loading" style="text-align: center; padding: 2rem; color: #666;">
+                                        Revenue recognition dashboard is under development.<br>
+                                        Revenue transactions are currently visible in the
+                                        <a href="/dashboard" style="color: #667eea;">Expenses Dashboard</a>.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Development Info Modal -->
+    <div style="position: fixed; bottom: 20px; right: 20px; background: white; padding: 1rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 300px; font-size: 0.85rem;">
+        <div style="color: #667eea; font-weight: 600; margin-bottom: 0.5rem;">🔧 Development Status</div>
+        <div style="color: #666;">
+            This page is a placeholder for the upcoming Revenue Recognition module.
+            Current revenue data can be viewed in the Expenses Dashboard.
+        </div>
+    </div>
+</body>
+</html>

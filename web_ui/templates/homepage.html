@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta CFO Agent - AI-Powered Financial Intelligence</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <style>
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 2rem;
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        .hero-title {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        .hero-subtitle {
+            font-size: 1.4rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        .hero-cta {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .cta-button {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .cta-button:hover {
+            transform: translateY(-2px);
+        }
+        .cta-primary {
+            background: white;
+            color: #667eea;
+        }
+        .cta-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 3rem 0;
+        }
+        .feature-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: box-shadow 0.3s;
+        }
+        .feature-card:hover {
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+        }
+        .feature-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        .feature-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+        }
+        .feature-description {
+            color: #666;
+            line-height: 1.6;
+        }
+        .status-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 2rem;
+            margin: 3rem 0;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .status-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .status-number {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        .status-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        .roadmap-section {
+            margin: 3rem 0;
+        }
+        .roadmap-item {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .roadmap-phase {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .roadmap-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 0.5rem 0;
+        }
+        .roadmap-description {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <h2>🚀 Delta CFO Agent</h2>
+                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link active">🏠 Home</a>
+                <a href="/dashboard" class="nav-link">💸 Expenses</a>
+                <a href="/revenue" class="nav-link">💰 Revenue Recognition</a>
+                <a href="/files" class="nav-link">📂 File Manager</a>
+                <a href="/api/stats" class="nav-link">📈 API</a>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <h1 class="hero-title">🤖 AI-Powered Financial Intelligence</h1>
+            <p class="hero-subtitle">
+                Transform your financial operations with intelligent automation.<br>
+                From transaction processing to revenue recognition - all powered by Claude AI.
+            </p>
+            <div class="hero-cta">
+                <a href="/dashboard" class="cta-button cta-primary">🚀 Launch Dashboard</a>
+                <a href="/files" class="cta-button cta-secondary">📁 Upload Documents</a>
+            </div>
+        </section>
+
+        <!-- Platform Metrics -->
+        <section class="status-section">
+            <h2>📊 Platform Metrics</h2>
+            <p>Real-time intelligence from AI-powered financial operations</p>
+            <div class="status-grid">
+                <div class="status-card">
+                    <div class="status-number" style="color: #667eea;">12+</div>
+                    <div class="status-label">Built-in AI Tools</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" style="color: #28a745;">{{ stats.total_transactions or 0 }}</div>
+                    <div class="status-label">Transactions Processed</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" style="color: #17a2b8;">7</div>
+                    <div class="status-label">Business Units</div>
+                </div>
+                <div class="status-card">
+                    <div class="status-number" style="color: #ffc107;">{{ stats.needs_review or 0 }}</div>
+                    <div class="status-label">Pending Review</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mission Statement -->
+        <section style="background: #f8f9fa; padding: 2rem; border-radius: 12px; margin: 3rem 0; text-align: center;">
+            <p style="font-size: 1.4rem; color: #667eea; font-weight: 600; margin: 0;">
+                Delta's proprietary self improving AI CFO Agent
+            </p>
+        </section>
+
+        <!-- Development Roadmap -->
+        <section class="roadmap-section">
+            <h2>🗺️ Development Roadmap</h2>
+            <div class="roadmap-item">
+                <div class="roadmap-phase">Phase 1 - Complete ✅</div>
+                <h3 class="roadmap-title">Core Transaction Processing</h3>
+                <p class="roadmap-description">AI-powered document ingestion, transaction classification, and advanced dashboard with real-time analytics.</p>
+            </div>
+            <div class="roadmap-item">
+                <div class="roadmap-phase">Phase 2 - In Development 🚧</div>
+                <h3 class="roadmap-title">Multi-User Onboarding System</h3>
+                <p class="roadmap-description">User authentication, role-based access control, client onboarding wizard, and consultant dashboard for Leap CFO services.</p>
+            </div>
+            <div class="roadmap-item">
+                <div class="roadmap-phase">Phase 3 - Planned 📋</div>
+                <h3 class="roadmap-title">Revenue Recognition Dashboard</h3>
+                <p class="roadmap-description">Automated invoice processing, ARR tracking, revenue forecasting, and ASC 606 compliance for enterprise clients.</p>
+            </div>
+            <div class="roadmap-item">
+                <div class="roadmap-phase">Phase 4 - Future 🔮</div>
+                <h3 class="roadmap-title">Advanced Reporting Engine</h3>
+                <p class="roadmap-description">Financial statement generation, AI-powered insights, interactive dashboards, and automated report delivery.</p>
+            </div>
+        </section>
+
+        <!-- Team Section -->
+        <section style="background: #f8f9fa; padding: 2rem; border-radius: 12px; margin: 3rem 0;">
+            <h2>👥 Delta Team Development</h2>
+            <p style="color: #666; margin-bottom: 1.5rem;">
+                Currently being developed and tested by our internal Delta operations team and admin department.
+                This real-world usage drives our feature development and ensures practical, business-ready functionality.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem;">
+                <div style="background: white; padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="color: #667eea; margin-bottom: 0.5rem;">🏢 Internal Operations</h4>
+                    <p style="color: #666; font-size: 0.9rem;">Delta team testing core features and providing feedback for daily financial operations.</p>
+                </div>
+                <div style="background: white; padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="color: #667eea; margin-bottom: 0.5rem;">📊 Admin Department</h4>
+                    <p style="color: #666; font-size: 0.9rem;">Bug fixing and feature validation through real-world financial data processing.</p>
+                </div>
+                <div style="background: white; padding: 1.5rem; border-radius: 8px;">
+                    <h4 style="color: #667eea; margin-bottom: 0.5rem;">🎯 Leap CFO Prep</h4>
+                    <p style="color: #666; font-size: 0.9rem;">Preparing for external deployment to our fractional CFO service clients.</p>
+                </div>
+            </div>
+        </section>
+    </div>
+</body>
+</html>
