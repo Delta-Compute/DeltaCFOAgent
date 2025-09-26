@@ -50,13 +50,13 @@ def init_claude_client():
 
         if api_key:
             claude_client = anthropic.Anthropic(api_key=api_key)
-            print("✅ Claude API client initialized")
+            print("Claude API client initialized")
             return True
         else:
-            print("⚠️  Claude API key not found - AI features disabled")
+            print("WARNING: Claude API key not found - AI features disabled")
             return False
     except Exception as e:
-        print(f"❌ Error initializing Claude API: {e}")
+        print(f"ERROR: Error initializing Claude API: {e}")
         return False
 
 def get_db_connection():
@@ -68,7 +68,7 @@ def get_db_connection():
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
     try:
-        print("🔍 Loading transactions from database...")
+        print("Loading transactions from database...")
         conn = get_db_connection()
 
         # Base query
@@ -142,12 +142,12 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
             transactions.append(transaction)
 
         conn.close()
-        print(f"✅ Loaded {len(transactions)} transactions using database backend")
+        print(f"Loaded {len(transactions)} transactions using database backend")
 
         return transactions, total_count
 
     except Exception as e:
-        print(f"❌ Error loading transactions from database: {e}")
+        print(f"ERROR: Error loading transactions from database: {e}")
         return [], 0
 
 def get_dashboard_stats():
@@ -207,7 +207,7 @@ def get_dashboard_stats():
         }
 
     except Exception as e:
-        print(f"❌ Error calculating dashboard stats: {e}")
+        print(f"ERROR: Error calculating dashboard stats: {e}")
         return {
             'total_transactions': 0,
             'total_revenue': 0,
@@ -247,11 +247,11 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         conn.commit()
         conn.close()
 
-        print(f"🔄 Updating transaction {transaction_id}: field={field}")
+        print(f"UPDATING: Updating transaction {transaction_id}: field={field}")
         return True
 
     except Exception as e:
-        print(f"❌ Error updating transaction field: {e}")
+        print(f"ERROR: Error updating transaction field: {e}")
         return False
 
 def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> List[str]:
@@ -328,7 +328,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
 
         import time
         start_time = time.time()
-        print(f"🤖 Calling Claude API for similar descriptions analysis...")
+        print(f"AI: Calling Claude API for similar descriptions analysis...")
 
         response = claude_client.messages.create(
             model="claude-3-haiku-20240307",
@@ -337,7 +337,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         )
 
         elapsed_time = time.time() - start_time
-        print(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
+        print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
 
         response_text = response.content[0].text.strip().lower()
 
@@ -358,11 +358,11 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             } for tx in selected_txs]
 
         except (ValueError, IndexError) as e:
-            print(f"❌ Error parsing Claude response for similar descriptions: {e}")
+            print(f"ERROR: Error parsing Claude response for similar descriptions: {e}")
             return []
 
     except Exception as e:
-        print(f"❌ Error in Claude analysis of similar descriptions: {e}")
+        print(f"ERROR: Error in Claude analysis of similar descriptions: {e}")
         return []
 
 def get_similar_descriptions_from_db(context: Dict) -> List[str]:
@@ -430,7 +430,7 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
         } for row in similar_txs]
 
     except Exception as e:
-        print(f"❌ Error finding similar descriptions: {e}")
+        print(f"ERROR: Error finding similar descriptions: {e}")
         return []
 
 def get_ai_powered_suggestions(field_type: str, current_value: str = "", context: Dict = None) -> List[str]:
@@ -524,15 +524,15 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
 
         prompt = prompts.get(field_type, "")
         if not prompt:
-            print(f"❌ No prompt found for field_type: {field_type}")
+            print(f"ERROR: No prompt found for field_type: {field_type}")
             return []
 
-        print(f"✅ Found prompt for {field_type}, enhancing with learning...")
+        print(f"SUCCESS: Found prompt for {field_type}, enhancing with learning...")
         # Enhance prompt with learned patterns
         enhanced_prompt = enhance_ai_prompt_with_learning(field_type, prompt, context)
-        print(f"✅ Enhanced prompt created, calling Claude API...")
+        print(f"SUCCESS: Enhanced prompt created, calling Claude API...")
 
-        print(f"🤖 Calling Claude API for {field_type} suggestions...")
+        print(f"AI: Calling Claude API for {field_type} suggestions...")
         start_time = time.time()
 
         response = claude_client.messages.create(
@@ -542,15 +542,15 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
         )
 
         elapsed_time = time.time() - start_time
-        print(f"⏱️  Claude API response time: {elapsed_time:.2f} seconds")
+        print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
 
         ai_suggestions = [line.strip() for line in response.content[0].text.strip().split('\n') if line.strip()]
-        print(f"💡 Claude suggestions: {ai_suggestions}")
+        print(f"AI: Claude suggestions: {ai_suggestions}")
 
         # Get learned suggestions
         learned_suggestions = get_learned_suggestions(field_type, context)
         learned_values = [s['value'] for s in learned_suggestions]
-        print(f"📚 Learned suggestions: {learned_values}")
+        print(f"DATABASE: Learned suggestions: {learned_values}")
 
         # Combine suggestions, prioritizing Claude AI suggestions FIRST
         combined_suggestions = []
@@ -562,11 +562,11 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             if learned not in combined_suggestions:
                 combined_suggestions.append(learned)
 
-        print(f"🔗 Final combined suggestions: {combined_suggestions[:5]}")
+        print(f"SUCCESS: Final combined suggestions: {combined_suggestions[:5]}")
         return combined_suggestions[:5]  # Limit to 5 suggestions
 
     except Exception as e:
-        print(f"❌ Error getting AI suggestions: {e}")
+        print(f"ERROR: Error getting AI suggestions: {e}")
         return []
 
 def sync_csv_to_database(csv_filename=None):
@@ -582,12 +582,12 @@ def sync_csv_to_database(csv_filename=None):
             csv_path = os.path.join(parent_dir, 'MASTER_TRANSACTIONS.csv')
 
         if not os.path.exists(csv_path):
-            print(f"⚠️  CSV file not found for sync: {csv_path}")
+            print(f"WARNING: CSV file not found for sync: {csv_path}")
             return False
 
         # Read the CSV file
         df = pd.read_csv(csv_path)
-        print(f"🔄 Syncing {len(df)} transactions to database...")
+        print(f"UPDATING: Syncing {len(df)} transactions to database...")
 
         # Connect to database
         conn = get_db_connection()
@@ -596,11 +596,11 @@ def sync_csv_to_database(csv_filename=None):
         if csv_filename:
             source_file = csv_filename.replace('classified_', '')
             conn.execute("DELETE FROM transactions WHERE source_file = ?", (source_file,))
-            print(f"🗑️  Cleared existing data for source file: {source_file}")
+            print(f"DATABASE: Cleared existing data for source file: {source_file}")
         else:
             # Only clear all data if syncing MASTER_TRANSACTIONS.csv (full sync)
             conn.execute("DELETE FROM transactions")
-            print("🗑️  Cleared all existing data for full sync")
+            print("DATABASE: Cleared all existing data for full sync")
 
         # Insert all transactions
         for _, row in df.iterrows():
@@ -649,11 +649,11 @@ def sync_csv_to_database(csv_filename=None):
 
         conn.commit()
         conn.close()
-        print(f"✅ Successfully synced {len(df)} transactions to database")
+        print(f"SUCCESS: Successfully synced {len(df)} transactions to database")
         return True
 
     except Exception as e:
-        print(f"❌ Error syncing CSV to database: {e}")
+        print(f"ERROR: Error syncing CSV to database: {e}")
         return False
 
 @app.route('/')
@@ -870,7 +870,7 @@ def api_suggestions():
         return jsonify({'suggestions': suggestions})
 
     except Exception as e:
-        print(f"❌ API suggestions error: {e}")
+        print(f"ERROR: API suggestions error: {e}")
         return jsonify({
             'error': f'Failed to get AI suggestions: {str(e)}',
             'suggestions': [],
@@ -1197,7 +1197,7 @@ def api_log_interaction():
         return jsonify({'success': True, 'message': 'Interaction logged successfully'})
 
     except Exception as e:
-        print(f"❌ Error in api_log_interaction: {e}")
+        print(f"ERROR: Error in api_log_interaction: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
@@ -1222,7 +1222,7 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
         ))
         conn.commit()
         conn.close()
-        print(f"✅ Logged user interaction: {action_type} for {field_type}")
+        print(f"SUCCESS: Logged user interaction: {action_type} for {field_type}")
 
         # Update performance metrics
         update_ai_performance_metrics(field_type, action_type == 'accepted_ai_suggestion')
@@ -1231,7 +1231,7 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
         learn_from_interaction(transaction_id, field_type, user_choice, transaction_context)
 
     except Exception as e:
-        print(f"❌ Error logging user interaction: {e}")
+        print(f"ERROR: Error logging user interaction: {e}")
 
 def update_ai_performance_metrics(field_type: str, was_accepted: bool):
     """Update daily AI performance metrics"""
@@ -1266,7 +1266,7 @@ def update_ai_performance_metrics(field_type: str, was_accepted: bool):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"❌ Error updating performance metrics: {e}")
+        print(f"ERROR: Error updating performance metrics: {e}")
 
 def learn_from_interaction(transaction_id: str, field_type: str, user_choice: str, context: dict):
     """Learn patterns from user interactions"""
@@ -1324,11 +1324,11 @@ def learn_from_interaction(transaction_id: str, field_type: str, user_choice: st
                 """, (pattern_type, condition_json, user_choice))
 
             conn.commit()
-            print(f"✅ Learned pattern: {pattern_type} -> {user_choice}")
+            print(f"SUCCESS: Learned pattern: {pattern_type} -> {user_choice}")
 
         conn.close()
     except Exception as e:
-        print(f"❌ Error learning from interaction: {e}")
+        print(f"ERROR: Error learning from interaction: {e}")
 
 def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
     """Get suggestions based on learned patterns"""
@@ -1383,7 +1383,7 @@ def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
         return suggestions[:3]  # Return top 3 learned suggestions
 
     except Exception as e:
-        print(f"❌ Error getting learned suggestions: {e}")
+        print(f"ERROR: Error getting learned suggestions: {e}")
         return []
 
 def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: dict) -> str:
@@ -1402,15 +1402,15 @@ def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: 
 
         return base_prompt
     except Exception as e:
-        print(f"❌ Error enhancing prompt: {e}")
+        print(f"ERROR: Error enhancing prompt: {e}")
         return base_prompt
 
 if __name__ == '__main__':
-    print("🚀 Starting Delta CFO Agent Web Interface (Database Mode)")
-    print("📊 Database backend enabled")
+    print("Starting Delta CFO Agent Web Interface (Database Mode)")
+    print("Database backend enabled")
 
     # Initialize Claude API
     init_claude_client()
 
-    print("🌐 Access at: http://localhost:5002")
+    print("STARTING: Access at: http://localhost:5002")
     app.run(host='0.0.0.0', port=5002, debug=True)

@@ -717,16 +717,18 @@ ADVANCED_TEMPLATE = '''
                             <td><strong style="color: #28a745;">{{ "%.2f" | format(invoice[5] or 0) }} {{ invoice[6] or 'USD' }}</strong></td>
                             <td><span class="bu-tag bu-{{ (invoice[7] or 'Other') | lower | replace(' ', '-') }}">{{ invoice[7] or 'Other' }}</span></td>
                             <td style="color: #6c757d; font-size: 13px;">{{ invoice[2] or 'N/A' }}</td>
-                            <td>
-                                <a href="/invoice/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; margin-right: 5px; text-decoration: none;">
-                                    Ver Detalhes
-                                </a>
-                                <a href="/file/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; background: #28a745; text-decoration: none; margin-right: 5px;">
-                                    Download
-                                </a>
-                                <button onclick="editInvoice('{{ invoice[0] }}')" class="btn" style="padding: 4px 8px; font-size: 11px; background: #ffc107; color: #000; border: none; cursor: pointer;">
-                                    ✏️ Editar
-                                </button>
+                            <td class="action-cell">
+                                <div class="action-buttons">
+                                    <a href="/invoice/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; margin-right: 5px; text-decoration: none;">
+                                        Ver Detalhes
+                                    </a>
+                                    <a href="/file/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; background: #28a745; text-decoration: none; margin-right: 5px;">
+                                        Download
+                                    </a>
+                                    <button onclick="openEditModal('{{ invoice[0] }}')" class="btn" style="padding: 4px 8px; font-size: 11px; background: #ffc107; color: #000; border: none; cursor: pointer;">
+                                        ✏️ Editar
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -758,7 +760,7 @@ ADVANCED_TEMPLATE = '''
     </div>
 
     <!-- Modal para edição de invoice -->
-    <div id="editModal" class="modal">
+    <div id="editInvoiceModal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeEditModal()">&times;</span>
             <h2>✏️ Editar Invoice</h2>
@@ -792,7 +794,14 @@ ADVANCED_TEMPLATE = '''
 
                 <div class="form-group">
                     <label for="editBusinessUnit">Business Unit:</label>
-                    <input type="text" id="editBusinessUnit" required>
+                    <select id="editBusinessUnit" required>
+                        <option value="Delta LLC">Delta LLC</option>
+                        <option value="Delta Prop Shop LLC">Delta Prop Shop LLC</option>
+                        <option value="Infinity Validator">Infinity Validator</option>
+                        <option value="Delta Mining Paraguay S.A.">Delta Mining Paraguay S.A.</option>
+                        <option value="Personal">Personal</option>
+                        <option value="Other">Other</option>
+                    </select>
                 </div>
 
                 <div class="form-group">
@@ -1461,7 +1470,38 @@ ADVANCED_TEMPLATE = '''
             });
         }
 
+        // Table helper functions
+        function showTableMessage(message, type) {
+            const existingMessage = document.querySelector('.table-message');
+            if (existingMessage) {
+                existingMessage.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `table-message ${type === 'success' ? 'success-message' : 'error-message'}`;
+            messageDiv.textContent = message;
+            messageDiv.style.position = 'fixed';
+            messageDiv.style.top = '20px';
+            messageDiv.style.right = '20px';
+            messageDiv.style.zIndex = '1000';
+            messageDiv.style.padding = '10px 20px';
+            messageDiv.style.borderRadius = '4px';
+            messageDiv.style.backgroundColor = type === 'success' ? '#d4edda' : '#f8d7da';
+            messageDiv.style.color = type === 'success' ? '#155724' : '#721c24';
+            messageDiv.style.border = `1px solid ${type === 'success' ? '#c3e6cb' : '#f5c6cb'}`;
+
+            document.body.appendChild(messageDiv);
+
+            setTimeout(() => {
+                messageDiv.remove();
+            }, 3000);
+        }
+
         // Edit Invoice Modal Functions
+        function openEditModal(invoiceId) {
+            editInvoice(invoiceId);
+        }
+
         function editInvoice(invoiceId) {
             // Fetch current invoice data
             fetch(`/api/invoice/${invoiceId}`)
@@ -1472,7 +1512,7 @@ ADVANCED_TEMPLATE = '''
                         document.getElementById('editInvoiceId').value = invoiceId;
                         document.getElementById('editInvoiceNumber').value = data.data.invoice_number || '';
                         document.getElementById('editVendorName').value = data.data.vendor_name || '';
-                        document.getElementById('editTotalAmount').value = data.data.total_amount || '';
+                        document.getElementById('editAmount').value = data.data.total_amount || '';
                         document.getElementById('editCurrency').value = data.data.currency || '';
                         document.getElementById('editBusinessUnit').value = data.data.business_unit || '';
                         document.getElementById('editCategory').value = data.data.category || '';
@@ -1505,7 +1545,7 @@ ADVANCED_TEMPLATE = '''
                     const formData = {
                         invoice_number: document.getElementById('editInvoiceNumber').value,
                         vendor_name: document.getElementById('editVendorName').value,
-                        total_amount: parseFloat(document.getElementById('editTotalAmount').value) || 0,
+                        total_amount: parseFloat(document.getElementById('editAmount').value) || 0,
                         currency: document.getElementById('editCurrency').value,
                         business_unit: document.getElementById('editBusinessUnit').value,
                         category: document.getElementById('editCategory').value,
@@ -1766,32 +1806,267 @@ def invoice_details(invoice_id):
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
         .detail-card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .field { margin: 15px 0; padding: 10px; background: #f8f9fa; border-radius: 6px; }
-        .label { font-weight: bold; color: #495057; }
-        .value { margin-top: 5px; }
-        .btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 5px; }
+        .field { margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px; position: relative; display: flex; justify-content: space-between; align-items: start; }
+        .field-content { flex-grow: 1; }
+        .label { font-weight: bold; color: #495057; font-size: 14px; margin-bottom: 8px; }
+        .value { font-size: 16px; }
+        .edit-input { width: 100%; padding: 8px; border: 2px solid #007bff; border-radius: 4px; font-size: 16px; }
+        .edit-buttons { margin-top: 10px; }
+        .btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; display: inline-block; margin: 5px; border: none; cursor: pointer; }
+        .btn-success { background: #28a745; }
+        .btn-secondary { background: #6c757d; }
+        .btn-warning { background: #ffc107; color: #000; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-xs { padding: 4px 8px; font-size: 11px; }
+        .readonly { background: #e9ecef !important; color: #6c757d; }
+        .editable { background: #fff; border-left: 4px solid #007bff; }
+        .success-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .edit-field-btn { margin-left: 10px; }
     </style></head>
     <body>
         <div class="detail-card">
             <h1>Invoice Details</h1>
-            <div class="field"><div class="label">Invoice ID:</div><div class="value">{{ invoice.id }}</div></div>
-            <div class="field"><div class="label">Invoice Number:</div><div class="value">{{ invoice.invoice_number or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Date:</div><div class="value">{{ invoice.date or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Vendor:</div><div class="value">{{ invoice.vendor_name or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Amount:</div><div class="value">${{ invoice.total_amount }} {{ invoice.currency }}</div></div>
-            <div class="field"><div class="label">Business Unit:</div><div class="value">{{ invoice.business_unit or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Category:</div><div class="value">{{ invoice.category or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Confidence Score:</div><div class="value">{{ (invoice.confidence_score * 100) | round }}%</div></div>
-            <div class="field"><div class="label">Processing Notes:</div><div class="value">{{ invoice.processing_notes or 'N/A' }}</div></div>
-            <div class="field"><div class="label">Source File:</div><div class="value">{{ invoice.source_file }}</div></div>
-            <div class="field"><div class="label">File Size:</div><div class="value">{{ (invoice.file_size / 1024 / 1024) | round(2) }} MB</div></div>
-            <div class="field"><div class="label">Processed At:</div><div class="value">{{ invoice.processed_at }}</div></div>
+
+            <div class="field readonly">
+                <div class="field-content">
+                    <div class="label">Invoice ID:</div>
+                    <div class="value">{{ invoice.id }}</div>
+                </div>
+            </div>
+
+            <div class="field editable" data-field="invoice_number">
+                <div class="field-content">
+                    <div class="label">Invoice Number:</div>
+                    <div class="value" data-original="{{ invoice.invoice_number or '' }}">{{ invoice.invoice_number or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('invoice_number')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="date">
+                <div class="field-content">
+                    <div class="label">Date:</div>
+                    <div class="value" data-original="{{ invoice.date or '' }}">{{ invoice.date or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('date')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="vendor_name">
+                <div class="field-content">
+                    <div class="label">Vendor:</div>
+                    <div class="value" data-original="{{ invoice.vendor_name or '' }}">{{ invoice.vendor_name or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('vendor_name')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="total_amount">
+                <div class="field-content">
+                    <div class="label">Amount:</div>
+                    <div class="value" data-original="{{ invoice.total_amount or 0 }}">${{ invoice.total_amount }} {{ invoice.currency }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('total_amount')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="currency">
+                <div class="field-content">
+                    <div class="label">Currency:</div>
+                    <div class="value" data-original="{{ invoice.currency or '' }}">{{ invoice.currency or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('currency')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="business_unit">
+                <div class="field-content">
+                    <div class="label">Business Unit:</div>
+                    <div class="value" data-original="{{ invoice.business_unit or '' }}">{{ invoice.business_unit or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('business_unit')">✏️ Editar</button>
+            </div>
+
+            <div class="field editable" data-field="category">
+                <div class="field-content">
+                    <div class="label">Category:</div>
+                    <div class="value" data-original="{{ invoice.category or '' }}">{{ invoice.category or 'N/A' }}</div>
+                </div>
+                <button class="btn btn-warning btn-xs edit-field-btn" onclick="startEditField('category')">✏️ Editar</button>
+            </div>
+
+            <div class="field readonly"><div class="label">Confidence Score:</div><div class="value">{{ (invoice.confidence_score * 100) | round }}%</div></div>
+            <div class="field readonly"><div class="label">Processing Notes:</div><div class="value">{{ invoice.processing_notes or 'N/A' }}</div></div>
+            <div class="field readonly"><div class="label">Source File:</div><div class="value">{{ invoice.source_file }}</div></div>
+            <div class="field readonly"><div class="label">File Size:</div><div class="value">{{ (invoice.file_size / 1024 / 1024) | round(2) }} MB</div></div>
+            <div class="field readonly"><div class="label">Processed At:</div><div class="value">{{ invoice.processed_at }}</div></div>
 
             <div style="margin-top: 30px;">
-                <a href="/file/{{ invoice.id }}" class="btn">Ver Arquivo Original</a>
-                <a href="/" class="btn">Voltar</a>
+                <a href="/file/{{ invoice.id }}" class="btn">📄 Ver Arquivo Original</a>
+                <a href="/" class="btn btn-secondary">⬅️ Voltar</a>
             </div>
         </div>
+
+        <script>
+            const invoiceId = '{{ invoice.id }}';
+
+            // Button-based editing system
+            function startEditField(fieldName) {
+                const fieldElement = document.querySelector(`[data-field="${fieldName}"]`);
+                if (fieldElement.classList.contains('editing')) {
+                    return; // Already editing
+                }
+
+                const valueElement = fieldElement.querySelector('.value');
+                const currentValue = valueElement.dataset.original || '';
+
+                fieldElement.classList.add('editing');
+
+                let inputHtml;
+                if (fieldName === 'date') {
+                    inputHtml = `<input type="date" class="edit-input" value="${currentValue}">`;
+                } else if (fieldName === 'total_amount') {
+                    inputHtml = `<input type="number" step="0.01" class="edit-input" value="${currentValue}">`;
+                } else if (fieldName === 'category') {
+                    const categories = ['Technology Expenses', 'Trading', 'Mining', 'Services', 'Other'];
+                    inputHtml = `<select class="edit-input">`;
+                    categories.forEach(cat => {
+                        const selected = cat === currentValue ? 'selected' : '';
+                        inputHtml += `<option value="${cat}" ${selected}>${cat}</option>`;
+                    });
+                    inputHtml += `</select>`;
+                } else if (fieldName === 'business_unit') {
+                    const units = ['Delta LLC', 'Delta Prop Shop LLC', 'Infinity Validator', 'Delta Mining Paraguay S.A.', 'Personal'];
+                    inputHtml = `<select class="edit-input">`;
+                    units.forEach(unit => {
+                        const selected = unit === currentValue ? 'selected' : '';
+                        inputHtml += `<option value="${unit}" ${selected}>${unit}</option>`;
+                    });
+                    inputHtml += `</select>`;
+                } else if (fieldName === 'currency') {
+                    const currencies = ['USD', 'EUR', 'BRL', 'BTC', 'ETH'];
+                    inputHtml = `<select class="edit-input">`;
+                    currencies.forEach(curr => {
+                        const selected = curr === currentValue ? 'selected' : '';
+                        inputHtml += `<option value="${curr}" ${selected}>${curr}</option>`;
+                    });
+                    inputHtml += `</select>`;
+                } else {
+                    inputHtml = `<input type="text" class="edit-input" value="${currentValue}">`;
+                }
+
+                valueElement.innerHTML = inputHtml +
+                    `<div class="edit-buttons">
+                        <button class="btn btn-success btn-sm" onclick="saveField('${fieldName}', this)">💾 Salvar</button>
+                        <button class="btn btn-secondary btn-sm" onclick="cancelEditField('${fieldName}')">❌ Cancelar</button>
+                    </div>`;
+
+                // Hide the edit button while editing
+                const editButton = fieldElement.querySelector('.edit-field-btn');
+                editButton.style.display = 'none';
+
+                const input = fieldElement.querySelector('.edit-input');
+                input.focus();
+                if (input.type === 'text') {
+                    input.select();
+                }
+            }
+
+            function saveField(fieldName, button) {
+                const fieldElement = button.closest('.field');
+                const input = fieldElement.querySelector('.edit-input');
+                const newValue = input.value;
+
+                // Show loading
+                button.textContent = '⏳ Salvando...';
+                button.disabled = true;
+
+                const updateData = {};
+                updateData[fieldName] = newValue;
+
+                // Include required fields for API
+                const allFields = ['invoice_number', 'vendor_name', 'total_amount', 'currency', 'business_unit', 'category', 'date'];
+                allFields.forEach(field => {
+                    if (field !== fieldName) {
+                        const fieldEl = document.querySelector(`[data-field="${field}"] .value`);
+                        if (fieldEl) {
+                            updateData[field] = fieldEl.dataset.original || '';
+                        }
+                    }
+                });
+
+                fetch(`/api/invoice/${invoiceId}/update`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(updateData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update the display
+                        const valueElement = fieldElement.querySelector('.value');
+                        valueElement.dataset.original = newValue;
+
+                        let displayValue = newValue || 'N/A';
+                        if (fieldName === 'total_amount') {
+                            const currency = updateData.currency || 'USD';
+                            displayValue = `$${newValue} ${currency}`;
+                        }
+
+                        valueElement.innerHTML = displayValue;
+                        fieldElement.classList.remove('editing');
+
+                        // Show the edit button again
+                        const editButton = fieldElement.querySelector('.edit-field-btn');
+                        editButton.style.display = 'block';
+
+                        // Show success message
+                        showMessage('Campo atualizado com sucesso!', 'success');
+                    } else {
+                        alert('Erro ao atualizar: ' + (data.error || 'Erro desconhecido'));
+                        cancelEditField(fieldName);
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    alert('Erro ao salvar alterações');
+                    cancelEditField(fieldName);
+                })
+                .finally(() => {
+                    button.textContent = '💾 Salvar';
+                    button.disabled = false;
+                });
+            }
+
+            function cancelEditField(fieldName) {
+                const fieldElement = document.querySelector(`[data-field="${fieldName}"]`);
+                const valueElement = fieldElement.querySelector('.value');
+                const originalValue = valueElement.dataset.original || 'N/A';
+
+                let displayValue = originalValue;
+                if (fieldName === 'total_amount' && originalValue !== 'N/A') {
+                    const currencyElement = document.querySelector('[data-field="currency"] .value');
+                    const currency = currencyElement ? currencyElement.dataset.original : 'USD';
+                    displayValue = `$${originalValue} ${currency}`;
+                }
+
+                valueElement.innerHTML = displayValue;
+                fieldElement.classList.remove('editing');
+
+                // Show the edit button again
+                const editButton = fieldElement.querySelector('.edit-field-btn');
+                editButton.style.display = 'block';
+            }
+
+            function showMessage(message, type) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = type === 'success' ? 'success-message' : 'error-message';
+                messageDiv.textContent = message;
+
+                document.querySelector('.detail-card').insertBefore(messageDiv, document.querySelector('h1').nextSibling);
+
+                setTimeout(() => {
+                    messageDiv.remove();
+                }, 3000);
+            }
+        </script>
     </body></html>
     '''
     return render_template_string(detail_template, invoice=invoice_dict)
