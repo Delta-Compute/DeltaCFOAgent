@@ -719,9 +719,9 @@ ADVANCED_TEMPLATE = '''
                             <td style="color: #6c757d; font-size: 13px;">{{ invoice[2] or 'N/A' }}</td>
                             <td class="action-cell">
                                 <div class="action-buttons">
-                                    <a href="/invoice/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; margin-right: 5px; text-decoration: none;">
-                                        Ver Detalhes
-                                    </a>
+                                    <button onclick="openDetailsModal('{{ invoice[0] }}')" class="btn" style="padding: 4px 8px; font-size: 11px; margin-right: 5px; border: none; cursor: pointer; background: #007bff; color: white;">
+                                        👁️ Ver Detalhes
+                                    </button>
                                     <a href="/file/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; background: #28a745; text-decoration: none; margin-right: 5px;">
                                         Download
                                     </a>
@@ -832,6 +832,101 @@ ADVANCED_TEMPLATE = '''
         </div>
     </div>
 
+    <!-- Invoice Details Modal -->
+    <div id="detailsModal" class="modal">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <span class="close" onclick="closeDetailsModal()">&times;</span>
+            <h2>👁️ Detalhes do Invoice</h2>
+
+            <div class="details-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                <!-- Left Column -->
+                <div class="details-column">
+                    <div class="detail-item">
+                        <label>Número do Invoice:</label>
+                        <div id="detailInvoiceNumber" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Fornecedor:</label>
+                        <div id="detailVendorName" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Valor Total:</label>
+                        <div id="detailAmount" class="detail-value" style="color: #28a745; font-weight: bold; font-size: 18px;">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Moeda:</label>
+                        <div id="detailCurrency" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Data:</label>
+                        <div id="detailDate" class="detail-value">-</div>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div class="details-column">
+                    <div class="detail-item">
+                        <label>Business Unit:</label>
+                        <div id="detailBusinessUnit" class="detail-value">
+                            <span id="detailBusinessUnitTag" class="bu-tag">-</span>
+                        </div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Categoria:</label>
+                        <div id="detailCategory" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Confiança:</label>
+                        <div id="detailConfidence" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Método de Extração:</label>
+                        <div id="detailExtractionMethod" class="detail-value">-</div>
+                    </div>
+
+                    <div class="detail-item">
+                        <label>Processado em:</label>
+                        <div id="detailProcessedAt" class="detail-value">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Processing Notes -->
+            <div class="detail-item" style="margin-top: 20px;">
+                <label>Notas de Processamento:</label>
+                <div id="detailProcessingNotes" class="detail-value" style="background: #f8f9fa; padding: 10px; border-radius: 5px; border-left: 4px solid #007bff;">-</div>
+            </div>
+
+            <!-- File Info -->
+            <div class="detail-item" style="margin-top: 15px;">
+                <label>Arquivo Fonte:</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div id="detailSourceFile" class="detail-value">-</div>
+                    <a id="detailDownloadLink" href="#" class="btn" style="padding: 5px 10px; font-size: 12px; background: #28a745; color: white; text-decoration: none;">
+                        📥 Download
+                    </a>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div style="text-align: right; margin-top: 30px; border-top: 1px solid #dee2e6; padding-top: 20px;">
+                <button type="button" onclick="closeDetailsModal()" class="btn" style="background: #6c757d; margin-right: 10px;">
+                    Fechar
+                </button>
+                <button type="button" onclick="editFromDetails()" class="btn" style="background: #ffc107; color: #000;">
+                    ✏️ Editar Invoice
+                </button>
+            </div>
+        </div>
+    </div>
+
     <style>
         /* Modal styles */
         .modal {
@@ -884,6 +979,40 @@ ADVANCED_TEMPLATE = '''
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 14px;
+        }
+
+        /* Details Modal Specific Styles */
+        .detail-item {
+            margin-bottom: 15px;
+        }
+
+        .detail-item label {
+            display: block;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .detail-value {
+            background: #ffffff;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 10px;
+            min-height: 20px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .details-grid {
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .details-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
         }
     </style>
 
@@ -1534,6 +1663,88 @@ ADVANCED_TEMPLATE = '''
             document.getElementById('editInvoiceModal').style.display = 'none';
         }
 
+        // Details Modal Functions
+        let currentDetailsInvoiceId = null;
+
+        function openDetailsModal(invoiceId) {
+            currentDetailsInvoiceId = invoiceId;
+
+            // Fetch invoice details
+            fetch(`/api/invoice/${invoiceId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        populateDetailsModal(data.data);
+                        document.getElementById('detailsModal').style.display = 'block';
+                    } else {
+                        alert('Erro ao carregar detalhes: ' + (data.error || 'Erro desconhecido'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Erro:', error);
+                    alert('Erro ao carregar detalhes do invoice');
+                });
+        }
+
+        function populateDetailsModal(invoiceData) {
+            // Basic information
+            document.getElementById('detailInvoiceNumber').textContent = invoiceData.invoice_number || 'N/A';
+            document.getElementById('detailVendorName').textContent = invoiceData.vendor_name || 'N/A';
+            document.getElementById('detailAmount').textContent =
+                `${parseFloat(invoiceData.total_amount || 0).toFixed(2)} ${invoiceData.currency || 'USD'}`;
+            document.getElementById('detailCurrency').textContent = invoiceData.currency || 'USD';
+            document.getElementById('detailDate').textContent = invoiceData.date || 'N/A';
+
+            // Business unit with styling
+            const businessUnit = invoiceData.business_unit || 'Other';
+            const businessUnitTag = document.getElementById('detailBusinessUnitTag');
+            businessUnitTag.textContent = businessUnit;
+            businessUnitTag.className = `bu-tag bu-${businessUnit.toLowerCase().replace(/\\s+/g, '-')}`;
+
+            // Additional details
+            document.getElementById('detailCategory').textContent = invoiceData.category || 'N/A';
+            document.getElementById('detailConfidence').textContent =
+                invoiceData.confidence_score ? `${(invoiceData.confidence_score * 100).toFixed(1)}%` : 'N/A';
+            document.getElementById('detailExtractionMethod').textContent =
+                invoiceData.extraction_method || 'N/A';
+
+            // Process dates
+            const processedAt = invoiceData.processed_at || invoiceData.created_at;
+            document.getElementById('detailProcessedAt').textContent =
+                processedAt ? new Date(processedAt).toLocaleString() : 'N/A';
+
+            // Processing notes
+            document.getElementById('detailProcessingNotes').textContent =
+                invoiceData.processing_notes || 'Nenhuma nota disponível';
+
+            // File information
+            document.getElementById('detailSourceFile').textContent =
+                invoiceData.source_file || 'N/A';
+
+            // Update download link
+            const downloadLink = document.getElementById('detailDownloadLink');
+            downloadLink.href = `/file/${currentDetailsInvoiceId}`;
+        }
+
+        function closeDetailsModal() {
+            document.getElementById('detailsModal').style.display = 'none';
+            currentDetailsInvoiceId = null;
+        }
+
+        function editFromDetails() {
+            console.log('editFromDetails called, currentDetailsInvoiceId:', currentDetailsInvoiceId);
+            const invoiceId = currentDetailsInvoiceId;
+            closeDetailsModal();
+            if (invoiceId) {
+                console.log('Opening edit modal for invoice:', invoiceId);
+                setTimeout(() => {
+                    openEditModal(invoiceId);
+                }, 100); // Small delay to ensure modal transition
+            } else {
+                console.error('No invoice ID available for editing');
+            }
+        }
+
         // Handle form submission
         document.addEventListener('DOMContentLoaded', function() {
             const editForm = document.getElementById('editForm');
@@ -1588,11 +1799,15 @@ ADVANCED_TEMPLATE = '''
                 });
             }
 
-            // Close modal when clicking outside
+            // Close modals when clicking outside
             window.onclick = function(event) {
-                const modal = document.getElementById('editInvoiceModal');
-                if (event.target == modal) {
+                const editModal = document.getElementById('editInvoiceModal');
+                const detailsModal = document.getElementById('detailsModal');
+
+                if (event.target == editModal) {
                     closeEditModal();
+                } else if (event.target == detailsModal) {
+                    closeDetailsModal();
                 }
             }
         });
