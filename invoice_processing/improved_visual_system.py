@@ -719,14 +719,20 @@ ADVANCED_TEMPLATE = '''
                             <td style="color: #6c757d; font-size: 13px;">{{ invoice[2] or 'N/A' }}</td>
                             <td class="action-cell">
                                 <div class="action-buttons">
-                                    <button onclick="openDetailsModal('{{ invoice[0] }}')" class="btn" style="padding: 4px 8px; font-size: 11px; margin-right: 5px; border: none; cursor: pointer; background: #007bff; color: white;">
-                                        👁️ Ver Detalhes
+                                    <button onclick="openDetailsModal('{{ invoice[0] }}')" class="btn-icon btn-details" title="Ver Detalhes">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/>
+                                        </svg>
                                     </button>
-                                    <a href="/file/{{ invoice[0] }}" class="btn" style="padding: 4px 8px; font-size: 11px; background: #28a745; text-decoration: none; margin-right: 5px;">
-                                        Download
+                                    <a href="/file/{{ invoice[0] }}" class="btn-icon btn-download" title="Download">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                                        </svg>
                                     </a>
-                                    <button onclick="openEditModal('{{ invoice[0] }}')" class="btn" style="padding: 4px 8px; font-size: 11px; background: #ffc107; color: #000; border: none; cursor: pointer;">
-                                        ✏️ Editar
+                                    <button onclick="openEditModal('{{ invoice[0] }}')" class="btn-icon btn-edit" title="Editar">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                        </svg>
                                     </button>
                                 </div>
                             </td>
@@ -2037,6 +2043,158 @@ def invoice_details(invoice_id):
         .editable { background: #fff; border-left: 4px solid #007bff; }
         .success-message { background: #d4edda; color: #155724; padding: 10px; border-radius: 4px; margin: 10px 0; }
         .edit-field-btn { margin-left: 10px; }
+
+        /* Modern action buttons */
+        .action-buttons {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: nowrap;
+            width: 120px;
+            margin: 0 auto;
+        }
+
+        .btn-icon {
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-decoration: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-icon:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            transform: scale(0);
+            transition: transform 0.3s ease;
+        }
+
+        .btn-icon:hover:before {
+            transform: scale(1);
+        }
+
+        .btn-icon:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.12);
+        }
+
+        .btn-icon:active {
+            transform: translateY(-1px) scale(1.02);
+            transition: all 0.1s ease;
+        }
+
+        .btn-details {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+        }
+
+        .btn-details:hover {
+            background: linear-gradient(135deg, #0056b3 0%, #004085 100%);
+        }
+
+        .btn-download {
+            background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+            color: white;
+        }
+
+        .btn-download:hover {
+            background: linear-gradient(135deg, #218838 0%, #1e7e34 100%);
+        }
+
+        .btn-edit {
+            background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);
+            color: #000;
+        }
+
+        .btn-edit:hover {
+            background: linear-gradient(135deg, #e0a800 0%, #d39e00 100%);
+        }
+
+        .action-cell {
+            white-space: nowrap;
+            padding: 12px 8px !important;
+            text-align: center;
+            vertical-align: middle;
+            min-width: 140px;
+        }
+
+        /* Improved table layout */
+        .table {
+            table-layout: fixed;
+        }
+
+        .table th:last-child,
+        .table td:last-child {
+            width: 140px;
+            text-align: center;
+        }
+
+        /* Mobile responsiveness */
+        @media (max-width: 768px) {
+            .btn-icon {
+                width: 32px;
+                height: 32px;
+                min-width: 32px;
+                font-size: 14px;
+            }
+
+            .action-buttons {
+                gap: 4px;
+                width: 108px;
+            }
+
+            .action-cell {
+                padding: 8px 4px !important;
+                min-width: 120px;
+            }
+
+            .table th:last-child,
+            .table td:last-child {
+                width: 120px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .btn-icon {
+                width: 28px;
+                height: 28px;
+                min-width: 28px;
+                font-size: 12px;
+                border-radius: 6px;
+            }
+
+            .action-buttons {
+                gap: 3px;
+                width: 96px;
+            }
+
+            .action-cell {
+                padding: 6px 2px !important;
+                min-width: 100px;
+            }
+
+            .table th:last-child,
+            .table td:last-child {
+                width: 100px;
+            }
+        }
     </style></head>
     <body>
         <div class="detail-card">
