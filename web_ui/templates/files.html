@@ -170,14 +170,21 @@
 
                 if (result.success) {
                     updateProgress(100, 'Complete!');
-                    showToast(`Successfully processed ${file.name}`, 'success');
+                    let message = `Successfully processed ${file.name}`;
+                    if (result.skipped_count > 0) {
+                        message += ` (${result.skipped_count} duplicates skipped)`;
+                    }
+                    showToast(message, 'success');
 
                     // Refresh the page to show new files
                     setTimeout(() => {
                         window.location.reload();
                     }, 2000);
+                } else if (result.duplicate_confirmation_needed) {
+                    // Handle duplicate confirmation dialog
+                    handleDuplicateConfirmation(file, result.duplicate_info);
                 } else {
-                    throw new Error(result.error || 'Upload failed');
+                    throw new Error(result.error || result.message || 'Upload failed');
                 }
 
             } catch (error) {
@@ -201,6 +208,85 @@
         function updateProgress(percent, text) {
             progressFill.style.width = percent + '%';
             progressText.textContent = text;
+        }
+
+        function handleDuplicateConfirmation(file, duplicateInfo) {
+            hideProgress();
+
+            // Create confirmation dialog
+            const dialog = document.createElement('div');
+            dialog.className = 'duplicate-dialog-overlay';
+            dialog.innerHTML = `
+                <div class="duplicate-dialog">
+                    <h3>🔄 Duplicate Transactions Found</h3>
+                    <p>Found <strong>${duplicateInfo.duplicate_count}</strong> duplicate transactions out of ${duplicateInfo.total_transactions} total.</p>
+                    <p style="color: #4a5568; font-size: 0.9rem; margin-bottom: 1rem;">These transactions appear to already exist in your database. How would you like to proceed?</p>
+
+                    <div class="duplicate-preview">
+                        <h4>Sample duplicates:</h4>
+                        <div class="duplicate-list">
+                            ${duplicateInfo.duplicates.map(dup => `
+                                <div class="duplicate-item">
+                                    <span class="duplicate-date">${dup.date}</span>
+                                    <span class="duplicate-desc">${dup.description}</span>
+                                    <span class="duplicate-amount">$${dup.amount}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="dialog-buttons">
+                        <button class="btn-secondary" onclick="closeDuplicateDialog()">Cancel Upload</button>
+                        <button class="btn-primary" onclick="processDuplicates('${file.name}', 'keep')">Skip Duplicates</button>
+                        <button class="btn-primary" onclick="processDuplicates('${file.name}', 'overwrite')">Update with New Data</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(dialog);
+        }
+
+        function closeDuplicateDialog() {
+            const dialog = document.querySelector('.duplicate-dialog-overlay');
+            if (dialog) {
+                document.body.removeChild(dialog);
+            }
+        }
+
+        async function processDuplicates(filename, action) {
+            closeDuplicateDialog();
+
+            try {
+                showProgress();
+                updateProgress(0, `Processing with ${action} mode...`);
+
+                const formData = new FormData();
+                formData.append('duplicateHandling', action);
+                formData.append('filename', filename);
+
+                const response = await fetch('/api/process-duplicates', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    updateProgress(100, 'Complete!');
+                    showToast(result.message || 'Processing completed', 'success');
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Processing failed');
+                }
+
+            } catch (error) {
+                console.error('Processing error:', error);
+                showToast('Processing failed: ' + error.message, 'error');
+            } finally {
+                setTimeout(hideProgress, 2000);
+            }
         }
 
         function viewFile(filename) {
@@ -288,6 +374,88 @@
         .btn-sm {
             padding: 0.375rem 0.75rem;
             font-size: 0.875rem;
+        }
+
+
+        .duplicate-dialog-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .duplicate-dialog {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+
+        .duplicate-dialog h3 {
+            margin: 0 0 1rem 0;
+            color: #2d3748;
+        }
+
+        .duplicate-preview {
+            margin: 1.5rem 0;
+            padding: 1rem;
+            background: #f7fafc;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+
+        .duplicate-preview h4 {
+            margin: 0 0 1rem 0;
+            color: #4a5568;
+            font-size: 0.95rem;
+        }
+
+        .duplicate-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .duplicate-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 1rem;
+            padding: 0.5rem;
+            background: white;
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .duplicate-date {
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .duplicate-desc {
+            color: #4a5568;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .duplicate-amount {
+            color: #38a169;
+            font-weight: 500;
+        }
+
+        .dialog-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
         }
     </style>
 </body>

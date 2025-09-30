@@ -482,8 +482,9 @@ class DeltaCFOAgent:
                     price_db[date_key] = {}
                 price_db[date_key][currency] = float(row['Price_USD'])
 
-        # Add new columns
-        df['Currency'] = 'USD'  # Default
+        # Add new columns (only if they don't exist, preserve Currency from smart ingestion)
+        if 'Currency' not in df.columns:
+            df['Currency'] = 'USD'  # Default only if not already set
         df['Crypto_Amount'] = None
         df['USD_Equivalent'] = None
         df['Conversion_Note'] = None
@@ -509,28 +510,36 @@ class DeltaCFOAgent:
                 # Skip row if no valid date
                 continue
 
-            # Detect crypto currency from description
-            currency = 'USD'
+            # Use existing Currency from smart ingestion or detect from description as fallback
+            currency = row.get('Currency', 'USD') if 'Currency' in df.columns else 'USD'
             crypto_amount = None
 
-            if 'BTC' in description.upper():
-                currency = 'BTC'
-                # Extract BTC amount from description
-                btc_match = re.search(r'([\d.]+)\s*BTC', description)
-                if btc_match:
-                    crypto_amount = float(btc_match.group(1))
-                else:
-                    crypto_amount = abs(amount)  # Assume amount is in BTC
+            # Only detect from description if Currency is not already set properly
+            if currency == 'USD' or pd.isna(currency):
+                if 'BTC' in description.upper():
+                    currency = 'BTC'
+                    # Extract BTC amount from description
+                    btc_match = re.search(r'([\d.]+)\s*BTC', description)
+                    if btc_match:
+                        crypto_amount = float(btc_match.group(1))
+                    else:
+                        crypto_amount = abs(amount)  # Assume amount is in BTC
 
-            elif 'TAO' in description.upper():
-                currency = 'TAO'
-                tao_match = re.search(r'([\d.]+)\s*TAO', description)
-                if tao_match:
-                    crypto_amount = float(tao_match.group(1))
-                else:
+                elif 'TAO' in description.upper():
+                    currency = 'TAO'
+                    tao_match = re.search(r'([\d.]+)\s*TAO', description)
+                    if tao_match:
+                        crypto_amount = float(tao_match.group(1))
+                    else:
+                        crypto_amount = abs(amount)
+
+                # Only update Currency column if we detected something different
+                if currency != row.get('Currency', 'USD'):
+                    df.at[idx, 'Currency'] = currency
+            else:
+                # Currency already set by smart ingestion, use original amount as crypto amount
+                if currency in ['BTC', 'TAO', 'ETH', 'BNB', 'USDC', 'USDT']:
                     crypto_amount = abs(amount)
-
-            df.at[idx, 'Currency'] = currency
 
             if currency != 'USD' and crypto_amount:
                 df.at[idx, 'Crypto_Amount'] = crypto_amount
@@ -697,8 +706,22 @@ class DeltaCFOAgent:
             identifier = ''
             minimal_desc = 'Transaction'
 
-            # Detect primary action from description if not available
-            if not primary_action or primary_action == 'NAN':
+            # Get transaction type from Chase CSV Type column
+            transaction_type = str(row.get('TransactionType', '')).upper()
+
+            # Detect primary action from Chase transaction type or description
+            if transaction_type and transaction_type != 'NAN':
+                # Chase transaction types: Sale, Payment, Deposit, etc.
+                if transaction_type in ['SALE', 'CHECK', 'FEE']:
+                    primary_action = 'SEND'  # Money going out
+                elif transaction_type in ['DEPOSIT', 'CREDIT']:
+                    primary_action = 'RECEIVE'  # Money coming in
+                elif transaction_type in ['PAYMENT']:
+                    # Check amount sign to determine direction
+                    amount = float(str(row.get('Amount', 0)).replace(',', '').replace('$', ''))
+                    primary_action = 'RECEIVE' if amount > 0 else 'SEND'
+            elif not primary_action or primary_action == 'NAN':
+                # Fallback to description analysis
                 desc_upper = description.upper()
                 if any(word in desc_upper for word in ['RECEIVE', 'RECEIVED']):
                     primary_action = 'RECEIVE'
@@ -755,48 +778,111 @@ class DeltaCFOAgent:
 
     def add_usd_conversion(self, df):
         """Add USD conversion for crypto amounts using historic pricing"""
-        print("💰 Adding USD conversion using historic crypto prices...")
+        print("💰 Converting crypto amounts to USD using historic prices...")
 
         # Import crypto pricing database
         from crypto_pricing import CryptoPricingDB
         pricing_db = CryptoPricingDB()
 
-        # Initialize Amount_USD column
-        df['Amount_USD'] = 0.0
+        # Initialize Crypto column to store original amounts
+        df['Crypto'] = ''
 
         for idx, row in df.iterrows():
-            amount = self.safe_float(row.get('Amount', 0))
+            original_amount = self.safe_float(row.get('Amount', 0))
             description = str(row.get('Description', ''))
             transaction_date = row.get('Date', '')
-            amount_usd = 0.0
 
             # Extract date in YYYY-MM-DD format
             date_str = self.extract_date_for_pricing(transaction_date)
 
             # Check if this is a crypto transaction
             crypto_detected = None
-            crypto_symbols = ['BTC', 'TAO', 'ETH', 'USDC', 'USDT']
+            crypto_symbols = ['BTC', 'TAO', 'ETH', 'USDC', 'USDT', 'BNB']
 
-            for crypto in crypto_symbols:
-                if crypto in description.upper():
-                    crypto_detected = crypto
-                    break
+            # First check if we have a Currency column from smart ingestion
+            if 'Currency' in df.columns:
+                currency_value = str(row.get('Currency', '')).upper().strip()
+                if currency_value in crypto_symbols:
+                    crypto_detected = currency_value
+
+            # Fallback to description-based detection
+            if not crypto_detected:
+                for crypto in crypto_symbols:
+                    if crypto in description.upper():
+                        crypto_detected = crypto
+                        break
 
             if crypto_detected and date_str:
                 # Get historic price for the transaction date
                 historic_price = pricing_db.get_price_on_date(crypto_detected, date_str)
-                amount_usd = abs(amount) * historic_price
+                amount_usd = abs(original_amount) * historic_price
 
-                if abs(amount) > 0:  # Only log for non-zero amounts
-                    print(f"  📈 {crypto_detected} on {date_str}: {abs(amount)} × ${historic_price:,.2f} = ${amount_usd:,.2f}")
+                # Store original crypto amount in Crypto column
+                df.at[idx, 'Crypto'] = f"{abs(original_amount)} {crypto_detected}"
+
+                # Replace Amount with USD equivalent
+                df.at[idx, 'Amount'] = round(amount_usd, 2) if original_amount >= 0 else -round(amount_usd, 2)
+
+                # Update description to include conversion details
+                updated_description = self.enhance_crypto_description(
+                    description, crypto_detected, abs(original_amount), historic_price, amount_usd, date_str
+                )
+                df.at[idx, 'Description'] = updated_description
+
+                if abs(original_amount) > 0:  # Only log for non-zero amounts
+                    print(f"  📈 {crypto_detected} on {date_str}: {abs(original_amount)} × ${historic_price:,.2f} = ${amount_usd:,.2f}")
             else:
-                # Default to USD for non-crypto or unknown currency
-                amount_usd = abs(amount)
+                # For non-crypto transactions, keep original amount and leave Crypto column empty
+                pass
 
-            df.at[idx, 'Amount_USD'] = round(amount_usd, 2)
-
-        print("✅ USD conversion added using historic prices")
+        print("✅ Crypto amounts converted to USD with original amounts stored in Crypto column")
         return df
+
+    def enhance_crypto_description(self, original_description, crypto_symbol, crypto_amount, usd_price, usd_total, date_str):
+        """Enhance description with crypto conversion details"""
+
+        # Determine transaction type from original description
+        desc_lower = original_description.lower()
+
+        if 'deposit' in desc_lower or 'received' in desc_lower:
+            transaction_type = "deposit"
+        elif 'withdrawal' in desc_lower or 'sent' in desc_lower:
+            transaction_type = "withdrawal"
+        elif 'trade' in desc_lower or 'buy' in desc_lower or 'sell' in desc_lower:
+            transaction_type = "trade"
+        else:
+            transaction_type = "transaction"
+
+        # Create enhanced description
+        crypto_names = {
+            'BTC': 'Bitcoin',
+            'TAO': 'Bittensor',
+            'ETH': 'Ethereum',
+            'BNB': 'Binance Coin',
+            'USDC': 'USD Coin',
+            'USDT': 'Tether'
+        }
+
+        crypto_name = crypto_names.get(crypto_symbol, crypto_symbol)
+
+        enhanced_description = f"{crypto_name} {transaction_type} - {crypto_amount} {crypto_symbol} @ ${usd_price:,.2f} = ${usd_total:,.2f} ({date_str})"
+
+        # Include original description context if it has useful info beyond the basics
+        original_clean = original_description.strip()
+        if original_clean and len(original_clean) > 10:
+            # Check if original has additional context worth keeping
+            useful_parts = []
+            for part in original_clean.split(' - '):
+                part_clean = part.strip()
+                if (part_clean and
+                    not any(word in part_clean.lower() for word in ['deposit', 'withdrawal', 'complete', 'success']) and
+                    not part_clean.startswith(crypto_symbol)):
+                    useful_parts.append(part_clean)
+
+            if useful_parts:
+                enhanced_description += f" | {' - '.join(useful_parts[:2])}"  # Keep at most 2 additional parts
+
+        return enhanced_description
 
     def extract_date_for_pricing(self, date_input):
         """Extract date in YYYY-MM-DD format for pricing lookup"""
@@ -1030,21 +1116,31 @@ class DeltaCFOAgent:
     def _continue_processing_from_dataframe(self, df, file_path, enhance):
         """Continue processing from a DataFrame after smart ingestion handles column mapping"""
         try:
-            # Assume smart ingestion has standardized columns: Date, Description, Amount
+            # Smart ingestion guarantees standardized columns: Date, Description, Amount
             date_col = 'Date'
             desc_col = 'Description'
             amount_col = 'Amount'
 
-            print(f"   📊 DEBUG: DataFrame columns from smart ingestion: {list(df.columns)}")
-            print(f"   📊 DEBUG: Using standardized columns - Date: {date_col}, Desc: {desc_col}, Amount: {amount_col}")
+            print(f"✅ Smart ingestion standardized DataFrame with {len(df)} transactions")
+            print(f"📊 Columns: {list(df.columns)}")
+
+            # Validate required columns exist (smart ingestion should guarantee this)
+            required_cols = [date_col, desc_col, amount_col]
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                raise ValueError(f"Smart ingestion failed to provide required columns: {missing_cols}")
+
+            # Sample data for debugging
             if len(df) > 0:
-                print(f"   📊 DEBUG: First row amount value: {repr(df.iloc[0][amount_col] if amount_col in df.columns else 'MISSING')}")
+                print(f"📊 Sample: {df.iloc[0][desc_col]} | ${df.iloc[0][amount_col]}")
 
             # Continue with classification and processing
             return self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
 
         except Exception as e:
-            print(f"❌ Error in smart ingestion continuation: {e}")
+            print(f"❌ Error in DataFrame processing: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _classify_and_process_dataframe(self, df, file_path, date_col, desc_col, amount_col, enhance):
@@ -1126,9 +1222,8 @@ class DeltaCFOAgent:
             print("🔍 Extracting keywords...")
             df = self.extract_keywords(df)
 
-            # Enhance transaction structure
-            # print("🔧 Enhancing transaction structure...")
-            # df = self.enhance_transaction_structure(df)  # Method not implemented yet
+            # Transaction structure already enhanced by smart ingestion
+            print("✅ Transaction structure already standardized by smart ingestion")
 
             # Add USD conversion using historic crypto prices
             print("💰 Adding USD conversion using historic crypto prices...")
@@ -1169,21 +1264,28 @@ class DeltaCFOAgent:
         if enhance:
             print("🚀 Enhanced processing mode enabled")
 
-        # Try smart ingestion first if enabled
+        # Use Claude AI smart ingestion (REQUIRED - no fallback)
         if use_smart_ingestion:
             try:
                 from smart_ingestion import smart_process_file
+                print("🤖 Processing with Claude AI smart ingestion...")
                 df = smart_process_file(file_path, enhance)
-                if df is not None:
-                    print("✅ Used smart ingestion system")
-                    # Skip to classification - smart ingestion handles column mapping
-                    return self._continue_processing_from_dataframe(df, file_path, enhance)
-                else:
-                    print("⚠️  Smart ingestion failed, falling back to manual processing")
+                print("✅ Claude AI smart ingestion successful")
+                # Skip to classification - smart ingestion handles all column mapping
+                return self._continue_processing_from_dataframe(df, file_path, enhance)
             except ImportError:
-                print("⚠️  Smart ingestion not available, using manual processing")
+                error_msg = "❌ SMART INGESTION MODULE NOT FOUND: Please ensure smart_ingestion.py is available."
+                print(error_msg)
+                return None
+            except ValueError as e:
+                # This handles Claude AI requirement errors
+                error_msg = str(e)
+                print(error_msg)
+                return None
             except Exception as e:
-                print(f"⚠️  Smart ingestion error: {e}, falling back to manual processing")
+                error_msg = f"❌ CLAUDE AI PROCESSING FAILED: {e}"
+                print(error_msg)
+                return None
 
         # Manual file reading (existing logic)
         # Read file
@@ -1545,8 +1647,11 @@ class DeltaCFOAgent:
 
         # Step 4: Merge and sort
         merged_df = pd.concat([master_df, unique_new], ignore_index=True)
-        merged_df['Date'] = pd.to_datetime(merged_df['Date'])
-        merged_df = merged_df.sort_values('Date', ascending=False)
+
+        # Handle different date column names
+        date_col = 'Date' if 'Date' in merged_df.columns else 'Transaction Date'
+        merged_df[date_col] = pd.to_datetime(merged_df[date_col])
+        merged_df = merged_df.sort_values(date_col, ascending=False)
 
         # Step 5: Save
         merged_df.to_csv(self.master_file, index=False)

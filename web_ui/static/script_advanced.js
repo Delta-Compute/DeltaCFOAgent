@@ -184,6 +184,7 @@ async function loadTransactions() {
 
         renderTransactionTable(currentTransactions);
         updateTableInfo(data.pagination);
+        updateSummaryStats(currentTransactions);
 
     } catch (error) {
         console.error('Error loading transactions:', error);
@@ -199,6 +200,109 @@ function showLoadingState() {
     document.getElementById('transactionTableBody').innerHTML =
         '<tr><td colspan="9" class="loading">Loading transactions...</td></tr>';
     document.getElementById('tableInfo').textContent = 'Loading...';
+}
+
+// Helper function to determine category class based on amount
+function getCategoryClass(amount) {
+    const val = parseFloat(amount || 0);
+    if (val > 0) return 'revenue';
+    if (val < 0) return 'expense';
+    return 'unclassified';
+}
+
+// Helper function to format currency with icon
+function formatCurrency(amount, currency) {
+    if (!amount || amount === 0) return '';
+    const isCrypto = ['BTC', 'ETH', 'TAO', 'SOL', 'USDC', 'USDT'].includes(currency);
+    const currencyClass = isCrypto ? 'crypto' : 'fiat';
+    const formattedAmount = parseFloat(amount).toFixed(isCrypto ? 4 : 2);
+    return `<span class="currency-icon ${currencyClass}">${formattedAmount} ${currency || 'USD'}</span>`;
+}
+
+// Format crypto token amounts (without dollar signs, show token quantity)
+function formatCryptoAmount(amount, currency) {
+    console.log(`formatCryptoAmount called with amount: ${amount}, currency: ${currency}`);
+    if (!amount || amount === 0) return '';
+    const isCrypto = ['BTC', 'ETH', 'TAO', 'SOL', 'USDC', 'USDT'].includes(currency);
+    if (isCrypto) {
+        // Use different precision based on token type
+        let precision = 4; // default precision
+        if (currency === 'BTC') precision = 8;  // BTC needs more precision
+        if (currency === 'TAO') precision = 4;  // TAO uses 4 decimal places
+        if (currency === 'USDC' || currency === 'USDT') precision = 2; // stablecoins use 2
+
+        const tokenAmount = parseFloat(amount).toFixed(precision);
+        const result = `<span class="crypto">${tokenAmount} ${currency}</span>`;
+        console.log(`formatCryptoAmount returning: ${result}`);
+        return result;
+    }
+    return '';
+}
+
+// Helper function to truncate text with tooltip
+function truncateText(text, maxLength = 30) {
+    if (!text || text.length <= maxLength) return text;
+    return `<span title="${text}">${text.substring(0, maxLength)}...</span>`;
+}
+
+// Helper function to update summary statistics
+function updateSummaryStats(transactions) {
+    if (!transactions || transactions.length === 0) {
+        return;
+    }
+
+    let totalRevenue = 0;
+    let totalExpenses = 0;
+    let needsReview = 0;
+    let unclassifiedCount = 0;
+
+    transactions.forEach(tx => {
+        const amount = parseFloat(tx.amount || 0);
+        if (amount > 0) {
+            totalRevenue += amount;
+        } else if (amount < 0) {
+            totalExpenses += Math.abs(amount);
+        }
+
+        // Count needs review (low confidence or unclassified)
+        if (!tx.confidence || parseFloat(tx.confidence) < 0.8 ||
+            !tx.classified_entity || tx.classified_entity.includes('Unclassified')) {
+            needsReview++;
+        }
+
+        if (!tx.classified_entity || tx.classified_entity.includes('Unclassified')) {
+            unclassifiedCount++;
+        }
+    });
+
+    // Update the stats display if elements exist
+    const statsElements = document.querySelectorAll('.stat-card');
+    if (statsElements.length >= 4) {
+        // Update total transactions
+        const totalElement = statsElements[0].querySelector('.stat-number');
+        if (totalElement) totalElement.textContent = transactions.length;
+
+        // Update total revenue
+        const revenueElement = statsElements[1].querySelector('.stat-number');
+        if (revenueElement) {
+            revenueElement.textContent = '$' + totalRevenue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            revenueElement.className = 'stat-number positive';
+        }
+
+        // Update total expenses
+        const expenseElement = statsElements[2].querySelector('.stat-number');
+        if (expenseElement) {
+            expenseElement.textContent = '$' + totalExpenses.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            expenseElement.className = 'stat-number negative';
+        }
+
+        // Update needs review
+        const reviewElement = statsElements[3].querySelector('.stat-number');
+        if (reviewElement) {
+            reviewElement.textContent = needsReview;
+            reviewElement.className = needsReview > 0 ? 'stat-number warning' : 'stat-number';
+        }
+    }
 }
 
 function renderTransactionTable(transactions) {
@@ -231,40 +335,31 @@ function renderTransactionTable(transactions) {
 
         return `
             <tr data-transaction-id="${transaction.transaction_id || ''}">
-                <td>${formatDate(transaction.date) || 'N/A'}</td>
+                <td>${formatDate(transaction.date) || (transaction.source_file?.includes('Chase') ? 'Date Missing' : 'N/A')}</td>
                 <td class="editable-field" data-field="origin" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.origin || 'Unknown'}
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
+                    ${transaction.origin || (transaction.source_file?.includes('Chase') ? 'Credit Card' : 'Unknown')}
                 </td>
                 <td class="editable-field" data-field="destination" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.destination || 'Unknown'}
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
+                    ${transaction.destination || (transaction.source_file?.includes('Chase') ? 'Merchant' : 'Unknown')}
                 </td>
-                <td class="editable-field" data-field="description" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.description || 'N/A'}
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
+                <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
+                    ${truncateText(transaction.description, 40) || 'N/A'}
                 </td>
                 <td class="${amountClass}">${formattedAmount}</td>
-                <td>${transaction.crypto_amount && transaction.currency !== 'USD' ? `${transaction.crypto_amount} ${transaction.currency}` : ''}</td>
+                <td class="crypto-cell">${formatCryptoAmount(transaction.crypto_amount, transaction.currency)}</td>
                 <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.classified_entity || 'N/A'} ▼
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
-                    ${(!transaction.classified_entity || transaction.classified_entity === 'N/A') ?
-                        '<button class="smart-btn" onclick="quickSuggest(\''+transaction.transaction_id+'\', \'classified_entity\')">Smart</button>' : ''}
+                    <span class="entity-category ${getCategoryClass(transaction.amount)}">${transaction.classified_entity?.replace(' N/A', '') || 'Unclassified'}</span>
                 </td>
                 <td class="editable-field smart-dropdown" data-field="accounting_category" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.accounting_category || 'N/A'} ▼
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
+                    ${transaction.accounting_category || 'N/A'}
                 </td>
                 <td class="editable-field" data-field="justification" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.justification || 'N/A'}
-                    <button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>
+                    ${truncateText(transaction.justification, 35) || 'Unknown'}
                 </td>
-                <td class="${confidenceClass}">
-                    ${confidence}
-                    ${(!transaction.confidence || parseFloat(transaction.confidence) < 0.8) ? ' <span title="Needs Review">⚠️</span>' : ''}
+                <td>
+                    <span class="confidence-score ${confidenceClass}">${confidence}</span>
                 </td>
-                <td>${transaction.source_file || 'N/A'}</td>
+                <td class="source-cell">${truncateText(transaction.source_file, 25) || 'N/A'}</td>
                 <td>
                     <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')">
                         View
@@ -282,25 +377,14 @@ function setupInlineEditing() {
     document.querySelectorAll('.editable-field').forEach(field => {
         // Click to edit
         field.addEventListener('click', (e) => {
-            if (e.target.classList.contains('ai-suggestions-btn')) {
-                e.stopPropagation();
-                showAISuggestions(field);
-                return;
-            }
+            // Removed AI suggestions button handler
 
             if (!field.classList.contains('editing')) {
                 startEditing(field);
             }
         });
 
-        // AI suggestions button
-        const aiBtn = field.querySelector('.ai-suggestions-btn');
-        if (aiBtn) {
-            aiBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                showAISuggestions(field);
-            });
-        }
+        // Removed AI suggestions button setup
     });
 }
 
@@ -331,7 +415,7 @@ function startEditing(field) {
     // Cancel on Escape
     const cancelEdit = () => {
         field.classList.remove('editing');
-        field.innerHTML = `${currentValue}<button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>`;
+        field.innerHTML = currentValue;
         setupInlineEditing(); // Re-setup event listeners
     };
 
@@ -424,7 +508,7 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
 
         if (result.success) {
             fieldElement.classList.remove('editing');
-            fieldElement.innerHTML = `${value || 'N/A'}<button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>`;
+            fieldElement.innerHTML = value || 'N/A';
             showToast('Transaction updated successfully', 'success');
             setupInlineEditing(); // Re-setup event listeners
 
@@ -457,7 +541,7 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
         // Restore original value
         fieldElement.classList.remove('editing');
         const originalValue = fieldElement.dataset.originalValue || 'N/A';
-        fieldElement.innerHTML = `${originalValue}<button class="ai-suggestions-btn" title="Get AI suggestions">🤖</button>`;
+        fieldElement.innerHTML = originalValue;
         setupInlineEditing();
     }
 }
@@ -602,35 +686,256 @@ async function checkForSimilarEntities(transactionId, newEntity) {
         const currentTx = currentTransactions.find(t => t.transaction_id === transactionId);
         if (!currentTx) return;
 
-        // Find similar transactions from same source file
-        const similarTxs = currentTransactions.filter(t =>
-            t.source_file === currentTx.source_file &&
-            t.transaction_id !== transactionId &&
-            (!t.classified_entity || t.classified_entity === 'N/A' || t.confidence < 0.7)
-        );
+        // Find similar transactions prioritizing same source file and description patterns
+        const similarTxs = currentTransactions.filter(t => {
+            // Must be different transaction
+            if (t.transaction_id === transactionId) return false;
+
+            // Must have poor/missing entity classification
+            if (t.classified_entity &&
+                t.classified_entity !== 'N/A' &&
+                t.classified_entity !== 'Unknown' &&
+                t.confidence >= 0.7) {
+                return false;
+            }
+
+            // Priority 1: Same source file (bank/financial institution)
+            const sameSourceFile = t.source_file === currentTx.source_file;
+
+            // Priority 2: Similar description patterns (same merchant/entity identifier)
+            const hasSimilarDescription = t.description && currentTx.description &&
+                (
+                    // Exact description match
+                    t.description.toLowerCase().trim() === currentTx.description.toLowerCase().trim() ||
+                    // Similar description (first 30 characters for merchant identification)
+                    t.description.substring(0, 30).toLowerCase().trim() ===
+                    currentTx.description.substring(0, 30).toLowerCase().trim() ||
+                    // Common merchant patterns (ACH, WIRE, etc.)
+                    (t.description.includes('ACH') && currentTx.description.includes('ACH')) ||
+                    (t.description.includes('WIRE') && currentTx.description.includes('WIRE')) ||
+                    (t.description.includes('TRANSFER') && currentTx.description.includes('TRANSFER'))
+                );
+
+            // Must match at least one criterion
+            return sameSourceFile || hasSimilarDescription;
+        })
+
+        // Sort by relevance: same source file first, then by description similarity
+        .sort((a, b) => {
+            const aSourceMatch = a.source_file === currentTx.source_file ? 1 : 0;
+            const bSourceMatch = b.source_file === currentTx.source_file ? 1 : 0;
+
+            if (aSourceMatch !== bSourceMatch) {
+                return bSourceMatch - aSourceMatch; // Same source file first
+            }
+
+            // Then sort by description similarity
+            const aDescMatch = a.description && currentTx.description &&
+                a.description.substring(0, 30).toLowerCase() ===
+                currentTx.description.substring(0, 30).toLowerCase() ? 1 : 0;
+            const bDescMatch = b.description && currentTx.description &&
+                b.description.substring(0, 30).toLowerCase() ===
+                currentTx.description.substring(0, 30).toLowerCase() ? 1 : 0;
+
+            return bDescMatch - aDescMatch;
+        });
 
         if (similarTxs.length > 0) {
             const modal = document.getElementById('suggestionsModal');
             const content = document.getElementById('suggestionsContent');
 
+            // Add similar-transactions-modal class to modal-content
+            modal.querySelector('.modal-content').classList.add('similar-transactions-modal');
+
+            // Format transaction date helper
+            const formatDate = (dateStr) => {
+                if (!dateStr) return '';
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            };
+
+            // Format amount helper
+            const formatAmount = (amount) => {
+                const val = parseFloat(amount || 0);
+                return `<span class="transaction-amount ${val >= 0 ? 'positive' : 'negative'}">
+                    ${val >= 0 ? '+' : ''}$${Math.abs(val).toFixed(2)}
+                </span>`;
+            };
+
             content.innerHTML = `
-                <h3>Update Similar Transactions?</h3>
-                <p>Found ${similarTxs.length} similar transactions from ${currentTx.source_file}.</p>
-                <p>Would you like to update their entity to "${newEntity}" as well?</p>
-                <div class="suggestions-list">
-                    ${similarTxs.slice(0, 5).map(t =>
-                        `<div class="suggestion-item">${t.description.substring(0, 80)}...</div>`
-                    ).join('')}
-                    ${similarTxs.length > 5 ? `<div>... and ${similarTxs.length - 5} more</div>` : ''}
+                <div class="modal-header">
+                    <h3>🔄 Update Similar Transactions</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
                 </div>
-                <button onclick="applyEntityToSimilar('${currentTx.source_file}', '${newEntity}')">Update All Similar</button>
-                <button onclick="closeModal()">Skip</button>
+
+                <div class="similar-selection-header">
+                    <div class="selection-controls">
+                        <button onclick="selectAllSimilar(true)">☑ Select All</button>
+                        <button onclick="selectAllSimilar(false)">☐ Deselect All</button>
+                    </div>
+                    <div class="selection-counter">
+                        <span id="selectedCount">0</span> of ${similarTxs.length} selected
+                    </div>
+                </div>
+
+                <div class="modal-body">
+                    <div class="update-preview">
+                        <h4>📋 Entity Update Preview</h4>
+                        <p><strong>Change:</strong> Entity → "${newEntity}"</p>
+                        <p><strong>Matching Criteria:</strong> Same source file (${currentTx.source_file}) + similar descriptions</p>
+                        <p><strong>Impact:</strong> <span id="impactSummary">Select transactions below</span></p>
+                        <div class="matching-info">
+                            <small>📌 Prioritized: Same bank file → Similar merchant/description patterns → ACH/WIRE transfers</small>
+                        </div>
+                    </div>
+
+                    <div class="transactions-list">
+                        ${similarTxs.map((t, index) => `
+                            <div class="transaction-item" data-tx-id="${t.transaction_id}">
+                                <input type="checkbox"
+                                       class="transaction-checkbox similar-tx-cb"
+                                       id="cb-${index}"
+                                       data-amount="${t.amount || 0}"
+                                       onchange="updateSelectionSummary()">
+                                <div class="transaction-details">
+                                    <div class="transaction-info">
+                                        <div class="transaction-date">${formatDate(t.date)}</div>
+                                        <div class="transaction-description" title="${t.description}">
+                                            ${t.description}
+                                        </div>
+                                        <div class="transaction-meta">
+                                            <span>Current: ${t.classified_entity || 'Unknown'}</span>
+                                            <span>•</span>
+                                            <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                        </div>
+                                    </div>
+                                    ${formatAmount(t.amount)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn-secondary" onclick="closeModal()">Skip These</button>
+                    <button class="btn-primary" id="updateSelectedBtn" onclick="applyEntityToSelected('${newEntity}')" disabled>
+                        Update Selected Transactions
+                    </button>
+                </div>
             `;
+
+            // Initialize selection
+            updateSelectionSummary();
             showModal();
         }
     } catch (error) {
         console.error('Error checking similar entities:', error);
     }
+}
+
+// Helper function to handle select all/deselect all for similar entities modal
+function selectAllSimilar(selectAll) {
+    const checkboxes = document.querySelectorAll('.similar-transactions-modal .transaction-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateSelectionSummary();
+}
+
+// Helper function to update selection summary for similar entities modal
+function updateSelectionSummary() {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkboxes = modal.querySelectorAll('.transaction-checkbox');
+    const checkedBoxes = modal.querySelectorAll('.transaction-checkbox:checked');
+    const updateBtn = modal.querySelector('#updateSelectedBtn');
+    const selectionCounter = modal.querySelector('.selection-counter');
+    const impactSummary = modal.querySelector('#impactSummary');
+
+    // Update selection counter
+    if (selectionCounter) {
+        selectionCounter.textContent = `${checkedBoxes.length} of ${checkboxes.length} selected`;
+    }
+
+    // Update impact summary
+    if (impactSummary) {
+        if (checkedBoxes.length === 0) {
+            impactSummary.textContent = 'Select transactions below';
+        } else {
+            let totalAmount = 0;
+            checkedBoxes.forEach(cb => {
+                const amount = parseFloat(cb.getAttribute('data-amount') || 0);
+                totalAmount += amount;
+            });
+            impactSummary.innerHTML = `${checkedBoxes.length} transaction(s), Total: <strong>$${Math.abs(totalAmount).toFixed(2)}</strong>`;
+        }
+    }
+
+    // Enable/disable update button
+    if (updateBtn) {
+        updateBtn.disabled = checkedBoxes.length === 0;
+        updateBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        updateBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+// Helper function to apply entity to selected transactions
+function applyEntityToSelected(newEntity) {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkedBoxes = modal.querySelectorAll('.transaction-checkbox:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Show confirmation dialog
+    const confirmMsg = `Are you sure you want to update ${transactionIds.length} transaction(s) to entity "${newEntity}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    // Make API call to update selected transactions
+    fetch('/api/update_entity_bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            transaction_ids: transactionIds,
+            new_entity: newEntity
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showToast(`Successfully updated ${transactionIds.length} transaction(s).`, 'success');
+
+            // Close modal and refresh the page to show updates
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error updating transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error updating transactions. Please try again.', 'error');
+    });
 }
 
 async function checkForSimilarAccountingCategories(transactionId, newCategory) {
@@ -643,7 +948,7 @@ async function checkForSimilarAccountingCategories(transactionId, newCategory) {
         // Look for transactions with similar descriptions, amounts, or from same entity
         const similarTxs = currentTransactions.filter(t =>
             t.transaction_id !== transactionId &&
-            (!t.accounting_category || t.accounting_category === 'N/A') &&
+            (!t.accounting_category || t.accounting_category === 'N/A' || t.confidence < 0.7) &&
             (
                 // Same entity classification
                 (t.classified_entity === currentTx.classified_entity) ||
@@ -659,27 +964,200 @@ async function checkForSimilarAccountingCategories(transactionId, newCategory) {
             const modal = document.getElementById('suggestionsModal');
             const content = document.getElementById('suggestionsContent');
 
+            // Clear any previous loading states
+            document.getElementById('suggestionsList').innerHTML = '';
+
+            // Add similar-transactions-modal class to modal-content
+            modal.querySelector('.modal-content').classList.add('similar-transactions-modal');
+
+            // Format transaction date helper
+            const formatDate = (dateStr) => {
+                if (!dateStr) return '';
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            };
+
+            // Format amount helper
+            const formatAmount = (amount) => {
+                const val = parseFloat(amount || 0);
+                return `<span class="transaction-amount ${val >= 0 ? 'positive' : 'negative'}">
+                    ${val >= 0 ? '+' : ''}$${Math.abs(val).toFixed(2)}
+                </span>`;
+            };
+
             content.innerHTML = `
-                <h3>Update Similar Transactions?</h3>
-                <p>Found ${similarTxs.length} similar transactions that might also be "${newCategory}".</p>
-                <p>These transactions have similar characteristics (entity, description, or amount).</p>
-                <div class="suggestions-list">
-                    ${similarTxs.slice(0, 5).map(t =>
-                        `<div class="suggestion-item">
-                            <strong>${t.classified_entity || 'Unknown'}</strong> - ${t.description.substring(0, 60)}...
-                            <span class="amount">$${parseFloat(t.amount || 0).toFixed(2)}</span>
-                        </div>`
-                    ).join('')}
-                    ${similarTxs.length > 5 ? `<div>... and ${similarTxs.length - 5} more</div>` : ''}
+                <div class="modal-header">
+                    <h3>🔄 Update Similar Accounting Categories</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
                 </div>
-                <button onclick="applyCategoryToSimilar('${transactionId}', '${newCategory}')">Update All Similar</button>
-                <button onclick="closeModal()">Skip</button>
+
+                <div class="similar-selection-header">
+                    <div class="selection-controls">
+                        <button onclick="selectAllSimilarCategories(true)">☑ Select All</button>
+                        <button onclick="selectAllSimilarCategories(false)">☐ Deselect All</button>
+                    </div>
+                    <div class="selection-counter">
+                        <span id="selectedCategoryCount">0</span> of ${similarTxs.length} selected
+                    </div>
+                </div>
+
+                <div class="modal-body">
+                    <div class="update-preview">
+                        <h4>📋 Category Update Preview</h4>
+                        <p><strong>Change:</strong> Accounting Category → "${newCategory}"</p>
+                        <p><strong>Reason:</strong> Similar entity, description, or amount to current transaction</p>
+                        <p><strong>Impact:</strong> <span id="categoryImpactSummary">Select transactions below</span></p>
+                    </div>
+
+                    <div class="transactions-list">
+                        ${similarTxs.map((t, index) => `
+                            <div class="transaction-item" data-tx-id="${t.transaction_id}">
+                                <input type="checkbox"
+                                       class="transaction-checkbox category-tx-cb"
+                                       id="category-cb-${index}"
+                                       data-amount="${t.amount || 0}"
+                                       onchange="updateCategorySelectionSummary()">
+                                <div class="transaction-details">
+                                    <div class="transaction-info">
+                                        <div class="transaction-date">${formatDate(t.date)}</div>
+                                        <div class="transaction-description" title="${t.description}">
+                                            ${t.description}
+                                        </div>
+                                        <div class="transaction-meta">
+                                            <span>Entity: ${t.classified_entity || 'Unknown'}</span>
+                                            <span>•</span>
+                                            <span>Current: ${t.accounting_category || 'N/A'}</span>
+                                            <span>•</span>
+                                            <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                        </div>
+                                    </div>
+                                    ${formatAmount(t.amount)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn-secondary" onclick="closeModal()">Skip These</button>
+                    <button class="btn-primary" id="updateCategoryBtn" onclick="applyCategoryToSelected('${newCategory}')" disabled>
+                        Update Selected Categories
+                    </button>
+                </div>
             `;
+
+            // Initialize selection
+            updateCategorySelectionSummary();
             showModal();
         }
     } catch (error) {
         console.error('Error checking similar accounting categories:', error);
     }
+}
+
+// Helper function to handle select all/deselect all for accounting category modal
+function selectAllSimilarCategories(selectAll) {
+    const checkboxes = document.querySelectorAll('.similar-transactions-modal .category-tx-cb');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateCategorySelectionSummary();
+}
+
+// Helper function to update selection summary for accounting category modal
+function updateCategorySelectionSummary() {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkboxes = modal.querySelectorAll('.category-tx-cb');
+    const checkedBoxes = modal.querySelectorAll('.category-tx-cb:checked');
+    const updateBtn = modal.querySelector('#updateCategoryBtn');
+    const selectionCounter = modal.querySelector('#selectedCategoryCount');
+    const impactSummary = modal.querySelector('#categoryImpactSummary');
+
+    // Update selection counter
+    if (selectionCounter) {
+        selectionCounter.textContent = checkedBoxes.length;
+    }
+
+    // Update impact summary
+    if (impactSummary) {
+        if (checkedBoxes.length === 0) {
+            impactSummary.textContent = 'Select transactions below';
+        } else {
+            let totalAmount = 0;
+            checkedBoxes.forEach(cb => {
+                const amount = parseFloat(cb.getAttribute('data-amount') || 0);
+                totalAmount += amount;
+            });
+            impactSummary.innerHTML = `${checkedBoxes.length} transaction(s), Total: <strong>$${Math.abs(totalAmount).toFixed(2)}</strong>`;
+        }
+    }
+
+    // Enable/disable update button
+    if (updateBtn) {
+        updateBtn.disabled = checkedBoxes.length === 0;
+        updateBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        updateBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+// Helper function to apply category to selected transactions
+function applyCategoryToSelected(newCategory) {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkedBoxes = modal.querySelectorAll('.category-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Show confirmation dialog
+    const confirmMsg = `Are you sure you want to update ${transactionIds.length} transaction(s) to accounting category "${newCategory}"?`;
+    if (!confirm(confirmMsg)) return;
+
+    // Make API call to update selected transactions
+    fetch('/api/update_category_bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            transaction_ids: transactionIds,
+            new_category: newCategory
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showToast(`Successfully updated ${transactionIds.length} transaction(s) to "${newCategory}".`, 'success');
+
+            // Close modal and refresh the page to show updates
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error updating transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error updating transactions. Please try again.', 'error');
+    });
 }
 
 async function applyCategoryToSimilar(transactionId, newCategory) {

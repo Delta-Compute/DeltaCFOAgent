@@ -32,81 +32,9 @@ class CryptoPricingDB:
         conn.close()
         print(f"📊 Crypto pricing database initialized: {self.db_path}")
 
-    def fetch_historic_prices_yahoo(self, symbol, start_date='2024-01-01', end_date=None):
-        """Fetch historic prices from Yahoo Finance"""
-        if end_date is None:
-            end_date = datetime.now().strftime('%Y-%m-%d')
-
-        # Yahoo Finance symbols
-        yahoo_symbols = {
-            'BTC': 'BTC-USD',
-            'TAO': 'TAO-USD',  # Bittensor
-            'ETH': 'ETH-USD',
-            'USDC': 'USDC-USD',
-            'USDT': 'USDT-USD'
-        }
-
-        if symbol not in yahoo_symbols:
-            print(f"⚠️ Symbol {symbol} not supported")
-            return
-
-        yahoo_symbol = yahoo_symbols[symbol]
-        print(f"📈 Fetching {symbol} prices from Yahoo Finance ({yahoo_symbol})...")
-
-        try:
-            # Yahoo Finance historic data URL
-            # Format: https://query1.finance.yahoo.com/v7/finance/download/BTC-USD?period1=start&period2=end&interval=1d
-            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
-
-            url = f"https://query1.finance.yahoo.com/v7/finance/download/{yahoo_symbol}"
-            params = {
-                'period1': start_ts,
-                'period2': end_ts,
-                'interval': '1d',
-                'events': 'history'
-            }
-
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-
-            response = requests.get(url, params=params, headers=headers, timeout=30)
-            response.raise_for_status()
-
-            # Parse CSV data
-            import io
-            csv_data = io.StringIO(response.text)
-            df = pd.read_csv(csv_data)
-
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            inserted_count = 0
-            for _, row in df.iterrows():
-                date = row['Date']
-                # Use Close price as the daily price
-                price = float(row['Close'])
-
-                # Insert or update price
-                cursor.execute('''
-                    INSERT OR REPLACE INTO historic_prices (date, symbol, price_usd)
-                    VALUES (?, ?, ?)
-                ''', (date, symbol, price))
-                inserted_count += 1
-
-            conn.commit()
-            conn.close()
-
-            print(f"✅ Inserted {inserted_count} {symbol} price records from Yahoo Finance")
-
-        except Exception as e:
-            print(f"❌ Error fetching {symbol} prices from Yahoo Finance: {e}")
-            # Try alternative free API as fallback
-            self.fetch_historic_prices_binance(symbol, start_date, end_date)
 
     def fetch_historic_prices_binance(self, symbol, start_date='2024-01-01', end_date=None):
-        """Fetch historic prices from Binance public API (fallback)"""
+        """Fetch historic prices from Binance public API"""
         if end_date is None:
             end_date = datetime.now().strftime('%Y-%m-%d')
 
@@ -114,9 +42,10 @@ class CryptoPricingDB:
         binance_symbols = {
             'BTC': 'BTCUSDT',
             'ETH': 'ETHUSDT',
-            'USDC': None,  # Not available on Binance
-            'USDT': None,  # Base currency
-            'TAO': 'TAOUSDT'  # If available
+            'BNB': 'BNBUSDT',
+            'TAO': 'TAOUSDT',
+            'USDC': None,  # Stablecoin
+            'USDT': None   # Base currency
         }
 
         if symbol not in binance_symbols or binance_symbols[symbol] is None:
@@ -250,6 +179,7 @@ class CryptoPricingDB:
             'BTC': 45000.0,
             'TAO': 250.0,
             'ETH': 2500.0,
+            'BNB': 400.0,
             'USDC': 1.0,
             'USDT': 1.0,
             'USD': 1.0
@@ -259,13 +189,13 @@ class CryptoPricingDB:
         return fallback_prices.get(symbol, 1.0)
 
     def populate_all_prices(self, start_date='2024-01-01'):
-        """Populate all supported crypto prices from real sources"""
-        symbols = ['BTC', 'TAO', 'ETH', 'USDC', 'USDT']
+        """Populate all supported crypto prices from Binance"""
+        symbols = ['BTC', 'TAO', 'ETH', 'BNB', 'USDC', 'USDT']
 
         for symbol in symbols:
             print(f"\n🔄 Processing {symbol}...")
-            # Try Yahoo Finance first, then Binance as fallback
-            self.fetch_historic_prices_yahoo(symbol, start_date)
+            # Use Binance as primary source
+            self.fetch_historic_prices_binance(symbol, start_date)
             time.sleep(1)  # Rate limiting
 
     def get_db_stats(self):

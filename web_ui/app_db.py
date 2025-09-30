@@ -67,6 +67,7 @@ def get_db_connection():
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
+    import re  # For crypto amount extraction
     try:
         print("Loading transactions from database...")
         conn = get_db_connection()
@@ -139,6 +140,69 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         for row in cursor.fetchall():
             transaction = dict(row)
+
+            # Map database columns to frontend expected field names for crypto display
+            # Frontend expects: transaction.amount, transaction.crypto_amount, transaction.currency
+
+            # Handle crypto transactions with correct database structure
+            # For BTC/TAO transactions: amount=USD_value, crypto_amount=token_quantity, currency=token_symbol
+
+            # Check for BTC transactions
+            if (transaction.get('classification_reason', '').lower().find('btc') != -1 or
+                transaction.get('justification', '').lower().find('btc') != -1):
+                # This is a BTC transaction
+                token_quantity = float(transaction.get('crypto_amount', 0))
+                usd_value = float(transaction.get('amount', 0))
+
+                # The crypto_amount field contains the correct BTC token amount
+                crypto_amount = f"{token_quantity:.8f}"  # BTC with 8 decimal precision
+
+                # Calculate actual price from existing data
+                token_price = usd_value / token_quantity if token_quantity > 0 else 0
+
+                # Create simplified description format
+                enhanced_description = f"Bitcoin @ ${token_price:,.2f}"
+                transaction['description'] = enhanced_description
+
+                # Set appropriate origin and destination for crypto transactions
+                transaction['origin'] = 'MEXC Exchange'
+                transaction['destination'] = 'Crypto Wallet'
+
+                transaction['currency'] = 'BTC'  # Keep currency as BTC
+                transaction['amount'] = usd_value
+                transaction['usd_equivalent'] = usd_value
+
+            # Check for TAO transactions
+            elif (transaction.get('classification_reason', '').lower().find('tao') != -1 or
+                  transaction.get('justification', '').lower().find('tao') != -1):
+                # This is a TAO transaction
+                token_quantity = float(transaction.get('crypto_amount', 0))
+                usd_value = float(transaction.get('amount', 0))
+
+                # The crypto_amount field contains the correct TAO token amount
+                crypto_amount = f"{token_quantity:.4f}"  # TAO with 4 decimal precision
+
+                # Calculate actual price from existing data
+                token_price = usd_value / token_quantity if token_quantity > 0 else 0
+
+                # Create simplified description format
+                enhanced_description = f"TAO @ ${token_price:,.2f}"
+                transaction['description'] = enhanced_description
+
+                # Set appropriate origin and destination for crypto transactions
+                transaction['origin'] = 'Unknown'
+                transaction['destination'] = 'Unknown'
+
+                transaction['currency'] = 'TAO'  # Keep currency as TAO
+                transaction['amount'] = usd_value
+                transaction['usd_equivalent'] = usd_value
+            else:
+                # For non-crypto transactions, use amount as is
+                crypto_amount = str(transaction.get('crypto_amount', '') or '')
+
+            # Add frontend-expected fields
+            transaction['crypto_amount'] = crypto_amount
+
             transactions.append(transaction)
 
         conn.close()
@@ -658,7 +722,16 @@ def sync_csv_to_database(csv_filename=None):
 
 @app.route('/')
 def homepage():
-    """Homepage with platform overview"""
+    """Business overview homepage"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('business_overview.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading homepage: {str(e)}", 500
+
+@app.route('/old-homepage')
+def old_homepage():
+    """Old homepage with platform overview"""
     try:
         stats = get_dashboard_stats()
         cache_buster = str(random.randint(1000, 9999))
@@ -1044,6 +1117,71 @@ def files_page():
     except Exception as e:
         return f"Error loading files: {str(e)}", 500
 
+def check_file_duplicates(filepath):
+    """Check if uploaded file contains transactions that already exist in database"""
+    try:
+        import pandas as pd
+        import hashlib
+
+        # Read the uploaded CSV file
+        df = pd.read_csv(filepath)
+        print(f"📊 Checking duplicates in {len(df)} transactions from file")
+
+        conn = get_db_connection()
+        duplicates = []
+
+        for index, row in df.iterrows():
+            # Create transaction identifier similar to main.py logic
+            date_str = str(row.get('Date', ''))
+            if 'T' in date_str:
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                date_str = date_str.split(' ')[0]
+
+            description = str(row.get('Description', ''))[:50]
+            amount = str(row.get('Amount', ''))
+
+            # Create check key
+            check_key = f"{date_str}|{amount}|{description}"
+
+            # Check if this transaction exists in database
+            existing = conn.execute("""
+                SELECT transaction_id, date, description, amount
+                FROM transactions
+                WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = ?
+                LIMIT 1
+            """, (check_key,)).fetchone()
+
+            if existing:
+                duplicates.append({
+                    'file_row': index + 1,
+                    'date': date_str,
+                    'description': description,
+                    'amount': amount,
+                    'existing_id': existing[0]
+                })
+
+        conn.close()
+
+        result = {
+            'has_duplicates': len(duplicates) > 0,
+            'duplicate_count': len(duplicates),
+            'total_transactions': len(df),
+            'duplicates': duplicates[:5]  # Return first 5 for preview
+        }
+
+        print(f"🔍 Duplicate check result: {len(duplicates)} duplicates found out of {len(df)} total transactions")
+        return result
+
+    except Exception as e:
+        print(f"ERROR: Error checking duplicates: {e}")
+        return {
+            'has_duplicates': False,
+            'duplicate_count': 0,
+            'total_transactions': 0,
+            'duplicates': []
+        }
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and processing"""
@@ -1072,6 +1210,17 @@ def upload_file():
         backup_path = f"{filepath}.backup"
         shutil.copy2(filepath, backup_path)
 
+        # Always check for duplicates first
+        duplicate_info = check_file_duplicates(filepath)
+        if duplicate_info['has_duplicates']:
+            print(f"🔍 Found {duplicate_info['duplicate_count']} duplicates, showing confirmation dialog")
+            return jsonify({
+                'success': False,
+                'duplicate_confirmation_needed': True,
+                'duplicate_info': duplicate_info,
+                'message': f'Found {duplicate_info["duplicate_count"]} duplicate transactions. Please choose how to handle them.'
+            })
+
         # Process the file in a simpler way to avoid subprocess issues
         try:
             # Use a subprocess to run the processing in a separate Python instance
@@ -1094,14 +1243,25 @@ else:
     print('PROCESSED_COUNT:0')
 """
 
-            # Run the processing script
+            # Run the processing script with environment variables
+            env = os.environ.copy()
+            env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
+
+            print(f"🔧 DEBUG: Running subprocess for {filename}")
+            print(f"🔧 DEBUG: API key set: {'Yes' if env.get('ANTHROPIC_API_KEY') else 'No'}")
+
             process_result = subprocess.run(
                 [sys.executable, '-c', processing_script],
                 capture_output=True,
                 text=True,
                 cwd=parent_dir,
-                timeout=60
+                timeout=60,
+                env=env
             )
+
+            print(f"🔧 DEBUG: Subprocess return code: {process_result.returncode}")
+            print(f"🔧 DEBUG: Subprocess stdout: {process_result.stdout}")
+            print(f"🔧 DEBUG: Subprocess stderr: {process_result.stderr}")
 
             # Extract transaction count from output
             transactions_processed = 0
@@ -1160,6 +1320,87 @@ def download_file(filename):
         return send_file(filepath, as_attachment=True)
     except Exception as e:
         return f"Error downloading file: {str(e)}", 500
+
+@app.route('/api/process-duplicates', methods=['POST'])
+def process_duplicates():
+    """Process a file that was already uploaded with specific duplicate handling"""
+    try:
+        duplicate_handling = request.form.get('duplicateHandling', 'overwrite')
+        filename = request.form.get('filename', '')
+
+        if not filename:
+            return jsonify({'error': 'No filename provided'}), 400
+
+        print(f"🔄 Processing duplicates for {filename} with mode: {duplicate_handling}")
+
+        # File should already exist from initial upload
+        parent_dir = os.path.dirname(os.path.dirname(__file__))
+        filepath = os.path.join(parent_dir, filename)
+
+        if not os.path.exists(filepath):
+            return jsonify({'error': 'File not found'}), 400
+
+        # Use same processing logic as upload_file but force the duplicate handling
+        import subprocess
+
+        processing_script = f"""
+import sys
+import os
+sys.path.append('{parent_dir}')
+os.chdir('{parent_dir}')
+
+from main import DeltaCFOAgent
+
+agent = DeltaCFOAgent()
+result = agent.process_file('{filename}', enhance=True, use_smart_ingestion=True)
+
+if result is not None:
+    print(f'PROCESSED_COUNT:{{len(result)}}')
+else:
+    print('PROCESSED_COUNT:0')
+"""
+
+        env = os.environ.copy()
+        env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
+        env['PYTHONPATH'] = parent_dir
+
+        process_result = subprocess.run(
+            ['python', '-c', processing_script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=parent_dir,
+            env=env
+        )
+
+        # Extract transaction count
+        transactions_processed = 0
+        if 'PROCESSED_COUNT:' in process_result.stdout:
+            count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
+            transactions_processed = int(count_str)
+
+        # Sync to database
+        sync_result = sync_csv_to_database(filename)
+
+        if sync_result:
+            action_msg = "updated" if duplicate_handling == 'overwrite' else "processed"
+            return jsonify({
+                'success': True,
+                'message': f'Successfully {action_msg} {transactions_processed} transactions from {filename}',
+                'transactions_processed': transactions_processed
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Processing succeeded but database sync failed'
+            }), 500
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/api/log_interaction', methods=['POST'])
 def api_log_interaction():
@@ -1412,5 +1653,8 @@ if __name__ == '__main__':
     # Initialize Claude API
     init_claude_client()
 
-    print("STARTING: Access at: http://localhost:5002")
-    app.run(host='0.0.0.0', port=5002, debug=True)
+    # Get port from environment (Cloud Run sets PORT automatically)
+    port = int(os.environ.get('PORT', 5002))
+
+    print(f"🌐 Starting server on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)

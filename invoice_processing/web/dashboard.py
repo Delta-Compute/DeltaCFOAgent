@@ -249,7 +249,9 @@ def invoice_list():
     return render_template('invoice_list.html', invoices=invoices, page=page)
 
 if __name__ == '__main__':
+    import os
+    port = int(os.environ.get('PORT', 5004))
     print("🚀 Invoice Dashboard starting...")
-    print("   Dashboard: http://localhost:5003/dashboard")
-    print("   Invoice List: http://localhost:5003/invoices/list")
-    app.run(host='0.0.0.0', port=5003, debug=True)
+    print(f"   Dashboard: http://localhost:{port}/dashboard")
+    print(f"   Invoice List: http://localhost:{port}/invoices/list")
+    app.run(host='0.0.0.0', port=port, debug=True)
