@@ -31,6 +31,8 @@ steps:
       - '10'
       - '--set-env-vars'
       - 'PYTHONPATH=/app'
+      - '--set-secrets'
+      - 'ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
 
 images:
   - 'gcr.io/$PROJECT_ID/delta-cfo-agent'
