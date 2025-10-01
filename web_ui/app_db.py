@@ -19,11 +19,18 @@ from werkzeug.utils import secure_filename
 import subprocess
 import shutil
 import hashlib
+import uuid
+import base64
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Import invoice processing modules
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
+
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
 
 # Database connection
 DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
@@ -57,6 +64,91 @@ def init_claude_client():
             return False
     except Exception as e:
         print(f"ERROR: Error initializing Claude API: {e}")
+        return False
+
+def init_invoice_tables():
+    """Initialize invoice tables in the database"""
+    try:
+        conn = get_db_connection()
+
+        # Main invoices table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS invoices (
+                id TEXT PRIMARY KEY,
+                invoice_number TEXT UNIQUE NOT NULL,
+                date TEXT NOT NULL,
+                due_date TEXT,
+                vendor_name TEXT NOT NULL,
+                vendor_address TEXT,
+                vendor_tax_id TEXT,
+                customer_name TEXT,
+                customer_address TEXT,
+                customer_tax_id TEXT,
+                total_amount REAL NOT NULL,
+                currency TEXT DEFAULT 'USD',
+                tax_amount REAL,
+                subtotal REAL,
+                line_items TEXT,
+                payment_terms TEXT,
+                status TEXT DEFAULT 'pending',
+                invoice_type TEXT DEFAULT 'other',
+                confidence_score REAL DEFAULT 0.0,
+                processing_notes TEXT,
+                source_file TEXT,
+                email_id TEXT,
+                processed_at TEXT,
+                created_at TEXT NOT NULL,
+                business_unit TEXT,
+                category TEXT,
+                currency_type TEXT,
+                vendor_type TEXT,
+                extraction_method TEXT,
+                linked_transaction_id TEXT,
+                FOREIGN KEY (linked_transaction_id) REFERENCES transactions(transaction_id)
+            )
+        ''')
+
+        # Email processing log
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS invoice_email_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_id TEXT UNIQUE NOT NULL,
+                subject TEXT,
+                sender TEXT,
+                received_at TEXT,
+                processed_at TEXT,
+                status TEXT DEFAULT 'pending',
+                attachments_count INTEGER DEFAULT 0,
+                invoices_extracted INTEGER DEFAULT 0,
+                error_message TEXT
+            )
+        ''')
+
+        # Add customer columns to existing tables (migration)
+        try:
+            conn.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
+            print("Added customer_name column to invoices table")
+        except:
+            pass  # Column already exists
+
+        try:
+            conn.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
+            print("Added customer_address column to invoices table")
+        except:
+            pass  # Column already exists
+
+        try:
+            conn.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
+            print("Added customer_tax_id column to invoices table")
+        except:
+            pass  # Column already exists
+
+        conn.commit()
+        conn.close()
+        print("Invoice tables initialized successfully")
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to initialize invoice tables: {e}")
         return False
 
 def get_db_connection():
@@ -1442,6 +1534,830 @@ def api_log_interaction():
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
+# INVOICE PROCESSING ROUTES
+# ============================================================================
+
+@app.route('/invoices')
+def invoices_page():
+    """Invoice management page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('invoices.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading invoices page: {str(e)}", 500
+
+@app.route('/api/invoices')
+def api_get_invoices():
+    """API endpoint to get invoices with pagination and filtering"""
+    try:
+        # Get filter parameters
+        filters = {
+            'business_unit': request.args.get('business_unit'),
+            'category': request.args.get('category'),
+            'vendor_name': request.args.get('vendor_name'),
+            'customer_name': request.args.get('customer_name')
+        }
+
+        # Remove None values
+        filters = {k: v for k, v in filters.items() if v}
+
+        # Pagination
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        offset = (page - 1) * per_page
+
+        conn = get_db_connection()
+
+        # Build query
+        query = "SELECT * FROM invoices WHERE 1=1"
+        params = []
+
+        if filters.get('business_unit'):
+            query += " AND business_unit = ?"
+            params.append(filters['business_unit'])
+
+        if filters.get('category'):
+            query += " AND category = ?"
+            params.append(filters['category'])
+
+        if filters.get('vendor_name'):
+            query += " AND vendor_name LIKE ?"
+            params.append(f"%{filters['vendor_name']}%")
+
+        if filters.get('customer_name'):
+            query += " AND customer_name LIKE ?"
+            params.append(f"%{filters['customer_name']}%")
+
+        # Get total count
+        count_query = query.replace("SELECT *", "SELECT COUNT(*)")
+        total_count = conn.execute(count_query, params).fetchone()[0]
+
+        # Add ordering and pagination
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([per_page, offset])
+
+        cursor = conn.execute(query, params)
+        invoices = []
+
+        for row in cursor.fetchall():
+            invoice = dict(row)
+            # Parse JSON fields
+            if invoice.get('line_items'):
+                try:
+                    invoice['line_items'] = json.loads(invoice['line_items'])
+                except:
+                    invoice['line_items'] = []
+            invoices.append(invoice)
+
+        conn.close()
+
+        return jsonify({
+            'invoices': invoices,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total_count,
+                'pages': (total_count + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>')
+def api_get_invoice(invoice_id):
+    """Get single invoice by ID"""
+    try:
+        conn = get_db_connection()
+        row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        conn.close()
+
+        if not row:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        invoice = dict(row)
+        # Parse JSON fields
+        if invoice.get('line_items'):
+            try:
+                invoice['line_items'] = json.loads(invoice['line_items'])
+            except:
+                invoice['line_items'] = []
+
+        return jsonify(invoice)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def extract_compressed_file(file_path: str, extract_dir: str) -> List[str]:
+    """
+    Extract files from compressed archives (ZIP, RAR, 7z) with support for nested directories.
+    Recursively walks through all subdirectories to find supported invoice files.
+
+    Args:
+        file_path: Path to the compressed archive file
+        extract_dir: Directory to extract files to
+
+    Returns:
+        List of file paths for all supported invoice files found in the archive,
+        or dict with 'error' key if extraction fails
+    """
+    try:
+        import zipfile
+        import py7zr
+
+        file_ext = os.path.splitext(file_path)[1].lower()
+
+        os.makedirs(extract_dir, exist_ok=True)
+
+        # Extract archive based on file type
+        if file_ext == '.zip':
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+        elif file_ext == '.7z':
+            with py7zr.SevenZipFile(file_path, mode='r') as archive:
+                archive.extractall(path=extract_dir)
+
+        elif file_ext == '.rar':
+            return {'error': 'RAR format requires additional setup. Please use ZIP or 7Z format.'}
+
+        else:
+            return {'error': f'Unsupported archive format: {file_ext}'}
+
+        # Recursively walk through all directories to find supported files
+        # This handles nested folder structures of any depth
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        filtered_files = []
+
+        for root, dirs, files in os.walk(extract_dir):
+            for filename in files:
+                file_path_in_archive = os.path.join(root, filename)
+                file_extension = os.path.splitext(filename)[1].lower()
+
+                # Only include files with supported extensions
+                if file_extension in allowed_extensions and os.path.isfile(file_path_in_archive):
+                    filtered_files.append(file_path_in_archive)
+
+        return filtered_files
+
+    except zipfile.BadZipFile:
+        return {'error': 'Invalid or corrupted ZIP file'}
+    except Exception as e:
+        return {'error': f'Failed to extract archive: {str(e)}'}
+
+@app.route('/api/invoices/upload', methods=['POST'])
+def api_upload_invoice():
+    """Upload and process invoice file"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Check file type
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': f'File type not allowed. Allowed types: {", ".join(allowed_extensions)}'}), 400
+
+        # Save file
+        upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'invoices')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        unique_filename = f"{uuid.uuid4()}{file_ext}"
+        file_path = os.path.join(upload_dir, unique_filename)
+        file.save(file_path)
+
+        # Process invoice with Claude Vision
+        invoice_data = process_invoice_with_claude(file_path, file.filename)
+
+        if 'error' in invoice_data:
+            return jsonify(invoice_data), 500
+
+        return jsonify({
+            'success': True,
+            'invoice_id': invoice_data['id'],
+            'invoice': invoice_data
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/invoices/upload-batch', methods=['POST'])
+def api_upload_batch_invoices():
+    """Upload and process multiple invoice files or compressed archive"""
+    try:
+        if 'files' not in request.files and 'file' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+
+        upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'invoices')
+        temp_extract_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'temp_extract')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        results = {
+            'success': True,
+            'total_files': 0,
+            'total_files_in_archive': 0,  # Total files found in ZIP (all types)
+            'files_found': 0,  # Supported invoice files found
+            'files_skipped': 0,  # Unsupported files skipped
+            'processed': 0,
+            'failed': 0,
+            'invoices': [],
+            'errors': [],
+            'skipped_files': [],  # List of skipped filenames with reasons
+            'archive_info': None  # Info about the archive structure
+        }
+
+        files_to_process = []
+        cleanup_paths = []
+
+        # Check if it's a compressed file
+        if 'file' in request.files:
+            file = request.files['file']
+            file_ext = os.path.splitext(file.filename)[1].lower()
+
+            if file_ext in ['.zip', '.7z', '.rar']:
+                # Save compressed file
+                compressed_path = os.path.join(upload_dir, f"{uuid.uuid4()}{file_ext}")
+                file.save(compressed_path)
+                cleanup_paths.append(compressed_path)
+
+                # Count total files in archive before extraction
+                total_in_archive = 0
+                all_files_in_archive = []
+                try:
+                    if file_ext == '.zip':
+                        import zipfile
+                        with zipfile.ZipFile(compressed_path, 'r') as zip_ref:
+                            all_files_in_archive = [name for name in zip_ref.namelist() if not name.endswith('/')]
+                            total_in_archive = len(all_files_in_archive)
+                    elif file_ext == '.7z':
+                        import py7zr
+                        with py7zr.SevenZipFile(compressed_path, mode='r') as archive:
+                            all_files_in_archive = archive.getnames()
+                            total_in_archive = len([f for f in all_files_in_archive if not f.endswith('/')])
+                except:
+                    pass
+
+                results['total_files_in_archive'] = total_in_archive
+
+                # Extract files
+                extract_result = extract_compressed_file(compressed_path, temp_extract_dir)
+
+                if isinstance(extract_result, dict) and 'error' in extract_result:
+                    return jsonify(extract_result), 400
+
+                files_to_process = [(f, os.path.basename(f)) for f in extract_result]
+                results['files_found'] = len(files_to_process)
+
+                # Calculate skipped files
+                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+                for file_in_archive in all_files_in_archive:
+                    file_extension = os.path.splitext(file_in_archive)[1].lower()
+                    if file_extension not in allowed_extensions and file_extension:
+                        results['skipped_files'].append({
+                            'filename': os.path.basename(file_in_archive),
+                            'path': file_in_archive,
+                            'reason': f'Unsupported file type: {file_extension}'
+                        })
+
+                results['files_skipped'] = len(results['skipped_files'])
+                results['archive_info'] = {
+                    'filename': file.filename,
+                    'type': file_ext,
+                    'nested_structure': any('/' in f or '\\' in f for f in all_files_in_archive)
+                }
+
+                cleanup_paths.append(temp_extract_dir)
+            else:
+                # Single file upload
+                unique_filename = f"{uuid.uuid4()}{file_ext}"
+                file_path = os.path.join(upload_dir, unique_filename)
+                file.save(file_path)
+                files_to_process = [(file_path, file.filename)]
+
+        # Check for multiple files
+        elif 'files' in request.files:
+            files = request.files.getlist('files')
+            for file in files:
+                if file.filename:
+                    file_ext = os.path.splitext(file.filename)[1].lower()
+                    unique_filename = f"{uuid.uuid4()}{file_ext}"
+                    file_path = os.path.join(upload_dir, unique_filename)
+                    file.save(file_path)
+                    files_to_process.append((file_path, file.filename))
+
+        results['total_files'] = len(files_to_process)
+
+        # Process each file
+        for file_path, original_filename in files_to_process:
+            try:
+                # Validate file type
+                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+                file_ext = os.path.splitext(file_path)[1].lower()
+
+                if file_ext not in allowed_extensions:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'file': original_filename,
+                        'error': f'Unsupported file type: {file_ext}'
+                    })
+                    continue
+
+                # Process invoice
+                invoice_data = process_invoice_with_claude(file_path, original_filename)
+
+                if 'error' in invoice_data:
+                    results['failed'] += 1
+                    results['errors'].append({
+                        'file': original_filename,
+                        'error': invoice_data['error']
+                    })
+                else:
+                    results['processed'] += 1
+                    results['invoices'].append({
+                        'id': invoice_data['id'],
+                        'invoice_number': invoice_data.get('invoice_number'),
+                        'vendor_name': invoice_data.get('vendor_name'),
+                        'total_amount': invoice_data.get('total_amount'),
+                        'currency': invoice_data.get('currency'),
+                        'original_filename': original_filename
+                    })
+
+            except Exception as e:
+                results['failed'] += 1
+                results['errors'].append({
+                    'file': original_filename,
+                    'error': str(e)
+                })
+
+        # Cleanup temporary files
+        for path in cleanup_paths:
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                elif os.path.isfile(path):
+                    os.remove(path)
+            except:
+                pass
+
+        # Set overall success status
+        results['success'] = results['processed'] > 0
+
+        return jsonify(results)
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/invoices/<invoice_id>', methods=['PUT'])
+def api_update_invoice(invoice_id):
+    """Update invoice fields - supports single field or multiple fields"""
+    try:
+        data = request.get_json()
+
+        conn = get_db_connection()
+
+        # Check if invoice exists
+        existing = conn.execute("SELECT id FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        if not existing:
+            conn.close()
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Handle both single field update and multiple field update
+        if 'field' in data and 'value' in data:
+            # Single field update (for inline editing)
+            field = data['field']
+            value = data['value']
+
+            # Validate field name to prevent SQL injection
+            allowed_fields = ['invoice_number', 'date', 'due_date', 'vendor_name', 'vendor_address',
+                            'vendor_tax_id', 'customer_name', 'customer_address', 'customer_tax_id',
+                            'total_amount', 'currency', 'tax_amount', 'subtotal',
+                            'business_unit', 'category', 'payment_terms']
+
+            if field not in allowed_fields:
+                conn.close()
+                return jsonify({'error': 'Invalid field name'}), 400
+
+            update_query = f"UPDATE invoices SET {field} = ? WHERE id = ?"
+            conn.execute(update_query, (value, invoice_id))
+        else:
+            # Multiple field update (for modal editing)
+            allowed_fields = ['invoice_number', 'date', 'due_date', 'vendor_name', 'vendor_address',
+                            'vendor_tax_id', 'customer_name', 'customer_address', 'customer_tax_id',
+                            'total_amount', 'currency', 'tax_amount', 'subtotal',
+                            'business_unit', 'category', 'payment_terms']
+
+            updates = []
+            values = []
+
+            for field, value in data.items():
+                if field in allowed_fields and value is not None:
+                    updates.append(f"{field} = ?")
+                    values.append(value)
+
+            if not updates:
+                conn.close()
+                return jsonify({'error': 'No valid fields to update'}), 400
+
+            update_query = f"UPDATE invoices SET {', '.join(updates)} WHERE id = ?"
+            values.append(invoice_id)
+            conn.execute(update_query, values)
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({'success': True, 'message': 'Invoice updated'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>', methods=['DELETE'])
+def api_delete_invoice(invoice_id):
+    """Delete invoice"""
+    try:
+        conn = get_db_connection()
+        result = conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        conn.commit()
+        conn.close()
+
+        if result.rowcount == 0:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        return jsonify({'success': True, 'message': 'Invoice deleted'})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/bulk-update', methods=['POST'])
+def api_bulk_update_invoices():
+    """Bulk update multiple invoices"""
+    try:
+        data = request.get_json()
+        invoice_ids = data.get('invoice_ids', [])
+        updates = data.get('updates', {})
+
+        if not invoice_ids or not updates:
+            return jsonify({'error': 'Missing invoice_ids or updates'}), 400
+
+        # Validate field names
+        allowed_fields = ['business_unit', 'category', 'currency', 'due_date', 'payment_terms',
+                         'customer_name', 'customer_address', 'customer_tax_id']
+
+        # Build update query
+        update_parts = []
+        values = []
+
+        for field, value in updates.items():
+            if field in allowed_fields and value:
+                update_parts.append(f"{field} = ?")
+                values.append(value)
+
+        if not update_parts:
+            return jsonify({'error': 'No valid fields to update'}), 400
+
+        conn = get_db_connection()
+        updated_count = 0
+
+        # Update each invoice
+        for invoice_id in invoice_ids:
+            update_query = f"UPDATE invoices SET {', '.join(update_parts)} WHERE id = ?"
+            result = conn.execute(update_query, values + [invoice_id])
+            if result.rowcount > 0:
+                updated_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'updated_count': updated_count,
+            'message': f'Successfully updated {updated_count} invoices'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/bulk-delete', methods=['POST'])
+def api_bulk_delete_invoices():
+    """Bulk delete multiple invoices"""
+    try:
+        data = request.get_json()
+        invoice_ids = data.get('invoice_ids', [])
+
+        if not invoice_ids:
+            return jsonify({'error': 'No invoice IDs provided'}), 400
+
+        conn = get_db_connection()
+        deleted_count = 0
+
+        # Delete each invoice
+        for invoice_id in invoice_ids:
+            result = conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+            if result.rowcount > 0:
+                deleted_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'deleted_count': deleted_count,
+            'message': f'Successfully deleted {deleted_count} invoices'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/stats')
+def api_invoice_stats():
+    """Get invoice statistics"""
+    try:
+        conn = get_db_connection()
+
+        # Total invoices
+        total = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+
+        # Total amount
+        total_amount = conn.execute("SELECT COALESCE(SUM(total_amount), 0) FROM invoices").fetchone()[0]
+
+        # Unique vendors
+        unique_vendors = conn.execute("SELECT COUNT(DISTINCT vendor_name) FROM invoices WHERE vendor_name IS NOT NULL AND vendor_name != ''").fetchone()[0]
+
+        # Unique customers
+        unique_customers = conn.execute("SELECT COUNT(DISTINCT customer_name) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''").fetchone()[0]
+
+        # By business unit
+        bu_counts = {}
+        bu_rows = conn.execute("SELECT business_unit, COUNT(*), SUM(total_amount) FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit").fetchall()
+        for row in bu_rows:
+            bu_counts[row[0]] = {'count': row[1], 'total': row[2]}
+
+        # By category
+        category_counts = {}
+        category_rows = conn.execute("SELECT category, COUNT(*), SUM(total_amount) FROM invoices WHERE category IS NOT NULL GROUP BY category").fetchall()
+        for row in category_rows:
+            category_counts[row[0]] = {'count': row[1], 'total': row[2]}
+
+        # By customer
+        customer_counts = {}
+        customer_rows = conn.execute("SELECT customer_name, COUNT(*), SUM(total_amount) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10").fetchall()
+        for row in customer_rows:
+            customer_counts[row[0]] = {'count': row[1], 'total': row[2]}
+
+        # Recent invoices
+        recent_rows = conn.execute("SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5").fetchall()
+        recent_invoices = [dict(row) for row in recent_rows]
+
+        conn.close()
+
+        return jsonify({
+            'total_invoices': total,
+            'total_amount': float(total_amount),
+            'unique_vendors': unique_vendors,
+            'unique_customers': unique_customers,
+            'business_unit_breakdown': bu_counts,
+            'category_breakdown': category_counts,
+            'customer_breakdown': customer_counts,
+            'recent_invoices': recent_invoices
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def process_invoice_with_claude(file_path: str, original_filename: str) -> Dict[str, Any]:
+    """Process invoice file with Claude Vision API"""
+    try:
+        global claude_client
+
+        if not claude_client:
+            return {'error': 'Claude API client not initialized'}
+
+        # Read and encode image
+        file_ext = os.path.splitext(file_path)[1].lower()
+
+        if file_ext == '.pdf':
+            # Convert PDF to image using PyMuPDF
+            try:
+                import fitz  # PyMuPDF
+
+                # Open PDF and get first page
+                doc = fitz.open(file_path)
+                if doc.page_count == 0:
+                    return {'error': 'PDF has no pages'}
+
+                # Get first page as image with 2x zoom for better quality
+                page = doc.load_page(0)
+                mat = fitz.Matrix(2, 2)
+                pix = page.get_pixmap(matrix=mat)
+
+                # Convert to PNG bytes
+                image_bytes = pix.pil_tobytes(format="PNG")
+                doc.close()
+
+                # Encode to base64
+                image_data = base64.b64encode(image_bytes).decode('utf-8')
+                media_type = 'image/png'
+
+            except ImportError:
+                return {'error': 'PyMuPDF not installed. Run: pip install PyMuPDF'}
+            except Exception as e:
+                return {'error': f'PDF conversion failed: {str(e)}'}
+        else:
+            # Read image file
+            with open(file_path, 'rb') as f:
+                image_data = base64.b64encode(f.read()).decode('utf-8')
+
+            # Determine media type
+            media_types = {
+                '.png': 'image/png',
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.tiff': 'image/tiff'
+            }
+            media_type = media_types.get(file_ext, 'image/png')
+
+        # Build extraction prompt
+        prompt = """Analyze this invoice image and extract BOTH vendor (who is sending/issuing the invoice) AND customer (who is receiving/paying the invoice) information in JSON format.
+
+IMPORTANT: Distinguish between the two parties on the invoice:
+- VENDOR/SUPPLIER (From/De/Remetente): The company ISSUING/SENDING the invoice
+- CUSTOMER/CLIENT (To/Para/Destinatário): The company RECEIVING/PAYING the invoice
+
+Common invoice keywords to help identify:
+- Vendor indicators: "From", "Bill From", "Vendor", "Supplier", "De", "Remetente", "Fornecedor", "Issued by"
+- Customer indicators: "To", "Bill To", "Sold To", "Client", "Customer", "Para", "Destinatário", "Cliente"
+
+REQUIRED FIELDS:
+- invoice_number: The invoice/bill number
+- date: Invoice date (YYYY-MM-DD format)
+- vendor_name: Company name ISSUING the invoice (FROM)
+- customer_name: Company name RECEIVING the invoice (TO)
+- total_amount: Total amount (numeric value only)
+- currency: Currency (USD, BRL, PYG, etc.)
+
+OPTIONAL VENDOR FIELDS:
+- vendor_address: Vendor's address
+- vendor_tax_id: Vendor's Tax ID/CNPJ/EIN/RUC if present
+
+OPTIONAL CUSTOMER FIELDS:
+- customer_address: Customer's address
+- customer_tax_id: Customer's Tax ID/CNPJ/EIN/RUC if present
+
+OTHER OPTIONAL FIELDS:
+- due_date: Due date if present (YYYY-MM-DD format)
+- tax_amount: Tax amount if itemized
+- subtotal: Subtotal before tax
+- line_items: Array of line items with description, quantity, unit_price, total
+
+CLASSIFICATION HINTS:
+Based on the customer (who is paying), suggest:
+- business_unit: One of ["Delta LLC", "Delta Prop Shop LLC", "Delta Mining Paraguay S.A.", "Delta Brazil", "Personal"]
+- category: One of ["Technology Expenses", "Utilities", "Insurance", "Professional Services", "Office Expenses", "Other"]
+
+Return ONLY a JSON object with this structure:
+{
+    "invoice_number": "string",
+    "date": "YYYY-MM-DD",
+    "vendor_name": "string (FROM - who is sending the invoice)",
+    "vendor_address": "string",
+    "vendor_tax_id": "string",
+    "customer_name": "string (TO - who is receiving/paying the invoice)",
+    "customer_address": "string",
+    "customer_tax_id": "string",
+    "total_amount": 1234.56,
+    "currency": "USD",
+    "tax_amount": 123.45,
+    "subtotal": 1111.11,
+    "due_date": "YYYY-MM-DD",
+    "line_items": [
+        {"description": "Item 1", "quantity": 1, "unit_price": 100.00, "total": 100.00}
+    ],
+    "business_unit": "Delta LLC",
+    "category": "Technology Expenses",
+    "confidence": 0.95,
+    "processing_notes": "Any issues or observations"
+}
+
+Be precise with numbers and dates. If a field is not clearly visible, use null.
+CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who RECEIVES/PAYS the invoice."""
+
+        # Call Claude Vision API
+        response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=4000,
+            temperature=0.1,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        )
+
+        # Parse response
+        response_text = response.content[0].text.strip()
+
+        # Remove markdown code blocks if present
+        if response_text.startswith('```json'):
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+        extracted_data = json.loads(response_text)
+
+        # Generate invoice ID
+        invoice_id = str(uuid.uuid4())
+
+        # Prepare invoice data for database
+        invoice_data = {
+            'id': invoice_id,
+            'invoice_number': extracted_data.get('invoice_number', ''),
+            'date': extracted_data.get('date'),
+            'due_date': extracted_data.get('due_date'),
+            'vendor_name': extracted_data.get('vendor_name', ''),
+            'vendor_address': extracted_data.get('vendor_address'),
+            'vendor_tax_id': extracted_data.get('vendor_tax_id'),
+            'customer_name': extracted_data.get('customer_name', ''),
+            'customer_address': extracted_data.get('customer_address'),
+            'customer_tax_id': extracted_data.get('customer_tax_id'),
+            'total_amount': float(extracted_data.get('total_amount', 0)),
+            'currency': extracted_data.get('currency', 'USD'),
+            'tax_amount': float(extracted_data.get('tax_amount', 0)) if extracted_data.get('tax_amount') else None,
+            'subtotal': float(extracted_data.get('subtotal', 0)) if extracted_data.get('subtotal') else None,
+            'line_items': json.dumps(extracted_data.get('line_items', [])),
+            'status': 'pending',
+            'invoice_type': 'other',
+            'confidence_score': float(extracted_data.get('confidence', 0.8)),
+            'processing_notes': extracted_data.get('processing_notes', ''),
+            'source_file': original_filename,
+            'extraction_method': 'claude_vision',
+            'processed_at': datetime.now().isoformat(),
+            'created_at': datetime.now().isoformat(),
+            'business_unit': extracted_data.get('business_unit'),
+            'category': extracted_data.get('category'),
+            'currency_type': 'fiat'  # Can be enhanced later
+        }
+
+        # Save to database
+        conn = get_db_connection()
+        conn.execute('''
+            INSERT INTO invoices (
+                id, invoice_number, date, due_date, vendor_name, vendor_address,
+                vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                total_amount, currency, tax_amount, subtotal,
+                line_items, status, invoice_type, confidence_score, processing_notes,
+                source_file, extraction_method, processed_at, created_at,
+                business_unit, category, currency_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+            invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+            invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+            invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+            invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+            invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+            invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+            invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+            invoice_data['category'], invoice_data['currency_type']
+        ))
+        conn.commit()
+        conn.close()
+
+        print(f"Invoice processed successfully: {invoice_data['invoice_number']}")
+        return invoice_data
+
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON response from Claude: {e}")
+        return {'error': f'Invalid JSON response from Claude Vision: {str(e)}'}
+    except Exception as e:
+        print(f"ERROR: Invoice processing failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return {'error': str(e)}
+
+# ============================================================================
 # REINFORCEMENT LEARNING SYSTEM
 # ============================================================================
 
@@ -1653,8 +2569,12 @@ if __name__ == '__main__':
     # Initialize Claude API
     init_claude_client()
 
+    # Initialize invoice tables
+    init_invoice_tables()
+
     # Get port from environment (Cloud Run sets PORT automatically)
     port = int(os.environ.get('PORT', 5002))
 
-    print(f"🌐 Starting server on port {port}")
+    print(f"Starting server on port {port}")
+    print("Invoice processing module integrated")
     app.run(host='0.0.0.0', port=port, debug=False)

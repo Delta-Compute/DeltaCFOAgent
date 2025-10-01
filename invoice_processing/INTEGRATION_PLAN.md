@@ -81,9 +81,22 @@ class DeltaCFOAgent:
 ```
 
 ### Passo 4: Dependencies
+All dependencies are now consolidated in the main project requirements file.
+
 ```bash
-pip install anthropic flask pdf2image Pillow
+# From the DeltaCFOAgent root directory:
+pip install -r requirements.txt
 ```
+
+**Included Dependencies:**
+- **Core:** Flask, gunicorn, Werkzeug, pandas, openpyxl
+- **AI:** anthropic (v0.8.0+)
+- **PDF Processing:** PyMuPDF, PyPDF2, pdfplumber, pdf2image, reportlab
+- **Image Processing:** Pillow, opencv-python
+- **OCR:** pytesseract
+- **Email:** exchangelib, imapclient
+- **File Handling:** python-magic, py7zr
+- **Utilities:** requests, python-dateutil
 
 ## Arquivos Importantes
 

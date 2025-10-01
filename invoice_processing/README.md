@@ -65,9 +65,20 @@ Sistema completo de upload manual e processamento inteligente de faturas com Cla
 ## 🛠 Installation & Setup
 
 ### Dependencies:
+All dependencies are now consolidated in the main project requirements file.
+
 ```bash
-pip install anthropic flask PyMuPDF reportlab
+# From the DeltaCFOAgent root directory:
+pip install -r requirements.txt
 ```
+
+**Note:** The main `requirements.txt` includes all invoice processing dependencies:
+- PDF processing (PyMuPDF, PyPDF2, pdfplumber, pdf2image, reportlab)
+- Image processing (Pillow, opencv-python)
+- OCR (pytesseract)
+- Email automation (exchangelib, imapclient)
+- AI integration (anthropic)
+- And all other core dependencies
 
 ### Environment:
 ```bash

@@ -4,13 +4,25 @@ Enterprise-grade AI-powered financial transaction processing and management syst
 
 ## 🚀 QUICK START
 
-### 1. Start the Advanced Web Dashboard
+### 1. Install Dependencies
+```bash
+# Install all required packages (includes invoice processing module)
+pip install -r requirements.txt
+```
+
+**Note:** The `requirements.txt` file includes all dependencies for:
+- Core transaction processing and web dashboard
+- Invoice processing module (PDF/image/OCR/email automation)
+- AI integration (Claude API)
+- Data processing and analytics
+
+### 2. Start the Advanced Web Dashboard
 ```bash
 cd web_ui && python3 app_db.py
 # Open http://localhost:5001
 ```
 
-### 2. Upload and Process New Files
+### 3. Upload and Process New Files
 - Navigate to **📁 Files** tab in the web interface
 - Drag & drop CSV files or click "Choose Files"
 - **Smart Ingestion** automatically detects Chase formats and CSV structures

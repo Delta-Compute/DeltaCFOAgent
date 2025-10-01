@@ -30,16 +30,20 @@ invoice_processing/
 
 #### 1. **Setup Inicial**
 ```bash
-cd DeltaCFOAgent/invoice_processing/
+# Install all dependencies from the main project requirements
+cd DeltaCFOAgent/
+pip install -r requirements.txt
 
-# Instalar dependências isoladas
-pip install -r requirements_invoice.txt
-
-# Configurar variáveis de ambiente
+# Configure environment variables
 export ANTHROPIC_API_KEY="seu_key_aqui"
 export INVOICE_EMAIL="invoices@deltacompute.com"
 export INVOICE_EMAIL_PASSWORD="senha_app_specific"
+
+# Navigate to invoice processing directory for development
+cd invoice_processing/
 ```
+
+**Note:** All dependencies are now consolidated in the main `DeltaCFOAgent/requirements.txt` file, including all invoice processing specific packages.
 
 #### 2. **Seu Workspace Isolado**
 ```bash
@@ -166,13 +170,15 @@ class InvoiceEmailMonitor:
 - Modificar qualquer arquivo em `invoice_processing/`
 - Criar novas tabelas no banco (prefixo `invoice_*`)
 - Adicionar rotas web com prefixo `/invoices`
-- Instalar novas dependências em `requirements_invoice.txt`
+- Propor novas dependências (adicionar ao `../requirements.txt` com aprovação)
 
 ### **❌ NÃO PODE Fazer:**
 - Modificar `main.py`, `app_db.py`, ou outros arquivos core
-- Alterar `requirements.txt` principal
+- Alterar `requirements.txt` principal sem coordenação
 - Modificar tabela `transactions` existente
 - Criar rotas web sem prefixo `/invoices`
+
+**Note on Dependencies:** Since dependencies are now consolidated in the main requirements.txt, any new dependencies needed for invoice processing should be coordinated with the core team to avoid version conflicts.
 
 ## 🔧 Debugging & Logs
 
