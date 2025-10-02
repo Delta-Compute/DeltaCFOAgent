@@ -2645,28 +2645,43 @@ def test_sync(filename):
     """Test endpoint to manually trigger sync for debugging"""
     print(f"🔧 TEST: Manual sync test for {filename}")
 
-    # Check if original file exists in uploads
+    # Check if original file exists where upload saves it (parent directory)
     parent_dir = os.path.dirname(os.path.dirname(__file__))
-    uploads_path = os.path.join(parent_dir, 'web_ui', 'uploads', filename)
+    actual_file_path = os.path.join(parent_dir, filename)  # This is where upload saves files
+    uploads_path = os.path.join(parent_dir, 'web_ui', 'uploads', filename)  # This was wrong assumption
 
-    print(f"🔧 TEST: Checking uploads path: {uploads_path}")
-    print(f"🔧 TEST: File exists: {os.path.exists(uploads_path)}")
+    print(f"🔧 TEST: Checking actual upload path: {actual_file_path}")
+    print(f"🔧 TEST: File exists at actual path: {os.path.exists(actual_file_path)}")
+    print(f"🔧 TEST: Also checking uploads path: {uploads_path}")
+    print(f"🔧 TEST: File exists at uploads path: {os.path.exists(uploads_path)}")
 
-    if os.path.exists(uploads_path):
+    # List files in parent directory
+    try:
+        files_in_parent = [f for f in os.listdir(parent_dir) if f.endswith('.csv')]
+        print(f"🔧 TEST: CSV files in parent dir: {files_in_parent}")
+    except Exception as e:
+        print(f"🔧 TEST: Error listing parent dir: {e}")
+        files_in_parent = []
+
+    if os.path.exists(actual_file_path):
         # Try sync
         result = sync_csv_to_database(filename)
         return jsonify({
             'test_result': 'success' if result else 'failed',
-            'uploads_file_found': True,
+            'file_found': True,
+            'actual_path': actual_file_path,
             'sync_result': result,
             'classified_dir_check': os.path.exists(os.path.join(parent_dir, 'classified_transactions')),
-            'files_in_classified': os.listdir(os.path.join(parent_dir, 'classified_transactions')) if os.path.exists(os.path.join(parent_dir, 'classified_transactions')) else []
+            'files_in_classified': os.listdir(os.path.join(parent_dir, 'classified_transactions')) if os.path.exists(os.path.join(parent_dir, 'classified_transactions')) else [],
+            'csv_files_in_parent': files_in_parent
         })
     else:
         return jsonify({
-            'test_result': 'file_not_found',
-            'uploads_file_found': False,
-            'checked_path': uploads_path
+            'test_result': 'file_not_found_anywhere',
+            'file_found': False,
+            'checked_actual_path': actual_file_path,
+            'checked_uploads_path': uploads_path,
+            'csv_files_in_parent': files_in_parent
         })
 
 if __name__ == '__main__':
