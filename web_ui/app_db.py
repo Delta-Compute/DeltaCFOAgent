@@ -1744,10 +1744,15 @@ def api_upload_invoice():
 
     except Exception as e:
         import traceback
-        return jsonify({
+        error_details = {
             'error': str(e),
+            'error_type': type(e).__name__,
+            'claude_client_status': 'initialized' if claude_client else 'not_initialized',
+            'api_key_present': bool(os.getenv('ANTHROPIC_API_KEY')),
             'traceback': traceback.format_exc()
-        }), 500
+        }
+        print(f"❌ Invoice upload error: {error_details}")
+        return jsonify(error_details), 500
 
 @app.route('/api/invoices/upload-batch', methods=['POST'])
 def api_upload_batch_invoices():
@@ -2140,8 +2145,11 @@ def process_invoice_with_claude(file_path: str, original_filename: str) -> Dict[
     try:
         global claude_client
 
+        # Initialize Claude client if not already done (lazy initialization)
         if not claude_client:
-            return {'error': 'Claude API client not initialized'}
+            init_success = init_claude_client()
+            if not init_success or not claude_client:
+                return {'error': 'Claude API client not initialized - check ANTHROPIC_API_KEY environment variable'}
 
         # Read and encode image
         file_ext = os.path.splitext(file_path)[1].lower()
@@ -2578,3 +2586,12 @@ if __name__ == '__main__':
     print(f"Starting server on port {port}")
     print("Invoice processing module integrated")
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# Initialize Claude client and database on module import (for production deployments like Cloud Run)
+try:
+    if not claude_client:
+        init_claude_client()
+    init_invoice_tables()
+    print("✅ Production initialization completed")
+except Exception as e:
+    print(f"⚠️  Production initialization warning: {e}")
