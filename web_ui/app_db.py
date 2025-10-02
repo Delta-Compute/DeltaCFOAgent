@@ -2684,6 +2684,36 @@ def test_sync(filename):
             'csv_files_in_parent': files_in_parent
         })
 
+@app.route('/api/debug-sync/<filename>')
+def debug_sync(filename):
+    """Debug endpoint to show detailed sync logs"""
+    import io
+    import sys
+    from contextlib import redirect_stdout, redirect_stderr
+
+    # Capture all prints during sync
+    stdout_capture = io.StringIO()
+    stderr_capture = io.StringIO()
+
+    try:
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            result = sync_csv_to_database(filename)
+
+        return jsonify({
+            'sync_result': result,
+            'stdout_logs': stdout_capture.getvalue(),
+            'stderr_logs': stderr_capture.getvalue(),
+            'success': result is not False
+        })
+    except Exception as e:
+        return jsonify({
+            'sync_result': False,
+            'stdout_logs': stdout_capture.getvalue(),
+            'stderr_logs': stderr_capture.getvalue(),
+            'exception': str(e),
+            'success': False
+        })
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
