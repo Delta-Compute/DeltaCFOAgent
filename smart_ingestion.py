@@ -42,24 +42,33 @@ class SmartDocumentIngestion:
 
     def _init_claude_client(self):
         """Initialize Claude API client"""
+        print("🔧 DEBUG: Initializing Claude API client...")
         try:
             # Check environment variable first
             api_key = os.getenv('ANTHROPIC_API_KEY')
+            print(f"🔧 DEBUG: API key from env: {'Found' if api_key else 'Not found'}")
 
             # Check for .anthropic_api_key file if env var not found
             if not api_key:
                 key_file = '.anthropic_api_key'
+                print(f"🔧 DEBUG: Checking for API key file: {key_file}")
                 if os.path.exists(key_file):
                     with open(key_file, 'r') as f:
                         api_key = f.read().strip()
+                    print("🔧 DEBUG: API key loaded from file")
 
             if not api_key:
                 print("⚠️  No ANTHROPIC_API_KEY found - smart ingestion disabled")
                 return None
 
-            return anthropic.Anthropic(api_key=api_key)
+            print("🔧 DEBUG: Creating Anthropic client...")
+            client = anthropic.Anthropic(api_key=api_key)
+            print("✅ DEBUG: Claude API client initialized successfully")
+            return client
         except Exception as e:
             print(f"❌ Error initializing Claude API: {e}")
+            import traceback
+            print(f"🔧 DEBUG: Traceback: {traceback.format_exc()}")
             return None
 
     def analyze_document_structure(self, file_path: str) -> Dict[str, Any]:
@@ -67,33 +76,50 @@ class SmartDocumentIngestion:
         Analyze document structure using Claude API
         Returns mapping instructions for processing
         """
+        print(f"🔧 DEBUG: Starting document analysis for {file_path}")
+
         if not self.claude_client:
-            raise ValueError("❌ CLAUDE AI REQUIRED: Smart document ingestion requires a valid ANTHROPIC_API_KEY. This ensures accurate processing of any CSV format.")
+            error_msg = "❌ CLAUDE AI REQUIRED: Smart document ingestion requires a valid ANTHROPIC_API_KEY. This ensures accurate processing of any CSV format."
+            print(f"🔧 DEBUG: {error_msg}")
+            raise ValueError(error_msg)
 
         try:
+            print("🔧 DEBUG: Getting document sample...")
             # Read sample of the document
             sample_content = self._get_document_sample(file_path)
             if not sample_content:
+                print("🔧 DEBUG: No sample content, using fallback analysis")
                 return self._fallback_analysis(file_path)
 
+            print(f"🔧 DEBUG: Sample content length: {len(sample_content)}")
+
             # Ask Claude to analyze the structure
+            print("🔧 DEBUG: Building analysis prompt...")
             prompt = self._build_analysis_prompt(sample_content, file_path)
+            print(f"🔧 DEBUG: Prompt length: {len(prompt)}")
+
+            print("🔧 DEBUG: Calling Claude API...")
             response = self.claude_client.messages.create(
                 model="claude-3-haiku-20240307",  # Fast, cheap model for structure analysis
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
+            print("✅ DEBUG: Claude API call successful")
 
             # Parse Claude's response
+            print("🔧 DEBUG: Parsing Claude response...")
             analysis = self._parse_claude_response(response.content[0].text)
             analysis['claude_analysis'] = True
             analysis['cost_estimate'] = 0.02  # Approximate cost
 
             print(f"🤖 Claude analyzed document structure: {analysis.get('format', 'unknown')}")
+            print(f"🔧 DEBUG: Analysis result: {analysis}")
             return analysis
 
         except Exception as e:
             print(f"❌ Claude analysis failed: {e}")
+            import traceback
+            print(f"🔧 DEBUG: Claude analysis error traceback: {traceback.format_exc()}")
             raise ValueError(f"❌ CLAUDE AI ANALYSIS FAILED: {e}. Smart document ingestion requires Claude AI for reliable processing.")
 
     def _get_document_sample(self, file_path: str) -> Optional[str]:
@@ -428,27 +454,37 @@ def smart_process_file(file_path: str, enhance: bool = True) -> Optional[pd.Data
     Smart file processing using Claude API for structure analysis
     REQUIRES Claude AI - no fallback processing available
     """
+    print(f"🔧 DEBUG: Starting smart_process_file for {file_path}")
     try:
+        print("🔧 DEBUG: Creating SmartDocumentIngestion instance...")
         ingestion = SmartDocumentIngestion()
 
         # Validate Claude AI is available
+        print("🔧 DEBUG: Validating Claude AI availability...")
         ingestion._validate_claude_required()
 
         # Step 1: Analyze document structure using Claude AI
         print(f"🔍 Analyzing document structure with Claude AI: {os.path.basename(file_path)}")
+        print("🔧 DEBUG: Calling analyze_document_structure...")
         structure_info = ingestion.analyze_document_structure(file_path)
+        print(f"🔧 DEBUG: Structure analysis completed: {structure_info}")
 
         # Step 2: Process using Claude's analysis
+        print("🔧 DEBUG: Processing with structure info...")
         df = ingestion.process_with_structure_info(file_path, structure_info)
+        print(f"🔧 DEBUG: Processing result: {'Success' if df is not None else 'Failed'}")
 
         if df is not None:
             print(f"✅ Claude AI smart ingestion successful - {len(df)} transactions")
             print(f"📋 Claude confidence: {structure_info.get('confidence', 0):.1%}")
+            print(f"PROCESSED_COUNT:{len(df)}")
             return df
         else:
             raise ValueError("❌ Claude AI processing failed to generate valid DataFrame")
 
     except Exception as e:
         print(f"❌ Smart ingestion error: {e}")
+        import traceback
+        print(f"🔧 DEBUG: Smart ingestion error traceback: {traceback.format_exc()}")
         # Re-raise the error instead of returning None - no silent failures
         raise e

@@ -735,19 +735,46 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
 
 def sync_csv_to_database(csv_filename=None):
     """Sync classified CSV files to SQLite database"""
+    print(f"🔧 DEBUG: Starting sync_csv_to_database for {csv_filename}")
     try:
         parent_dir = os.path.dirname(os.path.dirname(__file__))
+        print(f"🔧 DEBUG: Parent directory: {parent_dir}")
 
         if csv_filename:
             # Sync specific classified file
             csv_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{csv_filename}')
+            print(f"🔧 DEBUG: Looking for classified file: {csv_path}")
         else:
             # Try to sync MASTER_TRANSACTIONS.csv if it exists
             csv_path = os.path.join(parent_dir, 'MASTER_TRANSACTIONS.csv')
+            print(f"🔧 DEBUG: Looking for MASTER_TRANSACTIONS.csv: {csv_path}")
+
+        # Check if classified_transactions directory exists
+        classified_dir = os.path.join(parent_dir, 'classified_transactions')
+        print(f"🔧 DEBUG: Classified directory exists: {os.path.exists(classified_dir)}")
+        if os.path.exists(classified_dir):
+            files_in_dir = os.listdir(classified_dir)
+            print(f"🔧 DEBUG: Files in classified_transactions: {files_in_dir}")
 
         if not os.path.exists(csv_path):
             print(f"WARNING: CSV file not found for sync: {csv_path}")
-            return False
+
+            # Try alternative paths and files
+            alternative_paths = [
+                os.path.join(parent_dir, f'classified_{csv_filename}'),  # Root directory
+                os.path.join(parent_dir, 'web_ui', 'classified_transactions', f'classified_{csv_filename}'),  # web_ui subfolder
+                os.path.join(parent_dir, csv_filename),  # Original filename without classified_ prefix
+            ] if csv_filename else []
+
+            for alt_path in alternative_paths:
+                print(f"🔧 DEBUG: Trying alternative path: {alt_path}")
+                if os.path.exists(alt_path):
+                    csv_path = alt_path
+                    print(f"✅ DEBUG: Found file at alternative path: {alt_path}")
+                    break
+            else:
+                print(f"❌ DEBUG: No alternative paths found")
+                return False
 
         # Read the CSV file
         df = pd.read_csv(csv_path)
@@ -1349,28 +1376,61 @@ else:
 
             print(f"🔧 DEBUG: Running subprocess for {filename}")
             print(f"🔧 DEBUG: API key set: {'Yes' if env.get('ANTHROPIC_API_KEY') else 'No'}")
+            print(f"🔧 DEBUG: Working directory: {parent_dir}")
+            print(f"🔧 DEBUG: Processing script length: {len(processing_script)}")
 
             process_result = subprocess.run(
                 [sys.executable, '-c', processing_script],
                 capture_output=True,
                 text=True,
                 cwd=parent_dir,
-                timeout=60,
+                timeout=120,  # Increase timeout to 2 minutes
                 env=env
             )
 
             print(f"🔧 DEBUG: Subprocess return code: {process_result.returncode}")
-            print(f"🔧 DEBUG: Subprocess stdout: {process_result.stdout}")
-            print(f"🔧 DEBUG: Subprocess stderr: {process_result.stderr}")
+            print(f"🔧 DEBUG: Subprocess stdout length: {len(process_result.stdout)}")
+            print(f"🔧 DEBUG: Subprocess stderr length: {len(process_result.stderr)}")
+
+            if process_result.stdout:
+                print(f"🔧 DEBUG: Subprocess stdout: {process_result.stdout}")
+            if process_result.stderr:
+                print(f"🔧 DEBUG: Subprocess stderr: {process_result.stderr}")
+
+            # Check for specific error patterns
+            if process_result.returncode != 0:
+                print(f"❌ DEBUG: Subprocess failed with return code {process_result.returncode}")
+                if "claude" in process_result.stderr.lower() or "anthropic" in process_result.stderr.lower():
+                    print("🔧 DEBUG: Detected Claude/Anthropic related error")
+                if "import" in process_result.stderr.lower():
+                    print("🔧 DEBUG: Detected import error")
+                if "timeout" in process_result.stderr.lower():
+                    print("🔧 DEBUG: Detected timeout error")
 
             # Extract transaction count from output
             transactions_processed = 0
             if 'PROCESSED_COUNT:' in process_result.stdout:
                 count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
-                transactions_processed = int(count_str)
+                try:
+                    transactions_processed = int(count_str)
+                    print(f"🔧 DEBUG: Extracted transaction count: {transactions_processed}")
+                except ValueError as e:
+                    print(f"🔧 DEBUG: Failed to parse transaction count '{count_str}': {e}")
+
+            # If subprocess failed, return the error immediately
+            if process_result.returncode != 0:
+                return jsonify({
+                    'success': False,
+                    'error': f'Classification failed: {process_result.stderr or "Unknown subprocess error"}',
+                    'subprocess_stdout': process_result.stdout,
+                    'subprocess_stderr': process_result.stderr,
+                    'return_code': process_result.returncode
+                }), 500
 
             # Now sync to database
+            print(f"🔧 DEBUG: Starting database sync for {filename}...")
             sync_result = sync_csv_to_database(filename)
+            print(f"🔧 DEBUG: Database sync result: {sync_result}")
 
             if sync_result:
                 return jsonify({
@@ -1383,7 +1443,9 @@ else:
                 return jsonify({
                     'success': False,
                     'error': 'Processing succeeded but database sync failed',
-                    'transactions_processed': transactions_processed
+                    'transactions_processed': transactions_processed,
+                    'subprocess_stdout': process_result.stdout,
+                    'subprocess_stderr': process_result.stderr
                 }), 500
 
         except subprocess.TimeoutExpired:
