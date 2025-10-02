@@ -159,10 +159,75 @@ def init_invoice_tables():
         print(f"ERROR: Failed to initialize invoice tables: {e}")
         return False
 
+def init_database():
+    """Initialize database and create tables if they don't exist"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Create transactions table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            transaction_id TEXT PRIMARY KEY,
+            date TEXT,
+            description TEXT,
+            amount REAL,
+            currency TEXT,
+            usd_equivalent REAL,
+            classified_entity TEXT,
+            justification TEXT,
+            confidence REAL,
+            classification_reason TEXT,
+            origin TEXT,
+            destination TEXT,
+            identifier TEXT,
+            source_file TEXT,
+            crypto_amount TEXT,
+            conversion_note TEXT
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+    print("✅ Database initialized successfully")
+
 def get_db_connection():
     """Get database connection"""
+    # Initialize database on first connection
+    if not os.path.exists(DB_PATH):
+        print("🔧 DEBUG: Database doesn't exist, initializing...")
+        init_database()
+
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+
+    # Ensure table exists even if database exists but is empty
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
+    if not cursor.fetchone():
+        print("🔧 DEBUG: Transactions table doesn't exist, creating...")
+        cursor.execute("""
+            CREATE TABLE transactions (
+                transaction_id TEXT PRIMARY KEY,
+                date TEXT,
+                description TEXT,
+                amount REAL,
+                currency TEXT,
+                usd_equivalent REAL,
+                classified_entity TEXT,
+                justification TEXT,
+                confidence REAL,
+                classification_reason TEXT,
+                origin TEXT,
+                destination TEXT,
+                identifier TEXT,
+                source_file TEXT,
+                crypto_amount TEXT,
+                conversion_note TEXT
+            )
+        """)
+        conn.commit()
+        print("✅ DEBUG: Transactions table created")
+
     return conn
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
