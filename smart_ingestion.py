@@ -46,6 +46,8 @@ class SmartDocumentIngestion:
         try:
             # Check environment variable first
             api_key = os.getenv('ANTHROPIC_API_KEY')
+            if api_key:
+                api_key = api_key.strip()  # Remove newlines and whitespace
             print(f"🔧 DEBUG: API key from env: {'Found' if api_key else 'Not found'}")
 
             # Check for .anthropic_api_key file if env var not found
