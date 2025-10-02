@@ -1115,6 +1115,7 @@ class DeltaCFOAgent:
 
     def _continue_processing_from_dataframe(self, df, file_path, enhance):
         """Continue processing from a DataFrame after smart ingestion handles column mapping"""
+        print(f"🔧 DEBUG: Starting _continue_processing_from_dataframe for {file_path}")
         try:
             # Smart ingestion guarantees standardized columns: Date, Description, Amount
             date_col = 'Date'
@@ -1123,6 +1124,7 @@ class DeltaCFOAgent:
 
             print(f"✅ Smart ingestion standardized DataFrame with {len(df)} transactions")
             print(f"📊 Columns: {list(df.columns)}")
+            print(f"🔧 DEBUG: Current working directory: {os.getcwd()}")
 
             # Validate required columns exist (smart ingestion should guarantee this)
             required_cols = [date_col, desc_col, amount_col]
@@ -1135,7 +1137,11 @@ class DeltaCFOAgent:
                 print(f"📊 Sample: {df.iloc[0][desc_col]} | ${df.iloc[0][amount_col]}")
 
             # Continue with classification and processing
-            return self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
+            print("🔧 DEBUG: Calling _classify_and_process_dataframe...")
+            result = self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
+            print(f"🔧 DEBUG: Classification result: {'Success' if result is not None else 'Failed'}")
+
+            return result
 
         except Exception as e:
             print(f"❌ Error in DataFrame processing: {e}")
@@ -1252,8 +1258,22 @@ class DeltaCFOAgent:
         # Save classified file
         filename = os.path.basename(file_path)
         output_file = f"classified_transactions/classified_{filename}"
-        df.to_csv(output_file, index=False)
-        print(f"      Saved to: {output_file}")
+
+        print(f"🔧 DEBUG: Preparing to save classified file...")
+        print(f"🔧 DEBUG: Output file path: {output_file}")
+        print(f"🔧 DEBUG: Output directory exists: {os.path.exists('classified_transactions')}")
+
+        # Ensure directory exists
+        os.makedirs('classified_transactions', exist_ok=True)
+
+        try:
+            df.to_csv(output_file, index=False)
+            print(f"✅ DEBUG: Successfully saved classified file: {output_file}")
+            print(f"🔧 DEBUG: File size: {os.path.getsize(output_file)} bytes")
+            print(f"🔧 DEBUG: File exists after save: {os.path.exists(output_file)}")
+        except Exception as save_error:
+            print(f"❌ DEBUG: Failed to save classified file: {save_error}")
+            raise save_error
 
         return df
 
