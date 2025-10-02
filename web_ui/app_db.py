@@ -2640,6 +2640,35 @@ def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: 
         print(f"ERROR: Error enhancing prompt: {e}")
         return base_prompt
 
+@app.route('/api/test-sync/<filename>')
+def test_sync(filename):
+    """Test endpoint to manually trigger sync for debugging"""
+    print(f"🔧 TEST: Manual sync test for {filename}")
+
+    # Check if original file exists in uploads
+    parent_dir = os.path.dirname(os.path.dirname(__file__))
+    uploads_path = os.path.join(parent_dir, 'web_ui', 'uploads', filename)
+
+    print(f"🔧 TEST: Checking uploads path: {uploads_path}")
+    print(f"🔧 TEST: File exists: {os.path.exists(uploads_path)}")
+
+    if os.path.exists(uploads_path):
+        # Try sync
+        result = sync_csv_to_database(filename)
+        return jsonify({
+            'test_result': 'success' if result else 'failed',
+            'uploads_file_found': True,
+            'sync_result': result,
+            'classified_dir_check': os.path.exists(os.path.join(parent_dir, 'classified_transactions')),
+            'files_in_classified': os.listdir(os.path.join(parent_dir, 'classified_transactions')) if os.path.exists(os.path.join(parent_dir, 'classified_transactions')) else []
+        })
+    else:
+        return jsonify({
+            'test_result': 'file_not_found',
+            'uploads_file_found': False,
+            'checked_path': uploads_path
+        })
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
