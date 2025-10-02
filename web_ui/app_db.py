@@ -47,6 +47,8 @@ def init_claude_client():
 
         # Check environment variable
         api_key = os.getenv('ANTHROPIC_API_KEY')
+        if api_key:
+            api_key = api_key.strip()  # Remove whitespace and newlines
 
         # Check for .anthropic_api_key file in parent directory
         if not api_key:
@@ -56,8 +58,14 @@ def init_claude_client():
                     api_key = f.read().strip()
 
         if api_key:
+            # Additional validation and cleaning
+            api_key = api_key.strip()  # Extra safety
+            if not api_key.startswith('sk-ant-'):
+                print(f"WARNING: API key format looks invalid. Expected 'sk-ant-', got: '{api_key[:10]}...'")
+                return False
+
             claude_client = anthropic.Anthropic(api_key=api_key)
-            print("Claude API client initialized")
+            print(f"✅ Claude API client initialized successfully (key: {api_key[:10]}...{api_key[-4:]})")
             return True
         else:
             print("WARNING: Claude API key not found - AI features disabled")
