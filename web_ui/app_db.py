@@ -2281,6 +2281,66 @@ def api_invoice_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+def safe_insert_invoice(conn, invoice_data):
+    """
+    Safely insert or update invoice to avoid UNIQUE constraint errors
+    """
+    cursor = conn.cursor()
+
+    # Check if invoice exists
+    cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
+    existing = cursor.fetchone()
+
+    if existing:
+        # Update existing invoice
+        cursor.execute("""
+            UPDATE invoices SET
+                date=?, due_date=?, vendor_name=?, vendor_address=?,
+                vendor_tax_id=?, customer_name=?, customer_address=?, customer_tax_id=?,
+                total_amount=?, currency=?, tax_amount=?, subtotal=?,
+                line_items=?, status=?, invoice_type=?, confidence_score=?, processing_notes=?,
+                source_file=?, extraction_method=?, processed_at=?, created_at=?,
+                business_unit=?, category=?, currency_type=?
+            WHERE invoice_number=?
+        """, (
+            invoice_data['date'], invoice_data['due_date'], invoice_data['vendor_name'],
+            invoice_data['vendor_address'], invoice_data['vendor_tax_id'], invoice_data['customer_name'],
+            invoice_data['customer_address'], invoice_data['customer_tax_id'], invoice_data['total_amount'],
+            invoice_data['currency'], invoice_data['tax_amount'], invoice_data['subtotal'],
+            invoice_data['line_items'], invoice_data['status'], invoice_data['invoice_type'],
+            invoice_data['confidence_score'], invoice_data['processing_notes'], invoice_data['source_file'],
+            invoice_data['extraction_method'], invoice_data['processed_at'], invoice_data['created_at'],
+            invoice_data['business_unit'], invoice_data['category'], invoice_data['currency_type'],
+            invoice_data['invoice_number']
+        ))
+        print(f"Updated existing invoice: {invoice_data['invoice_number']}")
+        return "updated"
+    else:
+        # Insert new invoice
+        cursor.execute("""
+            INSERT INTO invoices (
+                id, invoice_number, date, due_date, vendor_name, vendor_address,
+                vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                total_amount, currency, tax_amount, subtotal,
+                line_items, status, invoice_type, confidence_score, processing_notes,
+                source_file, extraction_method, processed_at, created_at,
+                business_unit, category, currency_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+            invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+            invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+            invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+            invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+            invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+            invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+            invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+            invoice_data['category'], invoice_data['currency_type']
+        ))
+        print(f"Inserted new invoice: {invoice_data['invoice_number']}")
+        return "inserted"
+
 def process_invoice_with_claude(file_path: str, original_filename: str) -> Dict[str, Any]:
     """Process invoice file with Claude Vision API"""
     try:
@@ -2469,10 +2529,27 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
             'currency_type': 'fiat'  # Can be enhanced later
         }
 
-        # Save to database
-        conn = get_db_connection()
-        conn.execute('''
-            INSERT INTO invoices (
+        # Save to database with robust connection handling
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                conn = get_db_connection()
+
+                # Check if invoice_number already exists
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
+                existing = cursor.fetchone()
+
+                if existing:
+                    # Generate unique invoice number by appending timestamp
+                    import time
+                    timestamp = int(time.time())
+                    original_number = invoice_data['invoice_number']
+                    invoice_data['invoice_number'] = f"{original_number}_{timestamp}"
+                    print(f"Duplicate invoice number detected. Changed {original_number} to {invoice_data['invoice_number']}")
+
+                conn.execute('''
+                    INSERT INTO invoices (
                 id, invoice_number, date, due_date, vendor_name, vendor_address,
                 vendor_tax_id, customer_name, customer_address, customer_tax_id,
                 total_amount, currency, tax_amount, subtotal,
@@ -2491,11 +2568,26 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
             invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
             invoice_data['category'], invoice_data['currency_type']
         ))
-        conn.commit()
-        conn.close()
-
-        print(f"Invoice processed successfully: {invoice_data['invoice_number']}")
-        return invoice_data
+                conn.commit()
+                conn.close()
+                print(f"Invoice processed successfully: {invoice_data['invoice_number']}")
+                return invoice_data
+            except sqlite3.OperationalError as e:
+                if conn:
+                    conn.close()
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    print(f"Database locked during invoice insert, retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    print(f"Database error after {attempt + 1} attempts: {e}")
+                    return {'error': f'Database locked after {attempt + 1} attempts: {str(e)}'}
+            except Exception as e:
+                if conn:
+                    conn.close()
+                print(f"Unexpected error during invoice insert: {e}")
+                return {'error': str(e)}
 
     except json.JSONDecodeError as e:
         print(f"ERROR: Invalid JSON response from Claude: {e}")
