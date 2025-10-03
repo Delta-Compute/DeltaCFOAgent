@@ -64,3 +64,20 @@ python-magic>=0.4.27     # File type detection
 # Compressed File Support
 # ============================================
 py7zr>=0.20.0            # 7z archive support
+
+# ============================================
+# Database Support - Cloud SQL PostgreSQL
+# ============================================
+psycopg2-binary>=2.9.9   # PostgreSQL adapter for Cloud SQL
+flask-cors>=4.0.0        # CORS support for web APIs
+
+# ============================================
+# Google Cloud Dependencies
+# ============================================
+google-cloud-secret-manager>=2.16.4    # Secret management
+cloud-sql-python-connector>=1.4.0      # Cloud SQL connector
+
+# ============================================
+# Environment & Configuration
+# ============================================
+python-dotenv>=1.0.0     # Environment variable management
