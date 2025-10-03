@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Criar tabelas essenciais no PostgreSQL - Uma por vez
+Testado em produção: southamerica-east1 (Cloud SQL)
 """
 import psycopg2
 
