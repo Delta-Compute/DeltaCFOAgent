@@ -184,7 +184,7 @@ async function loadTransactions() {
 
         renderTransactionTable(currentTransactions);
         updateTableInfo(data.pagination);
-        updateSummaryStats(currentTransactions);
+        loadDashboardStats();
 
     } catch (error) {
         console.error('Error loading transactions:', error);
@@ -245,60 +245,49 @@ function truncateText(text, maxLength = 30) {
     return `<span title="${text}">${text.substring(0, maxLength)}...</span>`;
 }
 
-// Helper function to update summary statistics
-function updateSummaryStats(transactions) {
-    if (!transactions || transactions.length === 0) {
-        return;
+// Function to load correct dashboard statistics from backend
+async function loadDashboardStats() {
+    try {
+        const response = await fetch('/api/stats');
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        updateSummaryStatsDisplay(data);
+    } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+        showToast('Error loading dashboard statistics: ' + error.message, 'error');
     }
+}
 
-    let totalRevenue = 0;
-    let totalExpenses = 0;
-    let needsReview = 0;
-    let unclassifiedCount = 0;
-
-    transactions.forEach(tx => {
-        const amount = parseFloat(tx.amount || 0);
-        if (amount > 0) {
-            totalRevenue += amount;
-        } else if (amount < 0) {
-            totalExpenses += Math.abs(amount);
-        }
-
-        // Count needs review (low confidence or unclassified)
-        if (!tx.confidence || parseFloat(tx.confidence) < 0.8 ||
-            !tx.classified_entity || tx.classified_entity.includes('Unclassified')) {
-            needsReview++;
-        }
-
-        if (!tx.classified_entity || tx.classified_entity.includes('Unclassified')) {
-            unclassifiedCount++;
-        }
-    });
-
-    // Update the stats display if elements exist
+// Helper function to update summary statistics display with backend data
+function updateSummaryStatsDisplay(stats) {
     const statsElements = document.querySelectorAll('.stat-card');
     if (statsElements.length >= 4) {
-        // Update total transactions
+        // Update total transactions with correct count from backend
         const totalElement = statsElements[0].querySelector('.stat-number');
-        if (totalElement) totalElement.textContent = transactions.length;
+        if (totalElement) totalElement.textContent = stats.total_transactions || 0;
 
-        // Update total revenue
+        // Update total revenue with correct sum from backend
         const revenueElement = statsElements[1].querySelector('.stat-number');
         if (revenueElement) {
-            revenueElement.textContent = '$' + totalRevenue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            revenueElement.textContent = '$' + (stats.total_revenue || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             revenueElement.className = 'stat-number positive';
         }
 
-        // Update total expenses
+        // Update total expenses with correct sum from backend
         const expenseElement = statsElements[2].querySelector('.stat-number');
         if (expenseElement) {
-            expenseElement.textContent = '$' + totalExpenses.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            expenseElement.textContent = '$' + (stats.total_expenses || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             expenseElement.className = 'stat-number negative';
         }
 
-        // Update needs review
+        // Update needs review with correct count from backend
         const reviewElement = statsElements[3].querySelector('.stat-number');
         if (reviewElement) {
+            const needsReview = stats.needs_review || 0;
             reviewElement.textContent = needsReview;
             reviewElement.className = needsReview > 0 ? 'stat-number warning' : 'stat-number';
         }
