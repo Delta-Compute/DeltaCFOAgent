@@ -161,7 +161,10 @@ def init_invoice_tables():
 
 def init_database():
     """Initialize database and create tables if they don't exist"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    # Prevent database locks
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
 
     # Create transactions table
@@ -197,7 +200,10 @@ def get_db_connection():
         print("🔧 DEBUG: Database doesn't exist, initializing...")
         init_database()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    # Prevent database locks
+    conn.execute("PRAGMA busy_timeout=30000")
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
 
     # Ensure table exists even if database exists but is empty

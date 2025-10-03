@@ -15,7 +15,7 @@ class CryptoPricingDB:
 
     def init_database(self):
         """Initialize the pricing database"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         # Create historic_prices table
@@ -77,7 +77,7 @@ class CryptoPricingDB:
             response.raise_for_status()
             data = response.json()
 
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
             cursor = conn.cursor()
 
             inserted_count = 0
@@ -109,7 +109,7 @@ class CryptoPricingDB:
         start = datetime.strptime(start_date, '%Y-%m-%d')
         end = datetime.strptime(end_date, '%Y-%m-%d')
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         current_date = start
@@ -131,7 +131,7 @@ class CryptoPricingDB:
 
     def get_price_on_date(self, symbol, date_str):
         """Get price for a specific date, with fallback logic"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         # First try exact date
@@ -200,7 +200,7 @@ class CryptoPricingDB:
 
     def get_db_stats(self):
         """Get database statistics"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
 
         cursor.execute('''
