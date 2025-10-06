@@ -1020,18 +1020,30 @@ def health_check():
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        if db_type == 'postgresql' and POSTGRESQL_AVAILABLE:
-            cursor.execute("SELECT version()")
-            db_info = "PostgreSQL"
-        else:
-            cursor.execute("SELECT sqlite_version()")
-            db_info = "SQLite"
+        # Detect which database we're actually using
+        try:
+            if hasattr(cursor, 'mogrify'):  # PostgreSQL cursor has mogrify
+                cursor.execute("SELECT version()")
+                db_info = "PostgreSQL"
+            else:
+                cursor.execute("SELECT sqlite_version()")
+                db_info = "SQLite"
+        except:
+            # Fallback detection
+            try:
+                cursor.execute("SELECT sqlite_version()")
+                db_info = "SQLite"
+            except:
+                cursor.execute("SELECT version()")
+                db_info = "PostgreSQL"
 
         conn.close()
 
         return jsonify({
             "status": "healthy",
             "database": db_info,
+            "db_type_env": db_type,
+            "postgresql_available": POSTGRESQL_AVAILABLE,
             "timestamp": datetime.now().isoformat(),
             "version": "2.0"
         }), 200
