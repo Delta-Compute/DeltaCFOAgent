@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gcloud auth:*)",
+      "Bash(gcloud run services describe:*)",
+      "Bash(gcloud sql instances describe:*)",
+      "Bash(gcloud secrets list:*)",
+      "Bash(python:*)",
+      "Bash(gcloud secrets create:*)",
+      "Bash(gcloud secrets versions add:*)",
+      "Bash(gcloud run services list:*)",
+      "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/\")",
+      "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/invoices\")",
+      "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/api/invoices\")",
+      "Bash(gcloud builds submit:*)",
+      "Bash(gcloud run deploy:*)",
+      "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/health\")",
+      "Bash(git add:*)",
+      "Bash(set CLOUDSDK_PYTHON=C:Program FilesPython312python.exe)",
+      "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/api/transactions?page=1&per_page=1\")",
+      "Bash(dir:*)",
+      "Bash(awk:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

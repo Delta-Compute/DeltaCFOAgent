@@ -993,12 +993,100 @@
         let currentEditingInvoiceId = null;
         let allInvoices = [];
 
+        // Restore active background jobs on page load
+        async function restoreActiveJobs() {
+            // Check localStorage for active job
+            const activeJobId = localStorage.getItem('activeBatchJobId');
+            if (!activeJobId) return;
+
+            try {
+                // Check if job is still active
+                const response = await fetch(`/api/background-jobs/${activeJobId}/status`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    const job = result.data;
+
+                    // Only restore if job is still running
+                    if (job.status === 'running' || job.status === 'pending') {
+                        console.log('Restoring active batch job:', activeJobId);
+
+                        // Restore UI state
+                        const batchProgress = document.getElementById('batch-progress');
+                        const resultsSummary = document.getElementById('results-summary');
+                        batchProgress.style.display = 'block';
+                        resultsSummary.style.display = 'none';
+
+                        // Set current job
+                        currentBatchJob = activeJobId;
+
+                        // Add cancel button
+                        const progressText = document.getElementById('progress-text');
+                        const progressContainer = progressText.parentElement;
+                        if (!progressContainer.querySelector('.cancel-job-btn')) {
+                            const cancelBtn = document.createElement('button');
+                            cancelBtn.innerHTML = '❌ Cancel Job';
+                            cancelBtn.className = 'btn btn-sm btn-outline-danger ms-2 cancel-job-btn';
+                            cancelBtn.onclick = cancelCurrentJob;
+                            progressContainer.appendChild(cancelBtn);
+                        }
+
+                        // Resume polling
+                        pollJobProgress(activeJobId);
+                    } else {
+                        // Job is completed/failed, clean up
+                        localStorage.removeItem('activeBatchJobId');
+                        if (job.status === 'completed') {
+                            // Show completion notification
+                            showJobCompletionNotification(job);
+                        }
+                    }
+                } else {
+                    // Job not found, clean up
+                    localStorage.removeItem('activeBatchJobId');
+                }
+            } catch (error) {
+                console.error('Error restoring active job:', error);
+                localStorage.removeItem('activeBatchJobId');
+            }
+        }
+
+        // Show job completion notification
+        function showJobCompletionNotification(job) {
+            const notification = document.createElement('div');
+            notification.className = 'alert alert-success alert-dismissible fade show';
+            notification.innerHTML = `
+                <strong>Background Job Completed!</strong>
+                Processed ${job.processed_items || 0} files (${job.successful_items || 0} successful, ${job.failed_items || 0} failed)
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            notification.style.position = 'fixed';
+            notification.style.top = '20px';
+            notification.style.right = '20px';
+            notification.style.zIndex = '9999';
+            notification.style.minWidth = '300px';
+
+            document.body.appendChild(notification);
+
+            // Auto-remove after 8 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 8000);
+
+            // Refresh data
+            loadStats();
+            loadInvoices();
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
             loadInvoices();
             setupUpload();
             setupEditModal();
+            restoreActiveJobs(); // Restore any running background jobs
         });
 
         // Setup file upload
@@ -1083,7 +1171,10 @@
             }
         }
 
-        // Handle batch file upload with progress tracking
+        // Global variable to store current job for cancellation
+        let currentBatchJob = null;
+
+        // Handle batch file upload with progress tracking (async with background jobs)
         async function handleBatchFileUpload(files) {
             const formData = new FormData();
 
@@ -1116,60 +1207,194 @@
             progressBar.style.width = '0%';
             progressText.textContent = `0 / ${files.length}`;
             progressPercent.textContent = '0%';
-            currentFile.textContent = isCompressed ? `Extracting ${files[0].name}...` : 'Starting upload...';
+            currentFile.textContent = isCompressed ? `Uploading ${files[0].name}...` : 'Starting upload...';
+
+            // Add cancel button
+            const cancelBtn = document.createElement('button');
+            cancelBtn.innerHTML = '❌ Cancel Job';
+            cancelBtn.className = 'btn btn-sm btn-outline-danger ms-2';
+            cancelBtn.style.display = 'inline-block';
+            cancelBtn.onclick = cancelCurrentJob;
+
+            // Insert cancel button after progress text
+            const progressContainer = progressText.parentElement;
+            if (!progressContainer.querySelector('.cancel-job-btn')) {
+                cancelBtn.classList.add('cancel-job-btn');
+                progressContainer.appendChild(cancelBtn);
+            }
 
             try {
-                const response = await fetch('/api/invoices/upload-batch', {
+                // Start async upload job
+                const response = await fetch('/api/invoices/upload-batch-async', {
                     method: 'POST',
                     body: formData
                 });
 
                 const result = await response.json();
 
-                // Update progress to complete
-                progressBar.style.width = '100%';
-                progressPercent.textContent = '100%';
+                if (response.ok && result.success) {
+                    currentBatchJob = result.job_id;
+                    currentFile.textContent = 'Job started - processing files in background...';
 
-                if (response.ok) {
-                    // Show results
-                    progressText.textContent = `${result.processed} / ${result.total_files}`;
-                    currentFile.textContent = 'Processing complete!';
+                    // Store job ID for persistence across page refreshes
+                    localStorage.setItem('activeBatchJobId', result.job_id);
 
-                    // Show summary
-                    resultsSummary.style.display = 'block';
-                    document.getElementById('success-count').textContent = result.processed;
-                    document.getElementById('error-count').textContent = result.failed;
-
-                    // Show error details if any
-                    const errorDetails = document.getElementById('error-details');
-                    if (result.errors && result.errors.length > 0) {
-                        errorDetails.innerHTML = '<h5 style="margin-top: 1rem;">Failed Files:</h5>';
-                        result.errors.forEach(error => {
-                            errorDetails.innerHTML += `
-                                <div style="padding: 0.5rem; background: #fee2e2; border-radius: 4px; margin: 0.25rem 0; font-size: 0.9rem;">
-                                    <strong>${error.file}:</strong> ${error.error}
-                                </div>
-                            `;
-                        });
-                    }
-
-                    // Refresh stats and invoice list
-                    loadStats();
-                    loadInvoices();
-
-                    // Auto-hide progress after 5 seconds if successful
-                    if (result.failed === 0) {
-                        setTimeout(() => {
-                            batchProgress.style.display = 'none';
-                        }, 5000);
-                    }
+                    // Start polling for progress
+                    pollJobProgress(result.job_id);
                 } else {
-                    alert('Batch upload error: ' + (result.error || 'Unknown error'));
+                    alert('Failed to start batch job: ' + (result.error || 'Unknown error'));
                     batchProgress.style.display = 'none';
                 }
             } catch (error) {
-                alert('Batch upload error: ' + error.message);
+                alert('Upload error: ' + error.message);
                 batchProgress.style.display = 'none';
+                // Remove cancel button on error
+                const cancelButton = document.querySelector('.cancel-job-btn');
+                if (cancelButton) cancelButton.remove();
+            }
+        }
+
+        // Poll job progress every 2 seconds
+        async function pollJobProgress(jobId) {
+            const batchProgress = document.getElementById('batch-progress');
+            const resultsSummary = document.getElementById('results-summary');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const progressPercent = document.getElementById('progress-percent');
+            const currentFile = document.getElementById('current-file');
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/background-jobs/${jobId}/status`);
+                    const job = await response.json();
+
+                    if (response.ok && job.success) {
+                        const data = job.data;
+
+                        // Update progress display
+                        const progress = data.progress_percentage || 0;
+                        progressBar.style.width = `${progress}%`;
+                        progressPercent.textContent = `${Math.round(progress)}%`;
+                        progressText.textContent = `${data.processed_items || 0} / ${data.total_items || 0}`;
+
+                        // Update status text
+                        if (data.status === 'running') {
+                            currentFile.textContent = `Processing... (${data.successful_items || 0} success, ${data.failed_items || 0} failed)`;
+                        } else if (data.status === 'completed') {
+                            currentFile.textContent = 'Processing complete!';
+                            progressBar.style.width = '100%';
+                            progressPercent.textContent = '100%';
+
+                            // Clear polling and cleanup
+                            clearInterval(pollInterval);
+                            currentBatchJob = null;
+                            localStorage.removeItem('activeBatchJobId');
+
+                            // Remove cancel button
+                            const cancelButton = document.querySelector('.cancel-job-btn');
+                            if (cancelButton) cancelButton.remove();
+
+                            // Fetch detailed results for error display
+                            await showJobResults(jobId);
+
+                            // Refresh stats and invoice list
+                            loadStats();
+                            loadInvoices();
+
+                        } else if (data.status === 'failed') {
+                            currentFile.textContent = 'Job failed: ' + (data.error_message || 'Unknown error');
+                            clearInterval(pollInterval);
+                            currentBatchJob = null;
+                            localStorage.removeItem('activeBatchJobId');
+
+                            // Remove cancel button
+                            const cancelButton = document.querySelector('.cancel-job-btn');
+                            if (cancelButton) cancelButton.remove();
+
+                            // Still try to show partial results
+                            await showJobResults(jobId);
+                        } else if (data.status === 'cancelled') {
+                            currentFile.textContent = 'Job cancelled by user';
+                            clearInterval(pollInterval);
+                            currentBatchJob = null;
+                            localStorage.removeItem('activeBatchJobId');
+
+                            // Remove cancel button
+                            const cancelButton = document.querySelector('.cancel-job-btn');
+                            if (cancelButton) cancelButton.remove();
+
+                            batchProgress.style.display = 'none';
+                        }
+                    } else {
+                        console.error('Failed to fetch job status:', job.error);
+                        // Continue polling - might be temporary error
+                    }
+                } catch (error) {
+                    console.error('Error polling job status:', error);
+                    // Continue polling - might be temporary network error
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        // Show detailed job results
+        async function showJobResults(jobId) {
+            try {
+                const response = await fetch(`/api/background-jobs/${jobId}/results`);
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    const data = result.data;
+
+                    // Show summary
+                    const resultsSummary = document.getElementById('results-summary');
+                    resultsSummary.style.display = 'block';
+                    document.getElementById('success-count').textContent = data.successful_items || 0;
+                    document.getElementById('error-count').textContent = data.failed_items || 0;
+
+                    // Show error details if any
+                    const errorDetails = document.getElementById('error-details');
+                    if (data.failed_files && data.failed_files.length > 0) {
+                        errorDetails.innerHTML = '<h5 style="margin-top: 1rem;">Failed Files:</h5>';
+                        data.failed_files.forEach(error => {
+                            errorDetails.innerHTML += `
+                                <div style="padding: 0.5rem; background: #fee2e2; border-radius: 4px; margin: 0.25rem 0; font-size: 0.9rem;">
+                                    <strong>${error.filename || 'Unknown file'}:</strong> ${error.error || 'Unknown error'}
+                                </div>
+                            `;
+                        });
+                    } else {
+                        errorDetails.innerHTML = '';
+                    }
+
+                    // Auto-hide progress after 5 seconds if no failures
+                    if ((data.failed_items || 0) === 0) {
+                        setTimeout(() => {
+                            document.getElementById('batch-progress').style.display = 'none';
+                        }, 5000);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching job results:', error);
+            }
+        }
+
+        // Cancel current background job
+        async function cancelCurrentJob() {
+            if (!currentBatchJob) return;
+
+            try {
+                const response = await fetch(`/api/background-jobs/${currentBatchJob}/cancel`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    console.log('Job cancelled successfully');
+                } else {
+                    console.error('Failed to cancel job:', result.error);
+                }
+            } catch (error) {
+                console.error('Error cancelling job:', error);
             }
         }
 
