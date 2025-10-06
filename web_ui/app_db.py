@@ -1055,6 +1055,56 @@ def health_check():
             "timestamp": datetime.now().isoformat()
         }), 500
 
+@app.route('/debug')
+def debug_db():
+    """Debug endpoint to show database connection details"""
+    try:
+        debug_info = {
+            "environment_vars": {
+                "DB_TYPE": os.getenv('DB_TYPE', 'not_set'),
+                "DB_HOST": os.getenv('DB_HOST', 'not_set'),
+                "DB_PORT": os.getenv('DB_PORT', 'not_set'),
+                "DB_NAME": os.getenv('DB_NAME', 'not_set'),
+                "DB_USER": os.getenv('DB_USER', 'not_set'),
+                "DB_PASSWORD": "***" if os.getenv('DB_PASSWORD') else "not_set",
+                "DB_SOCKET_PATH": os.getenv('DB_SOCKET_PATH', 'not_set'),
+                "FLASK_ENV": os.getenv('FLASK_ENV', 'not_set'),
+            },
+            "postgresql_available": POSTGRESQL_AVAILABLE,
+            "connection_attempt": None
+        }
+
+        # Try PostgreSQL connection manually
+        if POSTGRESQL_AVAILABLE and os.getenv('DB_TYPE', '').lower() == 'postgresql':
+            try:
+                import psycopg2
+                socket_path = os.getenv('DB_SOCKET_PATH')
+                if socket_path:
+                    conn = psycopg2.connect(
+                        host=socket_path,
+                        database=os.getenv('DB_NAME', 'delta_cfo'),
+                        user=os.getenv('DB_USER', 'delta_user'),
+                        password=os.getenv('DB_PASSWORD')
+                    )
+                    debug_info["connection_attempt"] = "success_socket"
+                else:
+                    conn = psycopg2.connect(
+                        host=os.getenv('DB_HOST', '34.39.143.82'),
+                        port=os.getenv('DB_PORT', '5432'),
+                        database=os.getenv('DB_NAME', 'delta_cfo'),
+                        user=os.getenv('DB_USER', 'delta_user'),
+                        password=os.getenv('DB_PASSWORD')
+                    )
+                    debug_info["connection_attempt"] = "success_tcp"
+                conn.close()
+            except Exception as e:
+                debug_info["connection_attempt"] = f"failed: {str(e)}"
+
+        return jsonify(debug_info), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/old-homepage')
 def old_homepage():
     """Old homepage with platform overview"""
