@@ -1,7 +1,7 @@
 steps:
-  # Build the container image using Dockerfile.cloudsql
+  # Build the container image using Dockerfile
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'Dockerfile.cloudsql', '-t', 'gcr.io/$PROJECT_ID/deltacfoagent:latest', '.']
+    args: ['build', '-f', 'Dockerfile', '-t', 'gcr.io/$PROJECT_ID/deltacfoagent:latest', '.']
 
   # Push the container image to GCR
   - name: 'gcr.io/cloud-builders/docker'
