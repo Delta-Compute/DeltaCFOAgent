@@ -87,9 +87,11 @@ def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
 
         # Main invoices table
-        conn.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS invoices (
                 id TEXT PRIMARY KEY,
                 invoice_number TEXT UNIQUE NOT NULL,
@@ -126,7 +128,7 @@ def init_invoice_tables():
         ''')
 
         # Email processing log
-        conn.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS invoice_email_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email_id TEXT UNIQUE NOT NULL,
@@ -142,7 +144,7 @@ def init_invoice_tables():
         ''')
 
         # Background jobs table for async processing
-        conn.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS background_jobs (
                 id TEXT PRIMARY KEY,
                 job_type TEXT NOT NULL,
@@ -163,7 +165,7 @@ def init_invoice_tables():
         ''')
 
         # Job items table for tracking individual files in a job
-        conn.execute('''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS job_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 job_id TEXT NOT NULL,
@@ -181,19 +183,19 @@ def init_invoice_tables():
 
         # Add customer columns to existing tables (migration)
         try:
-            conn.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
+            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
             print("Added customer_name column to invoices table")
         except:
             pass  # Column already exists
 
         try:
-            conn.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
+            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
             print("Added customer_address column to invoices table")
         except:
             pass  # Column already exists
 
         try:
-            conn.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
+            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
             print("Added customer_tax_id column to invoices table")
         except:
             pass  # Column already exists
@@ -422,11 +424,72 @@ def get_job_status(job_id: str) -> dict:
         print(f"ERROR: Failed to get job status: {e}")
         return {'error': str(e)}
 
+def process_single_invoice_item(job_id: str, item: dict):
+    """Process a single invoice item (for parallel execution)"""
+    import time
+
+    item_name = item['item_name']
+    item_path = item.get('item_path')
+
+    if not item_path or not os.path.exists(item_path):
+        # File not found - mark as failed
+        update_job_item_status(job_id, item_name, 'failed',
+                             error_message='File not found or path invalid')
+        return {'status': 'failed', 'item_name': item_name, 'error': 'File not found'}
+
+    print(f"🔄 Processing item: {item_name}")
+    start_time = time.time()
+
+    try:
+        # Process the invoice using existing function
+        invoice_data = process_invoice_with_claude(item_path, item_name)
+        processing_time = time.time() - start_time
+
+        if 'error' in invoice_data:
+            # Processing failed
+            update_job_item_status(job_id, item_name, 'failed',
+                                 error_message=invoice_data['error'],
+                                 processing_time=processing_time)
+            print(f"❌ Failed item: {item_name} - {invoice_data['error']}")
+            return {'status': 'failed', 'item_name': item_name, 'error': invoice_data['error']}
+        else:
+            # Processing successful
+            result_summary = {
+                'id': invoice_data.get('id'),
+                'invoice_number': invoice_data.get('invoice_number'),
+                'vendor_name': invoice_data.get('vendor_name'),
+                'total_amount': invoice_data.get('total_amount')
+            }
+            update_job_item_status(job_id, item_name, 'completed',
+                                 result_data=str(result_summary),
+                                 processing_time=processing_time)
+            print(f"✅ Completed item: {item_name} in {processing_time:.2f}s")
+
+            # Clean up processed file to save storage
+            try:
+                os.remove(item_path)
+                print(f"🗑️ Cleaned up file: {item_path}")
+            except:
+                pass  # File cleanup failed, but processing succeeded
+
+            return {'status': 'completed', 'item_name': item_name, 'result': result_summary}
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        error_msg = f"Processing error: {str(e)}"
+        print(f"❌ Failed item: {item_name} - {error_msg}")
+
+        update_job_item_status(job_id, item_name, 'failed',
+                             error_message=error_msg,
+                             processing_time=processing_time)
+        return {'status': 'failed', 'item_name': item_name, 'error': error_msg}
+
 def process_invoice_batch_job(job_id: str):
-    """Background worker to process invoice batch job"""
+    """Background worker to process invoice batch job with parallel processing"""
     import time
     import threading
     import traceback
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     print(f"🚀 Starting background job {job_id}")
 
@@ -445,71 +508,38 @@ def process_invoice_batch_job(job_id: str):
         successful_count = 0
         failed_count = 0
 
-        print(f"📋 Processing {len(items)} items in job {job_id}")
+        print(f"📋 Processing {len(items)} items in job {job_id} with parallel workers")
 
-        # Process each item
-        for item in items:
-            item_name = item['item_name']
-            item_path = item.get('item_path')
+        # Process items in parallel with ThreadPoolExecutor
+        max_workers = min(5, len(items))  # Limit to 5 concurrent workers
+        print(f"🔥 Using {max_workers} parallel workers")
 
-            if not item_path or not os.path.exists(item_path):
-                # File not found - mark as failed
-                update_job_item_status(job_id, item_name, 'failed',
-                                     error_message='File not found or path invalid')
-                failed_count += 1
-                processed_count += 1
-                continue
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"InvoiceWorker-{job_id[:8]}") as executor:
+            # Submit all tasks
+            future_to_item = {
+                executor.submit(process_single_invoice_item, job_id, item): item
+                for item in items
+            }
 
-            print(f"🔄 Processing item: {item_name}")
-            start_time = time.time()
+            # Process completed tasks as they finish
+            for future in as_completed(future_to_item):
+                result = future.result()
 
-            try:
-                # Process the invoice using existing function
-                invoice_data = process_invoice_with_claude(item_path, item_name)
-
-                processing_time = time.time() - start_time
-
-                if 'error' in invoice_data:
-                    # Processing failed
-                    update_job_item_status(job_id, item_name, 'failed',
-                                         error_message=invoice_data['error'],
-                                         processing_time=processing_time)
-                    failed_count += 1
-                else:
-                    # Processing successful
-                    result_summary = {
-                        'id': invoice_data.get('id'),
-                        'invoice_number': invoice_data.get('invoice_number'),
-                        'vendor_name': invoice_data.get('vendor_name'),
-                        'total_amount': invoice_data.get('total_amount')
-                    }
-                    update_job_item_status(job_id, item_name, 'completed',
-                                         result_data=str(result_summary),
-                                         processing_time=processing_time)
+                if result['status'] == 'completed':
                     successful_count += 1
+                else:
+                    failed_count += 1
 
-                print(f"✅ Completed item: {item_name} in {processing_time:.2f}s")
+                processed_count += 1
 
-            except Exception as e:
-                processing_time = time.time() - start_time
-                error_msg = f"Processing error: {str(e)}"
-                print(f"❌ Failed item: {item_name} - {error_msg}")
+                # Update job progress after each completed item
+                update_job_progress(job_id,
+                                  processed_items=processed_count,
+                                  successful_items=successful_count,
+                                  failed_items=failed_count)
 
-                update_job_item_status(job_id, item_name, 'failed',
-                                     error_message=error_msg,
-                                     processing_time=processing_time)
-                failed_count += 1
-
-            processed_count += 1
-
-            # Update job progress after each item
-            update_job_progress(job_id,
-                              processed_items=processed_count,
-                              successful_items=successful_count,
-                              failed_items=failed_count)
-
-            # Small delay to prevent overwhelming the system
-            time.sleep(0.1)
+                progress = (processed_count / len(items)) * 100
+                print(f"📊 Progress: {processed_count}/{len(items)} ({progress:.1f}%) - ✅{successful_count} ❌{failed_count}")
 
         # Mark job as completed
         final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
