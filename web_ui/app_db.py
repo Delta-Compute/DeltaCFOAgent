@@ -213,15 +213,32 @@ def get_db_connection():
             # Try Cloud SQL socket connection first
             socket_path = os.getenv('DB_SOCKET_PATH')
             if socket_path:
-                conn = psycopg2.connect(
-                    host=socket_path,
-                    database=os.getenv('DB_NAME', 'delta_cfo'),
-                    user=os.getenv('DB_USER', 'delta_user'),
-                    password=os.getenv('DB_PASSWORD'),
-                    cursor_factory=RealDictCursor
-                )
+                try:
+                    print(f"🔌 Trying socket connection: {socket_path}")
+                    conn = psycopg2.connect(
+                        host=socket_path,
+                        database=os.getenv('DB_NAME', 'delta_cfo'),
+                        user=os.getenv('DB_USER', 'delta_user'),
+                        password=os.getenv('DB_PASSWORD'),
+                        cursor_factory=RealDictCursor
+                    )
+                    print("✅ Socket connection successful")
+                except Exception as socket_error:
+                    print(f"❌ Socket connection failed: {socket_error}")
+                    print("🔄 Trying TCP connection as fallback...")
+                    # Fallback to TCP connection
+                    conn = psycopg2.connect(
+                        host=os.getenv('DB_HOST', '34.39.143.82'),
+                        port=os.getenv('DB_PORT', '5432'),
+                        database=os.getenv('DB_NAME', 'delta_cfo'),
+                        user=os.getenv('DB_USER', 'delta_user'),
+                        password=os.getenv('DB_PASSWORD'),
+                        cursor_factory=RealDictCursor
+                    )
+                    print("✅ TCP connection successful")
             else:
                 # Direct TCP connection
+                print("🌐 Using TCP connection directly")
                 conn = psycopg2.connect(
                     host=os.getenv('DB_HOST', '34.39.143.82'),
                     port=os.getenv('DB_PORT', '5432'),
