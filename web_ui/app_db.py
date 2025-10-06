@@ -574,8 +574,8 @@ def get_dashboard_stats():
             'total_expenses': float(expenses),
             'needs_review': needs_review,
             'date_range': date_range,
-            'entities': [(row[0], row[1]) for row in entities],
-            'source_files': [(row[0], row[1]) for row in source_files]
+            'entities': [(row['classified_entity'], row['count']) if is_postgresql else (row[0], row[1]) for row in entities],
+            'source_files': [(row['source_file'], row['count']) if is_postgresql else (row[0], row[1]) for row in source_files]
         }
 
     except Exception as e:
@@ -651,40 +651,49 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             return []
 
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
         # Get the current transaction
-        current_tx = conn.execute(
-            "SELECT description, classified_entity FROM transactions WHERE transaction_id = ?",
+        cursor.execute(
+            f"SELECT description, classified_entity FROM transactions WHERE transaction_id = {placeholder}",
             (transaction_id,)
-        ).fetchone()
+        )
+        current_tx = cursor.fetchone()
 
         if not current_tx:
             conn.close()
             return []
 
-        original_description = current_tx[0]
-        entity = current_tx[1]
+        if is_postgresql:
+            original_description = current_tx['description']
+            entity = current_tx['classified_entity']
+        else:
+            original_description = current_tx[0]
+            entity = current_tx[1]
 
         # Get potential candidate transactions using basic keyword matching
-        candidate_txs = conn.execute("""
+        cursor.execute(f"""
             SELECT transaction_id, date, description, confidence
             FROM transactions
-            WHERE transaction_id != ?
+            WHERE transaction_id != {placeholder}
             AND (
-                (classified_entity = ? AND description LIKE ?) OR
-                (description LIKE '%WIRE%' AND ? LIKE '%WIRE%') OR
-                (description LIKE '%CIBC%' AND ? LIKE '%CIBC%') OR
-                (description LIKE '%TORONTO%' AND ? LIKE '%TORONTO%') OR
-                (description LIKE '%FEDWIRE%' AND ? LIKE '%FEDWIRE%') OR
-                (description LIKE '%BANCO%' AND ? LIKE '%BANCO%') OR
-                (description LIKE '%PARAGUAY%' AND ? LIKE '%PARAGUAY%')
+                (classified_entity = {placeholder} AND description LIKE {placeholder}) OR
+                (description LIKE '%WIRE%' AND {placeholder} LIKE '%WIRE%') OR
+                (description LIKE '%CIBC%' AND {placeholder} LIKE '%CIBC%') OR
+                (description LIKE '%TORONTO%' AND {placeholder} LIKE '%TORONTO%') OR
+                (description LIKE '%FEDWIRE%' AND {placeholder} LIKE '%FEDWIRE%') OR
+                (description LIKE '%BANCO%' AND {placeholder} LIKE '%BANCO%') OR
+                (description LIKE '%PARAGUAY%' AND {placeholder} LIKE '%PARAGUAY%')
             )
             LIMIT 20
         """, (
             transaction_id, entity, f"%{original_description[:20]}%",
             original_description, original_description, original_description,
             original_description, original_description, original_description
-        )).fetchall()
+        ))
+        candidate_txs = cursor.fetchall()
 
         conn.close()
 
@@ -692,8 +701,12 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             return []
 
         # Use Claude to analyze which transactions are truly similar
-        candidate_descriptions = [f"Transaction {i+1}: {tx[2][:100]}..." if len(tx[2]) > 100 else f"Transaction {i+1}: {tx[2]}"
-                                for i, tx in enumerate(candidate_txs)]
+        if is_postgresql:
+            candidate_descriptions = [f"Transaction {i+1}: {tx['description'][:100]}..." if len(tx['description']) > 100 else f"Transaction {i+1}: {tx['description']}"
+                                    for i, tx in enumerate(candidate_txs)]
+        else:
+            candidate_descriptions = [f"Transaction {i+1}: {tx[2][:100]}..." if len(tx[2]) > 100 else f"Transaction {i+1}: {tx[2]}"
+                                    for i, tx in enumerate(candidate_txs)]
 
         prompt = f"""
         Analyze these transaction descriptions and determine which ones are similar enough to the original transaction that they should have the same cleaned description.
@@ -734,12 +747,20 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             selected_txs = [candidate_txs[i] for i in selected_indices if 0 <= i < len(candidate_txs)]
 
             # Return formatted transaction data
-            return [{
-                'transaction_id': tx[0],
-                'date': tx[1],
-                'description': tx[2][:80] + "..." if len(tx[2]) > 80 else tx[2],
-                'confidence': tx[3] or 'N/A'
-            } for tx in selected_txs]
+            if is_postgresql:
+                return [{
+                    'transaction_id': tx['transaction_id'],
+                    'date': tx['date'],
+                    'description': tx['description'][:80] + "..." if len(tx['description']) > 80 else tx['description'],
+                    'confidence': tx['confidence'] or 'N/A'
+                } for tx in selected_txs]
+            else:
+                return [{
+                    'transaction_id': tx[0],
+                    'date': tx[1],
+                    'description': tx[2][:80] + "..." if len(tx[2]) > 80 else tx[2],
+                    'confidence': tx[3] or 'N/A'
+                } for tx in selected_txs]
 
         except (ValueError, IndexError) as e:
             print(f"ERROR: Error parsing Claude response for similar descriptions: {e}")
@@ -762,35 +783,43 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
             return []
 
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
         # Find the current transaction to get its original description
-        current_tx = conn.execute(
-            "SELECT description, classified_entity FROM transactions WHERE transaction_id = ?",
+        cursor.execute(
+            f"SELECT description, classified_entity FROM transactions WHERE transaction_id = {placeholder}",
             (transaction_id,)
-        ).fetchone()
+        )
+        current_tx = cursor.fetchone()
 
         if not current_tx:
             conn.close()
             return []
 
-        original_description = current_tx[0]
-        entity = current_tx[1]
+        if is_postgresql:
+            original_description = current_tx['description']
+            entity = current_tx['classified_entity']
+        else:
+            original_description = current_tx[0]
+            entity = current_tx[1]
 
         # Find transactions with similar patterns - return full transaction data
-        similar_txs = conn.execute("""
+        cursor.execute(f"""
             SELECT transaction_id, date, description, confidence
             FROM transactions
-            WHERE transaction_id != ?
+            WHERE transaction_id != {placeholder}
             AND (
                 -- Same entity with similar description pattern
-                (classified_entity = ? AND description LIKE ?) OR
+                (classified_entity = {placeholder} AND description LIKE {placeholder}) OR
                 -- Contains similar keywords for CIBC/Toronto wire transfers
-                (description LIKE '%CIBC%' AND ? LIKE '%CIBC%') OR
-                (description LIKE '%TORONTO%' AND ? LIKE '%TORONTO%') OR
-                (description LIKE '%WIRE%' AND ? LIKE '%WIRE%') OR
-                (description LIKE '%FEDWIRE%' AND ? LIKE '%FEDWIRE%')
+                (description LIKE '%CIBC%' AND {placeholder} LIKE '%CIBC%') OR
+                (description LIKE '%TORONTO%' AND {placeholder} LIKE '%TORONTO%') OR
+                (description LIKE '%WIRE%' AND {placeholder} LIKE '%WIRE%') OR
+                (description LIKE '%FEDWIRE%' AND {placeholder} LIKE '%FEDWIRE%')
             )
-            AND description != ?
+            AND description != {placeholder}
             LIMIT 10
         """, (
             transaction_id,
@@ -801,17 +830,26 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
             original_description,
             original_description,
             new_description
-        )).fetchall()
+        ))
+        similar_txs = cursor.fetchall()
 
         conn.close()
 
         # Return full transaction data for the improved UI
-        return [{
-            'transaction_id': row[0],
-            'date': row[1],
-            'description': row[2][:80] + "..." if len(row[2]) > 80 else row[2],
-            'confidence': row[3] or 'N/A'
-        } for row in similar_txs]
+        if is_postgresql:
+            return [{
+                'transaction_id': row['transaction_id'],
+                'date': row['date'],
+                'description': row['description'][:80] + "..." if len(row['description']) > 80 else row['description'],
+                'confidence': row['confidence'] or 'N/A'
+            } for row in similar_txs]
+        else:
+            return [{
+                'transaction_id': row[0],
+                'date': row[1],
+                'description': row[2][:80] + "..." if len(row[2]) > 80 else row[2],
+                'confidence': row[3] or 'N/A'
+            } for row in similar_txs]
 
     except Exception as e:
         print(f"ERROR: Error finding similar descriptions: {e}")
@@ -1323,14 +1361,17 @@ def api_update_entity_bulk():
 
         # Update each transaction
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
         updated_count = 0
 
         for transaction_id in transaction_ids:
-            result = conn.execute(
-                "UPDATE transactions SET classified_entity = ? WHERE transaction_id = ?",
+            cursor.execute(
+                f"UPDATE transactions SET classified_entity = {placeholder} WHERE transaction_id = {placeholder}",
                 (new_entity, transaction_id)
             )
-            if result.rowcount > 0:
+            if cursor.rowcount > 0:
                 updated_count += 1
 
         conn.commit()
@@ -1358,14 +1399,17 @@ def api_update_category_bulk():
 
         # Update each transaction
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
         updated_count = 0
 
         for transaction_id in transaction_ids:
-            result = conn.execute(
-                "UPDATE transactions SET accounting_category = ? WHERE transaction_id = ?",
+            cursor.execute(
+                f"UPDATE transactions SET accounting_category = {placeholder} WHERE transaction_id = {placeholder}",
                 (new_category, transaction_id)
             )
-            if result.rowcount > 0:
+            if cursor.rowcount > 0:
                 updated_count += 1
 
         conn.commit()
