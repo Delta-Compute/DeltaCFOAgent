@@ -954,15 +954,23 @@ def sync_csv_to_database(csv_filename=None):
 
         # Connect to database
         conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
+        placeholder = '%s' if is_postgresql else '?'
 
         # For specific file uploads, only clear data from that source file
         if csv_filename:
             source_file = csv_filename.replace('classified_', '')
-            conn.execute("DELETE FROM transactions WHERE source_file = ?", (source_file,))
+            if is_postgresql:
+                cursor.execute("DELETE FROM transactions WHERE source_file = %s", (source_file,))
+            else:
+                cursor.execute("DELETE FROM transactions WHERE source_file = ?", (source_file,))
             print(f"DATABASE: Cleared existing data for source file: {source_file}")
         else:
             # Only clear all data if syncing MASTER_TRANSACTIONS.csv (full sync)
-            conn.execute("DELETE FROM transactions")
+            cursor.execute("DELETE FROM transactions")
             print("DATABASE: Cleared all existing data for full sync")
 
         # Insert all transactions
@@ -995,20 +1003,51 @@ def sync_csv_to_database(csv_filename=None):
                 'conversion_note': str(row.get('Conversion_Note', '')) if pd.notna(row.get('Conversion_Note')) else None
             }
 
-            # Insert transaction (use REPLACE to handle duplicates)
-            conn.execute("""
-                INSERT OR REPLACE INTO transactions (
-                    transaction_id, date, description, amount, currency, usd_equivalent,
-                    classified_entity, justification, confidence, classification_reason,
-                    origin, destination, identifier, source_file, crypto_amount, conversion_note
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                data['transaction_id'], data['date'], data['description'],
-                data['amount'], data['currency'], data['usd_equivalent'],
-                data['classified_entity'], data['justification'], data['confidence'],
-                data['classification_reason'], data['origin'], data['destination'],
-                data['identifier'], data['source_file'], data['crypto_amount'], data['conversion_note']
-            ))
+            # Insert transaction (database-specific syntax for handling duplicates)
+            if is_postgresql:
+                cursor.execute("""
+                    INSERT INTO transactions (
+                        transaction_id, date, description, amount, currency, usd_equivalent,
+                        classified_entity, justification, confidence, classification_reason,
+                        origin, destination, identifier, source_file, crypto_amount, conversion_note
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO UPDATE SET
+                        date = EXCLUDED.date,
+                        description = EXCLUDED.description,
+                        amount = EXCLUDED.amount,
+                        currency = EXCLUDED.currency,
+                        usd_equivalent = EXCLUDED.usd_equivalent,
+                        classified_entity = EXCLUDED.classified_entity,
+                        justification = EXCLUDED.justification,
+                        confidence = EXCLUDED.confidence,
+                        classification_reason = EXCLUDED.classification_reason,
+                        origin = EXCLUDED.origin,
+                        destination = EXCLUDED.destination,
+                        identifier = EXCLUDED.identifier,
+                        source_file = EXCLUDED.source_file,
+                        crypto_amount = EXCLUDED.crypto_amount,
+                        conversion_note = EXCLUDED.conversion_note
+                """, (
+                    data['transaction_id'], data['date'], data['description'],
+                    data['amount'], data['currency'], data['usd_equivalent'],
+                    data['classified_entity'], data['justification'], data['confidence'],
+                    data['classification_reason'], data['origin'], data['destination'],
+                    data['identifier'], data['source_file'], data['crypto_amount'], data['conversion_note']
+                ))
+            else:
+                cursor.execute("""
+                    INSERT OR REPLACE INTO transactions (
+                        transaction_id, date, description, amount, currency, usd_equivalent,
+                        classified_entity, justification, confidence, classification_reason,
+                        origin, destination, identifier, source_file, crypto_amount, conversion_note
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    data['transaction_id'], data['date'], data['description'],
+                    data['amount'], data['currency'], data['usd_equivalent'],
+                    data['classified_entity'], data['justification'], data['confidence'],
+                    data['classification_reason'], data['origin'], data['destination'],
+                    data['identifier'], data['source_file'], data['crypto_amount'], data['conversion_note']
+                ))
 
         conn.commit()
         conn.close()
