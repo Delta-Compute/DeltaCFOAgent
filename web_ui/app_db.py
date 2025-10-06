@@ -10,8 +10,11 @@ import json
 import sqlite3
 import pandas as pd
 import time
+import threading
+import traceback
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import anthropic
 from typing import List, Dict, Any, Optional
@@ -21,6 +24,16 @@ import shutil
 import hashlib
 import uuid
 import base64
+import zipfile
+import re
+
+# Archive handling imports - optional
+try:
+    import py7zr
+    PY7ZR_AVAILABLE = True
+except ImportError:
+    PY7ZR_AVAILABLE = False
+    print("⚠️  py7zr not available - 7z archive support disabled")
 
 # Database imports - support both SQLite and PostgreSQL
 try:
@@ -353,9 +366,6 @@ def ensure_background_jobs_tables():
 def create_background_job(job_type: str, total_items: int, created_by: str = 'system',
                          source_file: str = None, metadata: str = None) -> str:
     """Create a new background job and return job ID"""
-    import uuid
-    from datetime import datetime
-
     # First ensure tables exist
     if not ensure_background_jobs_tables():
         print("ERROR: Cannot create background job - tables not available")
@@ -386,14 +396,11 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
 
     except Exception as e:
         print(f"ERROR: Failed to create background job: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
 def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
     """Add an item to a job and return item ID"""
-    from datetime import datetime
-
     created_at = datetime.utcnow().isoformat()
 
     try:
@@ -424,7 +431,6 @@ def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
 def update_job_progress(job_id: str, processed_items: int = None, successful_items: int = None,
                        failed_items: int = None, status: str = None, error_message: str = None):
     """Update job progress and status"""
-    from datetime import datetime
 
     try:
         conn = get_db_connection()
@@ -483,7 +489,6 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
 def update_job_item_status(job_id: str, item_name: str, status: str,
                           error_message: str = None, result_data: str = None, processing_time: float = None):
     """Update individual job item status"""
-    from datetime import datetime
 
     try:
         conn = get_db_connection()
@@ -537,7 +542,6 @@ def get_job_status(job_id: str) -> dict:
 
 def process_single_invoice_item(job_id: str, item: dict):
     """Process a single invoice item (for parallel execution)"""
-    import time
 
     item_name = item['item_name']
     item_path = item.get('item_path')
@@ -597,11 +601,6 @@ def process_single_invoice_item(job_id: str, item: dict):
 
 def process_invoice_batch_job(job_id: str):
     """Background worker to process invoice batch job with parallel processing"""
-    import time
-    import threading
-    import traceback
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
     print(f"🚀 Starting background job {job_id}")
 
     try:
@@ -821,7 +820,6 @@ def get_db_connection():
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
-    import re  # For crypto amount extraction
     try:
         print("Loading transactions from database...")
         conn = get_db_connection()
@@ -1205,7 +1203,6 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions are similar enough.
         """
 
-        import time
         start_time = time.time()
         print(f"AI: Calling Claude API for similar descriptions analysis...")
 
@@ -1702,7 +1699,6 @@ def debug_db():
         # Try PostgreSQL connection manually
         if POSTGRESQL_AVAILABLE and os.getenv('DB_TYPE', '').lower() == 'postgresql':
             try:
-                import psycopg2
                 socket_path = os.getenv('DB_SOCKET_PATH')
                 if socket_path:
                     conn = psycopg2.connect(
@@ -2142,9 +2138,6 @@ def files_page():
 def check_file_duplicates(filepath):
     """Check if uploaded file contains transactions that already exist in database"""
     try:
-        import pandas as pd
-        import hashlib
-
         # Read the uploaded CSV file
         df = pd.read_csv(filepath)
         print(f"📊 Checking duplicates in {len(df)} transactions from file")
@@ -2246,8 +2239,6 @@ def upload_file():
         # Process the file in a simpler way to avoid subprocess issues
         try:
             # Use a subprocess to run the processing in a separate Python instance
-            import subprocess
-
             processing_script = f"""
 import sys
 import os
@@ -2349,7 +2340,6 @@ else:
                 'error': 'Processing timeout - file too large or complex'
             }), 500
         except Exception as processing_error:
-            import traceback
             error_details = traceback.format_exc()
             return jsonify({
                 'success': False,
@@ -2358,7 +2348,6 @@ else:
             }), 500
 
     except Exception as e:
-        import traceback
         return jsonify({
             'error': str(e),
             'traceback': traceback.format_exc()
@@ -2398,8 +2387,6 @@ def process_duplicates():
             return jsonify({'error': 'File not found'}), 400
 
         # Use same processing logic as upload_file but force the duplicate handling
-        import subprocess
-
         processing_script = f"""
 import sys
 import os
@@ -2453,7 +2440,6 @@ else:
             }), 500
 
     except Exception as e:
-        import traceback
         return jsonify({
             'error': str(e),
             'traceback': traceback.format_exc()
@@ -2639,8 +2625,6 @@ def extract_compressed_file(file_path: str, extract_dir: str) -> List[str]:
         or dict with 'error' key if extraction fails
     """
     try:
-        import zipfile
-        import py7zr
 
         file_ext = os.path.splitext(file_path)[1].lower()
 
@@ -2652,6 +2636,8 @@ def extract_compressed_file(file_path: str, extract_dir: str) -> List[str]:
                 zip_ref.extractall(extract_dir)
 
         elif file_ext == '.7z':
+            if not PY7ZR_AVAILABLE:
+                return {'error': '7z support not available - py7zr package required'}
             with py7zr.SevenZipFile(file_path, mode='r') as archive:
                 archive.extractall(path=extract_dir)
 
@@ -2720,7 +2706,6 @@ def api_upload_invoice():
         })
 
     except Exception as e:
-        import traceback
         error_details = {
             'error': str(e),
             'error_type': type(e).__name__,
@@ -2775,15 +2760,14 @@ def api_upload_batch_invoices():
                 all_files_in_archive = []
                 try:
                     if file_ext == '.zip':
-                        import zipfile
                         with zipfile.ZipFile(compressed_path, 'r') as zip_ref:
                             all_files_in_archive = [name for name in zip_ref.namelist() if not name.endswith('/')]
                             total_in_archive = len(all_files_in_archive)
                     elif file_ext == '.7z':
-                        import py7zr
-                        with py7zr.SevenZipFile(compressed_path, mode='r') as archive:
-                            all_files_in_archive = archive.getnames()
-                            total_in_archive = len([f for f in all_files_in_archive if not f.endswith('/')])
+                        if PY7ZR_AVAILABLE:
+                            with py7zr.SevenZipFile(compressed_path, mode='r') as archive:
+                                all_files_in_archive = archive.getnames()
+                                total_in_archive = len([f for f in all_files_in_archive if not f.endswith('/')])
                 except:
                     pass
 
@@ -2895,7 +2879,6 @@ def api_upload_batch_invoices():
         return jsonify(results)
 
     except Exception as e:
-        import traceback
         return jsonify({
             'error': str(e),
             'traceback': traceback.format_exc()
@@ -3009,7 +2992,6 @@ def api_upload_batch_invoices_async():
         })
 
     except Exception as e:
-        import traceback
         return jsonify({
             'error': str(e),
             'traceback': traceback.format_exc()
@@ -3696,7 +3678,6 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
 
                 if existing:
                     # Generate unique invoice number by appending timestamp
-                    import time
                     timestamp = int(time.time())
                     original_number = invoice_data['invoice_number']
                     invoice_data['invoice_number'] = f"{original_number}_{timestamp}"
@@ -3771,7 +3752,6 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
         return {'error': f'Invalid JSON response from Claude Vision: {str(e)}'}
     except Exception as e:
         print(f"ERROR: Invoice processing failed: {e}")
-        import traceback
         traceback.print_exc()
         return {'error': str(e)}
 
@@ -4028,7 +4008,6 @@ def test_sync(filename):
 def debug_sync(filename):
     """Debug endpoint to show detailed sync logs"""
     import io
-    import sys
     from contextlib import redirect_stdout, redirect_stderr
 
     # Capture all prints during sync
