@@ -128,20 +128,36 @@ def init_invoice_tables():
         ''')
 
         # Email processing log
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS invoice_email_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email_id TEXT UNIQUE NOT NULL,
-                subject TEXT,
-                sender TEXT,
-                received_at TEXT,
-                processed_at TEXT,
-                status TEXT DEFAULT 'pending',
-                attachments_count INTEGER DEFAULT 0,
-                invoices_extracted INTEGER DEFAULT 0,
-                error_message TEXT
-            )
-        ''')
+        if is_postgresql:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS invoice_email_log (
+                    id SERIAL PRIMARY KEY,
+                    email_id TEXT UNIQUE NOT NULL,
+                    subject TEXT,
+                    sender TEXT,
+                    received_at TEXT,
+                    processed_at TEXT,
+                    status TEXT DEFAULT 'pending',
+                    attachments_count INTEGER DEFAULT 0,
+                    invoices_extracted INTEGER DEFAULT 0,
+                    error_message TEXT
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS invoice_email_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email_id TEXT UNIQUE NOT NULL,
+                    subject TEXT,
+                    sender TEXT,
+                    received_at TEXT,
+                    processed_at TEXT,
+                    status TEXT DEFAULT 'pending',
+                    attachments_count INTEGER DEFAULT 0,
+                    invoices_extracted INTEGER DEFAULT 0,
+                    error_message TEXT
+                )
+            ''')
 
         # Background jobs table for async processing
         cursor.execute('''
@@ -165,21 +181,38 @@ def init_invoice_tables():
         ''')
 
         # Job items table for tracking individual files in a job
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS job_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                job_id TEXT NOT NULL,
-                item_name TEXT NOT NULL,
-                item_path TEXT,
-                status TEXT NOT NULL DEFAULT 'pending',
-                processed_at TEXT,
-                error_message TEXT,
-                result_data TEXT,
-                processing_time_seconds REAL,
-                created_at TEXT NOT NULL,
-                FOREIGN KEY (job_id) REFERENCES background_jobs(id)
-            )
-        ''')
+        if is_postgresql:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS job_items (
+                    id SERIAL PRIMARY KEY,
+                    job_id TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    item_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    processed_at TEXT,
+                    error_message TEXT,
+                    result_data TEXT,
+                    processing_time_seconds REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS job_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    item_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    processed_at TEXT,
+                    error_message TEXT,
+                    result_data TEXT,
+                    processing_time_seconds REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                )
+            ''')
 
         # Add customer columns to existing tables (migration)
         try:
@@ -246,11 +279,87 @@ def init_database():
 # BACKGROUND JOBS MANAGEMENT
 # ============================================================================
 
+def ensure_background_jobs_tables():
+    """Ensure background jobs tables exist with correct schema"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+
+        # Background jobs table for async processing
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_items INTEGER NOT NULL DEFAULT 0,
+                processed_items INTEGER NOT NULL DEFAULT 0,
+                successful_items INTEGER NOT NULL DEFAULT 0,
+                failed_items INTEGER NOT NULL DEFAULT 0,
+                progress_percentage REAL NOT NULL DEFAULT 0.0,
+                started_at TEXT,
+                completed_at TEXT,
+                created_at TEXT NOT NULL,
+                created_by TEXT DEFAULT 'system',
+                source_file TEXT,
+                error_message TEXT,
+                metadata TEXT
+            )
+        ''')
+
+        # Job items table for tracking individual files in a job
+        if is_postgresql:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS job_items (
+                    id SERIAL PRIMARY KEY,
+                    job_id TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    item_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    processed_at TEXT,
+                    error_message TEXT,
+                    result_data TEXT,
+                    processing_time_seconds REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                )
+            ''')
+        else:
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS job_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    item_path TEXT,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    processed_at TEXT,
+                    error_message TEXT,
+                    result_data TEXT,
+                    processing_time_seconds REAL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                )
+            ''')
+
+        conn.commit()
+        conn.close()
+        print("✅ Background jobs tables ensured")
+        return True
+
+    except Exception as e:
+        print(f"ERROR: Failed to ensure background jobs tables: {e}")
+        return False
+
 def create_background_job(job_type: str, total_items: int, created_by: str = 'system',
                          source_file: str = None, metadata: str = None) -> str:
     """Create a new background job and return job ID"""
     import uuid
     from datetime import datetime
+
+    # First ensure tables exist
+    if not ensure_background_jobs_tables():
+        print("ERROR: Cannot create background job - tables not available")
+        return None
 
     job_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat()
@@ -277,6 +386,8 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
 
     except Exception as e:
         print(f"ERROR: Failed to create background job: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
@@ -3953,6 +4064,9 @@ if __name__ == '__main__':
     # Initialize invoice tables
     init_invoice_tables()
 
+    # Ensure background jobs tables exist
+    ensure_background_jobs_tables()
+
     # Get port from environment (Cloud Run sets PORT automatically)
     port = int(os.environ.get('PORT', 5002))
 
@@ -3965,6 +4079,7 @@ try:
     if not claude_client:
         init_claude_client()
     init_invoice_tables()
+    ensure_background_jobs_tables()
     print("✅ Production initialization completed")
 except Exception as e:
     print(f"⚠️  Production initialization warning: {e}")
