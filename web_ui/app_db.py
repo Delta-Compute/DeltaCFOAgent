@@ -3560,6 +3560,62 @@ def preprocess_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
 
     return invoice_data
 
+def repair_json_string(json_str: str) -> str:
+    """Repair common JSON formatting issues"""
+    import re
+
+    # Fix missing commas between objects
+    json_str = re.sub(r'"\s*\n\s*"', '",\n  "', json_str)
+
+    # Fix missing commas after values
+    json_str = re.sub(r'(\d+|"[^"]*"|\]|\})\s*\n\s*"', r'\1,\n  "', json_str)
+
+    # Fix trailing commas
+    json_str = re.sub(r',(\s*[\}\]])', r'\1', json_str)
+
+    # Ensure proper quotes around keys
+    json_str = re.sub(r'(\w+):', r'"\1":', json_str)
+
+    return json_str
+
+def fallback_extract_invoice_data(text: str) -> dict:
+    """Fallback extraction using regex when JSON parsing fails"""
+    import re
+
+    data = {}
+
+    # Common field patterns
+    patterns = {
+        'invoice_number': r'"invoice_number":\s*"([^"]*)"',
+        'vendor_name': r'"vendor_name":\s*"([^"]*)"',
+        'total_amount': r'"total_amount":\s*([0-9.]+)',
+        'currency': r'"currency":\s*"([^"]*)"',
+        'date': r'"date":\s*"([^"]*)"'
+    }
+
+    for field, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = match.group(1)
+            if field == 'total_amount':
+                try:
+                    data[field] = float(value)
+                except:
+                    data[field] = 0.0
+            else:
+                data[field] = value
+
+    # Return None if no essential fields found
+    if not data.get('vendor_name') and not data.get('total_amount'):
+        return None
+
+    # Fill in defaults for missing fields
+    data.setdefault('invoice_number', f'AUTO_{int(time.time())}')
+    data.setdefault('currency', 'USD')
+    data.setdefault('date', datetime.now().strftime('%Y-%m-%d'))
+
+    return data
+
 def process_invoice_with_claude(file_path: str, original_filename: str) -> Dict[str, Any]:
     """Process invoice file with Claude Vision API"""
     try:
@@ -3756,62 +3812,6 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
                         print("✅ Fallback extraction succeeded")
                     else:
                         raise json.JSONDecodeError(f"Failed to parse or repair JSON after {max_json_attempts} attempts", response_text, 0)
-
-def repair_json_string(json_str: str) -> str:
-    """Repair common JSON formatting issues"""
-    import re
-
-    # Fix missing commas between objects
-    json_str = re.sub(r'"\s*\n\s*"', '",\n  "', json_str)
-
-    # Fix missing commas after values
-    json_str = re.sub(r'(\d+|"[^"]*"|\]|\})\s*\n\s*"', r'\1,\n  "', json_str)
-
-    # Fix trailing commas
-    json_str = re.sub(r',(\s*[\}\]])', r'\1', json_str)
-
-    # Ensure proper quotes around keys
-    json_str = re.sub(r'(\w+):', r'"\1":', json_str)
-
-    return json_str
-
-def fallback_extract_invoice_data(text: str) -> dict:
-    """Fallback extraction using regex when JSON parsing fails"""
-    import re
-
-    data = {}
-
-    # Common field patterns
-    patterns = {
-        'invoice_number': r'"invoice_number":\s*"([^"]*)"',
-        'vendor_name': r'"vendor_name":\s*"([^"]*)"',
-        'total_amount': r'"total_amount":\s*([0-9.]+)',
-        'currency': r'"currency":\s*"([^"]*)"',
-        'date': r'"date":\s*"([^"]*)"'
-    }
-
-    for field, pattern in patterns.items():
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            value = match.group(1)
-            if field == 'total_amount':
-                try:
-                    data[field] = float(value)
-                except:
-                    data[field] = 0.0
-            else:
-                data[field] = value
-
-    # Return None if no essential fields found
-    if not data.get('vendor_name') and not data.get('total_amount'):
-        return None
-
-    # Fill in defaults for missing fields
-    data.setdefault('invoice_number', f'AUTO_{int(time.time())}')
-    data.setdefault('currency', 'USD')
-    data.setdefault('date', datetime.now().strftime('%Y-%m-%d'))
-
-    return data
 
         # Generate invoice ID
         invoice_id = str(uuid.uuid4())
