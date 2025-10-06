@@ -403,8 +403,10 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         # Add ordering and pagination
         query += " ORDER BY date DESC"
 
-        # Get total count for pagination
+        # Get total count for pagination (remove ORDER BY and LIMIT for count query)
         count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) as total FROM transactions")
+        # Remove ORDER BY and LIMIT clauses from count query
+        count_query = count_query.split(" ORDER BY")[0]  # Remove everything from ORDER BY onwards
         cursor.execute(count_query, params)
         count_result = cursor.fetchone()
         total_count = count_result['total'] if is_postgresql else count_result[0]
@@ -592,27 +594,39 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
     """Update a single field in a transaction with history tracking"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
         # Get current value for history
-        current_row = conn.execute(
-            "SELECT * FROM transactions WHERE transaction_id = ?",
+        cursor.execute(
+            f"SELECT * FROM transactions WHERE transaction_id = {placeholder}",
             (transaction_id,)
-        ).fetchone()
+        )
+        current_row = cursor.fetchone()
 
         if not current_row:
+            conn.close()
             return False
 
-        current_value = current_row[field] if field in current_row.keys() else None
+        # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
+        current_dict = dict(current_row) if current_row else {}
+        current_value = current_dict.get(field) if field in current_dict else None
 
         # Update the field
-        update_query = f"UPDATE transactions SET {field} = ?, updated_at = CURRENT_TIMESTAMP, updated_by = ? WHERE transaction_id = ?"
-        conn.execute(update_query, (value, user, transaction_id))
+        update_query = f"UPDATE transactions SET {field} = {placeholder}, updated_at = CURRENT_TIMESTAMP, updated_by = {placeholder} WHERE transaction_id = {placeholder}"
+        cursor.execute(update_query, (value, user, transaction_id))
 
-        # Record change in history
-        conn.execute("""
-            INSERT INTO transaction_history (transaction_id, field_name, old_value, new_value, changed_by, change_reason)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (transaction_id, field, str(current_value) if current_value else None, str(value), user, f"Updated via web interface"))
+        # Record change in history (only if table exists)
+        try:
+            cursor.execute(f"""
+                INSERT INTO transaction_history (transaction_id, field_name, old_value, new_value, changed_by, change_reason)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (transaction_id, field, str(current_value) if current_value else None, str(value), user, f"Updated via web interface"))
+        except Exception as history_error:
+            print(f"INFO: Could not record history (table may not exist): {history_error}")
 
         conn.commit()
         conn.close()
@@ -1381,7 +1395,12 @@ def api_suggestions():
         context = {}
         if transaction_id:
             conn = get_db_connection()
-            row = conn.execute("SELECT * FROM transactions WHERE transaction_id = ?", (transaction_id,)).fetchone()
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
+
+            cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+            row = cursor.fetchone()
             if row:
                 context = dict(row)
             conn.close()
@@ -1430,7 +1449,12 @@ def api_update_similar_categories():
 
         # Get the original transaction to find similar ones
         conn = get_db_connection()
-        original_row = conn.execute("SELECT * FROM transactions WHERE transaction_id = ?", (transaction_id,)).fetchone()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+        original_row = cursor.fetchone()
 
         if not original_row:
             conn.close()
@@ -1501,7 +1525,12 @@ def api_update_similar_descriptions():
 
         # Get the original transaction to find similar ones
         conn = get_db_connection()
-        original_row = conn.execute("SELECT * FROM transactions WHERE transaction_id = ?", (transaction_id,)).fetchone()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+        original_row = cursor.fetchone()
 
         if not original_row:
             conn.close()
@@ -1977,36 +2006,43 @@ def api_get_invoices():
         offset = (page - 1) * per_page
 
         conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
         # Build query
         query = "SELECT * FROM invoices WHERE 1=1"
         params = []
 
         if filters.get('business_unit'):
-            query += " AND business_unit = ?"
+            query += f" AND business_unit = {placeholder}"
             params.append(filters['business_unit'])
 
         if filters.get('category'):
-            query += " AND category = ?"
+            query += f" AND category = {placeholder}"
             params.append(filters['category'])
 
         if filters.get('vendor_name'):
-            query += " AND vendor_name LIKE ?"
+            query += f" AND vendor_name LIKE {placeholder}"
             params.append(f"%{filters['vendor_name']}%")
 
         if filters.get('customer_name'):
-            query += " AND customer_name LIKE ?"
+            query += f" AND customer_name LIKE {placeholder}"
             params.append(f"%{filters['customer_name']}%")
 
         # Get total count
-        count_query = query.replace("SELECT *", "SELECT COUNT(*)")
-        total_count = conn.execute(count_query, params).fetchone()[0]
+        count_query = query.replace("SELECT *", "SELECT COUNT(*) as total")
+        cursor.execute(count_query, params)
+        count_result = cursor.fetchone()
+        total_count = count_result['total'] if is_postgresql else count_result[0]
 
         # Add ordering and pagination
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        query += f" ORDER BY created_at DESC LIMIT {placeholder} OFFSET {placeholder}"
         params.extend([per_page, offset])
 
-        cursor = conn.execute(query, params)
+        cursor.execute(query, params)
         invoices = []
 
         for row in cursor.fetchall():
@@ -2039,7 +2075,12 @@ def api_get_invoice(invoice_id):
     """Get single invoice by ID"""
     try:
         conn = get_db_connection()
-        row = conn.execute("SELECT * FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"SELECT * FROM invoices WHERE id = {placeholder}", (invoice_id,))
+        row = cursor.fetchone()
         conn.close()
 
         if not row:
@@ -2341,9 +2382,13 @@ def api_update_invoice(invoice_id):
         data = request.get_json()
 
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
         # Check if invoice exists
-        existing = conn.execute("SELECT id FROM invoices WHERE id = ?", (invoice_id,)).fetchone()
+        cursor.execute(f"SELECT id FROM invoices WHERE id = {placeholder}", (invoice_id,))
+        existing = cursor.fetchone()
         if not existing:
             conn.close()
             return jsonify({'error': 'Invoice not found'}), 404
@@ -2402,11 +2447,15 @@ def api_delete_invoice(invoice_id):
     """Delete invoice"""
     try:
         conn = get_db_connection()
-        result = conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"DELETE FROM invoices WHERE id = {placeholder}", (invoice_id,))
         conn.commit()
         conn.close()
 
-        if result.rowcount == 0:
+        if cursor.rowcount == 0:
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify({'success': True, 'message': 'Invoice deleted'})
@@ -2474,12 +2523,15 @@ def api_bulk_delete_invoices():
             return jsonify({'error': 'No invoice IDs provided'}), 400
 
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
         deleted_count = 0
 
         # Delete each invoice
         for invoice_id in invoice_ids:
-            result = conn.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
-            if result.rowcount > 0:
+            cursor.execute(f"DELETE FROM invoices WHERE id = {placeholder}", (invoice_id,))
+            if cursor.rowcount > 0:
                 deleted_count += 1
 
         conn.commit()
@@ -2499,39 +2551,62 @@ def api_invoice_stats():
     """Get invoice statistics"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
 
         # Total invoices
-        total = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM invoices")
+        total_result = cursor.fetchone()
+        total = total_result['count'] if is_postgresql else total_result[0]
 
         # Total amount
-        total_amount = conn.execute("SELECT COALESCE(SUM(total_amount), 0) FROM invoices").fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(total_amount), 0) FROM invoices")
+        amount_result = cursor.fetchone()
+        total_amount = amount_result['coalesce'] if is_postgresql else amount_result[0]
 
         # Unique vendors
-        unique_vendors = conn.execute("SELECT COUNT(DISTINCT vendor_name) FROM invoices WHERE vendor_name IS NOT NULL AND vendor_name != ''").fetchone()[0]
+        cursor.execute("SELECT COUNT(DISTINCT vendor_name) FROM invoices WHERE vendor_name IS NOT NULL AND vendor_name != ''")
+        vendors_result = cursor.fetchone()
+        unique_vendors = vendors_result['count'] if is_postgresql else vendors_result[0]
 
         # Unique customers
-        unique_customers = conn.execute("SELECT COUNT(DISTINCT customer_name) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''").fetchone()[0]
+        cursor.execute("SELECT COUNT(DISTINCT customer_name) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''")
+        customers_result = cursor.fetchone()
+        unique_customers = customers_result['count'] if is_postgresql else customers_result[0]
 
         # By business unit
         bu_counts = {}
-        bu_rows = conn.execute("SELECT business_unit, COUNT(*), SUM(total_amount) FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit").fetchall()
+        cursor.execute("SELECT business_unit, COUNT(*), SUM(total_amount) FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit")
+        bu_rows = cursor.fetchall()
         for row in bu_rows:
-            bu_counts[row[0]] = {'count': row[1], 'total': row[2]}
+            if is_postgresql:
+                bu_counts[row['business_unit']] = {'count': row['count'], 'total': row['sum']}
+            else:
+                bu_counts[row[0]] = {'count': row[1], 'total': row[2]}
 
         # By category
         category_counts = {}
-        category_rows = conn.execute("SELECT category, COUNT(*), SUM(total_amount) FROM invoices WHERE category IS NOT NULL GROUP BY category").fetchall()
+        cursor.execute("SELECT category, COUNT(*), SUM(total_amount) FROM invoices WHERE category IS NOT NULL GROUP BY category")
+        category_rows = cursor.fetchall()
         for row in category_rows:
-            category_counts[row[0]] = {'count': row[1], 'total': row[2]}
+            if is_postgresql:
+                category_counts[row['category']] = {'count': row['count'], 'total': row['sum']}
+            else:
+                category_counts[row[0]] = {'count': row[1], 'total': row[2]}
 
         # By customer
         customer_counts = {}
-        customer_rows = conn.execute("SELECT customer_name, COUNT(*), SUM(total_amount) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10").fetchall()
+        cursor.execute("SELECT customer_name, COUNT(*), SUM(total_amount) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10")
+        customer_rows = cursor.fetchall()
         for row in customer_rows:
-            customer_counts[row[0]] = {'count': row[1], 'total': row[2]}
+            if is_postgresql:
+                customer_counts[row['customer_name']] = {'count': row['count'], 'total': row['sum']}
+            else:
+                customer_counts[row[0]] = {'count': row[1], 'total': row[2]}
 
         # Recent invoices
-        recent_rows = conn.execute("SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5").fetchall()
+        cursor.execute("SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5")
+        recent_rows = cursor.fetchall()
         recent_invoices = [dict(row) for row in recent_rows]
 
         conn.close()
