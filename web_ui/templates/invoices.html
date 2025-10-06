@@ -1301,6 +1301,30 @@
                             loadStats();
                             loadInvoices();
 
+                        } else if (data.status === 'completed_with_errors') {
+                            currentFile.textContent = `Processing completed with errors! (${data.successful_items || 0} success, ${data.failed_items || 0} failed)`;
+                            progressBar.style.width = '100%';
+                            progressPercent.textContent = '100%';
+
+                            // Clear polling and cleanup
+                            clearInterval(pollInterval);
+                            currentBatchJob = null;
+                            localStorage.removeItem('activeBatchJobId');
+
+                            // Remove cancel button
+                            const cancelButton = document.querySelector('.cancel-job-btn');
+                            if (cancelButton) cancelButton.remove();
+
+                            // Fetch detailed results for error display
+                            await showJobResults(jobId);
+
+                            // Refresh stats and invoice list
+                            loadStats();
+                            loadInvoices();
+
+                            // Show error notification with details
+                            showToast(`Upload completed with ${data.failed_items || 0} errors out of ${data.total_items || 0} files. Check details below.`, 'warning', 8000);
+
                         } else if (data.status === 'failed') {
                             currentFile.textContent = 'Job failed: ' + (data.error_message || 'Unknown error');
                             clearInterval(pollInterval);
@@ -1353,12 +1377,17 @@
 
                     // Show error details if any
                     const errorDetails = document.getElementById('error-details');
-                    if (data.failed_files && data.failed_files.length > 0) {
+                    const failedItems = data.items ? data.items.filter(item => item.status === 'failed') : [];
+                    if (failedItems.length > 0) {
                         errorDetails.innerHTML = '<h5 style="margin-top: 1rem;">Failed Files:</h5>';
-                        data.failed_files.forEach(error => {
+                        failedItems.forEach(item => {
+                            const filename = item.item_name || 'Unknown file';
+                            const error = item.error_message || 'Unknown error';
+                            // Truncate long error messages
+                            const truncatedError = error.length > 100 ? error.substring(0, 100) + '...' : error;
                             errorDetails.innerHTML += `
                                 <div style="padding: 0.5rem; background: #fee2e2; border-radius: 4px; margin: 0.25rem 0; font-size: 0.9rem;">
-                                    <strong>${error.filename || 'Unknown file'}:</strong> ${error.error || 'Unknown error'}
+                                    <strong>${filename}:</strong> ${truncatedError}
                                 </div>
                             `;
                         });

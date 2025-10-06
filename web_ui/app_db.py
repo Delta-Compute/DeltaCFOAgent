@@ -454,7 +454,7 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
         if status is not None:
             updates.append(f"status = {placeholder}")
             values.append(status)
-            if status in ['completed', 'failed']:
+            if status in ['completed', 'failed', 'completed_with_errors']:
                 updates.append(f"completed_at = {placeholder}")
                 values.append(datetime.utcnow().isoformat())
             elif status == 'processing':
@@ -3745,10 +3745,29 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
                     print(f"Database error after {attempt + 1} attempts: {e}")
                     return {'error': f'Database locked after {attempt + 1} attempts: {str(e)}'}
             except Exception as e:
+                # Handle both SQLite and PostgreSQL integrity errors
+                is_integrity_error = (
+                    isinstance(e, sqlite3.IntegrityError) or
+                    (POSTGRESQL_AVAILABLE and hasattr(psycopg2, 'IntegrityError') and isinstance(e, psycopg2.IntegrityError))
+                )
                 if conn:
                     conn.close()
-                print(f"Unexpected error during invoice insert: {e}")
-                return {'error': str(e)}
+                # Handle duplicate invoice number constraint violations
+                if is_integrity_error and ("duplicate key value violates unique constraint" in str(e) or "UNIQUE constraint failed" in str(e)):
+                    if attempt < max_retries - 1:
+                        # Generate new unique invoice number with timestamp
+                        timestamp = int(time.time() * 1000) + attempt  # More unique with attempt number
+                        original_number = invoice_data.get('invoice_number', 'UNKNOWN')
+                        invoice_data['invoice_number'] = f"{original_number}_{timestamp}"
+                        print(f"Duplicate constraint violation. Retrying with unique number: {invoice_data['invoice_number']}")
+                        time.sleep(0.1)  # Small delay to avoid further collisions
+                        continue
+                    else:
+                        print(f"Failed to resolve duplicate after {max_retries} attempts: {e}")
+                        return {'error': f'Duplicate invoice number could not be resolved: {str(e)}'}
+                else:
+                    print(f"Unexpected error during invoice insert: {e}")
+                    return {'error': str(e)}
 
     except json.JSONDecodeError as e:
         print(f"ERROR: Invalid JSON response from Claude: {e}")
