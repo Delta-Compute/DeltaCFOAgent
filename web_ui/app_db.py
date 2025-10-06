@@ -2523,56 +2523,106 @@ def safe_insert_invoice(conn, invoice_data):
     """
     cursor = conn.cursor()
 
+    # Detect database type for compatible syntax
+    is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
+
     # Check if invoice exists
-    cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
+    if is_postgresql:
+        cursor.execute('SELECT id FROM invoices WHERE invoice_number = %s', (invoice_data['invoice_number'],))
+    else:
+        cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
     existing = cursor.fetchone()
 
     if existing:
         # Update existing invoice
-        cursor.execute("""
-            UPDATE invoices SET
-                date=?, due_date=?, vendor_name=?, vendor_address=?,
-                vendor_tax_id=?, customer_name=?, customer_address=?, customer_tax_id=?,
-                total_amount=?, currency=?, tax_amount=?, subtotal=?,
-                line_items=?, status=?, invoice_type=?, confidence_score=?, processing_notes=?,
-                source_file=?, extraction_method=?, processed_at=?, created_at=?,
-                business_unit=?, category=?, currency_type=?
-            WHERE invoice_number=?
-        """, (
-            invoice_data['date'], invoice_data['due_date'], invoice_data['vendor_name'],
-            invoice_data['vendor_address'], invoice_data['vendor_tax_id'], invoice_data['customer_name'],
-            invoice_data['customer_address'], invoice_data['customer_tax_id'], invoice_data['total_amount'],
-            invoice_data['currency'], invoice_data['tax_amount'], invoice_data['subtotal'],
-            invoice_data['line_items'], invoice_data['status'], invoice_data['invoice_type'],
-            invoice_data['confidence_score'], invoice_data['processing_notes'], invoice_data['source_file'],
-            invoice_data['extraction_method'], invoice_data['processed_at'], invoice_data['created_at'],
-            invoice_data['business_unit'], invoice_data['category'], invoice_data['currency_type'],
-            invoice_data['invoice_number']
-        ))
+        if is_postgresql:
+            cursor.execute("""
+                UPDATE invoices SET
+                    date=%s, due_date=%s, vendor_name=%s, vendor_address=%s,
+                    vendor_tax_id=%s, customer_name=%s, customer_address=%s, customer_tax_id=%s,
+                    total_amount=%s, currency=%s, tax_amount=%s, subtotal=%s,
+                    line_items=%s, status=%s, invoice_type=%s, confidence_score=%s, processing_notes=%s,
+                    source_file=%s, extraction_method=%s, processed_at=%s, created_at=%s,
+                    business_unit=%s, category=%s, currency_type=%s
+                WHERE invoice_number=%s
+            """, (
+                invoice_data['date'], invoice_data['due_date'], invoice_data['vendor_name'],
+                invoice_data['vendor_address'], invoice_data['vendor_tax_id'], invoice_data['customer_name'],
+                invoice_data['customer_address'], invoice_data['customer_tax_id'], invoice_data['total_amount'],
+                invoice_data['currency'], invoice_data['tax_amount'], invoice_data['subtotal'],
+                invoice_data['line_items'], invoice_data['status'], invoice_data['invoice_type'],
+                invoice_data['confidence_score'], invoice_data['processing_notes'], invoice_data['source_file'],
+                invoice_data['extraction_method'], invoice_data['processed_at'], invoice_data['created_at'],
+                invoice_data['business_unit'], invoice_data['category'], invoice_data['currency_type'],
+                invoice_data['invoice_number']
+            ))
+        else:
+            cursor.execute("""
+                UPDATE invoices SET
+                    date=?, due_date=?, vendor_name=?, vendor_address=?,
+                    vendor_tax_id=?, customer_name=?, customer_address=?, customer_tax_id=?,
+                    total_amount=?, currency=?, tax_amount=?, subtotal=?,
+                    line_items=?, status=?, invoice_type=?, confidence_score=?, processing_notes=?,
+                    source_file=?, extraction_method=?, processed_at=?, created_at=?,
+                    business_unit=?, category=?, currency_type=?
+                WHERE invoice_number=?
+            """, (
+                invoice_data['date'], invoice_data['due_date'], invoice_data['vendor_name'],
+                invoice_data['vendor_address'], invoice_data['vendor_tax_id'], invoice_data['customer_name'],
+                invoice_data['customer_address'], invoice_data['customer_tax_id'], invoice_data['total_amount'],
+                invoice_data['currency'], invoice_data['tax_amount'], invoice_data['subtotal'],
+                invoice_data['line_items'], invoice_data['status'], invoice_data['invoice_type'],
+                invoice_data['confidence_score'], invoice_data['processing_notes'], invoice_data['source_file'],
+                invoice_data['extraction_method'], invoice_data['processed_at'], invoice_data['created_at'],
+                invoice_data['business_unit'], invoice_data['category'], invoice_data['currency_type'],
+                invoice_data['invoice_number']
+            ))
         print(f"Updated existing invoice: {invoice_data['invoice_number']}")
         return "updated"
     else:
         # Insert new invoice
-        cursor.execute("""
-            INSERT INTO invoices (
-                id, invoice_number, date, due_date, vendor_name, vendor_address,
-                vendor_tax_id, customer_name, customer_address, customer_tax_id,
-                total_amount, currency, tax_amount, subtotal,
-                line_items, status, invoice_type, confidence_score, processing_notes,
-                source_file, extraction_method, processed_at, created_at,
-                business_unit, category, currency_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
-            invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
-            invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
-            invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
-            invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
-            invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
-            invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
-            invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
-            invoice_data['category'], invoice_data['currency_type']
-        ))
+        if is_postgresql:
+            cursor.execute("""
+                INSERT INTO invoices (
+                    id, invoice_number, date, due_date, vendor_name, vendor_address,
+                    vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                    total_amount, currency, tax_amount, subtotal,
+                    line_items, status, invoice_type, confidence_score, processing_notes,
+                    source_file, extraction_method, processed_at, created_at,
+                    business_unit, category, currency_type
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+                invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+                invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+                invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+                invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+                invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+                invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+                invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+                invoice_data['category'], invoice_data['currency_type']
+            ))
+        else:
+            cursor.execute("""
+                INSERT INTO invoices (
+                    id, invoice_number, date, due_date, vendor_name, vendor_address,
+                    vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                    total_amount, currency, tax_amount, subtotal,
+                    line_items, status, invoice_type, confidence_score, processing_notes,
+                    source_file, extraction_method, processed_at, created_at,
+                    business_unit, category, currency_type
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+                invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+                invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+                invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+                invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+                invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+                invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+                invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+                invoice_data['category'], invoice_data['currency_type']
+            ))
         print(f"Inserted new invoice: {invoice_data['invoice_number']}")
         return "inserted"
 
@@ -2772,7 +2822,14 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
 
                 # Check if invoice_number already exists
                 cursor = conn.cursor()
-                cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
+
+                # Detect database type for compatible syntax
+                is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
+
+                if is_postgresql:
+                    cursor.execute('SELECT id FROM invoices WHERE invoice_number = %s', (invoice_data['invoice_number'],))
+                else:
+                    cursor.execute('SELECT id FROM invoices WHERE invoice_number = ?', (invoice_data['invoice_number'],))
                 existing = cursor.fetchone()
 
                 if existing:
@@ -2783,26 +2840,49 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
                     invoice_data['invoice_number'] = f"{original_number}_{timestamp}"
                     print(f"Duplicate invoice number detected. Changed {original_number} to {invoice_data['invoice_number']}")
 
-                conn.execute('''
-                    INSERT INTO invoices (
-                id, invoice_number, date, due_date, vendor_name, vendor_address,
-                vendor_tax_id, customer_name, customer_address, customer_tax_id,
-                total_amount, currency, tax_amount, subtotal,
-                line_items, status, invoice_type, confidence_score, processing_notes,
-                source_file, extraction_method, processed_at, created_at,
-                business_unit, category, currency_type
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
-            invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
-            invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
-            invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
-            invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
-            invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
-            invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
-            invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
-            invoice_data['category'], invoice_data['currency_type']
-        ))
+                # Use database-specific syntax for insert
+                if is_postgresql:
+                    cursor.execute('''
+                        INSERT INTO invoices (
+                            id, invoice_number, date, due_date, vendor_name, vendor_address,
+                            vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                            total_amount, currency, tax_amount, subtotal,
+                            line_items, status, invoice_type, confidence_score, processing_notes,
+                            source_file, extraction_method, processed_at, created_at,
+                            business_unit, category, currency_type
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', (
+                        invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+                        invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+                        invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+                        invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+                        invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+                        invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+                        invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+                        invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+                        invoice_data['category'], invoice_data['currency_type']
+                    ))
+                else:
+                    cursor.execute('''
+                        INSERT INTO invoices (
+                            id, invoice_number, date, due_date, vendor_name, vendor_address,
+                            vendor_tax_id, customer_name, customer_address, customer_tax_id,
+                            total_amount, currency, tax_amount, subtotal,
+                            line_items, status, invoice_type, confidence_score, processing_notes,
+                            source_file, extraction_method, processed_at, created_at,
+                            business_unit, category, currency_type
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        invoice_data['id'], invoice_data['invoice_number'], invoice_data['date'],
+                        invoice_data['due_date'], invoice_data['vendor_name'], invoice_data['vendor_address'],
+                        invoice_data['vendor_tax_id'], invoice_data['customer_name'], invoice_data['customer_address'],
+                        invoice_data['customer_tax_id'], invoice_data['total_amount'], invoice_data['currency'],
+                        invoice_data['tax_amount'], invoice_data['subtotal'], invoice_data['line_items'],
+                        invoice_data['status'], invoice_data['invoice_type'], invoice_data['confidence_score'],
+                        invoice_data['processing_notes'], invoice_data['source_file'], invoice_data['extraction_method'],
+                        invoice_data['processed_at'], invoice_data['created_at'], invoice_data['business_unit'],
+                        invoice_data['category'], invoice_data['currency_type']
+                    ))
                 conn.commit()
                 conn.close()
                 print(f"Invoice processed successfully: {invoice_data['invoice_number']}")
