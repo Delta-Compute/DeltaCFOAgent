@@ -299,6 +299,24 @@ def ensure_background_jobs_tables():
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
 
+        # MIGRATION: Expand VARCHAR(10) fields to avoid overflow errors
+        if is_postgresql:
+            try:
+                # Expand currency field in transactions table
+                cursor.execute("ALTER TABLE transactions ALTER COLUMN currency TYPE VARCHAR(50)")
+                print("✅ Migrated transactions.currency VARCHAR(10) → VARCHAR(50)")
+            except Exception as e:
+                if "does not exist" not in str(e) and "already exists" not in str(e):
+                    print(f"Currency migration info: {e}")
+
+            try:
+                # Expand currency field in invoices table
+                cursor.execute("ALTER TABLE invoices ALTER COLUMN currency TYPE VARCHAR(50)")
+                print("✅ Migrated invoices.currency VARCHAR(10) → VARCHAR(50)")
+            except Exception as e:
+                if "does not exist" not in str(e) and "already exists" not in str(e):
+                    print(f"Currency migration info: {e}")
+
         # Background jobs table for async processing
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS background_jobs (
@@ -3473,6 +3491,75 @@ def safe_insert_invoice(conn, invoice_data):
         print(f"Inserted new invoice: {invoice_data['invoice_number']}")
         return "inserted"
 
+def preprocess_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Ultra-robust preprocessing to handle all common failure cases"""
+    import re
+    from datetime import datetime, timedelta
+
+    if 'error' in invoice_data:
+        return invoice_data
+
+    # Layer 2A: Date field cleaning
+    problematic_dates = ['DUE ON RECEIPT', 'Due on Receipt', 'Due on receipt', 'PAID', 'NET 30', 'NET 15', 'UPON RECEIPT']
+
+    if 'due_date' in invoice_data:
+        due_date = str(invoice_data['due_date']).strip()
+        if due_date.upper() in [d.upper() for d in problematic_dates]:
+            # Convert to NULL for database
+            invoice_data['due_date'] = None
+            print(f"🔧 Cleaned problematic due_date: '{due_date}' → NULL")
+        elif due_date.upper() == 'NET 30':
+            # Smart conversion: NET 30 = invoice_date + 30 days
+            try:
+                if invoice_data.get('date'):
+                    invoice_date = datetime.strptime(invoice_data['date'], '%Y-%m-%d')
+                    invoice_data['due_date'] = (invoice_date + timedelta(days=30)).strftime('%Y-%m-%d')
+                    print(f"🧠 Smart conversion: NET 30 → {invoice_data['due_date']}")
+                else:
+                    invoice_data['due_date'] = None
+            except:
+                invoice_data['due_date'] = None
+
+    # Layer 2B: Field length limits and cleaning
+    field_limits = {
+        'currency': 45,  # Allow up to 45 chars (we expanded to 50, keeping 5 char buffer)
+        'invoice_number': 100,
+        'vendor_name': 200,
+        'customer_name': 200
+    }
+
+    for field, limit in field_limits.items():
+        if field in invoice_data and invoice_data[field]:
+            original_value = str(invoice_data[field])
+            if len(original_value) > limit:
+                invoice_data[field] = original_value[:limit].strip()
+                print(f"🔧 Truncated {field}: '{original_value[:20]}...' ({len(original_value)} chars → {limit})")
+
+    # Layer 2C: Currency normalization
+    if 'currency' in invoice_data and invoice_data['currency']:
+        currency = str(invoice_data['currency']).strip()
+        # Extract common currency codes from mixed strings
+        currency_patterns = {
+            r'USD|US\$|\$': 'USD',
+            r'EUR|€': 'EUR',
+            r'BTC|₿': 'BTC',
+            r'PYG|₲': 'PYG'
+        }
+
+        for pattern, code in currency_patterns.items():
+            if re.search(pattern, currency, re.IGNORECASE):
+                if currency != code:
+                    print(f"🔧 Normalized currency: '{currency}' → '{code}'")
+                    invoice_data['currency'] = code
+                break
+        else:
+            # If no pattern matches, keep first 3 chars as currency code
+            if len(currency) > 3:
+                invoice_data['currency'] = currency[:3].upper()
+                print(f"🔧 Currency code extracted: '{currency}' → '{invoice_data['currency']}'")
+
+    return invoice_data
+
 def process_invoice_with_claude(file_path: str, original_filename: str) -> Dict[str, Any]:
     """Process invoice file with Claude Vision API"""
     try:
@@ -3556,10 +3643,26 @@ OPTIONAL CUSTOMER FIELDS:
 - customer_tax_id: Customer's Tax ID/CNPJ/EIN/RUC if present
 
 OTHER OPTIONAL FIELDS:
-- due_date: Due date if present (YYYY-MM-DD format)
+- due_date: Due date ONLY if a SPECIFIC DATE is present (YYYY-MM-DD format). For text like "DUE ON RECEIPT", "NET 30", "PAID", use null
 - tax_amount: Tax amount if itemized
 - subtotal: Subtotal before tax
 - line_items: Array of line items with description, quantity, unit_price, total
+
+🚨 CRITICAL FORMATTING RULES:
+1. DATES: Only use YYYY-MM-DD format or null. NEVER use text like "DUE ON RECEIPT", "NET 30", "PAID"
+2. CURRENCY: Use standard 3-letter codes (USD, EUR, BTC, PYG). If unclear, extract first 3 characters
+3. JSON: MUST be valid JSON with all commas and quotes correct. Double-check syntax
+4. NUMBERS: Use numeric values only (e.g., 150.50, not "$150.50")
+
+⚡ EXAMPLES:
+❌ "due_date": "DUE ON RECEIPT"
+✅ "due_date": null
+
+❌ "currency": "US Dollars"
+✅ "currency": "USD"
+
+❌ "total_amount": "$1,500.00"
+✅ "total_amount": 1500.00
 
 CLASSIFICATION HINTS:
 Based on the customer (who is paying), suggest:
@@ -3626,7 +3729,89 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
         if response_text.startswith('```json'):
             response_text = response_text.replace('```json', '').replace('```', '').strip()
 
-        extracted_data = json.loads(response_text)
+        # LAYER 3: JSON repair and retry logic
+        extracted_data = None
+        json_parse_attempts = 0
+        max_json_attempts = 3
+
+        while extracted_data is None and json_parse_attempts < max_json_attempts:
+            json_parse_attempts += 1
+            try:
+                extracted_data = json.loads(response_text)
+                if json_parse_attempts > 1:
+                    print(f"✅ JSON parsed successfully on attempt {json_parse_attempts}")
+                break
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON parse attempt {json_parse_attempts} failed: {str(e)[:100]}")
+
+                if json_parse_attempts < max_json_attempts:
+                    # LAYER 3A: Auto-repair common JSON issues
+                    response_text = repair_json_string(response_text)
+                    print(f"🔧 Applied JSON auto-repair, retrying...")
+                else:
+                    # LAYER 3B: If all repairs fail, try regex fallback
+                    print(f"❌ JSON parsing failed after {max_json_attempts} attempts, trying fallback extraction...")
+                    extracted_data = fallback_extract_invoice_data(response_text)
+                    if extracted_data:
+                        print("✅ Fallback extraction succeeded")
+                    else:
+                        raise json.JSONDecodeError(f"Failed to parse or repair JSON after {max_json_attempts} attempts", response_text, 0)
+
+def repair_json_string(json_str: str) -> str:
+    """Repair common JSON formatting issues"""
+    import re
+
+    # Fix missing commas between objects
+    json_str = re.sub(r'"\s*\n\s*"', '",\n  "', json_str)
+
+    # Fix missing commas after values
+    json_str = re.sub(r'(\d+|"[^"]*"|\]|\})\s*\n\s*"', r'\1,\n  "', json_str)
+
+    # Fix trailing commas
+    json_str = re.sub(r',(\s*[\}\]])', r'\1', json_str)
+
+    # Ensure proper quotes around keys
+    json_str = re.sub(r'(\w+):', r'"\1":', json_str)
+
+    return json_str
+
+def fallback_extract_invoice_data(text: str) -> dict:
+    """Fallback extraction using regex when JSON parsing fails"""
+    import re
+
+    data = {}
+
+    # Common field patterns
+    patterns = {
+        'invoice_number': r'"invoice_number":\s*"([^"]*)"',
+        'vendor_name': r'"vendor_name":\s*"([^"]*)"',
+        'total_amount': r'"total_amount":\s*([0-9.]+)',
+        'currency': r'"currency":\s*"([^"]*)"',
+        'date': r'"date":\s*"([^"]*)"'
+    }
+
+    for field, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            value = match.group(1)
+            if field == 'total_amount':
+                try:
+                    data[field] = float(value)
+                except:
+                    data[field] = 0.0
+            else:
+                data[field] = value
+
+    # Return None if no essential fields found
+    if not data.get('vendor_name') and not data.get('total_amount'):
+        return None
+
+    # Fill in defaults for missing fields
+    data.setdefault('invoice_number', f'AUTO_{int(time.time())}')
+    data.setdefault('currency', 'USD')
+    data.setdefault('date', datetime.now().strftime('%Y-%m-%d'))
+
+    return data
 
         # Generate invoice ID
         invoice_id = str(uuid.uuid4())
@@ -3660,6 +3845,13 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
             'category': extracted_data.get('category'),
             'currency_type': 'fiat'  # Can be enhanced later
         }
+
+        # LAYER 2: Ultra-robust preprocessing to handle all failure cases
+        invoice_data = preprocess_invoice_data(invoice_data)
+
+        # If preprocessing detected an error, return it
+        if 'error' in invoice_data:
+            return invoice_data
 
         # Save to database with robust connection handling
         max_retries = 3
