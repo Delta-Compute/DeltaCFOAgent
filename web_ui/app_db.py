@@ -404,9 +404,10 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         query += " ORDER BY date DESC"
 
         # Get total count for pagination
-        count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) FROM transactions")
+        count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) as total FROM transactions")
         cursor.execute(count_query, params)
-        total_count = cursor.fetchone()[0]
+        count_result = cursor.fetchone()
+        total_count = count_result['total'] if is_postgresql else count_result[0]
 
         # Add pagination
         if page and per_page:
@@ -505,27 +506,41 @@ def get_dashboard_stats():
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')
+
         # Total transactions
-        cursor.execute("SELECT COUNT(*) FROM transactions")
-        total_transactions = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as total FROM transactions")
+        result = cursor.fetchone()
+        total_transactions = result['total'] if is_postgresql else result[0]
 
         # Revenue and expenses
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE amount > 0")
-        revenue = cursor.fetchone()[0]
-        cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0) FROM transactions WHERE amount < 0")
-        expenses = cursor.fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE amount > 0")
+        result = cursor.fetchone()
+        revenue = result['revenue'] if is_postgresql else result[0]
+
+        cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE amount < 0")
+        result = cursor.fetchone()
+        expenses = result['expenses'] if is_postgresql else result[0]
 
         # Needs review
-        cursor.execute("SELECT COUNT(*) FROM transactions WHERE confidence < 0.8 OR confidence IS NULL")
-        needs_review = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as needs_review FROM transactions WHERE confidence < 0.8 OR confidence IS NULL")
+        result = cursor.fetchone()
+        needs_review = result['needs_review'] if is_postgresql else result[0]
 
         # Date range
-        cursor.execute("SELECT MIN(date), MAX(date) FROM transactions")
+        cursor.execute("SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions")
         date_range_result = cursor.fetchone()
-        date_range = {
-            'min': date_range_result[0] or 'N/A',
-            'max': date_range_result[1] or 'N/A'
-        }
+        if is_postgresql:
+            date_range = {
+                'min': date_range_result['min_date'] or 'N/A',
+                'max': date_range_result['max_date'] or 'N/A'
+            }
+        else:
+            date_range = {
+                'min': date_range_result[0] or 'N/A',
+                'max': date_range_result[1] or 'N/A'
+            }
 
         # Top entities
         cursor.execute("""
