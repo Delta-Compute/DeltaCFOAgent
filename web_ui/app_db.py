@@ -141,6 +141,44 @@ def init_invoice_tables():
             )
         ''')
 
+        # Background jobs table for async processing
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS background_jobs (
+                id TEXT PRIMARY KEY,
+                job_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                total_items INTEGER NOT NULL DEFAULT 0,
+                processed_items INTEGER NOT NULL DEFAULT 0,
+                successful_items INTEGER NOT NULL DEFAULT 0,
+                failed_items INTEGER NOT NULL DEFAULT 0,
+                progress_percentage REAL NOT NULL DEFAULT 0.0,
+                started_at TEXT,
+                completed_at TEXT,
+                created_at TEXT NOT NULL,
+                created_by TEXT DEFAULT 'system',
+                source_file TEXT,
+                error_message TEXT,
+                metadata TEXT
+            )
+        ''')
+
+        # Job items table for tracking individual files in a job
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS job_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL,
+                item_name TEXT NOT NULL,
+                item_path TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                processed_at TEXT,
+                error_message TEXT,
+                result_data TEXT,
+                processing_time_seconds REAL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+            )
+        ''')
+
         # Add customer columns to existing tables (migration)
         try:
             conn.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
@@ -201,6 +239,309 @@ def init_database():
     conn.commit()
     conn.close()
     print("✅ Database initialized successfully")
+
+# ============================================================================
+# BACKGROUND JOBS MANAGEMENT
+# ============================================================================
+
+def create_background_job(job_type: str, total_items: int, created_by: str = 'system',
+                         source_file: str = None, metadata: str = None) -> str:
+    """Create a new background job and return job ID"""
+    import uuid
+    from datetime import datetime
+
+    job_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat()
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"""
+            INSERT INTO background_jobs (
+                id, job_type, status, total_items, created_at, created_by,
+                source_file, metadata
+            ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder},
+                     {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (job_id, job_type, 'pending', total_items, created_at, created_by,
+              source_file, metadata))
+
+        conn.commit()
+        conn.close()
+        print(f"✅ Created background job {job_id} with {total_items} items")
+        return job_id
+
+    except Exception as e:
+        print(f"ERROR: Failed to create background job: {e}")
+        return None
+
+def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
+    """Add an item to a job and return item ID"""
+    from datetime import datetime
+
+    created_at = datetime.utcnow().isoformat()
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"""
+            INSERT INTO job_items (job_id, item_name, item_path, status, created_at)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (job_id, item_name, item_path, 'pending', created_at))
+
+        if is_postgresql:
+            cursor.execute("SELECT lastval()")
+            item_id = cursor.fetchone()['lastval']
+        else:
+            item_id = cursor.lastrowid
+
+        conn.commit()
+        conn.close()
+        return item_id
+
+    except Exception as e:
+        print(f"ERROR: Failed to add job item: {e}")
+        return None
+
+def update_job_progress(job_id: str, processed_items: int = None, successful_items: int = None,
+                       failed_items: int = None, status: str = None, error_message: str = None):
+    """Update job progress and status"""
+    from datetime import datetime
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        # Build dynamic update query
+        updates = []
+        values = []
+
+        if processed_items is not None:
+            updates.append(f"processed_items = {placeholder}")
+            values.append(processed_items)
+        if successful_items is not None:
+            updates.append(f"successful_items = {placeholder}")
+            values.append(successful_items)
+        if failed_items is not None:
+            updates.append(f"failed_items = {placeholder}")
+            values.append(failed_items)
+        if status is not None:
+            updates.append(f"status = {placeholder}")
+            values.append(status)
+            if status in ['completed', 'failed']:
+                updates.append(f"completed_at = {placeholder}")
+                values.append(datetime.utcnow().isoformat())
+            elif status == 'processing':
+                updates.append(f"started_at = {placeholder}")
+                values.append(datetime.utcnow().isoformat())
+        if error_message is not None:
+            updates.append(f"error_message = {placeholder}")
+            values.append(error_message)
+
+        # Calculate progress percentage if we have processed_items
+        if processed_items is not None:
+            cursor.execute(f"SELECT total_items FROM background_jobs WHERE id = {placeholder}", (job_id,))
+            result = cursor.fetchone()
+            if result:
+                total = result['total_items'] if is_postgresql else result[0]
+                if total > 0:
+                    progress = (processed_items / total) * 100
+                    updates.append(f"progress_percentage = {placeholder}")
+                    values.append(progress)
+
+        if updates:
+            values.append(job_id)
+            update_query = f"UPDATE background_jobs SET {', '.join(updates)} WHERE id = {placeholder}"
+            cursor.execute(update_query, values)
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"ERROR: Failed to update job progress: {e}")
+
+def update_job_item_status(job_id: str, item_name: str, status: str,
+                          error_message: str = None, result_data: str = None, processing_time: float = None):
+    """Update individual job item status"""
+    from datetime import datetime
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        processed_at = datetime.utcnow().isoformat() if status in ['completed', 'failed'] else None
+
+        cursor.execute(f"""
+            UPDATE job_items
+            SET status = {placeholder}, processed_at = {placeholder},
+                error_message = {placeholder}, result_data = {placeholder}, processing_time_seconds = {placeholder}
+            WHERE job_id = {placeholder} AND item_name = {placeholder}
+        """, (status, processed_at, error_message, result_data, processing_time, job_id, item_name))
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        print(f"ERROR: Failed to update job item status: {e}")
+
+def get_job_status(job_id: str) -> dict:
+    """Get complete job status with items"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        # Get job info
+        cursor.execute(f"SELECT * FROM background_jobs WHERE id = {placeholder}", (job_id,))
+        job_row = cursor.fetchone()
+
+        if not job_row:
+            return {'error': 'Job not found'}
+
+        job_info = dict(job_row)
+
+        # Get job items
+        cursor.execute(f"SELECT * FROM job_items WHERE job_id = {placeholder} ORDER BY created_at", (job_id,))
+        items_rows = cursor.fetchall()
+        job_info['items'] = [dict(row) for row in items_rows]
+
+        conn.close()
+        return job_info
+
+    except Exception as e:
+        print(f"ERROR: Failed to get job status: {e}")
+        return {'error': str(e)}
+
+def process_invoice_batch_job(job_id: str):
+    """Background worker to process invoice batch job"""
+    import time
+    import threading
+    import traceback
+
+    print(f"🚀 Starting background job {job_id}")
+
+    try:
+        # Update job status to processing
+        update_job_progress(job_id, status='processing')
+
+        # Get job details
+        job_info = get_job_status(job_id)
+        if 'error' in job_info:
+            update_job_progress(job_id, status='failed', error_message='Job not found')
+            return
+
+        items = job_info.get('items', [])
+        processed_count = 0
+        successful_count = 0
+        failed_count = 0
+
+        print(f"📋 Processing {len(items)} items in job {job_id}")
+
+        # Process each item
+        for item in items:
+            item_name = item['item_name']
+            item_path = item.get('item_path')
+
+            if not item_path or not os.path.exists(item_path):
+                # File not found - mark as failed
+                update_job_item_status(job_id, item_name, 'failed',
+                                     error_message='File not found or path invalid')
+                failed_count += 1
+                processed_count += 1
+                continue
+
+            print(f"🔄 Processing item: {item_name}")
+            start_time = time.time()
+
+            try:
+                # Process the invoice using existing function
+                invoice_data = process_invoice_with_claude(item_path, item_name)
+
+                processing_time = time.time() - start_time
+
+                if 'error' in invoice_data:
+                    # Processing failed
+                    update_job_item_status(job_id, item_name, 'failed',
+                                         error_message=invoice_data['error'],
+                                         processing_time=processing_time)
+                    failed_count += 1
+                else:
+                    # Processing successful
+                    result_summary = {
+                        'id': invoice_data.get('id'),
+                        'invoice_number': invoice_data.get('invoice_number'),
+                        'vendor_name': invoice_data.get('vendor_name'),
+                        'total_amount': invoice_data.get('total_amount')
+                    }
+                    update_job_item_status(job_id, item_name, 'completed',
+                                         result_data=str(result_summary),
+                                         processing_time=processing_time)
+                    successful_count += 1
+
+                print(f"✅ Completed item: {item_name} in {processing_time:.2f}s")
+
+            except Exception as e:
+                processing_time = time.time() - start_time
+                error_msg = f"Processing error: {str(e)}"
+                print(f"❌ Failed item: {item_name} - {error_msg}")
+
+                update_job_item_status(job_id, item_name, 'failed',
+                                     error_message=error_msg,
+                                     processing_time=processing_time)
+                failed_count += 1
+
+            processed_count += 1
+
+            # Update job progress after each item
+            update_job_progress(job_id,
+                              processed_items=processed_count,
+                              successful_items=successful_count,
+                              failed_items=failed_count)
+
+            # Small delay to prevent overwhelming the system
+            time.sleep(0.1)
+
+        # Mark job as completed
+        final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
+        update_job_progress(job_id, status=final_status,
+                          processed_items=processed_count,
+                          successful_items=successful_count,
+                          failed_items=failed_count)
+
+        print(f"🎯 Job {job_id} finished: {successful_count} successful, {failed_count} failed")
+
+    except Exception as e:
+        error_msg = f"Job processing error: {str(e)}"
+        print(f"💥 Job {job_id} failed: {error_msg}")
+        print(f"Traceback: {traceback.format_exc()}")
+
+        update_job_progress(job_id, status='failed', error_message=error_msg)
+
+def start_background_job(job_id: str, job_type: str = 'invoice_batch'):
+    """Start a background job in a separate thread"""
+    if job_type == 'invoice_batch':
+        worker_thread = threading.Thread(
+            target=process_invoice_batch_job,
+            args=(job_id,),
+            name=f"JobWorker-{job_id[:8]}",
+            daemon=True  # Thread will not prevent program exit
+        )
+        worker_thread.start()
+        print(f"🔥 Started background worker thread for job {job_id}")
+        return True
+    else:
+        print(f"❌ Unknown job type: {job_type}")
+        return False
 
 def get_db_connection():
     """Get database connection - supports both SQLite and PostgreSQL"""
@@ -2419,6 +2760,120 @@ def api_upload_batch_invoices():
             'traceback': traceback.format_exc()
         }), 500
 
+@app.route('/api/invoices/upload-batch-async', methods=['POST'])
+def api_upload_batch_invoices_async():
+    """Upload and process multiple invoice files asynchronously using background jobs"""
+    try:
+        if 'files' not in request.files and 'file' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+
+        upload_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'invoices')
+        temp_extract_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'temp_extract')
+        os.makedirs(upload_dir, exist_ok=True)
+
+        files_to_process = []
+        cleanup_paths = []
+        source_file_name = None
+
+        # Handle file upload (same logic as sync version)
+        if 'file' in request.files:
+            file = request.files['file']
+            file_ext = os.path.splitext(file.filename)[1].lower()
+            source_file_name = file.filename
+
+            if file_ext in ['.zip', '.7z', '.rar']:
+                # Save compressed file
+                compressed_path = os.path.join(upload_dir, f"{uuid.uuid4()}{file_ext}")
+                file.save(compressed_path)
+                cleanup_paths.append(compressed_path)
+
+                # Extract files
+                extract_result = extract_compressed_file(compressed_path, temp_extract_dir)
+
+                if isinstance(extract_result, dict) and 'error' in extract_result:
+                    return jsonify(extract_result), 400
+
+                files_to_process = [(f, os.path.basename(f)) for f in extract_result]
+                cleanup_paths.append(temp_extract_dir)
+            else:
+                # Single file upload
+                unique_filename = f"{uuid.uuid4()}{file_ext}"
+                file_path = os.path.join(upload_dir, unique_filename)
+                file.save(file_path)
+                files_to_process = [(file_path, file.filename)]
+
+        # Handle multiple files
+        elif 'files' in request.files:
+            files = request.files.getlist('files')
+            for file in files:
+                if file.filename:
+                    file_ext = os.path.splitext(file.filename)[1].lower()
+                    unique_filename = f"{uuid.uuid4()}{file_ext}"
+                    file_path = os.path.join(upload_dir, unique_filename)
+                    file.save(file_path)
+                    files_to_process.append((file_path, file.filename))
+            source_file_name = f"{len(files)} files uploaded"
+
+        if not files_to_process:
+            return jsonify({'error': 'No valid files to process'}), 400
+
+        # Filter supported file types
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        valid_files = []
+
+        for file_path, original_name in files_to_process:
+            file_ext = os.path.splitext(file_path)[1].lower()
+            if file_ext in allowed_extensions:
+                valid_files.append((file_path, original_name))
+            else:
+                # Clean up unsupported files
+                try:
+                    os.remove(file_path)
+                except:
+                    pass
+
+        if not valid_files:
+            return jsonify({'error': 'No supported file types found'}), 400
+
+        # Create background job
+        metadata = f"Source: {source_file_name}, Files: {len(valid_files)}"
+        job_id = create_background_job(
+            job_type='invoice_batch',
+            total_items=len(valid_files),
+            created_by='web_user',
+            source_file=source_file_name,
+            metadata=metadata
+        )
+
+        if not job_id:
+            return jsonify({'error': 'Failed to create background job'}), 500
+
+        # Add all files as job items
+        for file_path, original_name in valid_files:
+            add_job_item(job_id, original_name, file_path)
+
+        # Start background processing
+        success = start_background_job(job_id, 'invoice_batch')
+
+        if not success:
+            return jsonify({'error': 'Failed to start background processing'}), 500
+
+        # Return immediately with job ID
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'message': f'Background job created successfully. Processing {len(valid_files)} files.',
+            'total_files': len(valid_files),
+            'status_url': f'/api/jobs/{job_id}'
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
 @app.route('/api/invoices/<invoice_id>', methods=['PUT'])
 def api_update_invoice(invoice_id):
     """Update invoice fields - supports single field or multiple fields"""
@@ -2669,6 +3124,119 @@ def api_invoice_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ============================================================================
+# BACKGROUND JOBS API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/jobs/<job_id>')
+def api_get_job_status(job_id):
+    """Get status and progress of a background job"""
+    try:
+        job_status = get_job_status(job_id)
+
+        if 'error' in job_status:
+            return jsonify(job_status), 404
+
+        return jsonify(job_status)
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/jobs')
+def api_list_jobs():
+    """List recent background jobs with pagination"""
+    try:
+        # Get pagination parameters
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 10)), 50)  # Max 50 per page
+        offset = (page - 1) * per_page
+
+        # Get job filter
+        status_filter = request.args.get('status')  # pending, processing, completed, failed
+        job_type_filter = request.args.get('job_type')  # invoice_batch, etc.
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        # Build query with filters
+        where_clauses = []
+        params = []
+
+        if status_filter:
+            where_clauses.append(f"status = {placeholder}")
+            params.append(status_filter)
+
+        if job_type_filter:
+            where_clauses.append(f"job_type = {placeholder}")
+            params.append(job_type_filter)
+
+        where_clause = "WHERE " + " AND ".join(where_clauses) if where_clauses else ""
+
+        # Get total count
+        count_query = f"SELECT COUNT(*) FROM background_jobs {where_clause}"
+        cursor.execute(count_query, params)
+        total_result = cursor.fetchone()
+        total = total_result['count'] if is_postgresql else total_result[0]
+
+        # Get jobs with pagination
+        params.extend([per_page, offset])
+        jobs_query = f"""
+            SELECT id, job_type, status, total_items, processed_items, successful_items,
+                   failed_items, progress_percentage, started_at, completed_at, created_at,
+                   created_by, source_file, error_message
+            FROM background_jobs
+            {where_clause}
+            ORDER BY created_at DESC
+            LIMIT {placeholder} OFFSET {placeholder}
+        """
+
+        cursor.execute(jobs_query, params)
+        jobs = [dict(row) for row in cursor.fetchall()]
+
+        conn.close()
+
+        return jsonify({
+            'jobs': jobs,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/jobs/<job_id>/cancel', methods=['POST'])
+def api_cancel_job(job_id):
+    """Cancel a running background job"""
+    try:
+        # Get current job status
+        job_status = get_job_status(job_id)
+
+        if 'error' in job_status:
+            return jsonify({'error': 'Job not found'}), 404
+
+        current_status = job_status.get('status')
+
+        if current_status in ['completed', 'failed']:
+            return jsonify({'error': f'Cannot cancel job that is already {current_status}'}), 400
+
+        # Update job status to cancelled
+        update_job_progress(job_id, status='cancelled',
+                          error_message='Job cancelled by user')
+
+        return jsonify({
+            'success': True,
+            'message': 'Job cancelled successfully',
+            'job_id': job_id
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def safe_insert_invoice(conn, invoice_data):
     """
