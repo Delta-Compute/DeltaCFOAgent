@@ -257,9 +257,10 @@ def get_db_connection():
                     SELECT FROM information_schema.tables
                     WHERE table_schema = 'public'
                     AND table_name = 'transactions'
-                );
+                ) as table_exists;
             """)
-            table_exists = cursor.fetchone()[0]
+            result = cursor.fetchone()
+            table_exists = result['table_exists']
 
             if not table_exists:
                 print("🔧 DEBUG: Transactions table doesn't exist in PostgreSQL, creating...")
