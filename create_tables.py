@@ -5,12 +5,18 @@ Testado em produção: southamerica-east1 (Cloud SQL)
 """
 import psycopg2
 
-# Configurações
-DB_HOST = "34.39.143.82"
-DB_PORT = 5432
-DB_NAME = "delta_cfo"
-DB_USER = "delta_user"
-DB_PASSWORD = "nWr0Y8bU51ypLjMIfx8bTe+V/1iOV59r90T8wJEsSGo="
+# Configurações usando variáveis de ambiente (mais seguro)
+import os
+DB_HOST = os.getenv('DB_HOST', '34.39.143.82')
+DB_PORT = int(os.getenv('DB_PORT', '5432'))
+DB_NAME = os.getenv('DB_NAME', 'delta_cfo')
+DB_USER = os.getenv('DB_USER', 'delta_user')
+DB_PASSWORD = os.getenv('DB_PASSWORD')  # DEVE vir de variável de ambiente
+
+if not DB_PASSWORD:
+    print("❌ ERROR: DB_PASSWORD environment variable not set!")
+    print("💡 Set it with: export DB_PASSWORD=your_password")
+    exit(1)
 
 def create_tables():
     """Criar tabelas principais uma por vez"""
