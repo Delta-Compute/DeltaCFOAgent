@@ -1,11 +1,11 @@
 steps:
   # Build the container image using Dockerfile
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-f', 'Dockerfile', '-t', 'gcr.io/$PROJECT_ID/deltacfoagent:latest', '.']
+    args: ['build', '-f', 'Dockerfile', '-t', 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/deltacfoagent/deltacfoagent:latest', '.']
 
-  # Push the container image to GCR
+  # Push the container image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/deltacfoagent:latest']
+    args: ['push', 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/deltacfoagent/deltacfoagent:latest']
 
   # Deploy container image to Cloud Run in southamerica-east1
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -15,7 +15,7 @@ steps:
       - 'deploy'
       - 'deltacfoagent'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/deltacfoagent:latest'
+      - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/deltacfoagent/deltacfoagent:latest'
       - '--region'
       - 'southamerica-east1'
       - '--platform'
@@ -39,4 +39,4 @@ steps:
       - 'DB_PASSWORD=db_password_sa:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
 
 images:
-  - 'gcr.io/$PROJECT_ID/deltacfoagent:latest'
+  - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/deltacfoagent/deltacfoagent:latest'
