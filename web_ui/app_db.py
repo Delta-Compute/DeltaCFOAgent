@@ -22,6 +22,15 @@ import hashlib
 import uuid
 import base64
 
+# Database imports - support both SQLite and PostgreSQL
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    POSTGRESQL_AVAILABLE = True
+except ImportError:
+    POSTGRESQL_AVAILABLE = False
+    print("⚠️  psycopg2 not available - PostgreSQL support disabled")
+
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -194,8 +203,82 @@ def init_database():
     print("✅ Database initialized successfully")
 
 def get_db_connection():
-    """Get database connection"""
-    # Initialize database on first connection
+    """Get database connection - supports both SQLite and PostgreSQL"""
+    db_type = os.getenv('DB_TYPE', 'sqlite').lower()
+
+    if db_type == 'postgresql' and POSTGRESQL_AVAILABLE:
+        # PostgreSQL connection for Cloud SQL
+        print("🐘 Connecting to PostgreSQL...")
+        try:
+            # Try Cloud SQL socket connection first
+            socket_path = os.getenv('DB_SOCKET_PATH')
+            if socket_path:
+                conn = psycopg2.connect(
+                    host=socket_path,
+                    database=os.getenv('DB_NAME', 'delta_cfo'),
+                    user=os.getenv('DB_USER', 'delta_user'),
+                    password=os.getenv('DB_PASSWORD'),
+                    cursor_factory=RealDictCursor
+                )
+            else:
+                # Direct TCP connection
+                conn = psycopg2.connect(
+                    host=os.getenv('DB_HOST', '34.39.143.82'),
+                    port=os.getenv('DB_PORT', '5432'),
+                    database=os.getenv('DB_NAME', 'delta_cfo'),
+                    user=os.getenv('DB_USER', 'delta_user'),
+                    password=os.getenv('DB_PASSWORD'),
+                    cursor_factory=RealDictCursor
+                )
+
+            print("✅ PostgreSQL connection established")
+
+            # Ensure table exists
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name = 'transactions'
+                );
+            """)
+            table_exists = cursor.fetchone()[0]
+
+            if not table_exists:
+                print("🔧 DEBUG: Transactions table doesn't exist in PostgreSQL, creating...")
+                cursor.execute("""
+                    CREATE TABLE transactions (
+                        transaction_id VARCHAR(255) PRIMARY KEY,
+                        date VARCHAR(255),
+                        description TEXT,
+                        amount DECIMAL(15,2),
+                        currency VARCHAR(10),
+                        usd_equivalent DECIMAL(15,2),
+                        classified_entity TEXT,
+                        justification TEXT,
+                        confidence DECIMAL(3,2),
+                        classification_reason TEXT,
+                        origin TEXT,
+                        destination TEXT,
+                        identifier TEXT,
+                        source_file TEXT,
+                        crypto_amount TEXT,
+                        conversion_note TEXT
+                    )
+                """)
+                conn.commit()
+                print("✅ DEBUG: Transactions table created in PostgreSQL")
+
+            return conn
+
+        except Exception as e:
+            print(f"❌ PostgreSQL connection failed: {e}")
+            print("🔄 Falling back to SQLite...")
+            # Fall back to SQLite if PostgreSQL fails
+            db_type = 'sqlite'
+
+    # SQLite connection (default or fallback)
+    print("📁 Using SQLite database...")
     if not os.path.exists(DB_PATH):
         print("🔧 DEBUG: Database doesn't exist, initializing...")
         init_database()
@@ -926,6 +1009,39 @@ def homepage():
         return render_template('business_overview.html', cache_buster=cache_buster)
     except Exception as e:
         return f"Error loading homepage: {str(e)}", 500
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint that returns database type and status"""
+    try:
+        db_type = os.getenv('DB_TYPE', 'sqlite').lower()
+
+        # Test database connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if db_type == 'postgresql' and POSTGRESQL_AVAILABLE:
+            cursor.execute("SELECT version()")
+            db_info = "PostgreSQL"
+        else:
+            cursor.execute("SELECT sqlite_version()")
+            db_info = "SQLite"
+
+        conn.close()
+
+        return jsonify({
+            "status": "healthy",
+            "database": db_info,
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0"
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 @app.route('/old-homepage')
 def old_homepage():
