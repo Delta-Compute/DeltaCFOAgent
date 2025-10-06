@@ -416,8 +416,15 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         cursor.execute(query, params)
         transactions = []
 
-        for row in cursor.fetchall():
-            transaction = dict(row)
+        results = cursor.fetchall()
+        print(f"🔧 DEBUG: Query returned {len(results)} results")
+
+        for row in results:
+            # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
+            if is_postgresql:
+                transaction = dict(row)  # RealDictCursor returns dict-like objects
+            else:
+                transaction = dict(row)  # SQLite Row objects
 
             # Map database columns to frontend expected field names for crypto display
             # Frontend expects: transaction.amount, transaction.crypto_amount, transaction.currency
