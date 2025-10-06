@@ -343,6 +343,11 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
     try:
         print("Loading transactions from database...")
         conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
+        placeholder = '%s' if is_postgresql else '?'
 
         # Base query
         query = """
@@ -354,7 +359,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         # Apply filters
         if filters:
             if filters.get('entity'):
-                query += " AND classified_entity = ?"
+                query += f" AND classified_entity = {placeholder}"
                 params.append(filters['entity'])
 
             if filters.get('transaction_type') == 'Revenue':
@@ -363,35 +368,35 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
                 query += " AND amount < 0"
 
             if filters.get('source_file'):
-                query += " AND source_file = ?"
+                query += f" AND source_file = {placeholder}"
                 params.append(filters['source_file'])
 
             if filters.get('needs_review') == 'true':
                 query += " AND (confidence < 0.8 OR confidence IS NULL)"
 
             if filters.get('min_amount'):
-                query += " AND ABS(amount) >= ?"
+                query += f" AND ABS(amount) >= {placeholder}"
                 params.append(float(filters['min_amount']))
 
             if filters.get('max_amount'):
-                query += " AND ABS(amount) <= ?"
+                query += f" AND ABS(amount) <= {placeholder}"
                 params.append(float(filters['max_amount']))
 
             if filters.get('start_date'):
-                query += " AND date >= ?"
+                query += f" AND date >= {placeholder}"
                 params.append(filters['start_date'])
 
             if filters.get('end_date'):
-                query += " AND date <= ?"
+                query += f" AND date <= {placeholder}"
                 params.append(filters['end_date'])
 
             if filters.get('keyword'):
                 keyword = f"%{filters['keyword']}%"
-                query += """ AND (
-                    description LIKE ? OR
-                    classified_entity LIKE ? OR
-                    keywords_action_type LIKE ? OR
-                    keywords_platform LIKE ?
+                query += f""" AND (
+                    description LIKE {placeholder} OR
+                    classified_entity LIKE {placeholder} OR
+                    keywords_action_type LIKE {placeholder} OR
+                    keywords_platform LIKE {placeholder}
                 )"""
                 params.extend([keyword, keyword, keyword, keyword])
 
@@ -400,14 +405,15 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         # Get total count for pagination
         count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) FROM transactions")
-        total_count = conn.execute(count_query, params).fetchone()[0]
+        cursor.execute(count_query, params)
+        total_count = cursor.fetchone()[0]
 
         # Add pagination
         if page and per_page:
             offset = (page - 1) * per_page
             query += f" LIMIT {per_page} OFFSET {offset}"
 
-        cursor = conn.execute(query, params)
+        cursor.execute(query, params)
         transactions = []
 
         for row in cursor.fetchall():
@@ -490,45 +496,51 @@ def get_dashboard_stats():
     """Calculate dashboard statistics from database"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
 
         # Total transactions
-        total_transactions = conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM transactions")
+        total_transactions = cursor.fetchone()[0]
 
         # Revenue and expenses
-        revenue = conn.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE amount > 0").fetchone()[0]
-        expenses = conn.execute("SELECT COALESCE(SUM(ABS(amount)), 0) FROM transactions WHERE amount < 0").fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM transactions WHERE amount > 0")
+        revenue = cursor.fetchone()[0]
+        cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0) FROM transactions WHERE amount < 0")
+        expenses = cursor.fetchone()[0]
 
         # Needs review
-        needs_review = conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE confidence < 0.8 OR confidence IS NULL"
-        ).fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM transactions WHERE confidence < 0.8 OR confidence IS NULL")
+        needs_review = cursor.fetchone()[0]
 
         # Date range
-        date_range_result = conn.execute("SELECT MIN(date), MAX(date) FROM transactions").fetchone()
+        cursor.execute("SELECT MIN(date), MAX(date) FROM transactions")
+        date_range_result = cursor.fetchone()
         date_range = {
             'min': date_range_result[0] or 'N/A',
             'max': date_range_result[1] or 'N/A'
         }
 
         # Top entities
-        entities = conn.execute("""
+        cursor.execute("""
             SELECT classified_entity, COUNT(*) as count
             FROM transactions
             WHERE classified_entity IS NOT NULL
             GROUP BY classified_entity
             ORDER BY count DESC
             LIMIT 10
-        """).fetchall()
+        """)
+        entities = cursor.fetchall()
 
         # Top source files
-        source_files = conn.execute("""
+        cursor.execute("""
             SELECT source_file, COUNT(*) as count
             FROM transactions
             WHERE source_file IS NOT NULL
             GROUP BY source_file
             ORDER BY count DESC
             LIMIT 10
-        """).fetchall()
+        """)
+        source_files = cursor.fetchall()
 
         conn.close()
 
