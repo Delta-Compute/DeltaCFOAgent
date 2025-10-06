@@ -3260,7 +3260,10 @@ def api_get_job_status(job_id):
         if 'error' in job_status:
             return jsonify(job_status), 404
 
-        return jsonify(job_status)
+        return jsonify({
+            'success': True,
+            'data': job_status
+        })
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

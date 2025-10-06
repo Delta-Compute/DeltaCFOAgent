@@ -1001,7 +1001,7 @@
 
             try {
                 // Check if job is still active
-                const response = await fetch(`/api/background-jobs/${activeJobId}/status`);
+                const response = await fetch(`/api/jobs/${activeJobId}`);
                 const result = await response.json();
 
                 if (response.ok && result.success) {
@@ -1265,11 +1265,11 @@
 
             const pollInterval = setInterval(async () => {
                 try {
-                    const response = await fetch(`/api/background-jobs/${jobId}/status`);
-                    const job = await response.json();
+                    const response = await fetch(`/api/jobs/${jobId}`);
+                    const result = await response.json();
 
-                    if (response.ok && job.success) {
-                        const data = job.data;
+                    if (response.ok && result.success) {
+                        const data = result.data;
 
                         // Update progress display
                         const progress = data.progress_percentage || 0;
@@ -1339,7 +1339,7 @@
         // Show detailed job results
         async function showJobResults(jobId) {
             try {
-                const response = await fetch(`/api/background-jobs/${jobId}/results`);
+                const response = await fetch(`/api/jobs/${jobId}`);
                 const result = await response.json();
 
                 if (response.ok && result.success) {
@@ -1383,7 +1383,7 @@
             if (!currentBatchJob) return;
 
             try {
-                const response = await fetch(`/api/background-jobs/${currentBatchJob}/cancel`, {
+                const response = await fetch(`/api/jobs/${currentBatchJob}/cancel`, {
                     method: 'POST'
                 });
                 const result = await response.json();
