@@ -1223,20 +1223,20 @@ async function checkForSimilarTransactions(transactionId, newDescription) {
             </div>
             <div class="loading-state" style="text-align: center; padding: 40px;">
                 <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
-                <p>Claude is analyzing similar transactions...</p>
-                <div style="margin-top: 10px; color: #666; font-size: 14px;">This may take a few seconds</div>
+                <p>Claude is analyzing this transaction...</p>
+                <div style="margin-top: 10px; color: #666; font-size: 14px;">Generating clean description suggestions</div>
             </div>
         `;
 
         // Show modal with loading state
         modal.style.display = 'block';
 
-        // Get AI suggestions for similar transactions
-        const response = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=similar_descriptions&value=${encodeURIComponent(newDescription)}`);
+        // Get AI suggestions for clean description
+        const response = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=description&current_value=${encodeURIComponent(newDescription)}`);
         const data = await response.json();
 
         if (data.suggestions && data.suggestions.length > 0) {
-            // Show enhanced modal matching the AI suggestion format
+            // Show simple list of AI-suggested descriptions with edit capability
             const modal = document.getElementById('suggestionsModal');
             const content = document.getElementById('suggestionsContent');
 
@@ -1245,48 +1245,36 @@ async function checkForSimilarTransactions(transactionId, newDescription) {
 
             content.innerHTML = `
                 <div class="ai-suggestion-header">
-                    <h3>🤖 AI Suggestion</h3>
+                    <h3>🤖 AI Suggested Descriptions</h3>
                 </div>
 
-                <p>I found ${data.suggestions.length} similar transactions that might benefit from the same description:</p>
-
-                <div class="ai-recommendation-section">
-                    <h4>🤖 AI Recommendations:</h4>
-                    <div class="standardized-recommendation">
-                        <strong>Proposed description:</strong> "${newDescription}"
-                    </div>
+                <div style="margin: 15px 0; padding: 10px; background: #f9f9f9; border-left: 3px solid #666; border-radius: 4px;">
+                    <strong style="color: #666;">Original Description:</strong>
+                    <div style="margin-top: 5px; font-size: 13px; color: #333;">${newDescription}</div>
                 </div>
 
-                <div class="transaction-selection">
-                    <div class="select-all-container">
-                        <label class="checkbox-container">
-                            <input type="checkbox" id="selectAllSimilar" onchange="toggleAllSimilarTransactions()" checked>
-                            <span class="checkmark"></span>
-                            Select All (${data.suggestions.length} transactions)
-                        </label>
-                    </div>
+                <p style="margin: 15px 0;">Claude suggests these clean descriptions. Click one to select it, or edit it below:</p>
 
-                    <div class="similar-transactions-list">
-                        ${data.suggestions.map((tx, index) => `
-                            <label class="checkbox-container transaction-item">
-                                <input type="checkbox" class="similar-transaction-cb" data-transaction-id="${tx.transaction_id || ''}" checked>
-                                <span class="checkmark"></span>
-                                <div class="transaction-details">
-                                    <div class="transaction-date">${tx.date || 'N/A'}</div>
-                                    <div class="transaction-description">${tx.description}</div>
-                                    <div class="transaction-confidence">Confidence: ${tx.confidence || 'N/A'}</div>
-                                </div>
-                            </label>
-                        `).join('')}
-                    </div>
+                <div class="suggestions-list" style="margin: 15px 0;">
+                    ${data.suggestions.map((suggestion, index) => `
+                        <div class="suggestion-item" style="padding: 12px; margin: 8px 0; background: #f5f5f5; border-radius: 6px; cursor: pointer; transition: background 0.2s; border: 2px solid transparent;"
+                             onmouseover="this.style.background='#e8f4f8'"
+                             onmouseout="this.style.background='#f5f5f5'"
+                             onclick="selectSuggestionForEdit('${suggestion.replace(/'/g, "\\'")}')">
+                            <div style="font-weight: 500;">${suggestion}</div>
+                        </div>
+                    `).join('')}
+                </div>
 
-                    <div class="selection-counter">
-                        <span id="similarSelectionCounter">Selected: ${data.suggestions.length} of ${data.suggestions.length} transactions</span>
-                    </div>
+                <div style="margin: 20px 0;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 500;">Edit Selected Description:</label>
+                    <input type="text" id="editedDescription" value="${data.suggestions[0]}"
+                           style="width: 100%; padding: 10px; border: 2px solid #ddd; border-radius: 6px; font-size: 14px;"
+                           placeholder="Edit the description here">
                 </div>
 
                 <div class="action-buttons">
-                    <button class="btn-primary" onclick="applyToSelectedSimilar('${transactionId}', '${newDescription}')">Apply to Selected</button>
+                    <button class="btn-primary" onclick="applyDescriptionAndFindSimilar('${transactionId}')">Apply & Find Similar</button>
                     <button class="btn-secondary" onclick="closeModal()">Cancel</button>
                 </div>
             `;
@@ -1300,6 +1288,135 @@ async function checkForSimilarTransactions(transactionId, newDescription) {
         // Close modal on error
         const modal = document.getElementById('suggestionsModal');
         if (modal) modal.style.display = 'none';
+    }
+}
+
+function selectSuggestionForEdit(suggestion) {
+    // Update the input field with the selected suggestion
+    const input = document.getElementById('editedDescription');
+    if (input) {
+        input.value = suggestion;
+        input.focus();
+    }
+
+    // Visual feedback - highlight the selected item
+    document.querySelectorAll('.suggestion-item').forEach(item => {
+        item.style.border = '2px solid transparent';
+        item.style.background = '#f5f5f5';
+    });
+    event.currentTarget.style.border = '2px solid #007bff';
+    event.currentTarget.style.background = '#e8f4f8';
+}
+
+async function applyDescriptionAndFindSimilar(transactionId) {
+    try {
+        // Get the edited description
+        const editedDescription = document.getElementById('editedDescription').value.trim();
+
+        if (!editedDescription) {
+            showNotification('Please enter a description', 'error');
+            return;
+        }
+
+        // First, apply the description to the current transaction
+        const updateResponse = await fetch('/api/update_transaction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                field: 'description',
+                value: editedDescription
+            })
+        });
+
+        if (!updateResponse.ok) {
+            throw new Error('Failed to update transaction');
+        }
+
+        // Update the UI
+        const cell = document.querySelector(`[data-transaction-id="${transactionId}"][data-field="description"]`);
+        if (cell) {
+            cell.textContent = editedDescription;
+        }
+
+        showNotification('Description updated successfully');
+
+        // Now find and show similar transactions
+        const modal = document.getElementById('suggestionsModal');
+        const content = document.getElementById('suggestionsContent');
+
+        content.innerHTML = `
+            <div class="ai-suggestion-header">
+                <h3>🤖 Finding Similar Transactions</h3>
+            </div>
+            <div class="loading-state" style="text-align: center; padding: 40px;">
+                <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
+                <p>Searching for similar transactions...</p>
+            </div>
+        `;
+
+        // Get similar transactions
+        const similarResponse = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=similar_descriptions&value=${encodeURIComponent(editedDescription)}`);
+        const similarData = await similarResponse.json();
+
+        if (similarData.suggestions && similarData.suggestions.length > 0) {
+            // Show similar transactions with checkbox selection
+            content.innerHTML = `
+                <div class="ai-suggestion-header">
+                    <h3>🤖 Apply to Similar Transactions</h3>
+                </div>
+
+                <p>Found ${similarData.suggestions.length} similar transactions. Select which ones to update:</p>
+
+                <div class="ai-recommendation-section">
+                    <h4>🤖 Will apply this description:</h4>
+                    <div class="standardized-recommendation">
+                        <strong>${editedDescription}</strong>
+                    </div>
+                </div>
+
+                <div class="transaction-selection">
+                    <div class="select-all-container">
+                        <label class="checkbox-container">
+                            <input type="checkbox" id="selectAllSimilar" onchange="toggleAllSimilarTransactions()" checked>
+                            <span class="checkmark"></span>
+                            Select All (${similarData.suggestions.length} transactions)
+                        </label>
+                    </div>
+
+                    <div class="similar-transactions-list">
+                        ${similarData.suggestions.map((tx, index) => `
+                            <label class="checkbox-container transaction-item">
+                                <input type="checkbox" class="similar-transaction-cb" data-transaction-id="${tx.transaction_id || ''}" checked>
+                                <span class="checkmark"></span>
+                                <div class="transaction-details">
+                                    <div class="transaction-date">${tx.date || 'N/A'}</div>
+                                    <div class="transaction-description">${tx.description}</div>
+                                    <div class="transaction-confidence">Confidence: ${tx.confidence || 'N/A'}</div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+
+                    <div class="selection-counter">
+                        <span id="similarSelectionCounter">Selected: ${similarData.suggestions.length} of ${similarData.suggestions.length} transactions</span>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn-primary" onclick="applyToSelectedSimilar('${transactionId}', '${editedDescription.replace(/'/g, "\\'")}')">Apply to Selected</button>
+                    <button class="btn-secondary" onclick="closeModal()">Skip</button>
+                </div>
+            `;
+        } else {
+            // No similar transactions found
+            showNotification('No similar transactions found');
+            closeModal();
+        }
+
+    } catch (error) {
+        console.error('Error applying description:', error);
+        showNotification('Error applying description', 'error');
     }
 }
 
@@ -1372,11 +1489,13 @@ async function applyToSelectedSimilar(originalTransactionId, newDescription) {
 
         await Promise.all(updatePromises);
 
-        showToast(`Updated ${selectedTransactionIds.length} similar transactions`, 'success');
+        showNotification(`Updated ${selectedTransactionIds.length} similar transactions`);
         closeModal();
 
         // Refresh the transaction list to show updates
-        loadTransactions(currentPage, itemsPerPage);
+        setTimeout(() => {
+            loadTransactions(currentPage, itemsPerPage);
+        }, 500);
 
     } catch (error) {
         console.error('Error applying to selected similar transactions:', error);

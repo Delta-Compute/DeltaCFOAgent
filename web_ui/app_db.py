@@ -280,7 +280,8 @@ def init_database():
             identifier TEXT,
             source_file TEXT,
             crypto_amount TEXT,
-            conversion_note TEXT
+            conversion_note TEXT,
+            accounting_category TEXT
         )
     """)
 
@@ -780,7 +781,8 @@ def get_db_connection():
                         identifier TEXT,
                         source_file TEXT,
                         crypto_amount TEXT,
-                        conversion_note TEXT
+                        conversion_note TEXT,
+                        accounting_category TEXT
                     )
                 """)
                 conn.commit()
@@ -828,7 +830,8 @@ def get_db_connection():
                 identifier TEXT,
                 source_file TEXT,
                 crypto_amount TEXT,
-                conversion_note TEXT
+                conversion_note TEXT,
+                accounting_category TEXT
             )
         """)
         conn.commit()
@@ -1114,8 +1117,8 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         current_value = current_dict.get(field) if field in current_dict else None
 
         # Update the field
-        update_query = f"UPDATE transactions SET {field} = {placeholder}, updated_at = CURRENT_TIMESTAMP, updated_by = {placeholder} WHERE transaction_id = {placeholder}"
-        cursor.execute(update_query, (value, user, transaction_id))
+        update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
+        cursor.execute(update_query, (value, transaction_id))
 
         # Record change in history (only if table exists)
         try:
@@ -1134,6 +1137,7 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
 
     except Exception as e:
         print(f"ERROR: Error updating transaction field: {e}")
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
         return False
 
 def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> List[str]:
@@ -1164,33 +1168,45 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             conn.close()
             return []
 
-        if is_postgresql:
-            original_description = current_tx['description']
-            entity = current_tx['classified_entity']
-        else:
-            original_description = current_tx[0]
-            entity = current_tx[1]
+        # Safe extraction of description and entity from current_tx
+        try:
+            if is_postgresql:
+                original_description = current_tx.get('description', '') if isinstance(current_tx, dict) else (current_tx[0] if len(current_tx) > 0 else '')
+                entity = current_tx.get('classified_entity', '') if isinstance(current_tx, dict) else (current_tx[1] if len(current_tx) > 1 else '')
+            else:
+                original_description = current_tx[0] if len(current_tx) > 0 else ''
+                entity = current_tx[1] if len(current_tx) > 1 else ''
+        except Exception as e:
+            print(f"ERROR: Failed to extract description/entity from current_tx: {e}, type={type(current_tx)}, len={len(current_tx) if hasattr(current_tx, '__len__') else 'N/A'}")
+            conn.close()
+            return []
 
         # Get potential candidate transactions using basic keyword matching
-        cursor.execute(f"""
+        # Check if original description contains certain keywords to improve matching
+        keywords_to_check = []
+        for keyword in ['WIRE', 'CIBC', 'TORONTO', 'FEDWIRE', 'BANCO', 'PARAGUAY', 'PAYPAL', 'TRANSFER', 'PAYMENT']:
+            if keyword in original_description.upper():
+                keywords_to_check.append(keyword)
+
+        # Build the query dynamically based on which keywords are present
+        base_query = f"""
             SELECT transaction_id, date, description, confidence
             FROM transactions
             WHERE transaction_id != {placeholder}
             AND (
-                (classified_entity = {placeholder} AND description LIKE {placeholder}) OR
-                (description LIKE '%WIRE%' AND {placeholder} LIKE '%WIRE%') OR
-                (description LIKE '%CIBC%' AND {placeholder} LIKE '%CIBC%') OR
-                (description LIKE '%TORONTO%' AND {placeholder} LIKE '%TORONTO%') OR
-                (description LIKE '%FEDWIRE%' AND {placeholder} LIKE '%FEDWIRE%') OR
-                (description LIKE '%BANCO%' AND {placeholder} LIKE '%BANCO%') OR
-                (description LIKE '%PARAGUAY%' AND {placeholder} LIKE '%PARAGUAY%')
-            )
-            LIMIT 20
-        """, (
-            transaction_id, entity, f"%{original_description[:20]}%",
-            original_description, original_description, original_description,
-            original_description, original_description, original_description
-        ))
+                (classified_entity = {placeholder} AND description LIKE {placeholder})
+        """
+
+        params = [transaction_id, entity, f"%{original_description[:20]}%"]
+
+        # Add keyword conditions if any keywords found
+        for keyword in keywords_to_check:
+            base_query += f" OR description LIKE {placeholder}"
+            params.append(f"%{keyword}%")
+
+        base_query += "\n            )\n            LIMIT 20"
+
+        cursor.execute(base_query, tuple(params))
         candidate_txs = cursor.fetchall()
 
         conn.close()
@@ -1199,12 +1215,18 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             return []
 
         # Use Claude to analyze which transactions are truly similar
-        if is_postgresql:
-            candidate_descriptions = [f"Transaction {i+1}: {tx['description'][:100]}..." if len(tx['description']) > 100 else f"Transaction {i+1}: {tx['description']}"
-                                    for i, tx in enumerate(candidate_txs)]
-        else:
-            candidate_descriptions = [f"Transaction {i+1}: {tx[2][:100]}..." if len(tx[2]) > 100 else f"Transaction {i+1}: {tx[2]}"
-                                    for i, tx in enumerate(candidate_txs)]
+        candidate_descriptions = []
+        for i, tx in enumerate(candidate_txs):
+            try:
+                if is_postgresql:
+                    desc = tx.get('description', '') if isinstance(tx, dict) else str(tx[2] if len(tx) > 2 else '')
+                else:
+                    desc = tx[2] if len(tx) > 2 else ''
+                desc_text = f"{desc[:100]}..." if len(desc) > 100 else desc
+                candidate_descriptions.append(f"Transaction {i+1}: {desc_text}")
+            except Exception as e:
+                print(f"ERROR: Failed to process candidate tx {i}: {e}")
+                candidate_descriptions.append(f"Transaction {i+1}: [Error loading description]")
 
         prompt = f"""
         Analyze these transaction descriptions and determine which ones are similar enough to the original transaction that they should have the same cleaned description.
@@ -1244,27 +1266,39 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             selected_txs = [candidate_txs[i] for i in selected_indices if 0 <= i < len(candidate_txs)]
 
             # Return formatted transaction data
-            if is_postgresql:
-                return [{
-                    'transaction_id': tx['transaction_id'],
-                    'date': tx['date'],
-                    'description': tx['description'][:80] + "..." if len(tx['description']) > 80 else tx['description'],
-                    'confidence': tx['confidence'] or 'N/A'
-                } for tx in selected_txs]
-            else:
-                return [{
-                    'transaction_id': tx[0],
-                    'date': tx[1],
-                    'description': tx[2][:80] + "..." if len(tx[2]) > 80 else tx[2],
-                    'confidence': tx[3] or 'N/A'
-                } for tx in selected_txs]
+            result = []
+            for tx in selected_txs:
+                try:
+                    if is_postgresql and isinstance(tx, dict):
+                        tx_id = tx.get('transaction_id', '')
+                        date = tx.get('date', '')
+                        desc = tx.get('description', '')
+                        conf = tx.get('confidence', 'N/A')
+                    else:
+                        tx_id = tx[0] if len(tx) > 0 else ''
+                        date = tx[1] if len(tx) > 1 else ''
+                        desc = tx[2] if len(tx) > 2 else ''
+                        conf = tx[3] if len(tx) > 3 else 'N/A'
+
+                    result.append({
+                        'transaction_id': tx_id,
+                        'date': date,
+                        'description': desc[:80] + "..." if len(desc) > 80 else desc,
+                        'confidence': conf or 'N/A'
+                    })
+                except Exception as e:
+                    print(f"ERROR: Failed to format transaction: {e}")
+
+            return result
 
         except (ValueError, IndexError) as e:
             print(f"ERROR: Error parsing Claude response for similar descriptions: {e}")
             return []
 
     except Exception as e:
+        import traceback
         print(f"ERROR: Error in Claude analysis of similar descriptions: {e}")
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
         return []
 
 def get_similar_descriptions_from_db(context: Dict) -> List[str]:
@@ -1639,6 +1673,7 @@ def sync_csv_to_database(csv_filename=None):
 
     except Exception as e:
         print(f"ERROR: Error syncing CSV to database: {e}")
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
         return False
 
 @app.route('/')
@@ -1969,7 +2004,8 @@ def api_suggestions():
         return jsonify({'suggestions': suggestions})
 
     except Exception as e:
-        print(f"ERROR: API suggestions error: {e}")
+        print(f"ERROR: API suggestions error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
         return jsonify({
             'error': f'Failed to get AI suggestions: {str(e)}',
             'suggestions': [],
@@ -2277,6 +2313,19 @@ else:
             # Run the processing script with environment variables
             env = os.environ.copy()
             env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
+            # Ensure database environment variables are passed through
+            if os.getenv('DB_TYPE'):
+                env['DB_TYPE'] = os.getenv('DB_TYPE')
+            if os.getenv('DB_HOST'):
+                env['DB_HOST'] = os.getenv('DB_HOST')
+            if os.getenv('DB_PORT'):
+                env['DB_PORT'] = os.getenv('DB_PORT')
+            if os.getenv('DB_NAME'):
+                env['DB_NAME'] = os.getenv('DB_NAME')
+            if os.getenv('DB_USER'):
+                env['DB_USER'] = os.getenv('DB_USER')
+            if os.getenv('DB_PASSWORD'):
+                env['DB_PASSWORD'] = os.getenv('DB_PASSWORD')
 
             print(f"🔧 DEBUG: Running subprocess for {filename}")
             print(f"🔧 DEBUG: API key set: {'Yes' if env.get('ANTHROPIC_API_KEY') else 'No'}")
@@ -2425,6 +2474,19 @@ else:
         env = os.environ.copy()
         env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
         env['PYTHONPATH'] = parent_dir
+        # Ensure database environment variables are passed through
+        if os.getenv('DB_TYPE'):
+            env['DB_TYPE'] = os.getenv('DB_TYPE')
+        if os.getenv('DB_HOST'):
+            env['DB_HOST'] = os.getenv('DB_HOST')
+        if os.getenv('DB_PORT'):
+            env['DB_PORT'] = os.getenv('DB_PORT')
+        if os.getenv('DB_NAME'):
+            env['DB_NAME'] = os.getenv('DB_NAME')
+        if os.getenv('DB_USER'):
+            env['DB_USER'] = os.getenv('DB_USER')
+        if os.getenv('DB_PASSWORD'):
+            env['DB_PASSWORD'] = os.getenv('DB_PASSWORD')
 
         process_result = subprocess.run(
             ['python', '-c', processing_script],
