@@ -26,6 +26,10 @@ import uuid
 import base64
 import zipfile
 import re
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Archive handling imports - optional
 try:
@@ -850,12 +854,17 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
         placeholder = '%s' if is_postgresql else '?'
 
-        # Base query
+        # Base query - exclude archived by default unless explicitly requested
         query = """
             SELECT * FROM transactions
             WHERE 1=1
         """
         params = []
+
+        # Handle archived filter
+        show_archived = filters.get('show_archived') == 'true' if filters else False
+        if not show_archived:
+            query += " AND (archived = FALSE OR archived IS NULL)"
 
         # Apply filters
         if filters:
@@ -1601,8 +1610,26 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             return []
 
         # Parse Claude's response to get selected transaction indices
+        # Claude may respond in different formats:
+        # 1. "1, 2, 3" (comma separated)
+        # 2. "transaction 1\ntransaction 2" (line separated with "transaction" prefix)
+        # 3. "1\n2\n3" (line separated numbers)
+        # 4. "based on... 1, 3, 7... explanation" (mixed with explanatory text)
         try:
-            selected_indices = [int(x.strip()) - 1 for x in response_text.split(',') if x.strip().isdigit()]
+            selected_indices = []
+
+            # First try: Extract all numbers from the response (handles all formats)
+            import re
+            numbers = re.findall(r'\b\d+\b', response_text)
+            for num_str in numbers:
+                try:
+                    num = int(num_str)
+                    # Only include numbers that are valid transaction indices (1-based)
+                    if 1 <= num <= len(candidate_txs):
+                        selected_indices.append(num - 1)  # Convert to 0-based
+                except ValueError:
+                    continue
+
             selected_txs = [candidate_txs[i] for i in selected_indices if 0 <= i < len(candidate_txs)]
 
             # Return formatted transaction data
@@ -1859,8 +1886,22 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
         elapsed_time = time.time() - start_time
         print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
 
-        ai_suggestions = [line.strip() for line in response.content[0].text.strip().split('\n') if line.strip()]
-        print(f"AI: Claude suggestions: {ai_suggestions}")
+        # Parse Claude response and filter out introduction/instruction text
+        raw_lines = [line.strip() for line in response.content[0].text.strip().split('\n') if line.strip()]
+
+        # Filter out lines that are clearly instructions or headers (containing "based on", "here are", etc.)
+        ai_suggestions = []
+        for line in raw_lines:
+            lower_line = line.lower()
+            # Skip lines that are instructions/headers
+            if any(phrase in lower_line for phrase in ['here are', 'based on', 'provided transaction', 'clean merchant', 'provider', 'entity names']):
+                continue
+            # Skip lines that end with colon (likely headers)
+            if line.endswith(':'):
+                continue
+            ai_suggestions.append(line)
+
+        print(f"AI: Claude suggestions (filtered): {ai_suggestions}")
 
         # Get learned suggestions
         learned_suggestions = get_learned_suggestions(field_type, context)
@@ -2185,7 +2226,8 @@ def api_transactions():
             'max_amount': request.args.get('max_amount'),
             'start_date': request.args.get('start_date'),
             'end_date': request.args.get('end_date'),
-            'keyword': request.args.get('keyword')
+            'keyword': request.args.get('keyword'),
+            'show_archived': request.args.get('show_archived')
         }
 
         # Remove None values
@@ -2339,6 +2381,78 @@ def api_update_category_bulk():
             'success': True,
             'message': f'Updated {updated_count} transactions',
             'updated_count': updated_count
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/archive_transactions', methods=['POST'])
+def api_archive_transactions():
+    """API endpoint to archive multiple transactions"""
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+
+        if not transaction_ids:
+            return jsonify({'error': 'No transaction IDs provided'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+        archived_count = 0
+
+        for transaction_id in transaction_ids:
+            cursor.execute(
+                f"UPDATE transactions SET archived = TRUE WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            if cursor.rowcount > 0:
+                archived_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Archived {archived_count} transactions',
+            'archived_count': archived_count
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/unarchive_transactions', methods=['POST'])
+def api_unarchive_transactions():
+    """API endpoint to unarchive multiple transactions"""
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+
+        if not transaction_ids:
+            return jsonify({'error': 'No transaction IDs provided'}), 400
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+        unarchived_count = 0
+
+        for transaction_id in transaction_ids:
+            cursor.execute(
+                f"UPDATE transactions SET archived = FALSE WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            if cursor.rowcount > 0:
+                unarchived_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Unarchived {unarchived_count} transactions',
+            'unarchived_count': unarchived_count
         })
 
     except Exception as e:
@@ -4597,18 +4711,20 @@ def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
     """Get suggestions based on learned patterns"""
     try:
         conn = get_db_connection()
+        cursor = conn.cursor()
         suggestions = []
 
         if field_type == 'description':
             original_desc = transaction_context.get('description', '').upper()
 
-            # Check for learned patterns
-            patterns = conn.execute("""
+            # Check for learned patterns - use cursor for both SQLite and PostgreSQL
+            cursor.execute("""
                 SELECT suggested_value, confidence_score, pattern_condition
                 FROM learned_patterns
                 WHERE pattern_type = 'description_pattern' AND confidence_score > 0.6
                 ORDER BY confidence_score DESC, usage_count DESC
-            """).fetchall()
+            """)
+            patterns = cursor.fetchall()
 
             for pattern in patterns:
                 condition = json.loads(pattern[2])
@@ -4625,12 +4741,13 @@ def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
             amount = float(transaction_context.get('amount', 0))
             amount_range = 'positive' if amount > 0 else 'negative'
 
-            patterns = conn.execute("""
+            cursor.execute("""
                 SELECT suggested_value, confidence_score, pattern_condition
                 FROM learned_patterns
                 WHERE pattern_type = 'accounting_category_pattern' AND confidence_score > 0.6
                 ORDER BY confidence_score DESC, usage_count DESC
-            """).fetchall()
+            """)
+            patterns = cursor.fetchall()
 
             for pattern in patterns:
                 condition = json.loads(pattern[2])
@@ -4642,6 +4759,7 @@ def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
                         'source': 'learned_pattern'
                     })
 
+        cursor.close()
         conn.close()
         return suggestions[:3]  # Return top 3 learned suggestions
 

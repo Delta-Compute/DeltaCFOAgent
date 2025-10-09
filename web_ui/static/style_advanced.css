@@ -497,7 +497,7 @@ th:nth-child(11), td:nth-child(11) { /* Source */
 }
 
 th:nth-child(12), td:nth-child(12) { /* Actions */
-    width: 80px;
+    width: 120px;
     text-align: center;
 }
 

@@ -42,6 +42,9 @@ function setupEventListeners() {
     // Export CSV button
     document.getElementById('exportCSV').addEventListener('click', exportToCSV);
 
+    // Show Archived toggle button
+    document.getElementById('showArchived').addEventListener('click', toggleArchivedView);
+
     // Quick filter buttons
     document.getElementById('filterTodos').addEventListener('click', () => {
         document.getElementById('needsReview').value = 'true';
@@ -149,6 +152,11 @@ function buildFilterQuery() {
     const keyword = document.getElementById('keywordFilter').value;
     if (keyword) params.append('keyword', keyword);
 
+    // Add archived filter
+    if (showingArchived) {
+        params.append('show_archived', 'true');
+    }
+
     // Add pagination
     params.append('page', currentPage);
     params.append('per_page', 50);
@@ -190,7 +198,7 @@ async function loadTransactions() {
         console.error('Error loading transactions:', error);
         showToast('Error loading transactions: ' + error.message, 'error');
         document.getElementById('transactionTableBody').innerHTML =
-            '<tr><td colspan="9" class="loading">Error loading transactions</td></tr>';
+            '<tr><td colspan="12" class="loading">Error loading transactions</td></tr>';
     } finally {
         isLoading = false;
     }
@@ -198,7 +206,7 @@ async function loadTransactions() {
 
 function showLoadingState() {
     document.getElementById('transactionTableBody').innerHTML =
-        '<tr><td colspan="9" class="loading">Loading transactions...</td></tr>';
+        '<tr><td colspan="12" class="loading">Loading transactions...</td></tr>';
     document.getElementById('tableInfo').textContent = 'Loading...';
 }
 
@@ -353,6 +361,9 @@ function renderTransactionTable(transactions) {
                     <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')">
                         View
                     </button>
+                    <button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
+                        🗄️ Archive
+                    </button>
                 </td>
             </tr>
         `;
@@ -362,19 +373,47 @@ function renderTransactionTable(transactions) {
     setupInlineEditing();
 }
 
+// Track if we've already set up the delegated event listener
+let inlineEditingSetup = false;
+
 function setupInlineEditing() {
-    document.querySelectorAll('.editable-field').forEach(field => {
-        // Click to edit
-        field.addEventListener('click', (e) => {
-            // Removed AI suggestions button handler
+    // Use event delegation instead of attaching to each field
+    // This prevents duplicate listeners and works even after DOM updates
+    if (inlineEditingSetup) {
+        return; // Already set up, don't duplicate
+    }
 
-            if (!field.classList.contains('editing')) {
-                startEditing(field);
-            }
-        });
+    const tbody = document.getElementById('transactionTableBody');
+    if (!tbody) return;
 
-        // Removed AI suggestions button setup
+    tbody.addEventListener('click', (e) => {
+        // Find the closest editable field
+        const field = e.target.closest('.editable-field');
+        if (!field) return;
+
+        console.log('🔷 Table body click detected');
+        console.log('🔷 Clicked element:', e.target.tagName, e.target.className);
+        console.log('🔷 Field already editing?', field.classList.contains('editing'));
+        console.log('🔷 Field transaction ID:', field.dataset.transactionId);
+
+        // CRITICAL: Don't start editing if clicking on an input/select that's already in edit mode
+        const clickedElement = e.target;
+        if (clickedElement.classList.contains('inline-input') ||
+            clickedElement.classList.contains('smart-select') ||
+            clickedElement.tagName === 'OPTION') {
+            console.log('⚪ Click on input/select/option detected - ignoring to prevent re-initialization');
+            return; // Don't restart editing
+        }
+
+        if (!field.classList.contains('editing')) {
+            console.log('🔷 Starting edit for transaction:', field.dataset.transactionId);
+            startEditing(field);
+        } else {
+            console.log('🔷 Field already in editing mode - not restarting');
+        }
     });
+
+    inlineEditingSetup = true;
 }
 
 function startEditing(field) {
@@ -464,7 +503,7 @@ async function createSmartDropdown(field, currentValue, fieldName) {
                     'Revenue - Challenge',
                     'Interest Income',
                     'Cost of Goods Sold (COGS)',
-                    'Technology Expenses',
+                    'Technology Expense',
                     'General and Administrative',
                     'Bank Fees',
                     'Internal Transfer'
@@ -479,7 +518,7 @@ async function createSmartDropdown(field, currentValue, fieldName) {
                 'Revenue - Challenge',
                 'Interest Income',
                 'Cost of Goods Sold (COGS)',
-                'Technology Expenses',
+                'Technology Expense',
                 'General and Administrative',
                 'Bank Fees',
                 'Internal Transfer'
@@ -490,7 +529,15 @@ async function createSmartDropdown(field, currentValue, fieldName) {
     // Create smart dropdown with existing options + custom input
     let selectHTML = `<select class="smart-select inline-input">`;
 
-    // Add current value as first option if not in list
+    // CRITICAL FIX: If current value is N/A, add it as the first selected option
+    // Without this, browser auto-selects the first option (alphabetically first, like "Bank Fees")
+    // causing lastValue to be set incorrectly
+    if (currentValue === 'N/A') {
+        selectHTML += `<option value="N/A" selected>-- Select Category --</option>`;
+        console.log(`🟠 Added N/A as selected option to prevent auto-selection of first category`);
+    }
+
+    // Add current value as first option if not in list and not N/A
     if (currentValue !== 'N/A' && !options.includes(currentValue)) {
         selectHTML += `<option value="${currentValue}" selected>${currentValue}</option>`;
     }
@@ -499,6 +546,9 @@ async function createSmartDropdown(field, currentValue, fieldName) {
     options.forEach(option => {
         const selected = option === currentValue ? 'selected' : '';
         selectHTML += `<option value="${option}" ${selected}>${option}</option>`;
+        if (selected) {
+            console.log(`🟠 Option "${option}" is marked as SELECTED (matches currentValue: "${currentValue}")`);
+        }
     });
 
     // Add custom option
@@ -509,8 +559,53 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
     // Handle custom option selection and regular selections
     const select = field.querySelector('.smart-select');
-    select.addEventListener('change', async function(e) {
-        console.log('🔵 Dropdown change event fired:', this.value);
+
+    console.log('🟣 Setting up change listener for dropdown');
+    console.log('🟣 Transaction ID:', field.dataset.transactionId);
+    console.log('🟣 Field name:', field.dataset.field);
+    console.log('🟣 Current value:', currentValue);
+    console.log('🟣 Dropdown element:', select);
+
+    // CRITICAL: Stop click events from bubbling to parent field
+    // Without this, clicking the dropdown triggers the field's click handler
+    // which recreates the dropdown and prevents the change event from firing
+    select.addEventListener('click', function(e) {
+        console.log('🟡 Click event on dropdown - stopping propagation');
+        e.stopPropagation(); // Prevent parent field from receiving click and recreating dropdown
+    });
+
+    select.addEventListener('mousedown', function(e) {
+        console.log('🟤 Mousedown event on dropdown - stopping propagation');
+        e.stopPropagation(); // Also stop mousedown to prevent any parent interactions
+    });
+
+    console.log('🟢 Attaching change event listener to select element');
+
+    // Store the initial value to detect changes
+    let lastValue = select.value;
+    console.log('🟢 Initial lastValue set to:', lastValue);
+    console.log('🟢 currentValue from field:', currentValue);
+
+    // Try multiple event approaches since change isn't firing reliably
+    const handleSelection = async function(e) {
+        console.log('🔵 Selection handler called! Event:', e.type);
+        console.log('🔵 Current value:', this.value);
+        console.log('🔵 Last value:', lastValue);
+        console.log('🔵 Previous field value was:', currentValue);
+
+        // Skip if user selected the N/A placeholder
+        if (this.value === 'N/A' && currentValue === 'N/A') {
+            console.log('🔵 N/A selected but field is already N/A, skipping');
+            return;
+        }
+
+        // Only proceed if value actually changed
+        if (this.value === lastValue && e.type !== 'change') {
+            console.log('🔵 Value unchanged, skipping');
+            return;
+        }
+
+        lastValue = this.value;
 
         if (this.value === '__custom__') {
             console.log('🔵 Custom option selected');
@@ -567,7 +662,13 @@ async function createSmartDropdown(field, currentValue, fieldName) {
             // Immediately update the transaction field
             await updateTransactionField(transactionId, fieldName, newValue, field);
         }
-    });
+    };
+
+    // Attach to multiple events to ensure we catch the selection
+    select.addEventListener('change', handleSelection);
+    select.addEventListener('blur', handleSelection);
+
+    console.log('🟢 Event listeners attached: change, blur');
 }
 
 async function updateTransactionField(transactionId, field, value, fieldElement) {
@@ -604,11 +705,9 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
 
             // For accounting category changes, check if we should update similar transactions
             if (field === 'accounting_category') {
+                console.log('💚 Accounting category updated, checking for similar transactions...');
+                console.log('💚 Transaction ID:', transactionId, 'New Category:', value);
                 checkForSimilarAccountingCategories(transactionId, value);
-            }
-            // For description changes, check if we should update similar transactions
-            if (field === 'description') {
-                checkForSimilarTransactions(transactionId, value);
             }
         } else {
             throw new Error(result.error || 'Failed to update');
@@ -824,7 +923,7 @@ async function checkForSimilarEntities(transactionId, newEntity) {
                         <p><strong>Impact:</strong> <span id="impactSummary">Select transactions below</span></p>
                         <div class="matching-info">
                             <small>✨ AI-powered: Claude analyzed description patterns to find transactions from the same business/entity</small>
-                            ${data.has_learned_patterns === false ? '<small style="color: #888; display: block; margin-top: 4px;">(Intelligent matching - pattern learning will improve accuracy over time)</small>' : ''}
+                            ${data.has_learned_patterns === false ? '<small style="color: #888; display: block; margin-top: 4px;">(not AI based - intelligent matching used as fallback. Pattern learning will improve accuracy over time)</small>' : ''}
                         </div>
                     </div>
 
@@ -1764,4 +1863,37 @@ function formatDate(dateString) {
     } catch {
         return dateString;
     }
+}
+
+// Archive functionality
+let showingArchived = false;
+
+async function archiveTransaction(transactionId) {
+    if (!confirm('Archive this transaction?')) return;
+
+    try {
+        const response = await fetch('/api/archive_transactions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_ids: [transactionId]})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('Transaction archived successfully', 'success');
+            loadTransactions();
+        } else {
+            showToast('Error archiving transaction: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Error archiving transaction: ' + error.message, 'error');
+    }
+}
+
+function toggleArchivedView() {
+    showingArchived = !showingArchived;
+    const button = document.getElementById('showArchived');
+    button.textContent = showingArchived ? '📦 Hide Archived' : '📦 Show Archived';
+    currentPage = 1;
+    loadTransactions();
 }
