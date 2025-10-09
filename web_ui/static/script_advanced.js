@@ -383,6 +383,8 @@ function startEditing(field) {
     const transactionId = field.dataset.transactionId;
 
     field.classList.add('editing');
+    // Store original value for cancel/custom operations
+    field.dataset.originalValue = currentValue;
 
     // Check if this is a smart dropdown field
     if (field.classList.contains('smart-dropdown')) {
@@ -392,27 +394,38 @@ function startEditing(field) {
     }
 
     const input = field.querySelector('.inline-input, .smart-select');
+    if (!input) return; // Exit if no input element found
+
     input.focus();
     if (input.select) input.select();
 
-    // Save on Enter or blur
-    const saveEdit = async () => {
-        const newValue = input.value.trim();
-        await updateTransactionField(transactionId, fieldName, newValue, field);
-    };
+    // For text inputs: Save on Enter or blur
+    // For select dropdowns: Only handle keyboard events (change event handles selection)
+    const isSelect = input.classList.contains('smart-select');
 
-    // Cancel on Escape
+    if (!isSelect) {
+        // Text input: save on blur
+        const saveEdit = async () => {
+            const newValue = input.value.trim();
+            console.log('🟢 Blur event fired - saveEdit called with value:', newValue);
+            await updateTransactionField(transactionId, fieldName, newValue, field);
+        };
+
+        input.addEventListener('blur', saveEdit);
+    }
+
+    // Cancel on Escape for both text inputs and selects
     const cancelEdit = () => {
         field.classList.remove('editing');
         field.innerHTML = currentValue;
         setupInlineEditing(); // Re-setup event listeners
     };
 
-    input.addEventListener('blur', saveEdit);
     input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+        if (e.key === 'Enter' && !isSelect) {
             e.preventDefault();
-            saveEdit();
+            const newValue = input.value.trim();
+            updateTransactionField(transactionId, fieldName, newValue, field);
         } else if (e.key === 'Escape') {
             e.preventDefault();
             cancelEdit();
@@ -420,7 +433,7 @@ function startEditing(field) {
     });
 }
 
-function createSmartDropdown(field, currentValue, fieldName) {
+async function createSmartDropdown(field, currentValue, fieldName) {
     // Define options for different field types
     const fieldOptions = {
         'classified_entity': [
@@ -431,21 +444,48 @@ function createSmartDropdown(field, currentValue, fieldName) {
             'Delta Brazil Operations',
             'Internal Transfer',
             'Personal'
-        ],
-        'accounting_category': [
-            'Revenue - Trading',
-            'Revenue - Mining',
-            'Revenue - Challenge',
-            'Interest Income',
-            'Cost of Goods Sold (COGS)',
-            'Technology Expenses',
-            'General and Administrative',
-            'Bank Fees',
-            'Internal Transfer'
         ]
     };
 
-    const options = fieldOptions[fieldName] || [];
+    let options = fieldOptions[fieldName] || [];
+
+    // For accounting_category, fetch from database
+    if (fieldName === 'accounting_category') {
+        try {
+            const response = await fetch('/api/accounting_categories');
+            if (response.ok) {
+                const data = await response.json();
+                options = data.categories || [];
+            } else {
+                // Fallback to default categories if API fails
+                options = [
+                    'Revenue - Trading',
+                    'Revenue - Mining',
+                    'Revenue - Challenge',
+                    'Interest Income',
+                    'Cost of Goods Sold (COGS)',
+                    'Technology Expenses',
+                    'General and Administrative',
+                    'Bank Fees',
+                    'Internal Transfer'
+                ];
+            }
+        } catch (error) {
+            console.error('Failed to fetch accounting categories:', error);
+            // Fallback to default categories
+            options = [
+                'Revenue - Trading',
+                'Revenue - Mining',
+                'Revenue - Challenge',
+                'Interest Income',
+                'Cost of Goods Sold (COGS)',
+                'Technology Expenses',
+                'General and Administrative',
+                'Bank Fees',
+                'Internal Transfer'
+            ];
+        }
+    }
 
     // Create smart dropdown with existing options + custom input
     let selectHTML = `<select class="smart-select inline-input">`;
@@ -467,14 +507,65 @@ function createSmartDropdown(field, currentValue, fieldName) {
 
     field.innerHTML = selectHTML;
 
-    // Handle custom option selection
+    // Handle custom option selection and regular selections
     const select = field.querySelector('.smart-select');
-    select.addEventListener('change', function() {
+    select.addEventListener('change', async function(e) {
+        console.log('🔵 Dropdown change event fired:', this.value);
+
         if (this.value === '__custom__') {
+            console.log('🔵 Custom option selected');
+            e.stopPropagation(); // Prevent other handlers from firing
+
+            // Get the transaction ID and field name from the parent field
+            const transactionId = field.dataset.transactionId;
+            const fieldName = field.dataset.field;
+            const currentValue = field.dataset.originalValue || field.textContent.trim();
+
             // Replace with text input for custom entry
             field.innerHTML = `<input type="text" class="inline-input" value="" placeholder="Enter custom value..." />`;
             const input = field.querySelector('.inline-input');
             input.focus();
+
+            // Set up event handlers for the new input
+            const saveCustomEdit = async () => {
+                const newValue = input.value.trim();
+                if (newValue) { // Only save if there's a value
+                    await updateTransactionField(transactionId, fieldName, newValue, field);
+                } else {
+                    // Cancel if empty
+                    field.classList.remove('editing');
+                    field.innerHTML = currentValue || 'N/A';
+                    setupInlineEditing();
+                }
+            };
+
+            const cancelCustomEdit = () => {
+                field.classList.remove('editing');
+                field.innerHTML = currentValue || 'N/A';
+                setupInlineEditing();
+            };
+
+            input.addEventListener('blur', saveCustomEdit);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveCustomEdit();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelCustomEdit();
+                }
+            });
+        } else {
+            // Handle regular dropdown selection - immediately save
+            console.log('🔵 Regular option selected, calling updateTransactionField');
+            const transactionId = field.dataset.transactionId;
+            const fieldName = field.dataset.field;
+            const newValue = this.value;
+
+            console.log('🔵 Transaction ID:', transactionId, 'Field:', fieldName, 'Value:', newValue);
+
+            // Immediately update the transaction field
+            await updateTransactionField(transactionId, fieldName, newValue, field);
         }
     });
 }
@@ -671,63 +762,21 @@ async function applyCustomInput(transactionId, fieldType) {
 
 async function checkForSimilarEntities(transactionId, newEntity) {
     try {
-        // Find current transaction to get source file
+        // Find current transaction
         const currentTx = currentTransactions.find(t => t.transaction_id === transactionId);
         if (!currentTx) return;
 
-        // Find similar transactions prioritizing same source file and description patterns
-        const similarTxs = currentTransactions.filter(t => {
-            // Must be different transaction
-            if (t.transaction_id === transactionId) return false;
+        // Use Claude AI to find similar transactions for entity classification
+        // Call the API endpoint that uses Claude to intelligently find similar transactions
+        const response = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=similar_entities&value=${encodeURIComponent(newEntity)}`);
 
-            // Must have poor/missing entity classification
-            if (t.classified_entity &&
-                t.classified_entity !== 'N/A' &&
-                t.classified_entity !== 'Unknown' &&
-                t.confidence >= 0.7) {
-                return false;
-            }
+        if (!response.ok) {
+            console.error('Failed to get AI suggestions for similar entities');
+            return;
+        }
 
-            // Priority 1: Same source file (bank/financial institution)
-            const sameSourceFile = t.source_file === currentTx.source_file;
-
-            // Priority 2: Similar description patterns (same merchant/entity identifier)
-            const hasSimilarDescription = t.description && currentTx.description &&
-                (
-                    // Exact description match
-                    t.description.toLowerCase().trim() === currentTx.description.toLowerCase().trim() ||
-                    // Similar description (first 30 characters for merchant identification)
-                    t.description.substring(0, 30).toLowerCase().trim() ===
-                    currentTx.description.substring(0, 30).toLowerCase().trim() ||
-                    // Common merchant patterns (ACH, WIRE, etc.)
-                    (t.description.includes('ACH') && currentTx.description.includes('ACH')) ||
-                    (t.description.includes('WIRE') && currentTx.description.includes('WIRE')) ||
-                    (t.description.includes('TRANSFER') && currentTx.description.includes('TRANSFER'))
-                );
-
-            // Must match at least one criterion
-            return sameSourceFile || hasSimilarDescription;
-        })
-
-        // Sort by relevance: same source file first, then by description similarity
-        .sort((a, b) => {
-            const aSourceMatch = a.source_file === currentTx.source_file ? 1 : 0;
-            const bSourceMatch = b.source_file === currentTx.source_file ? 1 : 0;
-
-            if (aSourceMatch !== bSourceMatch) {
-                return bSourceMatch - aSourceMatch; // Same source file first
-            }
-
-            // Then sort by description similarity
-            const aDescMatch = a.description && currentTx.description &&
-                a.description.substring(0, 30).toLowerCase() ===
-                currentTx.description.substring(0, 30).toLowerCase() ? 1 : 0;
-            const bDescMatch = b.description && currentTx.description &&
-                b.description.substring(0, 30).toLowerCase() ===
-                currentTx.description.substring(0, 30).toLowerCase() ? 1 : 0;
-
-            return bDescMatch - aDescMatch;
-        });
+        const data = await response.json();
+        const similarTxs = data.suggestions || [];
 
         if (similarTxs.length > 0) {
             const modal = document.getElementById('suggestionsModal');
@@ -771,10 +820,11 @@ async function checkForSimilarEntities(transactionId, newEntity) {
                     <div class="update-preview">
                         <h4>📋 Entity Update Preview</h4>
                         <p><strong>Change:</strong> Entity → "${newEntity}"</p>
-                        <p><strong>Matching Criteria:</strong> Same source file (${currentTx.source_file}) + similar descriptions</p>
+                        <p><strong>Matching Criteria:</strong> 🤖 Claude AI analyzed unclassified transactions and found similar patterns</p>
                         <p><strong>Impact:</strong> <span id="impactSummary">Select transactions below</span></p>
                         <div class="matching-info">
-                            <small>📌 Prioritized: Same bank file → Similar merchant/description patterns → ACH/WIRE transfers</small>
+                            <small>✨ AI-powered: Claude analyzed description patterns to find transactions from the same business/entity</small>
+                            ${data.has_learned_patterns === false ? '<small style="color: #888; display: block; margin-top: 4px;">(Intelligent matching - pattern learning will improve accuracy over time)</small>' : ''}
                         </div>
                     </div>
 
@@ -933,21 +983,16 @@ async function checkForSimilarAccountingCategories(transactionId, newCategory) {
         const currentTx = currentTransactions.find(t => t.transaction_id === transactionId);
         if (!currentTx) return;
 
-        // Find similar transactions that might benefit from the same accounting category
-        // Look for transactions with similar descriptions, amounts, or from same entity
-        const similarTxs = currentTransactions.filter(t =>
-            t.transaction_id !== transactionId &&
-            (!t.accounting_category || t.accounting_category === 'N/A' || t.confidence < 0.7) &&
-            (
-                // Same entity classification
-                (t.classified_entity === currentTx.classified_entity) ||
-                // Similar description (first 20 characters)
-                (t.description && currentTx.description &&
-                 t.description.substring(0, 20).toLowerCase() === currentTx.description.substring(0, 20).toLowerCase()) ||
-                // Same amount
-                (Math.abs(parseFloat(t.amount) - parseFloat(currentTx.amount)) < 0.01)
-            )
-        );
+        // Use Claude AI to find similar transactions for accounting category classification
+        const response = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=similar_accounting&value=${encodeURIComponent(newCategory)}`);
+
+        if (!response.ok) {
+            console.error('Failed to get AI suggestions for similar accounting categories');
+            return;
+        }
+
+        const data = await response.json();
+        const similarTxs = data.suggestions || [];
 
         if (similarTxs.length > 0) {
             const modal = document.getElementById('suggestionsModal');
@@ -994,8 +1039,11 @@ async function checkForSimilarAccountingCategories(transactionId, newCategory) {
                     <div class="update-preview">
                         <h4>📋 Category Update Preview</h4>
                         <p><strong>Change:</strong> Accounting Category → "${newCategory}"</p>
-                        <p><strong>Reason:</strong> Similar entity, description, or amount to current transaction</p>
+                        <p><strong>Matching Criteria:</strong> 🤖 Claude AI analyzed transaction types and purposes</p>
                         <p><strong>Impact:</strong> <span id="categoryImpactSummary">Select transactions below</span></p>
+                        <div class="matching-info">
+                            <small>✨ AI-powered: Claude analyzed descriptions to find similar transaction types, not based on amount</small>
+                        </div>
                     </div>
 
                     <div class="transactions-list">
