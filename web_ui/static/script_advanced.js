@@ -7,11 +7,15 @@ let totalPages = 1;
 let isLoading = false;
 
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🟢 DOM Content Loaded - starting initialization');
+
     // Load initial data
     loadTransactions();
 
     // Set up event listeners
     setupEventListeners();
+
+    console.log('🟢 Initialization complete');
 });
 
 function setupEventListeners() {
@@ -42,15 +46,18 @@ function setupEventListeners() {
     // Export CSV button
     document.getElementById('exportCSV').addEventListener('click', exportToCSV);
 
-    // Select All checkbox
-    document.getElementById('selectAll').addEventListener('change', function() {
-        const checkboxes = document.querySelectorAll('.transaction-select-cb');
-        checkboxes.forEach(cb => cb.checked = this.checked);
-        updateArchiveButtonVisibility();
-    });
+    // Note: Select All checkbox listener is set up in renderTransactionTable()
+    // because the checkbox is inside the table <thead> which must be rendered first
 
     // Archive Selected button
-    document.getElementById('archiveSelected').addEventListener('click', archiveSelectedTransactions);
+    const archiveBtn = document.getElementById('archiveSelected');
+    console.log('🔵 Setting up Archive Selected button:', archiveBtn);
+    if (archiveBtn) {
+        archiveBtn.addEventListener('click', archiveSelectedTransactions);
+        console.log('✅ Archive Selected event listener attached');
+    } else {
+        console.error('❌ Archive Selected button not found in DOM!');
+    }
 
     // Show Archived toggle button
     document.getElementById('showArchived').addEventListener('click', toggleArchivedView);
@@ -387,6 +394,26 @@ function renderTransactionTable(transactions) {
     document.querySelectorAll('.transaction-select-cb').forEach(cb => {
         cb.addEventListener('change', updateArchiveButtonVisibility);
     });
+
+    // Set up Select All checkbox listener (must be done after table is rendered)
+    const selectAllCheckbox = document.getElementById('selectAll');
+    if (selectAllCheckbox) {
+        // Remove any existing listeners to prevent duplicates
+        selectAllCheckbox.replaceWith(selectAllCheckbox.cloneNode(true));
+        const newSelectAll = document.getElementById('selectAll');
+
+        newSelectAll.addEventListener('change', function() {
+            console.log('🔵 Select All checkbox changed! Checked:', this.checked);
+            const checkboxes = document.querySelectorAll('.transaction-select-cb');
+            console.log('🔵 Found transaction checkboxes:', checkboxes.length);
+            checkboxes.forEach((cb, index) => {
+                cb.checked = this.checked;
+                console.log(`🔵 Set checkbox ${index} to:`, cb.checked);
+            });
+            updateArchiveButtonVisibility();
+        });
+        console.log('✅ Select All checkbox event listener attached (from renderTransactionTable)');
+    }
 }
 
 // Track if we've already set up the delegated event listener
@@ -1893,12 +1920,26 @@ function updateArchiveButtonVisibility() {
 }
 
 async function archiveSelectedTransactions() {
+    console.log('🔵 archiveSelectedTransactions() called!');
+
     const selectedCheckboxes = document.querySelectorAll('.transaction-select-cb:checked');
+    console.log('🔵 Found checkboxes:', selectedCheckboxes.length);
+
     const transactionIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.transactionId);
+    console.log('🔵 Transaction IDs:', transactionIds);
 
-    if (transactionIds.length === 0) return;
+    if (transactionIds.length === 0) {
+        console.log('🔴 No transactions selected, returning');
+        return;
+    }
 
-    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) return;
+    console.log('🔵 About to show confirmation dialog');
+    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) {
+        console.log('🔴 User cancelled confirmation dialog');
+        return;
+    }
+
+    console.log('🔵 User confirmed, making API call');
 
     try {
         const response = await fetch('/api/archive_transactions', {
@@ -1907,16 +1948,23 @@ async function archiveSelectedTransactions() {
             body: JSON.stringify({transaction_ids: transactionIds})
         });
 
+        console.log('🔵 API response status:', response.status);
         const data = await response.json();
+        console.log('🔵 API response data:', data);
+
         if (data.success) {
             showToast(`Archived ${data.archived_count} transactions`, 'success');
-            // Uncheck "Select All" checkbox
-            document.getElementById('selectAll').checked = false;
+            // Uncheck "Select All" checkbox (if it exists)
+            const selectAllCheckbox = document.getElementById('selectAll');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.checked = false;
+            }
             loadTransactions();
         } else {
             showToast('Error archiving transactions: ' + (data.error || 'Unknown error'), 'error');
         }
     } catch (error) {
+        console.error('🔴 Error archiving transactions:', error);
         showToast('Error archiving transactions: ' + error.message, 'error');
     }
 }
