@@ -42,6 +42,16 @@ function setupEventListeners() {
     // Export CSV button
     document.getElementById('exportCSV').addEventListener('click', exportToCSV);
 
+    // Select All checkbox
+    document.getElementById('selectAll').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.transaction-select-cb');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+        updateArchiveButtonVisibility();
+    });
+
+    // Archive Selected button
+    document.getElementById('archiveSelected').addEventListener('click', archiveSelectedTransactions);
+
     // Show Archived toggle button
     document.getElementById('showArchived').addEventListener('click', toggleArchivedView);
 
@@ -198,7 +208,7 @@ async function loadTransactions() {
         console.error('Error loading transactions:', error);
         showToast('Error loading transactions: ' + error.message, 'error');
         document.getElementById('transactionTableBody').innerHTML =
-            '<tr><td colspan="12" class="loading">Error loading transactions</td></tr>';
+            '<tr><td colspan="13" class="loading">Error loading transactions</td></tr>';
     } finally {
         isLoading = false;
     }
@@ -206,7 +216,7 @@ async function loadTransactions() {
 
 function showLoadingState() {
     document.getElementById('transactionTableBody').innerHTML =
-        '<tr><td colspan="12" class="loading">Loading transactions...</td></tr>';
+        '<tr><td colspan="13" class="loading">Loading transactions...</td></tr>';
     document.getElementById('tableInfo').textContent = 'Loading...';
 }
 
@@ -306,7 +316,7 @@ function renderTransactionTable(transactions) {
     const tbody = document.getElementById('transactionTableBody');
 
     if (transactions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="loading">No transactions found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="loading">No transactions found</td></tr>';
         return;
     }
 
@@ -332,6 +342,7 @@ function renderTransactionTable(transactions) {
 
         return `
             <tr data-transaction-id="${transaction.transaction_id || ''}">
+                <td><input type="checkbox" class="transaction-select-cb" data-transaction-id="${transaction.transaction_id || ''}"></td>
                 <td>${formatDate(transaction.date) || (transaction.source_file?.includes('Chase') ? 'Date Missing' : 'N/A')}</td>
                 <td class="editable-field" data-field="origin" data-transaction-id="${transaction.transaction_id}">
                     ${transaction.origin || (transaction.source_file?.includes('Chase') ? 'Credit Card' : 'Unknown')}
@@ -371,6 +382,11 @@ function renderTransactionTable(transactions) {
 
     // Set up inline editing
     setupInlineEditing();
+
+    // Set up checkbox change listeners for archive button visibility
+    document.querySelectorAll('.transaction-select-cb').forEach(cb => {
+        cb.addEventListener('change', updateArchiveButtonVisibility);
+    });
 }
 
 // Track if we've already set up the delegated event listener
@@ -1867,6 +1883,43 @@ function formatDate(dateString) {
 
 // Archive functionality
 let showingArchived = false;
+
+function updateArchiveButtonVisibility() {
+    const selectedCount = document.querySelectorAll('.transaction-select-cb:checked').length;
+    const archiveBtn = document.getElementById('archiveSelected');
+    if (archiveBtn) {
+        archiveBtn.style.display = selectedCount > 0 ? 'inline-block' : 'none';
+    }
+}
+
+async function archiveSelectedTransactions() {
+    const selectedCheckboxes = document.querySelectorAll('.transaction-select-cb:checked');
+    const transactionIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.transactionId);
+
+    if (transactionIds.length === 0) return;
+
+    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) return;
+
+    try {
+        const response = await fetch('/api/archive_transactions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_ids: transactionIds})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast(`Archived ${data.archived_count} transactions`, 'success');
+            // Uncheck "Select All" checkbox
+            document.getElementById('selectAll').checked = false;
+            loadTransactions();
+        } else {
+            showToast('Error archiving transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Error archiving transactions: ' + error.message, 'error');
+    }
+}
 
 async function archiveTransaction(transactionId) {
     if (!confirm('Archive this transaction?')) return;

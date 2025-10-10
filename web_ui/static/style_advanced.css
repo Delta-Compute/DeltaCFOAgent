@@ -450,53 +450,59 @@ tbody tr:hover {
 }
 
 /* Column width optimization */
-th:nth-child(1), td:nth-child(1) { /* Date */
+th:nth-child(1), td:nth-child(1) { /* Checkbox */
+    width: 40px;
+    min-width: 40px;
+    text-align: center;
+}
+
+th:nth-child(2), td:nth-child(2) { /* Date */
     width: 90px;
     min-width: 90px;
 }
 
-th:nth-child(2), td:nth-child(2), /* Origin */
-th:nth-child(3), td:nth-child(3) { /* Destination */
+th:nth-child(3), td:nth-child(3), /* Origin */
+th:nth-child(4), td:nth-child(4) { /* Destination */
     width: 100px;
 }
 
-th:nth-child(4), td:nth-child(4) { /* Description */
+th:nth-child(5), td:nth-child(5) { /* Description */
     width: 25%;
     min-width: 200px;
 }
 
-th:nth-child(5), td:nth-child(5) { /* Amount */
+th:nth-child(6), td:nth-child(6) { /* Amount */
     width: 100px;
     text-align: right;
 }
 
-th:nth-child(6), td:nth-child(6) { /* Crypto */
+th:nth-child(7), td:nth-child(7) { /* Crypto */
     width: 120px;
     text-align: right;
 }
 
-th:nth-child(7), td:nth-child(7) { /* Entity */
+th:nth-child(8), td:nth-child(8) { /* Entity */
     width: 180px;
 }
 
-th:nth-child(8), td:nth-child(8) { /* Accounting Category */
+th:nth-child(9), td:nth-child(9) { /* Accounting Category */
     width: 150px;
 }
 
-th:nth-child(9), td:nth-child(9) { /* Justification */
+th:nth-child(10), td:nth-child(10) { /* Justification */
     width: 200px;
 }
 
-th:nth-child(10), td:nth-child(10) { /* Confidence */
+th:nth-child(11), td:nth-child(11) { /* Confidence */
     width: 90px;
     text-align: center;
 }
 
-th:nth-child(11), td:nth-child(11) { /* Source */
+th:nth-child(12), td:nth-child(12) { /* Source */
     width: 150px;
 }
 
-th:nth-child(12), td:nth-child(12) { /* Actions */
+th:nth-child(13), td:nth-child(13) { /* Actions */
     width: 120px;
     text-align: center;
 }
