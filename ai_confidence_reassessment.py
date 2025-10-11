@@ -249,10 +249,11 @@ Respond ONLY with valid JSON in this exact format:
 }
 
 Guidelines:
-- Only suggest changes if you're confident (>0.7) they're improvements
+- CRITICAL: If any field is empty, null, "Unclassified", "N/A", "Unknown", or "None", you MUST provide a suggestion for that field, even if confidence is low
 - CRITICAL: DO NOT suggest a value that is already the current value (i.e., if suggested_value would be the same as current_value, omit that suggestion entirely)
-- If current classification seems correct, return empty suggestions array
-- Confidence should reflect certainty based on available context
+- For classified transactions, only suggest changes if you're confident (>0.7) they're improvements
+- If all fields are properly classified and you have no improvements, return empty suggestions array
+- Confidence should reflect certainty based on available context (use lower confidence like 0.5-0.6 if uncertain but still suggest)
 - Set should_review=true if transaction is unusual or ambiguous
 """
 
