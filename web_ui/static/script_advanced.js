@@ -2119,8 +2119,14 @@ async function getAISmartSuggestions(transactionId, transaction) {
                                 <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
                             </div>
                             <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
-                                <div style="font-size: 0.85em; color: #0066cc;">AI Suggests:</div>
-                                <div style="margin: 4px 0; font-weight: 500;">${suggestion.suggested_value}</div>
+                                <div style="font-size: 0.85em; color: #0066cc; margin-bottom: 6px;">AI Suggests (editable):</div>
+                                <input type="text"
+                                       class="ai-suggestion-value-input"
+                                       id="ai-suggestion-value-${index}"
+                                       value="${suggestion.suggested_value}"
+                                       data-index="${index}"
+                                       style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;"
+                                       placeholder="Edit AI suggestion...">
                             </div>
                             <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
                                 "${suggestion.reasoning}"
@@ -2287,12 +2293,21 @@ async function applySelectedAISuggestions(transactionId) {
             return;
         }
 
-        // Get the selected suggestions
+        // Get the selected suggestions with EDITED values from input fields
         const selectedSuggestions = [];
         checkedBoxes.forEach(checkbox => {
             const index = parseInt(checkbox.dataset.index);
             if (window.currentAISuggestions && window.currentAISuggestions.suggestions[index]) {
-                selectedSuggestions.push(window.currentAISuggestions.suggestions[index]);
+                // Clone the suggestion object
+                const suggestion = {...window.currentAISuggestions.suggestions[index]};
+
+                // Get the edited value from the input field
+                const inputField = document.getElementById(`ai-suggestion-value-${index}`);
+                if (inputField) {
+                    suggestion.suggested_value = inputField.value.trim();
+                }
+
+                selectedSuggestions.push(suggestion);
             }
         });
 

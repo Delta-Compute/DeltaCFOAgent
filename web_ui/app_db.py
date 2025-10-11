@@ -1918,8 +1918,8 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             """
         }
 
-        # Special handling for similar_descriptions, similar_entities, and similar_accounting - use Claude to analyze similar transactions
-        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting']:
+        # Special handling for similar_descriptions, similar_entities, similar_accounting, and similar_justifications - use Claude to analyze similar transactions
+        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting', 'similar_justifications']:
             return get_claude_analyzed_similar_descriptions(context, claude_client)
 
         prompt = prompts.get(field_type, "")
@@ -2770,26 +2770,36 @@ def api_ai_apply_suggestion():
 @app.route('/api/ai/find-similar-after-suggestion', methods=['POST'])
 def api_ai_find_similar_after_suggestion():
     """
-    Find similar transactions after an AI suggestion is applied.
-    Uses Claude AI to intelligently find transactions that could benefit from the same change.
+    Find similar transactions after AI suggestions are applied.
+    Uses Claude AI to intelligently find transactions that could benefit from the same changes.
+    Supports multiple applied suggestions (e.g., entity + category + justification).
     """
     try:
         data = request.json
         transaction_id = data.get('transaction_id')
-        applied_suggestion = data.get('applied_suggestion')
+        applied_suggestions = data.get('applied_suggestions')
 
-        if not transaction_id or not applied_suggestion:
+        # Support both single suggestion (legacy) and multiple suggestions
+        if not applied_suggestions:
+            applied_suggestion = data.get('applied_suggestion')
+            if applied_suggestion:
+                applied_suggestions = [applied_suggestion]
+
+        if not transaction_id or not applied_suggestions:
             return jsonify({
-                'error': 'transaction_id and applied_suggestion parameters required'
+                'error': 'transaction_id and applied_suggestions parameters required'
             }), 400
 
-        field = applied_suggestion.get('field')
-        new_value = applied_suggestion.get('suggested_value')
+        # Validate that applied_suggestions is a list
+        if not isinstance(applied_suggestions, list):
+            applied_suggestions = [applied_suggestions]
 
-        if not field or not new_value:
-            return jsonify({
-                'error': 'applied_suggestion must contain field and suggested_value'
-            }), 400
+        # Validate each suggestion
+        for suggestion in applied_suggestions:
+            if not suggestion.get('field') or not suggestion.get('suggested_value'):
+                return jsonify({
+                    'error': 'Each suggestion must contain field and suggested_value'
+                }), 400
 
         # Get the updated transaction from database
         conn = get_db_connection()
@@ -2811,44 +2821,61 @@ def api_ai_find_similar_after_suggestion():
 
         updated_transaction = dict(row)
 
-        # Determine which field type to search for
+        # Determine which field types to search for based on all applied suggestions
         field_type_map = {
             'classified_entity': 'similar_entities',
             'accounting_category': 'similar_accounting',
             'justification': 'similar_justifications'
         }
 
-        search_field_type = field_type_map.get(field)
-        if not search_field_type:
-            conn.close()
-            return jsonify({
-                'similar_transactions': [],
-                'message': f'No similar transaction search available for field: {field}'
-            })
+        # Collect similar transactions for EACH applied suggestion field
+        all_similar_txs = {}  # Dict to track unique transactions
+        applied_fields = {}   # Track which fields will be applied
 
-        # Use existing API suggestion logic to find similar transactions
-        context = dict(updated_transaction)
-        context['transaction_id'] = transaction_id
-        context['value'] = new_value
-        context['field_type'] = search_field_type
+        for suggestion in applied_suggestions:
+            field = suggestion.get('field')
+            new_value = suggestion.get('suggested_value')
 
-        # Get similar transactions using the existing function
-        similar_txs = get_ai_powered_suggestions(search_field_type, new_value, context)
+            # Store the field values that will be applied
+            applied_fields[field] = new_value
+
+            search_field_type = field_type_map.get(field)
+            if not search_field_type:
+                continue  # Skip fields without similarity search support
+
+            # Use existing API suggestion logic to find similar transactions for this field
+            context = dict(updated_transaction)
+            context['transaction_id'] = transaction_id
+            context['value'] = new_value
+            context['field_type'] = search_field_type
+
+            # Get similar transactions for this specific field
+            field_similar_txs = get_ai_powered_suggestions(search_field_type, new_value, context)
+
+            # Merge into all_similar_txs (deduplicate by transaction_id)
+            if field_similar_txs:
+                for tx in field_similar_txs:
+                    tx_id = tx.get('transaction_id')
+                    if tx_id and tx_id not in all_similar_txs:
+                        all_similar_txs[tx_id] = tx
 
         conn.close()
 
-        if not similar_txs or len(similar_txs) == 0:
+        if not all_similar_txs:
             return jsonify({
                 'similar_transactions': [],
                 'message': 'No similar transactions found'
             })
 
+        # Convert dict to list
+        similar_txs_list = list(all_similar_txs.values())
+
         return jsonify({
             'success': True,
-            'similar_transactions': similar_txs,
-            'count': len(similar_txs),
-            'field': field,
-            'suggested_value': new_value
+            'similar_transactions': similar_txs_list,
+            'count': len(similar_txs_list),
+            'applied_fields': applied_fields,  # Return all fields that will be applied
+            'suggestions_count': len(applied_suggestions)
         })
 
     except Exception as e:
