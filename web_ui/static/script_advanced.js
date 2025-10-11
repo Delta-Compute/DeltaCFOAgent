@@ -2121,6 +2121,53 @@ async function getAISmartSuggestions(transactionId, transaction) {
                     'justification': 'Justification'
                 }[suggestion.field] || suggestion.field;
 
+                // Determine if this field should use a dropdown or text input
+                let inputHTML = '';
+                if (suggestion.field === 'classified_entity') {
+                    // Use dropdown for Entity
+                    const entityOptions = [
+                        'Delta LLC',
+                        'Delta Prop Shop LLC',
+                        'Infinity Validator',
+                        'Delta Mining Paraguay S.A.',
+                        'Delta Brazil Operations',
+                        'Internal Transfer',
+                        'Personal'
+                    ];
+                    inputHTML = `
+                        <select class="ai-suggestion-value-input"
+                                id="ai-suggestion-value-${index}"
+                                data-index="${index}"
+                                style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;">
+                            ${entityOptions.map(entity =>
+                                `<option value="${entity}" ${entity === suggestion.suggested_value ? 'selected' : ''}>${entity}</option>`
+                            ).join('')}
+                        </select>
+                    `;
+                } else if (suggestion.field === 'accounting_category') {
+                    // Use dropdown for Category (will be populated dynamically)
+                    inputHTML = `
+                        <select class="ai-suggestion-value-input ai-suggestion-category-dropdown"
+                                id="ai-suggestion-value-${index}"
+                                data-index="${index}"
+                                data-suggested-value="${suggestion.suggested_value}"
+                                style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;">
+                            <option value="">Loading categories...</option>
+                        </select>
+                    `;
+                } else {
+                    // Use text input for Justification
+                    inputHTML = `
+                        <input type="text"
+                               class="ai-suggestion-value-input"
+                               id="ai-suggestion-value-${index}"
+                               value="${suggestion.suggested_value}"
+                               data-index="${index}"
+                               style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;"
+                               placeholder="Edit AI suggestion...">
+                    `;
+                }
+
                 return `
                     <div class="ai-suggestion-item" style="padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9; display: flex; gap: 15px;">
                         <div style="display: flex; align-items: flex-start; padding-top: 5px;">
@@ -2140,14 +2187,8 @@ async function getAISmartSuggestions(transactionId, transaction) {
                                 <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
                             </div>
                             <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
-                                <div style="font-size: 0.85em; color: #0066cc; margin-bottom: 6px;">AI Suggests (editable):</div>
-                                <input type="text"
-                                       class="ai-suggestion-value-input"
-                                       id="ai-suggestion-value-${index}"
-                                       value="${suggestion.suggested_value}"
-                                       data-index="${index}"
-                                       style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;"
-                                       placeholder="Edit AI suggestion...">
+                                <div style="font-size: 0.85em; color: #0066cc; margin-bottom: 6px;">AI Suggests ${suggestion.field === 'justification' ? '(editable)' : '(select from dropdown)'}:</div>
+                                ${inputHTML}
                             </div>
                             <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
                                 "${suggestion.reasoning}"
@@ -2185,6 +2226,44 @@ async function getAISmartSuggestions(transactionId, transaction) {
 
             // Initialize selection count
             updateAISuggestionSelectionCount();
+
+            // Populate accounting category dropdowns
+            const categoryDropdowns = document.querySelectorAll('.ai-suggestion-category-dropdown');
+            if (categoryDropdowns.length > 0) {
+                // Fetch categories and populate dropdowns
+                fetch('/api/accounting_categories')
+                    .then(response => response.json())
+                    .then(data => {
+                        const categories = data.categories || [];
+                        categoryDropdowns.forEach(dropdown => {
+                            const suggestedValue = dropdown.getAttribute('data-suggested-value');
+                            dropdown.innerHTML = categories.map(cat =>
+                                `<option value="${cat}" ${cat === suggestedValue ? 'selected' : ''}>${cat}</option>`
+                            ).join('');
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Failed to fetch accounting categories:', error);
+                        // Fallback to default categories
+                        const fallbackCategories = [
+                            'Revenue - Trading',
+                            'Revenue - Mining',
+                            'Revenue - Challenge',
+                            'Interest Income',
+                            'Cost of Goods Sold (COGS)',
+                            'Technology Expense',
+                            'General and Administrative',
+                            'Bank Fees',
+                            'Internal Transfer'
+                        ];
+                        categoryDropdowns.forEach(dropdown => {
+                            const suggestedValue = dropdown.getAttribute('data-suggested-value');
+                            dropdown.innerHTML = fallbackCategories.map(cat =>
+                                `<option value="${cat}" ${cat === suggestedValue ? 'selected' : ''}>${cat}</option>`
+                            ).join('');
+                        });
+                    });
+            }
         } else {
             document.getElementById('suggestionsList').innerHTML =
                 '<div style="padding: 20px; text-align: center; color: #666;">No specific suggestions available</div>';
