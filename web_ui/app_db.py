@@ -1475,9 +1475,9 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 AND (accounting_category IS NULL OR accounting_category != {placeholder})
                 AND (
                     accounting_category IS NULL
-                    OR accounting_category = 'N/A'
+                    OR accounting_category = ''
+                    OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
                     OR confidence < 0.7
-                    OR accounting_category IS NOT NULL
                 )
                 LIMIT 30
             """
