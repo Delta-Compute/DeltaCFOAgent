@@ -31,6 +31,17 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import AI Confidence Reassessment System
+try:
+    from ai_confidence_reassessment import AIConfidenceReassessor
+    AI_REASSESSMENT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  AI Confidence Reassessment not available: {e}")
+    AI_REASSESSMENT_AVAILABLE = False
+
 # Archive handling imports - optional
 try:
     import py7zr
@@ -882,7 +893,21 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
                 params.append(filters['source_file'])
 
             if filters.get('needs_review') == 'true':
-                query += " AND (confidence < 0.8 OR confidence IS NULL)"
+                # Include transactions with low confidence OR incomplete/missing fields
+                query += """ AND (
+                    confidence < 0.8
+                    OR confidence IS NULL
+                    OR classified_entity IS NULL
+                    OR classified_entity = ''
+                    OR LOWER(classified_entity) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense', 'needs review')
+                    OR accounting_category IS NULL
+                    OR accounting_category = ''
+                    OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
+                    OR justification IS NULL
+                    OR justification = ''
+                    OR LOWER(justification) LIKE '%unknown%'
+                    OR LOWER(justification) = 'n/a'
+                )"""
 
             if filters.get('min_amount'):
                 query += f" AND ABS(amount) >= {placeholder}"
@@ -917,14 +942,28 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) as total FROM transactions")
         # Remove ORDER BY and LIMIT clauses from count query
         count_query = count_query.split(" ORDER BY")[0]  # Remove everything from ORDER BY onwards
+
+        # Debug: print the count query
+        print(f"DEBUG - Count query: {count_query}")
+        print(f"DEBUG - Count params: {params}")
+
         cursor.execute(count_query, params)
         count_result = cursor.fetchone()
+
+        print(f"DEBUG - Count result: {count_result}")
+        print(f"DEBUG - Is PostgreSQL: {is_postgresql}")
+
         total_count = count_result['total'] if is_postgresql else count_result[0]
+        print(f"DEBUG - Total count: {total_count}")
 
         # Add pagination
         if page and per_page:
             offset = (page - 1) * per_page
             query += f" LIMIT {per_page} OFFSET {offset}"
+
+        # Debug: print the final query
+        print(f"DEBUG - Executing query: {query}")
+        print(f"DEBUG - With params: {params}")
 
         cursor.execute(query, params)
         transactions = []
@@ -1009,7 +1048,9 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         return transactions, total_count
 
     except Exception as e:
+        import traceback
         print(f"ERROR: Error loading transactions from database: {e}")
+        print(f"TRACEBACK:\n{traceback.format_exc()}")
         return [], 0
 
 def get_dashboard_stats():
@@ -1035,8 +1076,23 @@ def get_dashboard_stats():
         result = cursor.fetchone()
         expenses = result['expenses'] if is_postgresql else result[0]
 
-        # Needs review
-        cursor.execute("SELECT COUNT(*) as needs_review FROM transactions WHERE confidence < 0.8 OR confidence IS NULL")
+        # Needs review - count transactions with low confidence OR incomplete/missing fields
+        cursor.execute("""
+            SELECT COUNT(*) as needs_review FROM transactions WHERE (
+                confidence < 0.8
+                OR confidence IS NULL
+                OR classified_entity IS NULL
+                OR classified_entity = ''
+                OR LOWER(classified_entity) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense', 'needs review')
+                OR accounting_category IS NULL
+                OR accounting_category = ''
+                OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
+                OR justification IS NULL
+                OR justification = ''
+                OR LOWER(justification) LIKE '%unknown%'
+                OR LOWER(justification) = 'n/a'
+            )
+        """)
         result = cursor.fetchone()
         needs_review = result['needs_review'] if is_postgresql else result[0]
 
@@ -1396,6 +1452,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         elif field_type == 'similar_accounting':
             # For accounting category: find transactions from same entity that need review
             # Include: uncategorized, low confidence, OR different category (to suggest recategorization)
+            # CRITICAL FIX: Explicitly exclude transactions that already have the target accounting category
             print(f"DEBUG: Searching for similar accounting categories - entity: {current_entity}, new category: {new_value}")
 
             base_query = f"""
@@ -1403,11 +1460,12 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 FROM transactions
                 WHERE transaction_id != {placeholder}
                 AND classified_entity = {placeholder}
+                AND (accounting_category IS NULL OR accounting_category != {placeholder})
                 AND (
                     accounting_category IS NULL
                     OR accounting_category = 'N/A'
                     OR confidence < 0.7
-                    OR (accounting_category != {placeholder} AND accounting_category IS NOT NULL)
+                    OR accounting_category IS NOT NULL
                 )
                 LIMIT 30
             """
@@ -1951,11 +2009,10 @@ def sync_csv_to_database(csv_filename=None):
         if not os.path.exists(csv_path):
             print(f"WARNING: CSV file not found for sync: {csv_path}")
 
-            # Try alternative paths and files
+            # Try alternative paths and files - ONLY classified files
             alternative_paths = [
                 os.path.join(parent_dir, f'classified_{csv_filename}'),  # Root directory
                 os.path.join(parent_dir, 'web_ui', 'classified_transactions', f'classified_{csv_filename}'),  # web_ui subfolder
-                os.path.join(parent_dir, csv_filename),  # Original filename without classified_ prefix
             ] if csv_filename else []
 
             for alt_path in alternative_paths:
@@ -1965,11 +2022,33 @@ def sync_csv_to_database(csv_filename=None):
                     print(f"✅ DEBUG: Found file at alternative path: {alt_path}")
                     break
             else:
-                print(f"❌ DEBUG: No alternative paths found")
+                print(f"❌ DEBUG: No classified file found - skipping sync")
+                print(f"❌ The file needs to be processed by main.py first to create a classified file")
                 return False
 
         # Read the CSV file
         df = pd.read_csv(csv_path)
+
+        # Validate that this is a classified file with required database columns
+        # Make column check case-insensitive
+        df_columns_lower = [col.lower() for col in df.columns]
+        required_columns = ['date', 'description', 'amount']
+        missing_columns = [col for col in required_columns if col.lower() not in df_columns_lower]
+
+        if missing_columns:
+            print(f"❌ ERROR: CSV file is missing required columns: {missing_columns}")
+            print(f"❌ This appears to be a raw CSV file, not a classified one")
+            print(f"❌ Available columns: {list(df.columns)}")
+            return False
+
+        # Standardize column names to lowercase for database compatibility
+        column_mapping = {}
+        for col in df.columns:
+            col_lower = col.lower()
+            if col_lower in required_columns:
+                column_mapping[col] = col_lower
+        df = df.rename(columns=column_mapping)
+
         print(f"UPDATING: Syncing {len(df)} transactions to database...")
 
         # Connect to database
@@ -2524,6 +2603,261 @@ def api_suggestions():
             'fallback_available': False
         }), 500
 
+@app.route('/api/ai/get-suggestions')
+def api_ai_get_suggestions():
+    """Get AI-powered suggestions for improving a transaction's classification"""
+    try:
+        transaction_id = request.args.get('transaction_id')
+
+        if not transaction_id:
+            return jsonify({'error': 'transaction_id parameter required'}), 400
+
+        if not AI_REASSESSMENT_AVAILABLE:
+            return jsonify({
+                'error': 'AI Confidence Reassessment system not available',
+                'suggestions': []
+            }), 503
+
+        # Get transaction from database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"""
+            SELECT transaction_id, date, description, amount, classified_entity,
+                   accounting_category, justification, confidence,
+                   user_feedback_count, last_ai_review, confidence_history
+            FROM transactions
+            WHERE transaction_id = {placeholder}
+        """, (transaction_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        # Convert to dict - RealDictRow is already dict-like, so just convert it
+        transaction = dict(row)
+
+        # Initialize AI Reassessor
+        try:
+            reassessor = AIConfidenceReassessor()
+        except ValueError as e:
+            conn.close()
+            return jsonify({
+                'error': 'ANTHROPIC_API_KEY not configured',
+                'suggestions': []
+            }), 503
+
+        # Check if should reassess
+        if not reassessor.should_reassess(transaction, conn):
+            conn.close()
+            return jsonify({
+                'message': 'Transaction does not need reassessment',
+                'suggestions': [],
+                'reason': 'High confidence or recently reviewed or user-confirmed'
+            })
+
+        # Get context for AI
+        similar_transactions = reassessor.get_similar_transactions(transaction, conn)
+        learned_patterns = reassessor.get_learned_patterns(conn)
+
+        # Load business knowledge
+        business_knowledge_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'business_knowledge.md'
+        )
+        with open(business_knowledge_path, 'r') as f:
+            business_knowledge = f.read()
+
+        # Get AI assessment
+        result = reassessor.reassess_with_context(
+            transaction,
+            similar_transactions,
+            learned_patterns,
+            business_knowledge
+        )
+
+        # Update last_ai_review timestamp
+        cursor.execute(f"""
+            UPDATE transactions
+            SET last_ai_review = NOW()
+            WHERE transaction_id = {placeholder}
+        """, (transaction_id,))
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'transaction_id': transaction_id,
+            'current_confidence': float(transaction['confidence']),
+            'new_confidence': result['confidence'],
+            'suggestions': result['suggestions'],
+            'reasoning': result['reasoning'],
+            'should_review': result.get('should_review', False),
+            'similar_count': len(similar_transactions),
+            'patterns_count': len(learned_patterns)
+        })
+
+    except Exception as e:
+        print(f"ERROR: AI get-suggestions error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to get AI suggestions: {str(e)}',
+            'suggestions': []
+        }), 500
+
+@app.route('/api/ai/apply-suggestion', methods=['POST'])
+def api_ai_apply_suggestion():
+    """Apply an AI suggestion to a transaction"""
+    try:
+        data = request.json
+        transaction_id = data.get('transaction_id')
+        suggestion = data.get('suggestion')
+
+        if not transaction_id or not suggestion:
+            return jsonify({
+                'error': 'transaction_id and suggestion parameters required'
+            }), 400
+
+        if not AI_REASSESSMENT_AVAILABLE:
+            return jsonify({
+                'error': 'AI Confidence Reassessment system not available'
+            }), 503
+
+        # Validate suggestion structure
+        required_fields = ['field', 'suggested_value', 'confidence']
+        if not all(field in suggestion for field in required_fields):
+            return jsonify({
+                'error': f'Suggestion must contain: {", ".join(required_fields)}'
+            }), 400
+
+        # Initialize AI Reassessor
+        try:
+            reassessor = AIConfidenceReassessor()
+        except ValueError as e:
+            return jsonify({
+                'error': 'ANTHROPIC_API_KEY not configured'
+            }), 503
+
+        # Apply suggestion
+        conn = get_db_connection()
+        success = reassessor.apply_suggestion(transaction_id, suggestion, conn)
+        conn.close()
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Suggestion applied successfully',
+                'transaction_id': transaction_id,
+                'field': suggestion['field'],
+                'new_value': suggestion['suggested_value']
+            })
+        else:
+            return jsonify({
+                'error': 'Failed to apply suggestion',
+                'success': False
+            }), 500
+
+    except Exception as e:
+        print(f"ERROR: AI apply-suggestion error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to apply suggestion: {str(e)}'
+        }), 500
+
+@app.route('/api/ai/find-similar-after-suggestion', methods=['POST'])
+def api_ai_find_similar_after_suggestion():
+    """
+    Find similar transactions after an AI suggestion is applied.
+    Uses Claude AI to intelligently find transactions that could benefit from the same change.
+    """
+    try:
+        data = request.json
+        transaction_id = data.get('transaction_id')
+        applied_suggestion = data.get('applied_suggestion')
+
+        if not transaction_id or not applied_suggestion:
+            return jsonify({
+                'error': 'transaction_id and applied_suggestion parameters required'
+            }), 400
+
+        field = applied_suggestion.get('field')
+        new_value = applied_suggestion.get('suggested_value')
+
+        if not field or not new_value:
+            return jsonify({
+                'error': 'applied_suggestion must contain field and suggested_value'
+            }), 400
+
+        # Get the updated transaction from database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"""
+            SELECT transaction_id, date, description, amount, classified_entity,
+                   accounting_category, justification, confidence
+            FROM transactions
+            WHERE transaction_id = {placeholder}
+        """, (transaction_id,))
+
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        updated_transaction = dict(row)
+
+        # Determine which field type to search for
+        field_type_map = {
+            'classified_entity': 'similar_entities',
+            'accounting_category': 'similar_accounting',
+            'justification': 'similar_justifications'
+        }
+
+        search_field_type = field_type_map.get(field)
+        if not search_field_type:
+            conn.close()
+            return jsonify({
+                'similar_transactions': [],
+                'message': f'No similar transaction search available for field: {field}'
+            })
+
+        # Use existing API suggestion logic to find similar transactions
+        context = dict(updated_transaction)
+        context['transaction_id'] = transaction_id
+        context['value'] = new_value
+        context['field_type'] = search_field_type
+
+        # Get similar transactions using the existing function
+        similar_txs = get_ai_powered_suggestions(search_field_type, new_value, context)
+
+        conn.close()
+
+        if not similar_txs or len(similar_txs) == 0:
+            return jsonify({
+                'similar_transactions': [],
+                'message': 'No similar transactions found'
+            })
+
+        return jsonify({
+            'success': True,
+            'similar_transactions': similar_txs,
+            'count': len(similar_txs),
+            'field': field,
+            'suggested_value': new_value
+        })
+
+    except Exception as e:
+        print(f"ERROR: AI find-similar-after-suggestion error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to find similar transactions: {str(e)}'
+        }), 500
+
 @app.route('/api/accounting_categories', methods=['GET'])
 def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""
@@ -2719,7 +3053,7 @@ def files_page():
         csv_files = []
 
         for file in os.listdir(parent_dir):
-            if file.endswith('.csv'):
+            if file.lower().endswith('.csv'):
                 file_path = os.path.join(parent_dir, file)
                 stat = os.stat(file_path)
                 csv_files.append({
@@ -2743,6 +3077,7 @@ def check_file_duplicates(filepath):
         print(f"📊 Checking duplicates in {len(df)} transactions from file")
 
         conn = get_db_connection()
+        cursor = conn.cursor()
         duplicates = []
 
         for index, row in df.iterrows():
@@ -2760,12 +3095,24 @@ def check_file_duplicates(filepath):
             check_key = f"{date_str}|{amount}|{description}"
 
             # Check if this transaction exists in database
-            existing = conn.execute("""
-                SELECT transaction_id, date, description, amount
-                FROM transactions
-                WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = ?
-                LIMIT 1
-            """, (check_key,)).fetchone()
+            # Use cursor for PostgreSQL compatibility
+            is_postgresql = hasattr(cursor, 'mogrify')
+            if is_postgresql:
+                cursor.execute("""
+                    SELECT transaction_id, date, description, amount
+                    FROM transactions
+                    WHERE (date::TEXT || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = %s
+                    LIMIT 1
+                """, (check_key,))
+            else:
+                cursor.execute("""
+                    SELECT transaction_id, date, description, amount
+                    FROM transactions
+                    WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = ?
+                    LIMIT 1
+                """, (check_key,))
+
+            existing = cursor.fetchone()
 
             if existing:
                 duplicates.append({
@@ -2859,6 +3206,7 @@ else:
             # Run the processing script with environment variables
             env = os.environ.copy()
             env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
+            env['PYTHONDONTWRITEBYTECODE'] = '1'  # Force fresh imports in subprocess
             # Ensure database environment variables are passed through
             if os.getenv('DB_TYPE'):
                 env['DB_TYPE'] = os.getenv('DB_TYPE')
@@ -2926,6 +3274,16 @@ else:
                     'return_code': process_result.returncode
                 }), 500
 
+            # Check if any transactions were actually processed
+            if transactions_processed == 0:
+                return jsonify({
+                    'success': False,
+                    'error': 'Processing failed - no transactions were classified',
+                    'details': 'The file was analyzed but no transactions could be extracted or classified. Check the subprocess output for details.',
+                    'subprocess_stdout': process_result.stdout,
+                    'subprocess_stderr': process_result.stderr
+                }), 500
+
             # Now sync to database
             print(f"🔧 DEBUG: Starting database sync for {filename}...")
             sync_result = sync_csv_to_database(filename)
@@ -2941,7 +3299,8 @@ else:
             else:
                 return jsonify({
                     'success': False,
-                    'error': 'Processing succeeded but database sync failed',
+                    'error': 'Processing succeeded but database sync failed - no classified file found',
+                    'details': 'The transactions were processed but a classified file was not created. This may indicate an error during classification.',
                     'transactions_processed': transactions_processed,
                     'subprocess_stdout': process_result.stdout,
                     'subprocess_stderr': process_result.stderr

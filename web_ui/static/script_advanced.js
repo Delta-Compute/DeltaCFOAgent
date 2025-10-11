@@ -376,7 +376,10 @@ function renderTransactionTable(transactions) {
                 </td>
                 <td class="source-cell">${truncateText(transaction.source_file, 25) || 'N/A'}</td>
                 <td>
-                    <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')">
+                    <button class="btn-secondary btn-sm" onclick="getAISmartSuggestions('${transaction.transaction_id || ''}', ${JSON.stringify(transaction).replace(/'/g, "\\'").replace(/"/g, '&quot;')})" title="Get AI-powered suggestions for this transaction">
+                        🤖 AI
+                    </button>
+                    <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
                         View
                     </button>
                     <button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
@@ -1996,5 +1999,487 @@ function toggleArchivedView() {
     const button = document.getElementById('showArchived');
     button.textContent = showingArchived ? '📦 Hide Archived' : '📦 Show Archived';
     currentPage = 1;
+    loadTransactions();
+}
+
+// =============================================================================
+// AI SMART SUGGESTIONS - NEW DYNAMIC CONFIDENCE REASSESSMENT SYSTEM
+// =============================================================================
+
+/**
+ * Get AI-powered suggestions for improving a transaction's classification
+ * This is the main entry point called by the "🤖 AI" button
+ */
+async function getAISmartSuggestions(transactionId, transaction) {
+    try {
+        // Show modal immediately with loading state
+        showModal();
+
+        // Hide any previous error/empty states - with null checks
+        const errorDiv = document.getElementById('suggestionsError');
+        const emptyDiv = document.getElementById('suggestionsEmpty');
+        const assessmentDiv = document.getElementById('suggestionAssessment');
+
+        if (errorDiv) errorDiv.style.display = 'none';
+        if (emptyDiv) emptyDiv.style.display = 'none';
+        if (assessmentDiv) assessmentDiv.style.display = 'none';
+
+        // Clear previous suggestions
+        const suggestionsList = document.getElementById('suggestionsList');
+        if (suggestionsList) {
+            suggestionsList.innerHTML = '<div class="loading">🤖 AI is analyzing this transaction...</div>';
+        }
+
+        // Populate transaction info - with null checks
+        const descEl = document.getElementById('suggestionDescription');
+        const amountEl = document.getElementById('suggestionAmount');
+        const confEl = document.getElementById('suggestionCurrentConfidence');
+
+        if (descEl) descEl.textContent = transaction.description || 'N/A';
+        if (amountEl) amountEl.textContent = formatCurrency(transaction.amount);
+        if (confEl) confEl.textContent = transaction.confidence ? (transaction.confidence * 100).toFixed(0) + '%' : 'N/A';
+
+        // Call the AI suggestions API
+        const response = await fetch(`/api/ai/get-suggestions?transaction_id=${transactionId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            // Show error state
+            if (errorDiv) errorDiv.style.display = 'block';
+            const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+            if (errorMsgEl) errorMsgEl.textContent = data.error;
+            if (suggestionsList) suggestionsList.innerHTML = '';
+            return;
+        }
+
+        // Check if transaction doesn't need reassessment
+        if (data.message && (!data.suggestions || data.suggestions.length === 0)) {
+            // Show empty state - transaction is already good
+            if (emptyDiv) emptyDiv.style.display = 'block';
+            if (suggestionsList) suggestionsList.innerHTML = '';
+            return;
+        }
+
+        // Show AI assessment section
+        if (data.reasoning && assessmentDiv) {
+            assessmentDiv.style.display = 'block';
+            const reasoningEl = document.getElementById('suggestionReasoning');
+            const newConfEl = document.getElementById('suggestionNewConfidence');
+            const contextEl = document.getElementById('suggestionContext');
+
+            if (reasoningEl) reasoningEl.textContent = data.reasoning;
+            if (newConfEl) newConfEl.textContent = (data.new_confidence * 100).toFixed(0) + '%';
+
+            const contextText = `Based on ${data.similar_count || 0} similar transactions and ${data.patterns_count || 0} learned patterns`;
+            if (contextEl) contextEl.textContent = contextText;
+        }
+
+        // Render suggestions
+        if (data.suggestions && data.suggestions.length > 0) {
+            document.getElementById('suggestionsList').innerHTML = data.suggestions.map((suggestion, index) => {
+                const fieldLabel = {
+                    'classified_entity': 'Business Entity',
+                    'accounting_category': 'Accounting Category',
+                    'justification': 'Justification'
+                }[suggestion.field] || suggestion.field;
+
+                return `
+                    <div class="ai-suggestion-item" style="padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9;">
+                        <div style="margin-bottom: 8px;">
+                            <strong style="color: #0066cc;">${fieldLabel}</strong>
+                        </div>
+                        <div style="margin: 8px 0; padding: 8px; background: #fff; border-radius: 4px;">
+                            <div style="font-size: 0.85em; color: #666;">Current:</div>
+                            <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
+                        </div>
+                        <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
+                            <div style="font-size: 0.85em; color: #0066cc;">AI Suggests:</div>
+                            <div style="margin: 4px 0; font-weight: 500;">${suggestion.suggested_value}</div>
+                        </div>
+                        <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
+                            "${suggestion.reasoning}"
+                        </div>
+                        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="color: #666; font-size: 0.9em;">
+                                AI Confidence: <strong>${(suggestion.confidence * 100).toFixed(0)}%</strong>
+                            </span>
+                            <button
+                                onclick="applyAISuggestion('${transactionId}', ${index})"
+                                class="btn-primary btn-sm"
+                                style="padding: 8px 16px;">
+                                Apply This Suggestion
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Store suggestions in a global variable for easy access when applying
+            window.currentAISuggestions = {
+                transactionId: transactionId,
+                suggestions: data.suggestions
+            };
+        } else {
+            document.getElementById('suggestionsList').innerHTML =
+                '<div style="padding: 20px; text-align: center; color: #666;">No specific suggestions available</div>';
+        }
+
+    } catch (error) {
+        console.error('Error getting AI suggestions:', error);
+        const errorDiv = document.getElementById('suggestionsError');
+        const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        if (errorDiv) errorDiv.style.display = 'block';
+        if (errorMsgEl) errorMsgEl.textContent = 'Failed to load AI suggestions: ' + error.message;
+        if (suggestionsList) suggestionsList.innerHTML = '';
+    }
+}
+
+/**
+ * Apply a specific AI suggestion to the transaction
+ */
+async function applyAISuggestion(transactionId, suggestionIndex) {
+    try {
+        // Get the suggestion from the stored data
+        if (!window.currentAISuggestions || window.currentAISuggestions.transactionId !== transactionId) {
+            showToast('Error: Suggestion data not found', 'error');
+            return;
+        }
+
+        const suggestion = window.currentAISuggestions.suggestions[suggestionIndex];
+        if (!suggestion) {
+            showToast('Error: Invalid suggestion index', 'error');
+            return;
+        }
+
+        // Show loading state on the button
+        const buttons = document.querySelectorAll('.ai-suggestion-item button');
+        if (buttons[suggestionIndex]) {
+            buttons[suggestionIndex].disabled = true;
+            buttons[suggestionIndex].textContent = 'Applying...';
+        }
+
+        // Call the API to apply the suggestion
+        const response = await fetch('/api/ai/apply-suggestion', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                suggestion: suggestion
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✅ AI suggestion applied successfully!', 'success');
+
+            // IMPORTANT: Now look for similar transactions that could benefit from the same change
+            await findSimilarTransactionsAfterAISuggestion(transactionId, suggestion);
+
+            // Clean up stored suggestions
+            delete window.currentAISuggestions;
+        } else {
+            showToast('Error applying suggestion: ' + (data.error || 'Unknown error'), 'error');
+
+            // Re-enable the button
+            if (buttons[suggestionIndex]) {
+                buttons[suggestionIndex].disabled = false;
+                buttons[suggestionIndex].textContent = 'Apply This Suggestion';
+            }
+        }
+
+    } catch (error) {
+        console.error('Error applying AI suggestion:', error);
+        showToast('Error applying suggestion: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Find similar transactions after applying an AI suggestion
+ * Uses Claude AI to find other transactions that could benefit from the same change
+ */
+async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestion) {
+    try {
+        console.log('🔍 Looking for similar transactions after applying suggestion...');
+
+        // Show loading modal
+        const modal = document.getElementById('suggestionsModal');
+        const content = document.getElementById('suggestionsContent');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        // Clear previous content
+        if (suggestionsList) suggestionsList.innerHTML = '';
+
+        content.innerHTML = `
+            <div class="modal-header">
+                <h3>🤖 Finding Similar Transactions</h3>
+            </div>
+            <div class="loading-state" style="text-align: center; padding: 40px;">
+                <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
+                <p>Claude AI is analyzing for similar transactions...</p>
+                <div style="margin-top: 10px; color: #666; font-size: 14px;">This may take a moment</div>
+            </div>
+        `;
+
+        showModal();
+
+        // Call the new API endpoint
+        const response = await fetch('/api/ai/find-similar-after-suggestion', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                applied_suggestion: appliedSuggestion
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            console.log('❌ Error finding similar transactions:', data.error);
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        if (!data.similar_transactions || data.similar_transactions.length === 0) {
+            console.log('ℹ️ No similar transactions found');
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        // Show similar transactions modal with selection UI
+        const similarTxs = data.similar_transactions;
+        const field = data.field;
+        const suggestedValue = data.suggested_value;
+
+        const fieldLabel = {
+            'classified_entity': 'Business Entity',
+            'accounting_category': 'Accounting Category',
+            'justification': 'Justification'
+        }[field] || field;
+
+        // Format transaction date helper
+        const formatTxDate = (dateStr) => {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        // Format amount helper
+        const formatTxAmount = (amount) => {
+            const val = parseFloat(amount || 0);
+            return `<span class="transaction-amount ${val >= 0 ? 'positive' : 'negative'}">
+                ${val >= 0 ? '+' : ''}$${Math.abs(val).toFixed(2)}
+            </span>`;
+        };
+
+        content.innerHTML = `
+            <div class="modal-header">
+                <h3>🤖 Apply AI Suggestion to Similar Transactions</h3>
+                <span class="close" onclick="closeModalAndRefresh()">&times;</span>
+            </div>
+
+            <div class="similar-selection-header">
+                <div class="selection-controls">
+                    <button onclick="selectAllAISimilar(true)">☑ Select All</button>
+                    <button onclick="selectAllAISimilar(false)">☐ Deselect All</button>
+                </div>
+                <div class="selection-counter">
+                    <span id="aiSimilarSelectedCount">0</span> of ${similarTxs.length} selected
+                </div>
+            </div>
+
+            <div class="modal-body">
+                <div class="update-preview">
+                    <h4>📋 AI Suggestion Application</h4>
+                    <p><strong>Field:</strong> ${fieldLabel}</p>
+                    <p><strong>New Value:</strong> "${suggestedValue}"</p>
+                    <p><strong>AI Found:</strong> ${similarTxs.length} similar transaction(s)</p>
+                    <p><strong>Impact:</strong> <span id="aiSimilarImpactSummary">Select transactions below</span></p>
+                    <div class="matching-info">
+                        <small>✨ AI-powered: Claude analyzed transaction patterns to find similar cases</small>
+                    </div>
+                </div>
+
+                <div class="transactions-list">
+                    ${similarTxs.map((t, index) => `
+                        <div class="transaction-item" data-tx-id="${t.transaction_id}">
+                            <input type="checkbox"
+                                   class="transaction-checkbox ai-similar-tx-cb"
+                                   id="ai-similar-cb-${index}"
+                                   data-amount="${t.amount || 0}"
+                                   onchange="updateAISimilarSelectionSummary()">
+                            <div class="transaction-details">
+                                <div class="transaction-info">
+                                    <div class="transaction-date">${formatTxDate(t.date)}</div>
+                                    <div class="transaction-description" title="${t.description}">
+                                        ${t.description}
+                                    </div>
+                                    <div class="transaction-meta">
+                                        <span>Current ${fieldLabel}: ${t[field] || 'N/A'}</span>
+                                        <span>•</span>
+                                        <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                    </div>
+                                </div>
+                                ${formatTxAmount(t.amount)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModalAndRefresh()">Cancel</button>
+                <button class="btn-secondary" onclick="closeModalAndRefresh()">Skip These</button>
+                <button class="btn-primary" id="updateAISimilarBtn" onclick="applyAISuggestionToSelected('${field}', '${suggestedValue.replace(/'/g, "\\'")}')">
+                    Apply to Selected Transactions
+                </button>
+            </div>
+        `;
+
+        // Initialize selection - disable button initially
+        updateAISimilarSelectionSummary();
+
+    } catch (error) {
+        console.error('Error finding similar transactions after AI suggestion:', error);
+        closeModal();
+        loadTransactions();
+    }
+}
+
+// Helper function to select all/deselect all for AI similar transactions modal
+function selectAllAISimilar(selectAll) {
+    const checkboxes = document.querySelectorAll('.ai-similar-tx-cb');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateAISimilarSelectionSummary();
+}
+
+// Helper function to update selection summary for AI similar transactions modal
+function updateAISimilarSelectionSummary() {
+    const checkboxes = document.querySelectorAll('.ai-similar-tx-cb');
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const updateBtn = document.getElementById('updateAISimilarBtn');
+    const selectionCounter = document.getElementById('aiSimilarSelectedCount');
+    const impactSummary = document.getElementById('aiSimilarImpactSummary');
+
+    // Update selection counter
+    if (selectionCounter) {
+        selectionCounter.textContent = checkedBoxes.length;
+    }
+
+    // Update impact summary
+    if (impactSummary) {
+        if (checkedBoxes.length === 0) {
+            impactSummary.textContent = 'Select transactions below';
+        } else {
+            let totalAmount = 0;
+            checkedBoxes.forEach(cb => {
+                const amount = parseFloat(cb.getAttribute('data-amount') || 0);
+                totalAmount += amount;
+            });
+            impactSummary.innerHTML = `${checkedBoxes.length} transaction(s), Total: <strong>$${Math.abs(totalAmount).toFixed(2)}</strong>`;
+        }
+    }
+
+    // Enable/disable update button
+    if (updateBtn) {
+        updateBtn.disabled = checkedBoxes.length === 0;
+        updateBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        updateBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+// Helper function to apply AI suggestion to selected similar transactions
+async function applyAISuggestionToSelected(field, newValue) {
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Show confirmation dialog
+    const fieldLabel = {
+        'classified_entity': 'entity',
+        'accounting_category': 'accounting category',
+        'justification': 'justification'
+    }[field] || field;
+
+    const confirmMsg = `Apply the AI suggestion to ${transactionIds.length} transaction(s)?\n\nThis will update the ${fieldLabel} to: "${newValue}"`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        // Make API call to update selected transactions in bulk
+        const endpointMap = {
+            'classified_entity': '/api/update_entity_bulk',
+            'accounting_category': '/api/update_category_bulk'
+        };
+
+        const endpoint = endpointMap[field];
+        if (!endpoint) {
+            // Fallback: update one by one
+            for (const txId of transactionIds) {
+                await fetch('/api/update_transaction', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        transaction_id: txId,
+                        field: field,
+                        value: newValue
+                    })
+                });
+            }
+
+            showToast(`Successfully updated ${transactionIds.length} transaction(s) with AI suggestion!`, 'success');
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        // Use bulk endpoint if available
+        const payload = field === 'classified_entity'
+            ? { transaction_ids: transactionIds, new_entity: newValue }
+            : { transaction_ids: transactionIds, new_category: newValue };
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast(`Successfully applied AI suggestion to ${transactionIds.length} transaction(s)!`, 'success');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error updating transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error applying AI suggestion to selected transactions. Please try again.', 'error');
+    }
+}
+
+// Helper function to close modal and refresh transactions
+function closeModalAndRefresh() {
+    closeModal();
     loadTransactions();
 }
