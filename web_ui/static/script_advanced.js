@@ -2074,9 +2074,26 @@ async function getAISmartSuggestions(transactionId, transaction) {
             if (contextEl) contextEl.textContent = contextText;
         }
 
-        // Render suggestions
+        // Render suggestions with checkboxes for multi-select
         if (data.suggestions && data.suggestions.length > 0) {
-            document.getElementById('suggestionsList').innerHTML = data.suggestions.map((suggestion, index) => {
+            // Add selection controls header
+            const selectionHeader = `
+                <div style="padding: 10px; margin-bottom: 15px; background: #f0f0f0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <button onclick="selectAllAISuggestions(true)" class="btn-secondary btn-sm" style="margin-right: 8px;">
+                            ☑ Select All
+                        </button>
+                        <button onclick="selectAllAISuggestions(false)" class="btn-secondary btn-sm">
+                            ☐ Deselect All
+                        </button>
+                    </div>
+                    <div style="color: #666; font-size: 0.9em;">
+                        <span id="aiSuggestionSelectedCount">0</span> of ${data.suggestions.length} selected
+                    </div>
+                </div>
+            `;
+
+            const suggestionsHTML = data.suggestions.map((suggestion, index) => {
                 const fieldLabel = {
                     'classified_entity': 'Business Entity',
                     'accounting_category': 'Accounting Category',
@@ -2084,41 +2101,63 @@ async function getAISmartSuggestions(transactionId, transaction) {
                 }[suggestion.field] || suggestion.field;
 
                 return `
-                    <div class="ai-suggestion-item" style="padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9;">
-                        <div style="margin-bottom: 8px;">
-                            <strong style="color: #0066cc;">${fieldLabel}</strong>
+                    <div class="ai-suggestion-item" style="padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9; display: flex; gap: 15px;">
+                        <div style="display: flex; align-items: flex-start; padding-top: 5px;">
+                            <input type="checkbox"
+                                   class="ai-suggestion-checkbox"
+                                   id="ai-suggestion-cb-${index}"
+                                   data-index="${index}"
+                                   onchange="updateAISuggestionSelectionCount()"
+                                   style="width: 18px; height: 18px; cursor: pointer;">
                         </div>
-                        <div style="margin: 8px 0; padding: 8px; background: #fff; border-radius: 4px;">
-                            <div style="font-size: 0.85em; color: #666;">Current:</div>
-                            <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
-                        </div>
-                        <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
-                            <div style="font-size: 0.85em; color: #0066cc;">AI Suggests:</div>
-                            <div style="margin: 4px 0; font-weight: 500;">${suggestion.suggested_value}</div>
-                        </div>
-                        <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
-                            "${suggestion.reasoning}"
-                        </div>
-                        <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-                            <span style="color: #666; font-size: 0.9em;">
-                                AI Confidence: <strong>${(suggestion.confidence * 100).toFixed(0)}%</strong>
-                            </span>
-                            <button
-                                onclick="applyAISuggestion('${transactionId}', ${index})"
-                                class="btn-primary btn-sm"
-                                style="padding: 8px 16px;">
-                                Apply This Suggestion
-                            </button>
+                        <div style="flex: 1;">
+                            <div style="margin-bottom: 8px;">
+                                <strong style="color: #0066cc;">${fieldLabel}</strong>
+                            </div>
+                            <div style="margin: 8px 0; padding: 8px; background: #fff; border-radius: 4px;">
+                                <div style="font-size: 0.85em; color: #666;">Current:</div>
+                                <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
+                            </div>
+                            <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
+                                <div style="font-size: 0.85em; color: #0066cc;">AI Suggests:</div>
+                                <div style="margin: 4px 0; font-weight: 500;">${suggestion.suggested_value}</div>
+                            </div>
+                            <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
+                                "${suggestion.reasoning}"
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <span style="color: #666; font-size: 0.9em;">
+                                    AI Confidence: <strong>${(suggestion.confidence * 100).toFixed(0)}%</strong>
+                                </span>
+                            </div>
                         </div>
                     </div>
                 `;
             }).join('');
+
+            // Add Apply Selected button at the bottom
+            const applyButton = `
+                <div style="margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 6px; text-align: right;">
+                    <button id="applySelectedSuggestionsBtn"
+                            onclick="applySelectedAISuggestions('${transactionId}')"
+                            class="btn-primary"
+                            style="padding: 10px 20px;"
+                            disabled>
+                        Apply Selected Suggestions (<span id="applyBtnCount">0</span>)
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('suggestionsList').innerHTML = selectionHeader + suggestionsHTML + applyButton;
 
             // Store suggestions in a global variable for easy access when applying
             window.currentAISuggestions = {
                 transactionId: transactionId,
                 suggestions: data.suggestions
             };
+
+            // Initialize selection count
+            updateAISuggestionSelectionCount();
         } else {
             document.getElementById('suggestionsList').innerHTML =
                 '<div style="padding: 20px; text-align: center; color: #666;">No specific suggestions available</div>';
@@ -2193,6 +2232,151 @@ async function applyAISuggestion(transactionId, suggestionIndex) {
     } catch (error) {
         console.error('Error applying AI suggestion:', error);
         showToast('Error applying suggestion: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Select or deselect all AI suggestions
+ */
+function selectAllAISuggestions(selectAll) {
+    const checkboxes = document.querySelectorAll('.ai-suggestion-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateAISuggestionSelectionCount();
+}
+
+/**
+ * Update the selection count and enable/disable the Apply button
+ */
+function updateAISuggestionSelectionCount() {
+    const checkboxes = document.querySelectorAll('.ai-suggestion-checkbox');
+    const checkedBoxes = document.querySelectorAll('.ai-suggestion-checkbox:checked');
+    const countElement = document.getElementById('aiSuggestionSelectedCount');
+    const applyBtn = document.getElementById('applySelectedSuggestionsBtn');
+    const applyBtnCount = document.getElementById('applyBtnCount');
+
+    // Update count display
+    if (countElement) {
+        countElement.textContent = checkedBoxes.length;
+    }
+
+    // Update button count
+    if (applyBtnCount) {
+        applyBtnCount.textContent = checkedBoxes.length;
+    }
+
+    // Enable/disable the Apply button
+    if (applyBtn) {
+        applyBtn.disabled = checkedBoxes.length === 0;
+        applyBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        applyBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+/**
+ * Apply all selected AI suggestions to the transaction
+ */
+async function applySelectedAISuggestions(transactionId) {
+    try {
+        // Get all selected checkboxes
+        const checkedBoxes = document.querySelectorAll('.ai-suggestion-checkbox:checked');
+
+        if (checkedBoxes.length === 0) {
+            showToast('Please select at least one suggestion to apply', 'warning');
+            return;
+        }
+
+        // Get the selected suggestions
+        const selectedSuggestions = [];
+        checkedBoxes.forEach(checkbox => {
+            const index = parseInt(checkbox.dataset.index);
+            if (window.currentAISuggestions && window.currentAISuggestions.suggestions[index]) {
+                selectedSuggestions.push(window.currentAISuggestions.suggestions[index]);
+            }
+        });
+
+        if (selectedSuggestions.length === 0) {
+            showToast('Error: No valid suggestions selected', 'error');
+            return;
+        }
+
+        // Show confirmation
+        const fieldsList = selectedSuggestions.map(s => {
+            const fieldLabel = {
+                'classified_entity': 'Business Entity',
+                'accounting_category': 'Accounting Category',
+                'justification': 'Justification'
+            }[s.field] || s.field;
+            return `• ${fieldLabel}: "${s.suggested_value}"`;
+        }).join('\n');
+
+        const confirmMsg = `Apply ${selectedSuggestions.length} AI suggestion(s)?\n\n${fieldsList}`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        // Disable the apply button
+        const applyBtn = document.getElementById('applySelectedSuggestionsBtn');
+        if (applyBtn) {
+            applyBtn.disabled = true;
+            applyBtn.textContent = 'Applying...';
+        }
+
+        // Apply each suggestion sequentially
+        let successCount = 0;
+        let lastAppliedSuggestion = null;
+
+        for (const suggestion of selectedSuggestions) {
+            try {
+                const response = await fetch('/api/ai/apply-suggestion', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        transaction_id: transactionId,
+                        suggestion: suggestion
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    successCount++;
+                    lastAppliedSuggestion = suggestion;
+                } else {
+                    console.error(`Failed to apply suggestion for ${suggestion.field}:`, data.error);
+                }
+            } catch (error) {
+                console.error(`Error applying suggestion for ${suggestion.field}:`, error);
+            }
+        }
+
+        if (successCount > 0) {
+            showToast(`✅ Successfully applied ${successCount} of ${selectedSuggestions.length} suggestion(s)!`, 'success');
+
+            // If at least one suggestion was applied, look for similar transactions
+            // Use the last successfully applied suggestion for similarity search
+            if (lastAppliedSuggestion) {
+                await findSimilarTransactionsAfterAISuggestion(transactionId, lastAppliedSuggestion);
+            } else {
+                // No similar transaction search, just refresh
+                closeModal();
+                loadTransactions();
+            }
+
+            // Clean up stored suggestions
+            delete window.currentAISuggestions;
+        } else {
+            showToast('Error: Failed to apply any suggestions', 'error');
+            if (applyBtn) {
+                applyBtn.disabled = false;
+                applyBtn.textContent = `Apply Selected Suggestions (${selectedSuggestions.length})`;
+            }
+        }
+
+    } catch (error) {
+        console.error('Error applying selected AI suggestions:', error);
+        showToast('Error applying suggestions: ' + error.message, 'error');
     }
 }
 
