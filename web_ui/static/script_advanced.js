@@ -2323,9 +2323,9 @@ async function applySelectedAISuggestions(transactionId) {
             applyBtn.textContent = 'Applying...';
         }
 
-        // Apply each suggestion sequentially
+        // Apply each suggestion sequentially and track ALL successful ones
         let successCount = 0;
-        let lastAppliedSuggestion = null;
+        let appliedSuggestions = [];  // Track ALL successfully applied suggestions
 
         for (const suggestion of selectedSuggestions) {
             try {
@@ -2342,7 +2342,7 @@ async function applySelectedAISuggestions(transactionId) {
 
                 if (data.success) {
                     successCount++;
-                    lastAppliedSuggestion = suggestion;
+                    appliedSuggestions.push(suggestion);  // Add to list of applied suggestions
                 } else {
                     console.error(`Failed to apply suggestion for ${suggestion.field}:`, data.error);
                 }
@@ -2355,9 +2355,9 @@ async function applySelectedAISuggestions(transactionId) {
             showToast(`✅ Successfully applied ${successCount} of ${selectedSuggestions.length} suggestion(s)!`, 'success');
 
             // If at least one suggestion was applied, look for similar transactions
-            // Use the last successfully applied suggestion for similarity search
-            if (lastAppliedSuggestion) {
-                await findSimilarTransactionsAfterAISuggestion(transactionId, lastAppliedSuggestion);
+            // Pass ALL successfully applied suggestions for comprehensive similarity search
+            if (appliedSuggestions.length > 0) {
+                await findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions);
             } else {
                 // No similar transaction search, just refresh
                 closeModal();
@@ -2381,12 +2381,18 @@ async function applySelectedAISuggestions(transactionId) {
 }
 
 /**
- * Find similar transactions after applying an AI suggestion
- * Uses Claude AI to find other transactions that could benefit from the same change
+ * Find similar transactions after applying AI suggestions
+ * Uses Claude AI to find other transactions that could benefit from the same changes
+ * Supports multiple applied suggestions (e.g., entity + category + justification)
  */
-async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestion) {
+async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions) {
     try {
-        console.log('🔍 Looking for similar transactions after applying suggestion...');
+        // Support both single suggestion (legacy) and array of suggestions
+        if (!Array.isArray(appliedSuggestions)) {
+            appliedSuggestions = [appliedSuggestions];
+        }
+
+        console.log(`🔍 Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
 
         // Show loading modal
         const modal = document.getElementById('suggestionsModal');
@@ -2396,6 +2402,16 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
         // Clear previous content
         if (suggestionsList) suggestionsList.innerHTML = '';
 
+        // Create a friendly list of what was applied
+        const appliedFieldsList = appliedSuggestions.map(s => {
+            const fieldLabel = {
+                'classified_entity': 'Business Entity',
+                'accounting_category': 'Accounting Category',
+                'justification': 'Justification'
+            }[s.field] || s.field;
+            return `${fieldLabel}: "${s.suggested_value}"`;
+        }).join(', ');
+
         content.innerHTML = `
             <div class="modal-header">
                 <h3>🤖 Finding Similar Transactions</h3>
@@ -2403,19 +2419,21 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             <div class="loading-state" style="text-align: center; padding: 40px;">
                 <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
                 <p>Claude AI is analyzing for similar transactions...</p>
-                <div style="margin-top: 10px; color: #666; font-size: 14px;">This may take a moment</div>
+                <div style="margin-top: 10px; color: #666; font-size: 14px;">
+                    Will apply: ${appliedFieldsList}
+                </div>
             </div>
         `;
 
         showModal();
 
-        // Call the new API endpoint
+        // Call the API endpoint with ALL applied suggestions
         const response = await fetch('/api/ai/find-similar-after-suggestion', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 transaction_id: transactionId,
-                applied_suggestion: appliedSuggestion
+                applied_suggestions: appliedSuggestions  // Send all suggestions
             })
         });
 
@@ -2437,14 +2455,24 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
         // Show similar transactions modal with selection UI
         const similarTxs = data.similar_transactions;
-        const field = data.field;
-        const suggestedValue = data.suggested_value;
+        const appliedFields = data.applied_fields || {};  // All fields that will be applied
 
-        const fieldLabel = {
+        // Store applied fields globally for use in applyAISuggestionToSelected
+        window.currentAppliedFields = appliedFields;
+
+        // Create friendly labels for all fields being applied
+        const fieldLabelMap = {
             'classified_entity': 'Business Entity',
             'accounting_category': 'Accounting Category',
             'justification': 'Justification'
-        }[field] || field;
+        };
+
+        // Build list of changes that will be applied
+        const changesHTML = Object.keys(appliedFields).map(field => {
+            const label = fieldLabelMap[field] || field;
+            const value = appliedFields[field];
+            return `<li><strong>${label}:</strong> "${value}"</li>`;
+        }).join('');
 
         // Format transaction date helper
         const formatTxDate = (dateStr) => {
@@ -2463,7 +2491,7 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
         content.innerHTML = `
             <div class="modal-header">
-                <h3>🤖 Apply AI Suggestion to Similar Transactions</h3>
+                <h3>🤖 Apply AI Suggestions to Similar Transactions</h3>
                 <span class="close" onclick="closeModalAndRefresh()">&times;</span>
             </div>
 
@@ -2479,13 +2507,15 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
             <div class="modal-body">
                 <div class="update-preview">
-                    <h4>📋 AI Suggestion Application</h4>
-                    <p><strong>Field:</strong> ${fieldLabel}</p>
-                    <p><strong>New Value:</strong> "${suggestedValue}"</p>
+                    <h4>📋 AI Suggestions Application</h4>
+                    <p><strong>Changes to Apply:</strong></p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        ${changesHTML}
+                    </ul>
                     <p><strong>AI Found:</strong> ${similarTxs.length} similar transaction(s)</p>
                     <p><strong>Impact:</strong> <span id="aiSimilarImpactSummary">Select transactions below</span></p>
                     <div class="matching-info">
-                        <small>✨ AI-powered: Claude analyzed transaction patterns to find similar cases</small>
+                        <small>✨ AI-powered: Claude analyzed transaction patterns across ${Object.keys(appliedFields).length} field(s) to find similar cases</small>
                     </div>
                 </div>
 
@@ -2504,7 +2534,10 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
                                         ${t.description}
                                     </div>
                                     <div class="transaction-meta">
-                                        <span>Current ${fieldLabel}: ${t[field] || 'N/A'}</span>
+                                        ${Object.keys(appliedFields).map(field => {
+                                            const label = fieldLabelMap[field] || field;
+                                            return `<span>Current ${label}: ${t[field] || 'N/A'}</span>`;
+                                        }).join(' <span>•</span> ')}
                                         <span>•</span>
                                         <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
                                     </div>
@@ -2519,7 +2552,7 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             <div class="modal-actions">
                 <button class="btn-secondary" onclick="closeModalAndRefresh()">Cancel</button>
                 <button class="btn-secondary" onclick="closeModalAndRefresh()">Skip These</button>
-                <button class="btn-primary" id="updateAISimilarBtn" onclick="applyAISuggestionToSelected('${field}', '${suggestedValue.replace(/'/g, "\\'")}')">
+                <button class="btn-primary" id="updateAISimilarBtn" onclick="applyMultipleFieldsToSelected()">
                     Apply to Selected Transactions
                 </button>
             </div>
@@ -2659,6 +2692,131 @@ async function applyAISuggestionToSelected(field, newValue) {
     } catch (error) {
         console.error('Error:', error);
         showToast('Error applying AI suggestion to selected transactions. Please try again.', 'error');
+    }
+}
+
+// Helper function to apply MULTIPLE AI suggestion fields to selected similar transactions
+async function applyMultipleFieldsToSelected() {
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Get the fields to apply from window.currentAppliedFields
+    const appliedFields = window.currentAppliedFields || {};
+    const fieldKeys = Object.keys(appliedFields);
+
+    if (fieldKeys.length === 0) {
+        alert('No fields to apply. Please try again.');
+        return;
+    }
+
+    // Build confirmation message showing ALL fields that will be applied
+    const fieldLabels = {
+        'classified_entity': 'Entity',
+        'accounting_category': 'Accounting Category',
+        'justification': 'Justification'
+    };
+
+    const fieldsList = fieldKeys.map(field => {
+        const label = fieldLabels[field] || field;
+        const value = appliedFields[field];
+        return `  • ${label}: "${value}"`;
+    }).join('\n');
+
+    const confirmMsg = `Apply AI suggestions to ${transactionIds.length} transaction(s)?\n\nThe following fields will be updated:\n${fieldsList}`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        let successCount = 0;
+        let errorMessages = [];
+
+        // Process each field
+        for (const field of fieldKeys) {
+            const newValue = appliedFields[field];
+
+            // Determine which endpoint to use
+            const endpointMap = {
+                'classified_entity': '/api/update_entity_bulk',
+                'accounting_category': '/api/update_category_bulk'
+            };
+
+            const endpoint = endpointMap[field];
+
+            if (endpoint) {
+                // Use bulk endpoint for entity and category
+                const payload = field === 'classified_entity'
+                    ? { transaction_ids: transactionIds, new_entity: newValue }
+                    : { transaction_ids: transactionIds, new_category: newValue };
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorMessages.push(`${field}: ${data.error || 'Unknown error'}`);
+                }
+            } else {
+                // Fallback: update one by one for justification and other fields
+                let fieldSuccessCount = 0;
+                for (const txId of transactionIds) {
+                    const response = await fetch('/api/update_transaction', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            transaction_id: txId,
+                            field: field,
+                            value: newValue
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        fieldSuccessCount++;
+                    }
+                }
+
+                if (fieldSuccessCount === transactionIds.length) {
+                    successCount++;
+                } else {
+                    errorMessages.push(`${field}: Only ${fieldSuccessCount}/${transactionIds.length} updated`);
+                }
+            }
+        }
+
+        // Show results
+        if (successCount === fieldKeys.length) {
+            showToast(`Successfully applied ${fieldKeys.length} AI suggestion(s) to ${transactionIds.length} transaction(s)!`, 'success');
+            closeModal();
+            loadTransactions();
+        } else if (successCount > 0) {
+            showToast(`Partially successful: ${successCount}/${fieldKeys.length} fields updated. Errors: ${errorMessages.join(', ')}`, 'warning');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast(`Failed to update transactions. Errors: ${errorMessages.join(', ')}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error applying AI suggestions to selected transactions. Please try again.', 'error');
     }
 }
 
