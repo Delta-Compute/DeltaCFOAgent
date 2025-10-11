@@ -894,19 +894,25 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
             if filters.get('needs_review') == 'true':
                 # Include transactions with low confidence OR incomplete/missing fields
+                # EXCLUDE transactions with entity = 'Personal' or 'Internal Transfer' as they don't need categorization
                 query += """ AND (
                     confidence < 0.8
                     OR confidence IS NULL
                     OR classified_entity IS NULL
                     OR classified_entity = ''
                     OR LOWER(classified_entity) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense', 'needs review')
-                    OR accounting_category IS NULL
-                    OR accounting_category = ''
-                    OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
-                    OR justification IS NULL
-                    OR justification = ''
-                    OR LOWER(justification) LIKE '%unknown%'
-                    OR LOWER(justification) = 'n/a'
+                    OR (
+                        LOWER(classified_entity) NOT IN ('personal', 'internal transfer')
+                        AND (
+                            accounting_category IS NULL
+                            OR accounting_category = ''
+                            OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
+                            OR justification IS NULL
+                            OR justification = ''
+                            OR LOWER(justification) LIKE '%unknown%'
+                            OR LOWER(justification) = 'n/a'
+                        )
+                    )
                 )"""
 
             if filters.get('min_amount'):
@@ -1077,6 +1083,7 @@ def get_dashboard_stats():
         expenses = result['expenses'] if is_postgresql else result[0]
 
         # Needs review - count transactions with low confidence OR incomplete/missing fields
+        # EXCLUDE transactions with entity = 'Personal' or 'Internal Transfer' as they don't need categorization
         cursor.execute("""
             SELECT COUNT(*) as needs_review FROM transactions WHERE (
                 confidence < 0.8
@@ -1084,13 +1091,18 @@ def get_dashboard_stats():
                 OR classified_entity IS NULL
                 OR classified_entity = ''
                 OR LOWER(classified_entity) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense', 'needs review')
-                OR accounting_category IS NULL
-                OR accounting_category = ''
-                OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
-                OR justification IS NULL
-                OR justification = ''
-                OR LOWER(justification) LIKE '%unknown%'
-                OR LOWER(justification) = 'n/a'
+                OR (
+                    LOWER(classified_entity) NOT IN ('personal', 'internal transfer')
+                    AND (
+                        accounting_category IS NULL
+                        OR accounting_category = ''
+                        OR LOWER(accounting_category) IN ('n/a', 'unknown', 'unclassified', 'unclassified expense')
+                        OR justification IS NULL
+                        OR justification = ''
+                        OR LOWER(justification) LIKE '%unknown%'
+                        OR LOWER(justification) = 'n/a'
+                    )
+                )
             )
         """)
         result = cursor.fetchone()
