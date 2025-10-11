@@ -597,6 +597,8 @@ async function createSmartDropdown(field, currentValue, fieldName) {
         }
     });
 
+    // Add AI assistant option (above custom)
+    selectHTML += `<option value="__ai_assistant__">🤖 Ask AI Assistant...</option>`;
     // Add custom option
     selectHTML += `<option value="__custom__">+ Add Custom...</option>`;
     selectHTML += `</select>`;
@@ -653,7 +655,26 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
         lastValue = this.value;
 
-        if (this.value === '__custom__') {
+        if (this.value === '__ai_assistant__') {
+            console.log('🔵 AI Assistant option selected');
+            e.stopPropagation();
+
+            // Get transaction details
+            const transactionId = field.dataset.transactionId;
+            const row = field.closest('tr');
+            const description = row.querySelector('[data-field="description"]')?.textContent?.trim() || '';
+            const amount = row.querySelector('[data-field="amount"]')?.textContent?.trim() || '';
+            const entity = row.querySelector('[data-field="classified_entity"]')?.textContent?.trim() || '';
+
+            // Open AI assistant modal
+            showAIAccountingAssistant(transactionId, { description, amount, entity }, field);
+
+            // Reset dropdown to previous value
+            setTimeout(() => {
+                select.value = currentValue;
+            }, 100);
+
+        } else if (this.value === '__custom__') {
             console.log('🔵 Custom option selected');
             e.stopPropagation(); // Prevent other handlers from firing
 
@@ -2839,4 +2860,190 @@ async function applyMultipleFieldsToSelected() {
 function closeModalAndRefresh() {
     closeModal();
     loadTransactions();
+}
+
+/**
+ * Show AI Accounting Assistant Modal
+ * Helps users categorize expenses by asking natural language questions
+ */
+async function showAIAccountingAssistant(transactionId, transactionContext, targetField) {
+    const modal = document.getElementById('suggestionsModal');
+    const modalContent = modal.querySelector('.modal-content .modal-body');
+
+    // Build modal content
+    modalContent.innerHTML = `
+        <div style="padding: 20px;">
+            <h3 style="margin-bottom: 15px;">🤖 AI Accounting Assistant</h3>
+
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <p style="margin: 5px 0;"><strong>Transaction:</strong> ${transactionContext.description || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Amount:</strong> ${transactionContext.amount || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Entity:</strong> ${transactionContext.entity || 'N/A'}</p>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                    Ask a question about how to categorize this expense:
+                </label>
+                <textarea
+                    id="aiQuestionInput"
+                    placeholder="Example: What category should I use for cloud hosting fees?"
+                    style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                ></textarea>
+                <p style="margin-top: 8px; font-size: 0.9em; color: #666;">
+                    💡 Tip: Be specific about the expense type for better suggestions
+                </p>
+            </div>
+
+            <div id="aiAssistantResult" style="display: none; margin-top: 20px;">
+                <!-- AI response will appear here -->
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closeModal()" class="btn-secondary">Cancel</button>
+                <button onclick="askAIAccountingQuestion('${transactionId}', '${targetField?.dataset?.transactionId || ''}', '${targetField?.dataset?.field || ''}')"
+                        class="btn-primary"
+                        id="askAIBtn">
+                    Ask AI
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Show modal
+    modal.style.display = 'flex';
+
+    // Focus on textarea
+    setTimeout(() => {
+        document.getElementById('aiQuestionInput').focus();
+    }, 100);
+
+    // Store target field globally for later use
+    window.aiAssistantTargetField = targetField;
+}
+
+/**
+ * Ask AI the accounting question and display results
+ */
+async function askAIAccountingQuestion(transactionId, fieldTransactionId, fieldName) {
+    const questionInput = document.getElementById('aiQuestionInput');
+    const question = questionInput.value.trim();
+    const askBtn = document.getElementById('askAIBtn');
+    const resultDiv = document.getElementById('aiAssistantResult');
+
+    if (!question) {
+        showToast('Please enter a question', 'warning');
+        return;
+    }
+
+    // Disable button and show loading
+    askBtn.disabled = true;
+    askBtn.textContent = 'Asking AI...';
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="loading">🤖 AI is thinking...</div></div>';
+
+    try {
+        // Get transaction context from the row
+        const targetField = window.aiAssistantTargetField;
+        const row = targetField?.closest('tr');
+        const description = row?.querySelector('[data-field="description"]')?.textContent?.trim() || '';
+        const amount = row?.querySelector('[data-field="amount"]')?.textContent?.trim() || '';
+        const entity = row?.querySelector('[data-field="classified_entity"]')?.textContent?.trim() || '';
+
+        // Call AI endpoint
+        const response = await fetch('/api/ai/ask-accounting-category', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                question: question,
+                transaction_context: {
+                    description: description,
+                    amount: amount,
+                    entity: entity
+                }
+            })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to get AI response');
+        }
+
+        // Display results
+        const result = data.result;
+        let resultHTML = '<div style="background: #e8f4f8; padding: 15px; border-radius: 6px; border-left: 4px solid #0066cc;">';
+        resultHTML += '<h4 style="margin-top: 0; color: #0066cc;">AI Recommendation:</h4>';
+
+        if (result.note) {
+            resultHTML += `<p style="font-style: italic; margin-bottom: 15px; color: #666;">${result.note}</p>`;
+        }
+
+        result.categories.forEach((cat, index) => {
+            resultHTML += `
+                <div style="background: white; padding: 12px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ddd;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <strong style="color: #0066cc; font-size: 1.1em;">${cat.name}</strong>
+                            <p style="margin: 8px 0 0 0; color: #666; font-size: 0.95em;">${cat.explanation}</p>
+                        </div>
+                        <button
+                            onclick="applyAIAccountingCategory('${cat.name}', '${fieldTransactionId}', '${fieldName}')"
+                            class="btn-primary"
+                            style="margin-left: 15px; white-space: nowrap;">
+                            Apply This
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        resultHTML += '</div>';
+
+        resultDiv.innerHTML = resultHTML;
+
+        // Re-enable button but change text
+        askBtn.disabled = false;
+        askBtn.textContent = 'Ask Another Question';
+
+    } catch (error) {
+        console.error('Error asking AI:', error);
+        resultDiv.innerHTML = `
+            <div style="background: #fee; padding: 15px; border-radius: 6px; border-left: 4px solid #c33;">
+                <p style="color: #c33; margin: 0;"><strong>Error:</strong> ${error.message}</p>
+            </div>
+        `;
+        askBtn.disabled = false;
+        askBtn.textContent = 'Try Again';
+    }
+}
+
+/**
+ * Apply the AI-suggested accounting category to the transaction
+ */
+async function applyAIAccountingCategory(categoryName, transactionId, fieldName) {
+    try {
+        const response = await fetch('/api/update_transaction', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                field: fieldName,
+                value: categoryName
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`Applied category: ${categoryName}`, 'success');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error applying category: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error applying category:', error);
+        showToast('Error applying category. Please try again.', 'error');
+    }
 }

@@ -2931,6 +2931,123 @@ def api_get_accounting_categories():
         print(f"ERROR: Failed to fetch accounting categories: {e}", flush=True)
         return jsonify({'error': str(e), 'categories': []}), 500
 
+@app.route('/api/ai/ask-accounting-category', methods=['POST'])
+def api_ai_ask_accounting_category():
+    """AI assistant to help categorize expenses based on natural language questions"""
+    try:
+        data = request.json
+        question = data.get('question', '').strip()
+        transaction_context = data.get('transaction_context', {})
+
+        if not question:
+            return jsonify({'error': 'Question is required'}), 400
+
+        if not claude_client:
+            return jsonify({'error': 'Claude AI not available'}), 503
+
+        # Get all available accounting categories from database
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT accounting_category
+            FROM transactions
+            WHERE accounting_category IS NOT NULL
+            AND accounting_category != 'N/A'
+            AND accounting_category != ''
+            ORDER BY accounting_category
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        is_postgresql = hasattr(cursor, 'mogrify')
+        if is_postgresql:
+            categories = [row['accounting_category'] if isinstance(row, dict) else row[0] for row in rows]
+        else:
+            categories = [row[0] for row in rows]
+
+        # Build AI prompt
+        prompt = f"""You are an expert accounting assistant helping categorize business transactions.
+
+AVAILABLE ACCOUNTING CATEGORIES:
+{chr(10).join([f"- {cat}" for cat in categories])}
+
+USER QUESTION: "{question}"
+
+TRANSACTION CONTEXT (if available):
+- Description: {transaction_context.get('description', 'N/A')}
+- Amount: ${transaction_context.get('amount', 'N/A')}
+- Entity: {transaction_context.get('entity', 'N/A')}
+
+INSTRUCTIONS:
+1. Based on the user's question and transaction context, suggest the most appropriate accounting category from the list above
+2. If there are TWO equally valid options (e.g., ambiguous cases), provide both with a 1-line explanation for each
+3. If there is ONE clear correct answer, provide only that category with a brief explanation
+4. Do NOT suggest categories not in the available list
+
+Respond ONLY with valid JSON in this exact format:
+
+For ONE category:
+{{
+  "categories": [
+    {{
+      "name": "Category Name",
+      "explanation": "Brief 1-line explanation of why this is the correct category"
+    }}
+  ]
+}}
+
+For TWO categories:
+{{
+  "categories": [
+    {{
+      "name": "Category Name 1",
+      "explanation": "Brief 1-line explanation of why this could be the category"
+    }},
+    {{
+      "name": "Category Name 2",
+      "explanation": "Brief 1-line explanation of why this could alternatively be the category"
+    }}
+  ],
+  "note": "Brief note explaining why there are two options"
+}}
+
+Maximum 2 categories. Keep explanations to ONE line each."""
+
+        # Call Claude API
+        message = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1000,
+            temperature=0.3,
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
+        )
+
+        response_text = message.content[0].text
+
+        # Parse JSON response
+        try:
+            start = response_text.find('{')
+            end = response_text.rfind('}') + 1
+            json_str = response_text[start:end]
+            result = json.loads(json_str)
+
+            return jsonify({
+                'success': True,
+                'result': result
+            })
+
+        except json.JSONDecodeError as e:
+            return jsonify({
+                'error': 'Failed to parse AI response',
+                'raw_response': response_text
+            }), 500
+
+    except Exception as e:
+        print(f"ERROR in AI accounting assistant: {e}", flush=True)
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/update_similar_categories', methods=['POST'])
 def api_update_similar_categories():
     """API endpoint to update accounting category for similar transactions"""
