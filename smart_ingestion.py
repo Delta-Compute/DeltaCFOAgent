@@ -177,7 +177,14 @@ OPTIONAL MAPPINGS:
 - CURRENCY: Currency info ("Currency", "Crypto", "Asset", "Symbol")
 - REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number")
 - BALANCE: Account balance ("Balance", "Running Balance")
+- ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Card Number", "Wallet", "Portfolio")
 - ADDITIONAL: Any other relevant columns
+
+CRITICAL: MULTI-ACCOUNT DETECTION
+If the file contains transactions from MULTIPLE accounts/cards/wallets in a single CSV:
+- Identify the column that distinguishes between accounts (e.g., "Card", "Account Number")
+- Note this in "account_identifier_column" field
+- This enables intelligent entity mapping and routing per account
 
 SPECIAL CASES TO HANDLE:
 - Crypto exchanges (MEXC, Coinbase, Binance): May have "Crypto", "Network", "Status", "Progress"
@@ -199,10 +206,13 @@ Please respond with a JSON object containing:
     "currency_column": "exact_column_name_or_null",
     "reference_column": "exact_column_name_or_null",
     "balance_column": "exact_column_name_or_null",
+    "account_identifier_column": "exact_column_name_for_account_card_wallet_or_null",
+    "has_multiple_accounts": true|false,
+    "account_identifier_type": "card_number|account_number|wallet_address|portfolio_id|null",
     "description_creation_rule": "rule_for_creating_description_if_missing",
     "amount_processing": "single_column|debit_credit_split|calculate_from_quantity_price",
     "date_format": "detected_date_format_pattern",
-    "special_handling": "standard|misaligned_headers|multi_currency|crypto_format|none",
+    "special_handling": "standard|misaligned_headers|multi_currency|crypto_format|multi_account|none",
     "confidence": 0.95,
     "processing_method": "python_pandas|claude_extraction",
     "additional_columns": ["list_of_other_important_columns"],
@@ -257,7 +267,43 @@ Only respond with the JSON object, no other text.
 
             # Read the file
             if file_ext == '.csv':
-                df = pd.read_csv(file_path)
+                # First, check for trailing commas and clean them
+                import tempfile
+                import shutil
+
+                needs_cleaning = False
+                with open(file_path, 'r') as f:
+                    first_two_lines = [f.readline() for _ in range(2)]
+                    if len(first_two_lines) >= 2:
+                        header_commas = first_two_lines[0].count(',')
+                        data_commas = first_two_lines[1].count(',')
+                        if data_commas > header_commas:
+                            needs_cleaning = True
+                            print(f"⚠️  Detected trailing commas: header has {header_commas} commas, data has {data_commas}")
+
+                if needs_cleaning:
+                    # Create a cleaned temporary file
+                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
+                        temp_path = temp_file.name
+                        with open(file_path, 'r') as f:
+                            for line in f:
+                                # Remove trailing commas (but keep commas within quoted strings)
+                                cleaned_line = line.rstrip('\n')
+                                # Count trailing commas
+                                while cleaned_line.endswith(','):
+                                    cleaned_line = cleaned_line[:-1]
+                                temp_file.write(cleaned_line + '\n')
+
+                    print(f"✅ Cleaned CSV file, reading from temporary file")
+                    df = pd.read_csv(temp_path)
+                    # Clean up temp file
+                    import os
+                    os.unlink(temp_path)
+                else:
+                    df = pd.read_csv(file_path)
+
+                # Drop columns that are completely empty (safety check)
+                df = df.dropna(axis=1, how='all')
             elif file_ext in ['.xlsx', '.xls']:
                 df = pd.read_excel(file_path)
             else:
@@ -385,7 +431,8 @@ Only respond with the JSON object, no other text.
                 'TransactionType': structure_info.get('type_column'),
                 'Currency': structure_info.get('currency_column'),
                 'Reference': structure_info.get('reference_column'),
-                'Balance': structure_info.get('balance_column')
+                'Balance': structure_info.get('balance_column'),
+                'AccountIdentifier': structure_info.get('account_identifier_column')
             }
 
             for std_name, source_col in optional_mappings.items():
@@ -393,6 +440,13 @@ Only respond with the JSON object, no other text.
                     standardized_df[std_name] = df[source_col]
                     mapped_columns.append(source_col)
                     print(f"🔗 Mapped {std_name}: {source_col}")
+
+            # Store multi-account metadata for downstream processing
+            if structure_info.get('has_multiple_accounts'):
+                print(f"🏦 Multi-account file detected - {structure_info.get('account_identifier_type', 'unknown')} type")
+                standardized_df.attrs['has_multiple_accounts'] = True
+                standardized_df.attrs['account_identifier_type'] = structure_info.get('account_identifier_type')
+                standardized_df.attrs['account_identifier_column'] = structure_info.get('account_identifier_column')
 
             # 5. PRESERVE ADDITIONAL COLUMNS
             additional_cols = structure_info.get('additional_columns', [])
@@ -426,6 +480,15 @@ Only respond with the JSON object, no other text.
                         standardized_df['Amount'] = 0
 
             print(f"✅ Standardized {len(standardized_df)} transactions with {len(standardized_df.columns)} columns")
+
+            # DEBUG: Print first row before returning
+            if len(standardized_df) > 0:
+                print(f"🔧 DEBUG SMART_INGESTION: First row before return:")
+                print(f"   Date: {standardized_df.iloc[0]['Date']}")
+                print(f"   Amount: {standardized_df.iloc[0]['Amount']}")
+                print(f"   Description: {standardized_df.iloc[0]['Description']}")
+                print(f"   Columns: {list(standardized_df.columns)}")
+
             return standardized_df
 
         except Exception as e:

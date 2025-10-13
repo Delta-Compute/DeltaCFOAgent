@@ -953,7 +953,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         print(f"DEBUG - Count query: {count_query}")
         print(f"DEBUG - Count params: {params}")
 
-        cursor.execute(count_query, params)
+        cursor.execute(count_query, tuple(params) if params else None)
         count_result = cursor.fetchone()
 
         print(f"DEBUG - Count result: {count_result}")
@@ -971,7 +971,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         print(f"DEBUG - Executing query: {query}")
         print(f"DEBUG - With params: {params}")
 
-        cursor.execute(query, params)
+        cursor.execute(query, tuple(params) if params else None)
         transactions = []
 
         results = cursor.fetchall()
@@ -1194,8 +1194,48 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         current_value = current_dict.get(field) if field in current_dict else None
 
         # Update the field
-        update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
-        cursor.execute(update_query, (value, transaction_id))
+        # SMART CONFIDENCE BOOST: If user edits classified_entity, accounting_category, or justification,
+        # check if ALL three fields are filled. If so, boost confidence to 95% because it's fully categorized.
+        classification_fields = ['classified_entity', 'accounting_category', 'justification']
+
+        if field in classification_fields:
+            # First, update the field
+            update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
+            cursor.execute(update_query, (value, transaction_id))
+
+            # Now check if ALL classification fields are filled (including the one we just updated)
+            cursor.execute(
+                f"SELECT classified_entity, accounting_category, justification FROM transactions WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            check_row = cursor.fetchone()
+
+            if check_row:
+                check_dict = dict(check_row) if check_row else {}
+                entity = check_dict.get('classified_entity', '')
+                category = check_dict.get('accounting_category', '')
+                justification = check_dict.get('justification', '')
+
+                # Check if all three fields are non-empty and not default/placeholder values
+                all_filled = (
+                    entity and entity.strip() and entity not in ['', 'N/A', 'Unclassified', 'Unknown'] and
+                    category and category.strip() and category not in ['', 'N/A', 'Unclassified', 'Unknown'] and
+                    justification and justification.strip() and justification not in ['', 'N/A', 'Unknown']
+                )
+
+                if all_filled:
+                    # Boost confidence to 95% since all classification fields are now complete
+                    cursor.execute(
+                        f"UPDATE transactions SET confidence = 0.95 WHERE transaction_id = {placeholder}",
+                        (transaction_id,)
+                    )
+                    print(f"✅ CONFIDENCE BOOST: All classification fields complete for transaction {transaction_id}, confidence → 95%")
+                else:
+                    print(f"ℹ️  PARTIAL UPDATE: Updated {field} for transaction {transaction_id}, but not all classification fields complete yet")
+        else:
+            # For other fields, just update the field normally
+            update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
+            cursor.execute(update_query, (value, transaction_id))
 
         # CRITICAL: Commit the UPDATE immediately to ensure it persists
         # In PostgreSQL, if a later query fails, it can rollback the entire transaction
@@ -1614,34 +1654,63 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             current_direction = "DEBIT/Expense" if current_amount < 0 else "CREDIT/Revenue" if current_amount > 0 else "Zero"
             current_source = context.get('source_file', '')
 
+            # INCREMENTAL IMPROVEMENT: Use Claude to first understand the PURPOSE of the current transaction
+            # This allows purpose-based matching that works for any user, any industry, any vendor
             prompt = f"""
-            Analyze these transactions and determine which ones should have the same accounting category as the current transaction.
+            You are analyzing financial transactions to suggest which ones should have the same accounting category.
 
-            CURRENT TRANSACTION:
+            STEP 1: Understand the current transaction's PURPOSE
+            Analyze this transaction and identify its specific purpose/nature:
             - Description: "{current_description}"
-            - Type: {current_tx_type}
             - Direction: {current_direction}
             - Amount: ${current_amount}
-            - NEW Accounting Category: "{new_value}"
-            - Entity: {current_entity}
-            - Source File: {current_source}
+            - Accounting Category: "{new_value}"
+
+            What is this transaction FOR? Examples:
+            - Fuel/gas purchase (from gas station, fuel card, etc.)
+            - Restaurant meal or food delivery
+            - Hotel accommodation or lodging
+            - Software subscription (SaaS, hosting, etc.)
+            - Office supplies
+            - Utility payment (electricity, water, internet, etc.)
+            - Bank fees or wire transfer fees
+            - Professional services (legal, accounting, consulting)
+            - Equipment purchase
+            - Advertising/marketing
+            - Travel expenses (flights, transportation)
+            - Insurance payments
+
+            STEP 2: Find ONLY transactions with the SAME PURPOSE
+            Now review these candidate transactions and identify which ones have the EXACT SAME PURPOSE as the current transaction:
 
             CANDIDATE TRANSACTIONS FROM SAME ENTITY:
             {chr(10).join(candidate_descriptions)}
 
-            MATCHING CRITERIA - Consider these factors:
-            1. **Transaction Purpose**: What is the transaction for? (hosting, trading income, bank fees, power bills, etc.)
-            2. **Transaction Flow**: DEBIT (expense/outgoing) vs CREDIT (revenue/incoming) - must match current transaction
-            3. **Transaction Type**: Wire transfer, ACH, credit card merchant, etc.
-            4. **Business Function**: Same business activity or cost center
-            5. **Recategorization**: If a transaction has a DIFFERENT category but appears to be the SAME type as current, include it (it may be miscategorized)
+            MATCHING RULES - BE VERY STRICT:
+            1. **Same Purpose ONLY**: Transaction must be for the exact same purpose/activity
+               - Fuel purchase ONLY matches other fuel purchases (gas stations, fuel cards)
+               - Restaurant meals ONLY match other meals/food
+               - Hotels ONLY match other lodging
+               - Software ONLY matches other software subscriptions
 
-            IMPORTANT RULES:
-            - Expenses and revenues are NEVER the same category
-            - A $15 bank fee and a $3000 wire transfer are DIFFERENT (fee vs transfer)
-            - Two hosting payments from same provider ARE the same (even if different amounts)
-            - Ignore amount - focus on transaction nature and purpose
-            - Include transactions with wrong categories if they match the current transaction's purpose
+            2. **Same Direction ONLY**: {current_direction} can ONLY match other {current_direction} transactions
+               - Expenses NEVER match revenues
+
+            3. **Ignore These Differences** (these DON'T matter for matching):
+               - Amount differences (a $50 fuel purchase can match a $100 fuel purchase)
+               - Different dates
+               - Different vendor names (as long as same purpose: SHELL and ESSO are both fuel)
+
+            4. **When in Doubt, DON'T MATCH**:
+               - If you're not confident two transactions serve the same purpose → DON'T match
+               - False negatives are better than false positives
+               - Being too strict is better than being too lenient
+
+            EXAMPLE:
+            - Current: "BATUKE GAS STATION" (fuel purchase)
+            - Match: "SHELL FUEL CARD" ✓ (also fuel)
+            - DON'T Match: "HOTEL MARRIOTT" ✗ (lodging, not fuel)
+            - DON'T Match: "RESTAURANT ABC" ✗ (food, not fuel)
 
             Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions match.
             """
@@ -2394,7 +2463,29 @@ def api_update_transaction():
                 print(f"WARNING: Pattern extraction failed but transaction update succeeded: {pattern_error}")
 
         if success:
-            return jsonify({'success': True, 'message': 'Transaction updated successfully'})
+            # Get updated confidence value to return to frontend
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
+
+            cursor.execute(
+                f"SELECT confidence FROM transactions WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            updated_row = cursor.fetchone()
+            conn.close()
+
+            updated_confidence = None
+            if updated_row:
+                updated_dict = dict(updated_row) if updated_row else {}
+                updated_confidence = updated_dict.get('confidence')
+
+            return jsonify({
+                'success': True,
+                'message': 'Transaction updated successfully',
+                'updated_confidence': updated_confidence  # Return updated confidence
+            })
         else:
             return jsonify({'error': 'Failed to update transaction'}), 500
 

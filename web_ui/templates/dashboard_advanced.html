@@ -188,15 +188,39 @@
     <div id="suggestionsModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>🤖 AI Suggestions</h3>
+                <h3>🤖 AI Smart Recommendations</h3>
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">
                 <div id="suggestionsContent">
-                    <!-- Dynamically populated -->
+                    <!-- Transaction info -->
+                    <div id="suggestionTransactionInfo" style="margin-bottom: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px;">
+                        <p><strong>Transaction:</strong> <span id="suggestionDescription"></span></p>
+                        <p><strong>Amount:</strong> <span id="suggestionAmount"></span></p>
+                        <p><strong>Current Confidence:</strong> <span id="suggestionCurrentConfidence"></span></p>
+                    </div>
+
+                    <!-- AI Assessment -->
+                    <div id="suggestionAssessment" style="margin-bottom: 20px; padding: 10px; background: #e8f4f8; border-radius: 4px; display: none;">
+                        <p><strong>AI Assessment:</strong></p>
+                        <p id="suggestionReasoning" style="margin: 10px 0;"></p>
+                        <p><strong>New Confidence:</strong> <span id="suggestionNewConfidence"></span></p>
+                        <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+                            <span id="suggestionContext"></span>
+                        </p>
+                    </div>
                 </div>
+
                 <div id="suggestionsList">
-                    <div class="loading">Loading suggestions...</div>
+                    <div class="loading">Loading AI suggestions...</div>
+                </div>
+
+                <div id="suggestionsError" style="display: none; padding: 10px; background: #fee; border-radius: 4px; color: #c33;">
+                    <p id="suggestionsErrorMessage"></p>
+                </div>
+
+                <div id="suggestionsEmpty" style="display: none; padding: 10px; background: #efe; border-radius: 4px; color: #363;">
+                    <p>✅ No improvements needed! The AI is confident with the current classification.</p>
                 </div>
             </div>
         </div>

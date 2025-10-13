@@ -350,12 +350,12 @@ function renderTransactionTable(transactions) {
         return `
             <tr data-transaction-id="${transaction.transaction_id || ''}">
                 <td><input type="checkbox" class="transaction-select-cb" data-transaction-id="${transaction.transaction_id || ''}"></td>
-                <td>${formatDate(transaction.date) || (transaction.source_file?.includes('Chase') ? 'Date Missing' : 'N/A')}</td>
+                <td>${formatDate(transaction.date) || 'N/A'}</td>
                 <td class="editable-field" data-field="origin" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.origin || (transaction.source_file?.includes('Chase') ? 'Credit Card' : 'Unknown')}
+                    ${transaction.origin || 'Unknown'}
                 </td>
                 <td class="editable-field" data-field="destination" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.destination || (transaction.source_file?.includes('Chase') ? 'Merchant' : 'Unknown')}
+                    ${transaction.destination || 'Unknown'}
                 </td>
                 <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
                     ${truncateText(transaction.description, 40) || 'N/A'}
@@ -760,6 +760,44 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
             showToast('Transaction updated successfully', 'success');
             setupInlineEditing(); // Re-setup event listeners
 
+            // SMART CONFIDENCE UPDATE: Use the updated confidence value from backend
+            console.log('🔍 DEBUG: API response:', result);
+            console.log('🔍 DEBUG: Updated confidence value:', result.updated_confidence);
+
+            if (result.updated_confidence !== undefined && result.updated_confidence !== null) {
+                const row = fieldElement.closest('tr');
+                console.log('🔍 DEBUG: Found row:', row);
+
+                if (row) {
+                    // Find the confidence span by its class name (not data-field)
+                    const confidenceCell = row.querySelector('.confidence-score');
+                    console.log('🔍 DEBUG: Found confidence cell:', confidenceCell);
+
+                    if (confidenceCell) {
+                        const confidencePercent = Math.round(result.updated_confidence * 100);
+                        const oldText = confidenceCell.textContent;
+                        confidenceCell.textContent = confidencePercent + '%';
+
+                        // Update CSS class based on confidence level
+                        if (confidencePercent >= 90) {
+                            confidenceCell.className = 'confidence-score confidence-high';
+                        } else if (confidencePercent >= 70) {
+                            confidenceCell.className = 'confidence-score confidence-medium';
+                        } else {
+                            confidenceCell.className = 'confidence-score confidence-low';
+                        }
+
+                        console.log(`✅ CONFIDENCE UPDATE: Changed from ${oldText} to ${confidencePercent}% for transaction ${transactionId}`);
+                    } else {
+                        console.warn('⚠️  Could not find confidence cell in row');
+                    }
+                } else {
+                    console.warn('⚠️  Could not find parent row');
+                }
+            } else {
+                console.warn('⚠️  No updated_confidence in API response');
+            }
+
             // For description changes, check if we should update similar transactions
             if (field === 'description') {
                 checkForSimilarTransactions(transactionId, value);
@@ -798,8 +836,11 @@ async function showAISuggestions(field) {
     const currentValue = field.textContent.trim();
 
     try {
-        showModal();
+        // CRITICAL FIX: Clear modal content BEFORE showing it to prevent stale data from appearing
         document.getElementById('suggestionsList').innerHTML = '<div class="loading">Loading AI suggestions...</div>';
+
+        // Now show the modal with fresh loading state
+        showModal();
 
         const url = `/api/suggestions?field_type=${fieldType}&transaction_id=${transactionId}&current_value=${encodeURIComponent(currentValue)}`;
         const response = await fetch(url);
@@ -1729,7 +1770,25 @@ document.addEventListener('change', function(e) {
 });
 
 function closeModal() {
-    document.getElementById('suggestionsModal').style.display = 'none';
+    const modal = document.getElementById('suggestionsModal');
+    modal.style.display = 'none';
+
+    // CRITICAL FIX: Clean up modal state to prevent stale data from appearing on next open
+    // Remove any modal-specific CSS classes
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        modalContent.classList.remove('similar-transactions-modal');
+    }
+
+    // Clear modal content to prevent stale data
+    const suggestionsContent = document.getElementById('suggestionsContent');
+    const suggestionsList = document.getElementById('suggestionsList');
+    if (suggestionsContent) {
+        suggestionsContent.innerHTML = '';
+    }
+    if (suggestionsList) {
+        suggestionsList.innerHTML = '';
+    }
 }
 
 function showNotification(message, type = 'success') {
@@ -2075,9 +2134,23 @@ async function getAISmartSuggestions(transactionId, transaction) {
 
         // Check if transaction doesn't need reassessment
         if (data.message && (!data.suggestions || data.suggestions.length === 0)) {
-            // Show empty state - transaction is already good
-            if (emptyDiv) emptyDiv.style.display = 'block';
-            if (suggestionsList) suggestionsList.innerHTML = '';
+            // CRITICAL FIX: Only show "No improvements needed" if confidence is actually high
+            // For low confidence transactions without suggestions, show a different message
+            const currentConfidence = transaction.confidence || 0;
+
+            if (currentConfidence >= 0.8) {
+                // High confidence - truly no improvements needed
+                if (emptyDiv) emptyDiv.style.display = 'block';
+                if (suggestionsList) suggestionsList.innerHTML = '';
+            } else {
+                // Low confidence but no suggestions - show error instead
+                if (errorDiv) errorDiv.style.display = 'block';
+                const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+                if (errorMsgEl) {
+                    errorMsgEl.textContent = `AI could not generate suggestions. Current confidence: ${(currentConfidence * 100).toFixed(0)}%. Try editing the fields manually or contact support.`;
+                }
+                if (suggestionsList) suggestionsList.innerHTML = '';
+            }
             return;
         }
 
