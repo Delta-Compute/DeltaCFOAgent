@@ -60,6 +60,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 
+# Import historical currency converter
+from historical_currency_converter import HistoricalCurrencyConverter
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
 
@@ -68,6 +71,9 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for ba
 
 # Claude API client
 claude_client = None
+
+# Historical Currency Converter
+currency_converter = None
 
 def init_claude_client():
     """Initialize Claude API client"""
@@ -103,6 +109,18 @@ def init_claude_client():
             return False
     except Exception as e:
         print(f"ERROR: Error initializing Claude API: {e}")
+        return False
+
+def init_currency_converter():
+    """Initialize Historical Currency Converter"""
+    global currency_converter
+    try:
+        from database import db_manager
+        currency_converter = HistoricalCurrencyConverter(db_manager)
+        print("[OK] Historical Currency Converter initialized successfully")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Error initializing Currency Converter: {e}")
         return False
 
 def init_invoice_tables():
@@ -3770,8 +3788,17 @@ def api_invoice_stats():
         total_result = db_manager.execute_query("SELECT COUNT(*) as count FROM invoices", fetch_one=True)
         total = total_result['count'] if total_result else 0
 
-        # Total amount
-        amount_result = db_manager.execute_query("SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices", fetch_one=True)
+        # Total amount - Use USD equivalent when available, fallback to original
+        amount_query = """
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN currency = 'USD' THEN total_amount
+                WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0 THEN usd_equivalent_amount
+                ELSE total_amount
+            END
+        ), 0) as total FROM invoices
+        """
+        amount_result = db_manager.execute_query(amount_query, fetch_one=True)
         total_amount = amount_result['total'] if amount_result else 0
 
         # Unique vendors
@@ -3785,7 +3812,16 @@ def api_invoice_stats():
         # By business unit
         bu_counts = {}
         try:
-            bu_rows = db_manager.execute_query("SELECT business_unit, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit", fetch_all=True)
+            bu_query = """
+            SELECT business_unit, COUNT(*) as count,
+                SUM(CASE
+                    WHEN currency = 'USD' THEN total_amount
+                    WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0 THEN usd_equivalent_amount
+                    ELSE total_amount
+                END) as total
+            FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit
+            """
+            bu_rows = db_manager.execute_query(bu_query, fetch_all=True)
             if bu_rows:
                 for row in bu_rows:
                     bu_counts[row['business_unit']] = {'count': row['count'], 'total': row['total']}
@@ -3795,7 +3831,16 @@ def api_invoice_stats():
         # By category
         category_counts = {}
         try:
-            category_rows = db_manager.execute_query("SELECT category, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE category IS NOT NULL GROUP BY category", fetch_all=True)
+            category_query = """
+            SELECT category, COUNT(*) as count,
+                SUM(CASE
+                    WHEN currency = 'USD' THEN total_amount
+                    WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0 THEN usd_equivalent_amount
+                    ELSE total_amount
+                END) as total
+            FROM invoices WHERE category IS NOT NULL GROUP BY category
+            """
+            category_rows = db_manager.execute_query(category_query, fetch_all=True)
             if category_rows:
                 for row in category_rows:
                     category_counts[row['category']] = {'count': row['count'], 'total': row['total']}
@@ -3804,7 +3849,17 @@ def api_invoice_stats():
 
         # By customer
         customer_counts = {}
-        customer_rows = db_manager.execute_query("SELECT customer_name, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10", fetch_all=True)
+        customer_query = """
+        SELECT customer_name, COUNT(*) as count,
+            SUM(CASE
+                WHEN currency = 'USD' THEN total_amount
+                WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0 THEN usd_equivalent_amount
+                ELSE total_amount
+            END) as total
+        FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''
+        GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10
+        """
+        customer_rows = db_manager.execute_query(customer_query, fetch_all=True)
         if customer_rows:
             for row in customer_rows:
                 customer_counts[row['customer_name']] = {'count': row['count'], 'total': row['total']}
@@ -3826,6 +3881,99 @@ def api_invoice_stats():
 
     except Exception as e:
         logger.error(f"Error getting invoice stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# CURRENCY CONVERSION API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/invoices/convert-currencies', methods=['POST'])
+def api_convert_currencies():
+    """Bulk convert invoice currencies to USD using historical rates"""
+    try:
+        global currency_converter
+        if not currency_converter:
+            return jsonify({'error': 'Currency converter not available'}), 503
+
+        data = request.get_json() or {}
+        limit = data.get('limit', 50)
+
+        # Perform bulk conversion
+        results = currency_converter.bulk_convert_invoices(limit)
+
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error converting currencies: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/conversion-stats')
+def api_conversion_stats():
+    """Get currency conversion statistics"""
+    try:
+        global currency_converter
+        if not currency_converter:
+            return jsonify({'error': 'Currency converter not available'}), 503
+
+        # Get conversion statistics
+        stats = currency_converter.get_conversion_stats()
+
+        return jsonify({
+            'success': True,
+            'stats': dict(stats) if stats else {}
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting conversion stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>/convert', methods=['POST'])
+def api_convert_single_invoice(invoice_id):
+    """Convert a single invoice to USD using historical rates"""
+    try:
+        global currency_converter
+        if not currency_converter:
+            return jsonify({'error': 'Currency converter not available'}), 503
+
+        from database import db_manager
+
+        # Get invoice data
+        invoice = db_manager.execute_query(
+            "SELECT * FROM invoices WHERE id = %s",
+            (invoice_id,),
+            fetch_one=True
+        )
+
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Convert the invoice
+        conversion = currency_converter.convert_invoice_amount(
+            float(invoice['total_amount']),
+            invoice['currency'],
+            invoice['date']
+        )
+
+        # Update invoice with USD equivalent if conversion was successful
+        if conversion['conversion_successful']:
+            currency_converter._update_invoice_usd_amount(
+                invoice['id'],
+                conversion['converted_amount'],
+                conversion['exchange_rate'],
+                conversion['rate_date'],
+                conversion['source']
+            )
+
+        return jsonify({
+            'success': True,
+            'conversion': conversion
+        })
+
+    except Exception as e:
+        logger.error(f"Error converting single invoice: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
@@ -5900,6 +6048,9 @@ if __name__ == '__main__':
     # Initialize invoice tables
     init_invoice_tables()
 
+    # Initialize currency converter
+    init_currency_converter()
+
     # Ensure background jobs tables exist
     ensure_background_jobs_tables()
 
@@ -5915,6 +6066,8 @@ try:
     if not claude_client:
         init_claude_client()
     init_invoice_tables()
+    if not currency_converter:
+        init_currency_converter()
     ensure_background_jobs_tables()
     print("[OK] Production initialization completed")
 except Exception as e:
