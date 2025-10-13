@@ -8,14 +8,26 @@ import os
 import sqlite3
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 from contextlib import contextmanager
-from typing import Generator, Optional, Any
+from typing import Generator, Optional, Any, Dict, List
 import time
+import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
         self.db_type = os.getenv('DB_TYPE', 'sqlite')  # 'sqlite' or 'postgresql'
         self.connection_config = self._get_connection_config()
+        self.connection_pool = None
+        self._init_connection_pool()
 
     def _get_connection_config(self) -> dict:
         """Get database connection configuration based on environment"""
@@ -32,12 +44,42 @@ class DatabaseManager:
             }
         else:
             # SQLite configuration
-            db_path = os.getenv('SQLITE_DB_PATH', 'web_ui/delta_transactions.db')
+            db_path = os.getenv('SQLITE_DB_PATH', 'delta_transactions.db')
             return {
                 'database': db_path,
                 'timeout': 60.0,
                 'check_same_thread': False
             }
+
+    def _init_connection_pool(self):
+        """Initialize connection pool for PostgreSQL"""
+        if self.db_type == 'postgresql':
+            try:
+                config = self.connection_config.copy()
+
+                # Handle Cloud SQL socket connection
+                if config.get('unix_sock'):
+                    config['host'] = config['unix_sock']
+                    config.pop('unix_sock', None)
+                    config['sslmode'] = 'disable'
+
+                # Remove None values
+                config = {k: v for k, v in config.items() if v is not None}
+
+                # Create connection pool
+                self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=2,  # Minimum connections
+                    maxconn=20,  # Maximum connections for Cloud SQL
+                    **config
+                )
+                logger.info("PostgreSQL connection pool initialized successfully")
+
+            except Exception as e:
+                logger.error(f"Failed to initialize connection pool: {e}")
+                self.connection_pool = None
+        else:
+            # SQLite doesn't need connection pooling
+            self.connection_pool = None
 
     @contextmanager
     def get_connection(self) -> Generator[Any, None, None]:
@@ -56,21 +98,47 @@ class DatabaseManager:
                 break
 
             except Exception as e:
+                if connection:
+                    try:
+                        if self.db_type == 'postgresql' and self.connection_pool:
+                            self.connection_pool.putconn(connection)
+                        else:
+                            connection.close()
+                    except:
+                        pass
+                    connection = None
+
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 2
-                    print(f"Database connection attempt {attempt + 1} failed: {e}")
-                    print(f"Retrying in {wait_time} seconds...")
+                    logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+                    logger.warning(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                     continue
                 else:
-                    print(f"All database connection attempts failed: {e}")
+                    logger.error(f"All database connection attempts failed: {e}")
                     raise
             finally:
                 if connection:
-                    connection.close()
+                    try:
+                        if self.db_type == 'postgresql' and self.connection_pool:
+                            self.connection_pool.putconn(connection)
+                        else:
+                            connection.close()
+                    except Exception as e:
+                        logger.error(f"Error returning connection to pool: {e}")
 
     def _get_postgresql_connection(self):
-        """Create PostgreSQL connection"""
+        """Create PostgreSQL connection using pool if available"""
+        if self.connection_pool:
+            try:
+                conn = self.connection_pool.getconn()
+                if conn:
+                    conn.autocommit = False  # Use transactions
+                    return conn
+            except Exception as e:
+                logger.warning(f"Failed to get connection from pool, creating new one: {e}")
+
+        # Fallback to direct connection
         config = self.connection_config.copy()
 
         # Handle Cloud SQL socket connection
@@ -150,6 +218,201 @@ class DatabaseManager:
                 raise e
             finally:
                 cursor.close()
+
+    @contextmanager
+    def get_transaction(self):
+        """
+        Context manager for database transactions with automatic rollback on error
+        Ensures data consistency for complex operations like matching
+        """
+        with self.get_connection() as conn:
+            savepoint_name = None
+            try:
+                # For PostgreSQL, we can use savepoints for nested transactions
+                if self.db_type == 'postgresql':
+                    import uuid
+                    savepoint_name = f"sp_{str(uuid.uuid4()).replace('-', '_')}"
+                    cursor = conn.cursor()
+                    cursor.execute(f"SAVEPOINT {savepoint_name}")
+                    cursor.close()
+
+                yield conn
+
+                # If we reach here, commit the transaction
+                if self.db_type == 'postgresql' and savepoint_name:
+                    cursor = conn.cursor()
+                    cursor.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                    cursor.close()
+
+                conn.commit()
+                logger.debug("Transaction committed successfully")
+
+            except Exception as e:
+                # Rollback on any error
+                try:
+                    if self.db_type == 'postgresql' and savepoint_name:
+                        cursor = conn.cursor()
+                        cursor.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+                        cursor.close()
+                    else:
+                        conn.rollback()
+                    logger.warning(f"Transaction rolled back due to error: {e}")
+                except Exception as rollback_error:
+                    logger.error(f"Error during rollback: {rollback_error}")
+                raise e
+
+    def execute_batch_operation(self, operations: List[Dict], batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Execute multiple database operations in batches with transaction safety
+        Useful for processing large volumes of matching operations
+
+        Args:
+            operations: List of dicts with 'query', 'params', and optional 'operation_type'
+            batch_size: Number of operations per batch
+
+        Returns:
+            Dict with success/failure statistics
+        """
+        results = {
+            'total_operations': len(operations),
+            'successful_batches': 0,
+            'failed_batches': 0,
+            'total_rows_affected': 0,
+            'errors': []
+        }
+
+        # Process in batches
+        for i in range(0, len(operations), batch_size):
+            batch = operations[i:i + batch_size]
+            batch_num = (i // batch_size) + 1
+
+            try:
+                with self.get_transaction() as conn:
+                    cursor = conn.cursor()
+                    batch_rows_affected = 0
+
+                    for operation in batch:
+                        query = operation['query']
+                        params = operation.get('params', ())
+
+                        cursor.execute(query, params)
+                        batch_rows_affected += cursor.rowcount
+
+                    cursor.close()
+                    results['successful_batches'] += 1
+                    results['total_rows_affected'] += batch_rows_affected
+
+                    logger.info(f"Batch {batch_num} completed successfully ({len(batch)} operations)")
+
+            except Exception as e:
+                results['failed_batches'] += 1
+                error_msg = f"Batch {batch_num} failed: {str(e)}"
+                results['errors'].append(error_msg)
+                logger.error(error_msg)
+
+                # Continue with next batch rather than failing completely
+                continue
+
+        logger.info(f"Batch processing completed: {results['successful_batches']}/{results['successful_batches'] + results['failed_batches']} batches successful")
+        return results
+
+    def execute_with_retry(self, query: str, params: tuple = None, max_retries: int = 3,
+                          fetch_one: bool = False, fetch_all: bool = False):
+        """
+        Execute query with automatic retry for transient failures
+        Particularly useful for Cloud SQL which may have temporary connectivity issues
+        """
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                return self.execute_query(query, params, fetch_one, fetch_all)
+
+            except psycopg2.OperationalError as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2
+                    logger.warning(f"Database operation failed (attempt {attempt + 1}/{max_retries}): {e}")
+                    logger.warning(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Database operation failed after {max_retries} attempts")
+                    raise
+
+            except Exception as e:
+                # For non-operational errors, don't retry
+                logger.error(f"Database operation failed with non-retryable error: {e}")
+                raise
+
+        # Should never reach here, but just in case
+        if last_exception:
+            raise last_exception
+
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Perform database health check
+        Returns status information about database connectivity and performance
+        """
+        health_status = {
+            'status': 'unknown',
+            'db_type': self.db_type,
+            'connection_pool_status': None,
+            'response_time_ms': None,
+            'error': None
+        }
+
+        try:
+            start_time = time.time()
+
+            # Simple connectivity test
+            result = self.execute_query("SELECT 1 as health_check", fetch_one=True)
+
+            end_time = time.time()
+            response_time = (end_time - start_time) * 1000  # Convert to milliseconds
+
+            # Handle both dict-like and tuple-like results
+            health_check_value = None
+            if result:
+                if hasattr(result, 'get'):
+                    health_check_value = result.get('health_check')
+                elif hasattr(result, '__getitem__'):
+                    try:
+                        health_check_value = result[0]
+                    except (IndexError, KeyError):
+                        health_check_value = None
+                elif hasattr(result, 'health_check'):
+                    health_check_value = result.health_check
+
+            if health_check_value == 1:
+                health_status['status'] = 'healthy'
+                health_status['response_time_ms'] = round(response_time, 2)
+
+                # Check connection pool status for PostgreSQL
+                if self.db_type == 'postgresql' and self.connection_pool:
+                    health_status['connection_pool_status'] = {
+                        'total_connections': len(self.connection_pool._pool),
+                        'used_connections': len(self.connection_pool._used),
+                        'available_connections': len(self.connection_pool._pool) - len(self.connection_pool._used)
+                    }
+            else:
+                health_status['status'] = 'unhealthy'
+                health_status['error'] = 'Health check query returned unexpected result'
+
+        except Exception as e:
+            health_status['status'] = 'unhealthy'
+            health_status['error'] = str(e)
+            logger.error(f"Database health check failed: {e}")
+
+        return health_status
+
+    def close_pool(self):
+        """Close connection pool gracefully"""
+        if self.connection_pool and self.db_type == 'postgresql':
+            try:
+                self.connection_pool.closeall()
+                logger.info("Connection pool closed successfully")
+            except Exception as e:
+                logger.error(f"Error closing connection pool: {e}")
 
     def init_database(self):
         """Initialize database with schema"""

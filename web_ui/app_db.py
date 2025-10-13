@@ -7,7 +7,7 @@ Advanced web interface for financial transaction management with Claude AI integ
 import os
 import sys
 import json
-import sqlite3
+import sqlite3  # Kept for backward compatibility - main DB uses database.py manager
 import pandas as pd
 import time
 import threading
@@ -26,10 +26,15 @@ import uuid
 import base64
 import zipfile
 import re
+import logging
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Archive handling imports - optional
 try:
@@ -37,7 +42,7 @@ try:
     PY7ZR_AVAILABLE = True
 except ImportError:
     PY7ZR_AVAILABLE = False
-    print("⚠️  py7zr not available - 7z archive support disabled")
+    print("WARNING: py7zr not available - 7z archive support disabled")
 
 # Database imports - support both SQLite and PostgreSQL
 try:
@@ -46,7 +51,7 @@ try:
     POSTGRESQL_AVAILABLE = True
 except ImportError:
     POSTGRESQL_AVAILABLE = False
-    print("⚠️  psycopg2 not available - PostgreSQL support disabled")
+    print("WARNING: psycopg2 not available - PostgreSQL support disabled")
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -58,8 +63,8 @@ sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
 
-# Database connection
-DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
+# Database connection - DEPRECATED: Now using database manager (database.py)
+# DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
 
 # Claude API client
 claude_client = None
@@ -91,7 +96,7 @@ def init_claude_client():
                 return False
 
             claude_client = anthropic.Anthropic(api_key=api_key)
-            print(f"✅ Claude API client initialized successfully (key: {api_key[:10]}...{api_key[-4:]})")
+            print(f"[OK] Claude API client initialized successfully (key: {api_key[:10]}...{api_key[-4:]})")
             return True
         else:
             print("WARNING: Claude API key not found - AI features disabled")
@@ -103,195 +108,169 @@ def init_claude_client():
 def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
 
-        # Main invoices table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS invoices (
-                id TEXT PRIMARY KEY,
-                invoice_number TEXT UNIQUE NOT NULL,
-                date TEXT NOT NULL,
-                due_date TEXT,
-                vendor_name TEXT NOT NULL,
-                vendor_address TEXT,
-                vendor_tax_id TEXT,
-                customer_name TEXT,
-                customer_address TEXT,
-                customer_tax_id TEXT,
-                total_amount REAL NOT NULL,
-                currency TEXT DEFAULT 'USD',
-                tax_amount REAL,
-                subtotal REAL,
-                line_items TEXT,
-                payment_terms TEXT,
-                status TEXT DEFAULT 'pending',
-                invoice_type TEXT DEFAULT 'other',
-                confidence_score REAL DEFAULT 0.0,
-                processing_notes TEXT,
-                source_file TEXT,
-                email_id TEXT,
-                processed_at TEXT,
-                created_at TEXT NOT NULL,
-                business_unit TEXT,
-                category TEXT,
-                currency_type TEXT,
-                vendor_type TEXT,
-                extraction_method TEXT,
-                linked_transaction_id TEXT,
-                FOREIGN KEY (linked_transaction_id) REFERENCES transactions(transaction_id)
-            )
-        ''')
-
-        # Email processing log
-        if is_postgresql:
+            # Main invoices table
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS invoice_email_log (
-                    id SERIAL PRIMARY KEY,
-                    email_id TEXT UNIQUE NOT NULL,
-                    subject TEXT,
-                    sender TEXT,
-                    received_at TEXT,
-                    processed_at TEXT,
+                CREATE TABLE IF NOT EXISTS invoices (
+                    id TEXT PRIMARY KEY,
+                    invoice_number TEXT UNIQUE NOT NULL,
+                    date TEXT NOT NULL,
+                    due_date TEXT,
+                    vendor_name TEXT NOT NULL,
+                    vendor_address TEXT,
+                    vendor_tax_id TEXT,
+                    customer_name TEXT,
+                    customer_address TEXT,
+                    customer_tax_id TEXT,
+                    total_amount REAL NOT NULL,
+                    currency TEXT DEFAULT 'USD',
+                    tax_amount REAL,
+                    subtotal REAL,
+                    line_items TEXT,
+                    payment_terms TEXT,
                     status TEXT DEFAULT 'pending',
-                    attachments_count INTEGER DEFAULT 0,
-                    invoices_extracted INTEGER DEFAULT 0,
-                    error_message TEXT
-                )
-            ''')
-        else:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS invoice_email_log (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email_id TEXT UNIQUE NOT NULL,
-                    subject TEXT,
-                    sender TEXT,
-                    received_at TEXT,
+                    invoice_type TEXT DEFAULT 'other',
+                    confidence_score REAL DEFAULT 0.0,
+                    processing_notes TEXT,
+                    source_file TEXT,
+                    email_id TEXT,
                     processed_at TEXT,
-                    status TEXT DEFAULT 'pending',
-                    attachments_count INTEGER DEFAULT 0,
-                    invoices_extracted INTEGER DEFAULT 0,
-                    error_message TEXT
-                )
-            ''')
-
-        # Background jobs table for async processing
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS background_jobs (
-                id TEXT PRIMARY KEY,
-                job_type TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                total_items INTEGER NOT NULL DEFAULT 0,
-                processed_items INTEGER NOT NULL DEFAULT 0,
-                successful_items INTEGER NOT NULL DEFAULT 0,
-                failed_items INTEGER NOT NULL DEFAULT 0,
-                progress_percentage REAL NOT NULL DEFAULT 0.0,
-                started_at TEXT,
-                completed_at TEXT,
-                created_at TEXT NOT NULL,
-                created_by TEXT DEFAULT 'system',
-                source_file TEXT,
-                error_message TEXT,
-                metadata TEXT
-            )
-        ''')
-
-        # Job items table for tracking individual files in a job
-        if is_postgresql:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS job_items (
-                    id SERIAL PRIMARY KEY,
-                    job_id TEXT NOT NULL,
-                    item_name TEXT NOT NULL,
-                    item_path TEXT,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    processed_at TEXT,
-                    error_message TEXT,
-                    result_data TEXT,
-                    processing_time_seconds REAL,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    business_unit TEXT,
+                    category TEXT,
+                    currency_type TEXT,
+                    vendor_type TEXT,
+                    extraction_method TEXT,
+                    linked_transaction_id TEXT,
+                    FOREIGN KEY (linked_transaction_id) REFERENCES transactions(transaction_id)
                 )
             ''')
-        else:
+
+            # Email processing log
+            if is_postgresql:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_email_log (
+                        id SERIAL PRIMARY KEY,
+                        email_id TEXT UNIQUE NOT NULL,
+                        subject TEXT,
+                        sender TEXT,
+                        received_at TEXT,
+                        processed_at TEXT,
+                        status TEXT DEFAULT 'pending',
+                        attachments_count INTEGER DEFAULT 0,
+                        invoices_extracted INTEGER DEFAULT 0,
+                        error_message TEXT
+                    )
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_email_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        email_id TEXT UNIQUE NOT NULL,
+                        subject TEXT,
+                        sender TEXT,
+                        received_at TEXT,
+                        processed_at TEXT,
+                        status TEXT DEFAULT 'pending',
+                        attachments_count INTEGER DEFAULT 0,
+                        invoices_extracted INTEGER DEFAULT 0,
+                        error_message TEXT
+                    )
+                ''')
+
+            # Background jobs table for async processing
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS job_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id TEXT NOT NULL,
-                    item_name TEXT NOT NULL,
-                    item_path TEXT,
+                CREATE TABLE IF NOT EXISTS background_jobs (
+                    id TEXT PRIMARY KEY,
+                    job_type TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
-                    processed_at TEXT,
-                    error_message TEXT,
-                    result_data TEXT,
-                    processing_time_seconds REAL,
+                    total_items INTEGER NOT NULL DEFAULT 0,
+                    processed_items INTEGER NOT NULL DEFAULT 0,
+                    successful_items INTEGER NOT NULL DEFAULT 0,
+                    failed_items INTEGER NOT NULL DEFAULT 0,
+                    progress_percentage REAL NOT NULL DEFAULT 0.0,
+                    started_at TEXT,
+                    completed_at TEXT,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    created_by TEXT DEFAULT 'system',
+                    source_file TEXT,
+                    error_message TEXT,
+                    metadata TEXT
                 )
             ''')
 
-        # Add customer columns to existing tables (migration)
-        try:
-            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
-            print("Added customer_name column to invoices table")
-        except:
-            pass  # Column already exists
+            # Job items table for tracking individual files in a job
+            if is_postgresql:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS job_items (
+                        id SERIAL PRIMARY KEY,
+                        job_id TEXT NOT NULL,
+                        item_name TEXT NOT NULL,
+                        item_path TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        processed_at TEXT,
+                        error_message TEXT,
+                        result_data TEXT,
+                        processing_time_seconds REAL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    )
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS job_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id TEXT NOT NULL,
+                        item_name TEXT NOT NULL,
+                        item_path TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        processed_at TEXT,
+                        error_message TEXT,
+                        result_data TEXT,
+                        processing_time_seconds REAL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    )
+                ''')
 
-        try:
-            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
-            print("Added customer_address column to invoices table")
-        except:
-            pass  # Column already exists
+            # Add customer columns to existing tables (migration)
+            try:
+                cursor.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
+                print("Added customer_name column to invoices table")
+            except:
+                pass  # Column already exists
 
-        try:
-            cursor.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
-            print("Added customer_tax_id column to invoices table")
-        except:
-            pass  # Column already exists
+            try:
+                cursor.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
+                print("Added customer_address column to invoices table")
+            except:
+                pass  # Column already exists
 
-        conn.commit()
-        conn.close()
-        print("Invoice tables initialized successfully")
-        return True
+            try:
+                cursor.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
+                print("Added customer_tax_id column to invoices table")
+            except:
+                pass  # Column already exists
+
+            conn.commit()
+            print("Invoice tables initialized successfully")
+            return True
     except Exception as e:
         print(f"ERROR: Failed to initialize invoice tables: {e}")
         return False
 
 def init_database():
-    """Initialize database and create tables if they don't exist"""
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
-    # Prevent database locks
-    conn.execute("PRAGMA busy_timeout=30000")
-    conn.execute("PRAGMA journal_mode=WAL")
-    cursor = conn.cursor()
-
-    # Create transactions table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            transaction_id TEXT PRIMARY KEY,
-            date TEXT,
-            description TEXT,
-            amount REAL,
-            currency TEXT,
-            usd_equivalent REAL,
-            classified_entity TEXT,
-            justification TEXT,
-            confidence REAL,
-            classification_reason TEXT,
-            origin TEXT,
-            destination TEXT,
-            identifier TEXT,
-            source_file TEXT,
-            crypto_amount TEXT,
-            conversion_note TEXT,
-            accounting_category TEXT
-        )
-    """)
-
-    conn.commit()
-    conn.close()
-    print("✅ Database initialized successfully")
+    """Initialize database and create tables if they don't exist - now uses database manager"""
+    try:
+        from database import db_manager
+        db_manager.init_database()
+        print("[OK] Database initialized successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to initialize database: {e}")
+        raise
 
 # ============================================================================
 # BACKGROUND JOBS MANAGEMENT
@@ -300,87 +279,86 @@ def init_database():
 def ensure_background_jobs_tables():
     """Ensure background jobs tables exist with correct schema"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
 
-        # MIGRATION: Expand VARCHAR(10) fields to avoid overflow errors
-        if is_postgresql:
-            try:
-                # Expand currency field in transactions table
-                cursor.execute("ALTER TABLE transactions ALTER COLUMN currency TYPE VARCHAR(50)")
-                print("✅ Migrated transactions.currency VARCHAR(10) → VARCHAR(50)")
-            except Exception as e:
-                if "does not exist" not in str(e) and "already exists" not in str(e):
-                    print(f"Currency migration info: {e}")
+            # MIGRATION: Expand VARCHAR(10) fields to avoid overflow errors
+            if is_postgresql:
+                try:
+                    # Expand currency field in transactions table
+                    cursor.execute("ALTER TABLE transactions ALTER COLUMN currency TYPE VARCHAR(50)")
+                    print("[OK] Migrated transactions.currency VARCHAR(10) → VARCHAR(50)")
+                except Exception as e:
+                    if "does not exist" not in str(e) and "already exists" not in str(e):
+                        print(f"Currency migration info: {e}")
 
-            try:
-                # Expand currency field in invoices table
-                cursor.execute("ALTER TABLE invoices ALTER COLUMN currency TYPE VARCHAR(50)")
-                print("✅ Migrated invoices.currency VARCHAR(10) → VARCHAR(50)")
-            except Exception as e:
-                if "does not exist" not in str(e) and "already exists" not in str(e):
-                    print(f"Currency migration info: {e}")
+                try:
+                    # Expand currency field in invoices table
+                    cursor.execute("ALTER TABLE invoices ALTER COLUMN currency TYPE VARCHAR(50)")
+                    print("[OK] Migrated invoices.currency VARCHAR(10) → VARCHAR(50)")
+                except Exception as e:
+                    if "does not exist" not in str(e) and "already exists" not in str(e):
+                        print(f"Currency migration info: {e}")
 
-        # Background jobs table for async processing
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS background_jobs (
-                id TEXT PRIMARY KEY,
-                job_type TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                total_items INTEGER NOT NULL DEFAULT 0,
-                processed_items INTEGER NOT NULL DEFAULT 0,
-                successful_items INTEGER NOT NULL DEFAULT 0,
-                failed_items INTEGER NOT NULL DEFAULT 0,
-                progress_percentage REAL NOT NULL DEFAULT 0.0,
-                started_at TEXT,
-                completed_at TEXT,
-                created_at TEXT NOT NULL,
-                created_by TEXT DEFAULT 'system',
-                source_file TEXT,
-                error_message TEXT,
-                metadata TEXT
-            )
-        ''')
-
-        # Job items table for tracking individual files in a job
-        if is_postgresql:
+            # Background jobs table for async processing
             cursor.execute('''
-                CREATE TABLE IF NOT EXISTS job_items (
-                    id SERIAL PRIMARY KEY,
-                    job_id TEXT NOT NULL,
-                    item_name TEXT NOT NULL,
-                    item_path TEXT,
+                CREATE TABLE IF NOT EXISTS background_jobs (
+                    id TEXT PRIMARY KEY,
+                    job_type TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'pending',
-                    processed_at TEXT,
-                    error_message TEXT,
-                    result_data TEXT,
-                    processing_time_seconds REAL,
+                    total_items INTEGER NOT NULL DEFAULT 0,
+                    processed_items INTEGER NOT NULL DEFAULT 0,
+                    successful_items INTEGER NOT NULL DEFAULT 0,
+                    failed_items INTEGER NOT NULL DEFAULT 0,
+                    progress_percentage REAL NOT NULL DEFAULT 0.0,
+                    started_at TEXT,
+                    completed_at TEXT,
                     created_at TEXT NOT NULL,
-                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
-                )
-            ''')
-        else:
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS job_items (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_id TEXT NOT NULL,
-                    item_name TEXT NOT NULL,
-                    item_path TEXT,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    processed_at TEXT,
+                    created_by TEXT DEFAULT 'system',
+                    source_file TEXT,
                     error_message TEXT,
-                    result_data TEXT,
-                    processing_time_seconds REAL,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    metadata TEXT
                 )
             ''')
 
-        conn.commit()
-        conn.close()
-        print("✅ Background jobs tables ensured")
-        return True
+            # Job items table for tracking individual files in a job
+            if is_postgresql:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS job_items (
+                        id SERIAL PRIMARY KEY,
+                        job_id TEXT NOT NULL,
+                        item_name TEXT NOT NULL,
+                        item_path TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        processed_at TEXT,
+                        error_message TEXT,
+                        result_data TEXT,
+                        processing_time_seconds REAL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    )
+                ''')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS job_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        job_id TEXT NOT NULL,
+                        item_name TEXT NOT NULL,
+                        item_path TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        processed_at TEXT,
+                        error_message TEXT,
+                        result_data TEXT,
+                        processing_time_seconds REAL,
+                        created_at TEXT NOT NULL,
+                        FOREIGN KEY (job_id) REFERENCES background_jobs(id)
+                    )
+                ''')
+
+            conn.commit()
+            print("[OK] Background jobs tables ensured")
+            return True
 
     except Exception as e:
         print(f"ERROR: Failed to ensure background jobs tables: {e}")
@@ -398,24 +376,23 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
     created_at = datetime.utcnow().isoformat()
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        cursor.execute(f"""
-            INSERT INTO background_jobs (
-                id, job_type, status, total_items, created_at, created_by,
-                source_file, metadata
-            ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder},
-                     {placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (job_id, job_type, 'pending', total_items, created_at, created_by,
-              source_file, metadata))
+            cursor.execute(f"""
+                INSERT INTO background_jobs (
+                    id, job_type, status, total_items, created_at, created_by,
+                    source_file, metadata
+                ) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder},
+                         {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (job_id, job_type, 'pending', total_items, created_at, created_by,
+                  source_file, metadata))
 
-        conn.commit()
-        conn.close()
-        print(f"✅ Created background job {job_id} with {total_items} items")
-        return job_id
+            conn.commit()
+            print(f"[OK] Created background job {job_id} with {total_items} items")
+            return job_id
 
     except Exception as e:
         print(f"ERROR: Failed to create background job: {e}")
@@ -427,25 +404,24 @@ def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
     created_at = datetime.utcnow().isoformat()
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        cursor.execute(f"""
-            INSERT INTO job_items (job_id, item_name, item_path, status, created_at)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (job_id, item_name, item_path, 'pending', created_at))
+            cursor.execute(f"""
+                INSERT INTO job_items (job_id, item_name, item_path, status, created_at)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (job_id, item_name, item_path, 'pending', created_at))
 
-        if is_postgresql:
-            cursor.execute("SELECT lastval()")
-            item_id = cursor.fetchone()['lastval']
-        else:
-            item_id = cursor.lastrowid
+            if is_postgresql:
+                cursor.execute("SELECT lastval()")
+                item_id = cursor.fetchone()['lastval']
+            else:
+                item_id = cursor.lastrowid
 
-        conn.commit()
-        conn.close()
-        return item_id
+            conn.commit()
+            return item_id
 
     except Exception as e:
         print(f"ERROR: Failed to add job item: {e}")
@@ -456,55 +432,54 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
     """Update job progress and status"""
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        # Build dynamic update query
-        updates = []
-        values = []
+            # Build dynamic update query
+            updates = []
+            values = []
 
-        if processed_items is not None:
-            updates.append(f"processed_items = {placeholder}")
-            values.append(processed_items)
-        if successful_items is not None:
-            updates.append(f"successful_items = {placeholder}")
-            values.append(successful_items)
-        if failed_items is not None:
-            updates.append(f"failed_items = {placeholder}")
-            values.append(failed_items)
-        if status is not None:
-            updates.append(f"status = {placeholder}")
-            values.append(status)
-            if status in ['completed', 'failed', 'completed_with_errors']:
-                updates.append(f"completed_at = {placeholder}")
-                values.append(datetime.utcnow().isoformat())
-            elif status == 'processing':
-                updates.append(f"started_at = {placeholder}")
-                values.append(datetime.utcnow().isoformat())
-        if error_message is not None:
-            updates.append(f"error_message = {placeholder}")
-            values.append(error_message)
+            if processed_items is not None:
+                updates.append(f"processed_items = {placeholder}")
+                values.append(processed_items)
+            if successful_items is not None:
+                updates.append(f"successful_items = {placeholder}")
+                values.append(successful_items)
+            if failed_items is not None:
+                updates.append(f"failed_items = {placeholder}")
+                values.append(failed_items)
+            if status is not None:
+                updates.append(f"status = {placeholder}")
+                values.append(status)
+                if status in ['completed', 'failed', 'completed_with_errors']:
+                    updates.append(f"completed_at = {placeholder}")
+                    values.append(datetime.utcnow().isoformat())
+                elif status == 'processing':
+                    updates.append(f"started_at = {placeholder}")
+                    values.append(datetime.utcnow().isoformat())
+            if error_message is not None:
+                updates.append(f"error_message = {placeholder}")
+                values.append(error_message)
 
-        # Calculate progress percentage if we have processed_items
-        if processed_items is not None:
-            cursor.execute(f"SELECT total_items FROM background_jobs WHERE id = {placeholder}", (job_id,))
-            result = cursor.fetchone()
-            if result:
-                total = result['total_items'] if is_postgresql else result[0]
-                if total > 0:
-                    progress = (processed_items / total) * 100
-                    updates.append(f"progress_percentage = {placeholder}")
-                    values.append(progress)
+            # Calculate progress percentage if we have processed_items
+            if processed_items is not None:
+                cursor.execute(f"SELECT total_items FROM background_jobs WHERE id = {placeholder}", (job_id,))
+                result = cursor.fetchone()
+                if result:
+                    total = result['total_items'] if is_postgresql else result[0]
+                    if total > 0:
+                        progress = (processed_items / total) * 100
+                        updates.append(f"progress_percentage = {placeholder}")
+                        values.append(progress)
 
-        if updates:
-            values.append(job_id)
-            update_query = f"UPDATE background_jobs SET {', '.join(updates)} WHERE id = {placeholder}"
-            cursor.execute(update_query, values)
+            if updates:
+                values.append(job_id)
+                update_query = f"UPDATE background_jobs SET {', '.join(updates)} WHERE id = {placeholder}"
+                cursor.execute(update_query, values)
 
-        conn.commit()
-        conn.close()
+            conn.commit()
 
     except Exception as e:
         print(f"ERROR: Failed to update job progress: {e}")
@@ -514,22 +489,21 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
     """Update individual job item status"""
 
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        processed_at = datetime.utcnow().isoformat() if status in ['completed', 'failed'] else None
+            processed_at = datetime.utcnow().isoformat() if status in ['completed', 'failed'] else None
 
-        cursor.execute(f"""
-            UPDATE job_items
-            SET status = {placeholder}, processed_at = {placeholder},
-                error_message = {placeholder}, result_data = {placeholder}, processing_time_seconds = {placeholder}
-            WHERE job_id = {placeholder} AND item_name = {placeholder}
-        """, (status, processed_at, error_message, result_data, processing_time, job_id, item_name))
+            cursor.execute(f"""
+                UPDATE job_items
+                SET status = {placeholder}, processed_at = {placeholder},
+                    error_message = {placeholder}, result_data = {placeholder}, processing_time_seconds = {placeholder}
+                WHERE job_id = {placeholder} AND item_name = {placeholder}
+            """, (status, processed_at, error_message, result_data, processing_time, job_id, item_name))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
 
     except Exception as e:
         print(f"ERROR: Failed to update job item status: {e}")
@@ -537,27 +511,26 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
 def get_job_status(job_id: str) -> dict:
     """Get complete job status with items"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        # Get job info
-        cursor.execute(f"SELECT * FROM background_jobs WHERE id = {placeholder}", (job_id,))
-        job_row = cursor.fetchone()
+            # Get job info
+            cursor.execute(f"SELECT * FROM background_jobs WHERE id = {placeholder}", (job_id,))
+            job_row = cursor.fetchone()
 
-        if not job_row:
-            return {'error': 'Job not found'}
+            if not job_row:
+                return {'error': 'Job not found'}
 
-        job_info = dict(job_row)
+            job_info = dict(job_row)
 
-        # Get job items
-        cursor.execute(f"SELECT * FROM job_items WHERE job_id = {placeholder} ORDER BY created_at", (job_id,))
-        items_rows = cursor.fetchall()
-        job_info['items'] = [dict(row) for row in items_rows]
+            # Get job items
+            cursor.execute(f"SELECT * FROM job_items WHERE job_id = {placeholder} ORDER BY created_at", (job_id,))
+            items_rows = cursor.fetchall()
+            job_info['items'] = [dict(row) for row in items_rows]
 
-        conn.close()
-        return job_info
+            return job_info
 
     except Exception as e:
         print(f"ERROR: Failed to get job status: {e}")
@@ -575,7 +548,7 @@ def process_single_invoice_item(job_id: str, item: dict):
                              error_message='File not found or path invalid')
         return {'status': 'failed', 'item_name': item_name, 'error': 'File not found'}
 
-    print(f"🔄 Processing item: {item_name}")
+    print(f"[PROCESS] Processing item: {item_name}")
     start_time = time.time()
 
     try:
@@ -588,7 +561,7 @@ def process_single_invoice_item(job_id: str, item: dict):
             update_job_item_status(job_id, item_name, 'failed',
                                  error_message=invoice_data['error'],
                                  processing_time=processing_time)
-            print(f"❌ Failed item: {item_name} - {invoice_data['error']}")
+            print(f"[ERROR] Failed item: {item_name} - {invoice_data['error']}")
             return {'status': 'failed', 'item_name': item_name, 'error': invoice_data['error']}
         else:
             # Processing successful
@@ -601,7 +574,7 @@ def process_single_invoice_item(job_id: str, item: dict):
             update_job_item_status(job_id, item_name, 'completed',
                                  result_data=str(result_summary),
                                  processing_time=processing_time)
-            print(f"✅ Completed item: {item_name} in {processing_time:.2f}s")
+            print(f"[OK] Completed item: {item_name} in {processing_time:.2f}s")
 
             # Clean up processed file to save storage
             try:
@@ -615,7 +588,7 @@ def process_single_invoice_item(job_id: str, item: dict):
     except Exception as e:
         processing_time = time.time() - start_time
         error_msg = f"Processing error: {str(e)}"
-        print(f"❌ Failed item: {item_name} - {error_msg}")
+        print(f"[ERROR] Failed item: {item_name} - {error_msg}")
 
         update_job_item_status(job_id, item_name, 'failed',
                              error_message=error_msg,
@@ -672,7 +645,7 @@ def process_invoice_batch_job(job_id: str):
                                   failed_items=failed_count)
 
                 progress = (processed_count / len(items)) * 100
-                print(f"📊 Progress: {processed_count}/{len(items)} ({progress:.1f}%) - ✅{successful_count} ❌{failed_count}")
+                print(f"[STATS] Progress: {processed_count}/{len(items)} ({progress:.1f}%) - [OK]{successful_count} [ERROR]{failed_count}")
 
         # Mark job as completed
         final_status = 'completed' if failed_count == 0 else 'completed_with_errors'
@@ -681,11 +654,11 @@ def process_invoice_batch_job(job_id: str):
                           successful_items=successful_count,
                           failed_items=failed_count)
 
-        print(f"🎯 Job {job_id} finished: {successful_count} successful, {failed_count} failed")
+        print(f"[COMPLETE] Job {job_id} finished: {successful_count} successful, {failed_count} failed")
 
     except Exception as e:
         error_msg = f"Job processing error: {str(e)}"
-        print(f"💥 Job {job_id} failed: {error_msg}")
+        print(f"[ERROR] Job {job_id} failed: {error_msg}")
         print(f"Traceback: {traceback.format_exc()}")
 
         update_job_progress(job_id, status='failed', error_message=error_msg)
@@ -703,380 +676,150 @@ def start_background_job(job_id: str, job_type: str = 'invoice_batch'):
         print(f"🔥 Started background worker thread for job {job_id}")
         return True
     else:
-        print(f"❌ Unknown job type: {job_type}")
+        print(f"[ERROR] Unknown job type: {job_type}")
         return False
 
 def get_db_connection():
-    """Get database connection - supports both SQLite and PostgreSQL"""
-    db_type = os.getenv('DB_TYPE', 'sqlite').lower()
-
-    if db_type == 'postgresql' and POSTGRESQL_AVAILABLE:
-        # PostgreSQL connection for Cloud SQL
-        print("🐘 Connecting to PostgreSQL...")
-        try:
-            # Try Cloud SQL socket connection first
-            socket_path = os.getenv('DB_SOCKET_PATH')
-            if socket_path:
-                try:
-                    print(f"🔌 Trying socket connection: {socket_path}")
-                    conn = psycopg2.connect(
-                        host=socket_path,
-                        database=os.getenv('DB_NAME', 'delta_cfo'),
-                        user=os.getenv('DB_USER', 'delta_user'),
-                        password=os.getenv('DB_PASSWORD'),
-                        cursor_factory=RealDictCursor
-                    )
-                    print("✅ Socket connection successful")
-                except Exception as socket_error:
-                    print(f"❌ Socket connection failed: {socket_error}")
-                    print("🔄 Trying TCP connection as fallback...")
-                    # Fallback to TCP connection
-                    conn = psycopg2.connect(
-                        host=os.getenv('DB_HOST', '34.39.143.82'),
-                        port=os.getenv('DB_PORT', '5432'),
-                        database=os.getenv('DB_NAME', 'delta_cfo'),
-                        user=os.getenv('DB_USER', 'delta_user'),
-                        password=os.getenv('DB_PASSWORD'),
-                        cursor_factory=RealDictCursor
-                    )
-                    print("✅ TCP connection successful")
-            else:
-                # Direct TCP connection
-                print("🌐 Using TCP connection directly")
-                conn = psycopg2.connect(
-                    host=os.getenv('DB_HOST', '34.39.143.82'),
-                    port=os.getenv('DB_PORT', '5432'),
-                    database=os.getenv('DB_NAME', 'delta_cfo'),
-                    user=os.getenv('DB_USER', 'delta_user'),
-                    password=os.getenv('DB_PASSWORD'),
-                    cursor_factory=RealDictCursor
-                )
-
-            print("✅ PostgreSQL connection established")
-
-            # Ensure table exists
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables
-                    WHERE table_schema = 'public'
-                    AND table_name = 'transactions'
-                ) as table_exists;
-            """)
-            result = cursor.fetchone()
-            table_exists = result['table_exists']
-
-            if not table_exists:
-                print("🔧 DEBUG: Transactions table doesn't exist in PostgreSQL, creating...")
-                cursor.execute("""
-                    CREATE TABLE transactions (
-                        transaction_id VARCHAR(255) PRIMARY KEY,
-                        date VARCHAR(255),
-                        description TEXT,
-                        amount DECIMAL(15,2),
-                        currency VARCHAR(10),
-                        usd_equivalent DECIMAL(15,2),
-                        classified_entity TEXT,
-                        justification TEXT,
-                        confidence DECIMAL(3,2),
-                        classification_reason TEXT,
-                        origin TEXT,
-                        destination TEXT,
-                        identifier TEXT,
-                        source_file TEXT,
-                        crypto_amount TEXT,
-                        conversion_note TEXT,
-                        accounting_category TEXT
-                    )
-                """)
-                conn.commit()
-                print("✅ DEBUG: Transactions table created in PostgreSQL")
-
-            return conn
-
-        except Exception as e:
-            print(f"❌ PostgreSQL connection failed: {e}")
-            print("🔄 Falling back to SQLite...")
-            # Fall back to SQLite if PostgreSQL fails
-            db_type = 'sqlite'
-
-    # SQLite connection (default or fallback)
-    print("📁 Using SQLite database...")
-    if not os.path.exists(DB_PATH):
-        print("🔧 DEBUG: Database doesn't exist, initializing...")
-        init_database()
-
-    conn = sqlite3.connect(DB_PATH, timeout=30.0)
-    # Prevent database locks
-    conn.execute("PRAGMA busy_timeout=30000")
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.row_factory = sqlite3.Row
-
-    # Ensure table exists even if database exists but is empty
-    cursor = conn.cursor()
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
-    if not cursor.fetchone():
-        print("🔧 DEBUG: Transactions table doesn't exist, creating...")
-        cursor.execute("""
-            CREATE TABLE transactions (
-                transaction_id TEXT PRIMARY KEY,
-                date TEXT,
-                description TEXT,
-                amount REAL,
-                currency TEXT,
-                usd_equivalent REAL,
-                classified_entity TEXT,
-                justification TEXT,
-                confidence REAL,
-                classification_reason TEXT,
-                origin TEXT,
-                destination TEXT,
-                identifier TEXT,
-                source_file TEXT,
-                crypto_amount TEXT,
-                conversion_note TEXT,
-                accounting_category TEXT
-            )
-        """)
-        conn.commit()
-        print("✅ DEBUG: Transactions table created")
-
-    return conn
+    """Get database connection using the centralized database manager"""
+    try:
+        from database import db_manager
+        # Return a connection context - this will be used in a 'with' statement
+        return db_manager.get_connection()
+    except Exception as e:
+        print(f"[ERROR] Failed to get database connection: {e}")
+        raise
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
-    try:
-        print("Loading transactions from database...")
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    # Temporarily removed try/except to see actual error
+    from database import db_manager
 
-        # Detect database type for compatible syntax
-        is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
-        placeholder = '%s' if is_postgresql else '?'
+    # Use the exact same pattern as get_dashboard_stats function
+    with db_manager.get_connection() as conn:
+        if db_manager.db_type == 'postgresql':
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        else:
+            cursor = conn.cursor()
 
-        # Base query - exclude archived by default unless explicitly requested
-        query = """
-            SELECT * FROM transactions
-            WHERE 1=1
-        """
-        params = []
+        is_postgresql = db_manager.db_type == 'postgresql'
 
-        # Handle archived filter
-        show_archived = filters.get('show_archived') == 'true' if filters else False
-        if not show_archived:
-            query += " AND (archived = FALSE OR archived IS NULL)"
+        # Simple test - get total count without archived filter first
+        cursor.execute("SELECT COUNT(*) as total FROM transactions")
+        count_result = cursor.fetchone()
+        total_without_filter = count_result['total'] if is_postgresql else count_result[0]
 
-        # Apply filters
-        if filters:
-            if filters.get('entity'):
-                query += f" AND classified_entity = {placeholder}"
-                params.append(filters['entity'])
-
-            if filters.get('transaction_type') == 'Revenue':
-                query += " AND amount > 0"
-            elif filters.get('transaction_type') == 'Expense':
-                query += " AND amount < 0"
-
-            if filters.get('source_file'):
-                query += f" AND source_file = {placeholder}"
-                params.append(filters['source_file'])
-
-            if filters.get('needs_review') == 'true':
-                query += " AND (confidence < 0.8 OR confidence IS NULL)"
-
-            if filters.get('min_amount'):
-                query += f" AND ABS(amount) >= {placeholder}"
-                params.append(float(filters['min_amount']))
-
-            if filters.get('max_amount'):
-                query += f" AND ABS(amount) <= {placeholder}"
-                params.append(float(filters['max_amount']))
-
-            if filters.get('start_date'):
-                query += f" AND date >= {placeholder}"
-                params.append(filters['start_date'])
-
-            if filters.get('end_date'):
-                query += f" AND date <= {placeholder}"
-                params.append(filters['end_date'])
-
-            if filters.get('keyword'):
-                keyword = f"%{filters['keyword']}%"
-                query += f""" AND (
-                    description LIKE {placeholder} OR
-                    classified_entity LIKE {placeholder} OR
-                    keywords_action_type LIKE {placeholder} OR
-                    keywords_platform LIKE {placeholder}
-                )"""
-                params.extend([keyword, keyword, keyword, keyword])
-
-        # Add ordering and pagination
-        query += " ORDER BY date DESC"
-
-        # Get total count for pagination (remove ORDER BY and LIMIT for count query)
-        count_query = query.replace("SELECT * FROM transactions", "SELECT COUNT(*) as total FROM transactions")
-        # Remove ORDER BY and LIMIT clauses from count query
-        count_query = count_query.split(" ORDER BY")[0]  # Remove everything from ORDER BY onwards
-        cursor.execute(count_query, params)
+        # Now get count with archived filter (same as stats API)
+        cursor.execute("SELECT COUNT(*) as total FROM transactions WHERE (archived = FALSE OR archived IS NULL)")
         count_result = cursor.fetchone()
         total_count = count_result['total'] if is_postgresql else count_result[0]
 
-        # Add pagination
-        if page and per_page:
-            offset = (page - 1) * per_page
-            query += f" LIMIT {per_page} OFFSET {offset}"
+        # For debugging: return both counts in a way we can see
+        if total_without_filter == 0:
+            return [], 0  # No transactions at all
 
-        cursor.execute(query, params)
-        transactions = []
+        if total_count == 0:
+            # All transactions are archived, but let's return some for testing
+            cursor.execute("SELECT * FROM transactions LIMIT 3")
+            results = cursor.fetchall()
+            test_transactions = []
+            for row in results:
+                if is_postgresql:
+                    transaction = dict(row)
+                else:
+                    transaction = dict(row)
+                test_transactions.append(transaction)
+            return test_transactions, total_without_filter
+
+        # Normal path - get transactions with archived filter
+        offset = (page - 1) * per_page if page > 0 else 0
+        query = f"SELECT * FROM transactions WHERE (archived = FALSE OR archived IS NULL) ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
+        cursor.execute(query)
 
         results = cursor.fetchall()
-        print(f"🔧 DEBUG: Query returned {len(results)} results")
+        transactions = []
 
         for row in results:
-            # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
             if is_postgresql:
-                transaction = dict(row)  # RealDictCursor returns dict-like objects
+                transaction = dict(row)
             else:
-                transaction = dict(row)  # SQLite Row objects
-
-            # Map database columns to frontend expected field names for crypto display
-            # Frontend expects: transaction.amount, transaction.crypto_amount, transaction.currency
-
-            # Handle crypto transactions with correct database structure
-            # For BTC/TAO transactions: amount=USD_value, crypto_amount=token_quantity, currency=token_symbol
-
-            # Check for BTC transactions
-            if (transaction.get('classification_reason', '').lower().find('btc') != -1 or
-                transaction.get('justification', '').lower().find('btc') != -1):
-                # This is a BTC transaction
-                token_quantity = float(transaction.get('crypto_amount', 0))
-                usd_value = float(transaction.get('amount', 0))
-
-                # The crypto_amount field contains the correct BTC token amount
-                crypto_amount = f"{token_quantity:.8f}"  # BTC with 8 decimal precision
-
-                # Calculate actual price from existing data
-                token_price = usd_value / token_quantity if token_quantity > 0 else 0
-
-                # Create simplified description format
-                enhanced_description = f"Bitcoin @ ${token_price:,.2f}"
-                transaction['description'] = enhanced_description
-
-                # Set appropriate origin and destination for crypto transactions
-                transaction['origin'] = 'MEXC Exchange'
-                transaction['destination'] = 'Crypto Wallet'
-
-                transaction['currency'] = 'BTC'  # Keep currency as BTC
-                transaction['amount'] = usd_value
-                transaction['usd_equivalent'] = usd_value
-
-            # Check for TAO transactions
-            elif (transaction.get('classification_reason', '').lower().find('tao') != -1 or
-                  transaction.get('justification', '').lower().find('tao') != -1):
-                # This is a TAO transaction
-                token_quantity = float(transaction.get('crypto_amount', 0))
-                usd_value = float(transaction.get('amount', 0))
-
-                # The crypto_amount field contains the correct TAO token amount
-                crypto_amount = f"{token_quantity:.4f}"  # TAO with 4 decimal precision
-
-                # Calculate actual price from existing data
-                token_price = usd_value / token_quantity if token_quantity > 0 else 0
-
-                # Create simplified description format
-                enhanced_description = f"TAO @ ${token_price:,.2f}"
-                transaction['description'] = enhanced_description
-
-                # Set appropriate origin and destination for crypto transactions
-                transaction['origin'] = 'Unknown'
-                transaction['destination'] = 'Unknown'
-
-                transaction['currency'] = 'TAO'  # Keep currency as TAO
-                transaction['amount'] = usd_value
-                transaction['usd_equivalent'] = usd_value
-            else:
-                # For non-crypto transactions, use amount as is
-                crypto_amount = str(transaction.get('crypto_amount', '') or '')
-
-            # Add frontend-expected fields
-            transaction['crypto_amount'] = crypto_amount
-
+                transaction = dict(row)
             transactions.append(transaction)
 
-        conn.close()
-        print(f"Loaded {len(transactions)} transactions using database backend")
-
         return transactions, total_count
-
-    except Exception as e:
-        print(f"ERROR: Error loading transactions from database: {e}")
-        return [], 0
 
 def get_dashboard_stats():
     """Calculate dashboard statistics from database"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        from database import db_manager
 
-        # Detect database type for compatible syntax
-        is_postgresql = hasattr(cursor, 'mogrify')
+        # Use the robust database manager instead of old get_db_connection
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                cursor = conn.cursor()
 
-        # Total transactions
-        cursor.execute("SELECT COUNT(*) as total FROM transactions")
-        result = cursor.fetchone()
-        total_transactions = result['total'] if is_postgresql else result[0]
+            # Detect database type for compatible syntax
+            is_postgresql = db_manager.db_type == 'postgresql'
 
-        # Revenue and expenses
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE amount > 0")
-        result = cursor.fetchone()
-        revenue = result['revenue'] if is_postgresql else result[0]
+            # Total transactions (exclude archived to match /api/transactions behavior)
+            cursor.execute("SELECT COUNT(*) as total FROM transactions WHERE (archived = FALSE OR archived IS NULL)")
+            result = cursor.fetchone()
+            total_transactions = result['total'] if is_postgresql else result[0]
 
-        cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE amount < 0")
-        result = cursor.fetchone()
-        expenses = result['expenses'] if is_postgresql else result[0]
+            # Revenue and expenses (exclude archived)
+            cursor.execute("SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE amount > 0 AND (archived = FALSE OR archived IS NULL)")
+            result = cursor.fetchone()
+            revenue = result['revenue'] if is_postgresql else result[0]
 
-        # Needs review
-        cursor.execute("SELECT COUNT(*) as needs_review FROM transactions WHERE confidence < 0.8 OR confidence IS NULL")
-        result = cursor.fetchone()
-        needs_review = result['needs_review'] if is_postgresql else result[0]
+            cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE amount < 0 AND (archived = FALSE OR archived IS NULL)")
+            result = cursor.fetchone()
+            expenses = result['expenses'] if is_postgresql else result[0]
 
-        # Date range
-        cursor.execute("SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions")
-        date_range_result = cursor.fetchone()
-        if is_postgresql:
-            date_range = {
-                'min': date_range_result['min_date'] or 'N/A',
-                'max': date_range_result['max_date'] or 'N/A'
-            }
-        else:
-            date_range = {
-                'min': date_range_result[0] or 'N/A',
-                'max': date_range_result[1] or 'N/A'
-            }
+            # Needs review (exclude archived)
+            cursor.execute("SELECT COUNT(*) as needs_review FROM transactions WHERE (confidence < 0.8 OR confidence IS NULL) AND (archived = FALSE OR archived IS NULL)")
+            result = cursor.fetchone()
+            needs_review = result['needs_review'] if is_postgresql else result[0]
 
-        # Top entities
-        cursor.execute("""
-            SELECT classified_entity, COUNT(*) as count
-            FROM transactions
-            WHERE classified_entity IS NOT NULL
-            GROUP BY classified_entity
-            ORDER BY count DESC
-            LIMIT 10
-        """)
-        entities = cursor.fetchall()
+            # Date range (exclude archived)
+            cursor.execute("SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions WHERE (archived = FALSE OR archived IS NULL)")
+            date_range_result = cursor.fetchone()
+            if is_postgresql:
+                date_range = {
+                    'min': date_range_result['min_date'] or 'N/A',
+                    'max': date_range_result['max_date'] or 'N/A'
+                }
+            else:
+                date_range = {
+                    'min': date_range_result[0] or 'N/A',
+                    'max': date_range_result[1] or 'N/A'
+                }
 
-        # Top source files
-        cursor.execute("""
-            SELECT source_file, COUNT(*) as count
-            FROM transactions
-            WHERE source_file IS NOT NULL
-            GROUP BY source_file
-            ORDER BY count DESC
-            LIMIT 10
-        """)
-        source_files = cursor.fetchall()
+            # Top entities (exclude archived)
+            cursor.execute("""
+                SELECT classified_entity, COUNT(*) as count
+                FROM transactions
+                WHERE classified_entity IS NOT NULL
+                AND (archived = FALSE OR archived IS NULL)
+                GROUP BY classified_entity
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            entities = cursor.fetchall()
 
-        conn.close()
+            # Top source files (exclude archived)
+            cursor.execute("""
+                SELECT source_file, COUNT(*) as count
+                FROM transactions
+                WHERE source_file IS NOT NULL
+                AND (archived = FALSE OR archived IS NULL)
+                GROUP BY source_file
+                ORDER BY count DESC
+                LIMIT 10
+            """)
+            source_files = cursor.fetchall()
+
+            cursor.close()
 
         return {
             'total_transactions': total_transactions,
@@ -1103,60 +846,58 @@ def get_dashboard_stats():
 def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user') -> bool:
     """Update a single field in a transaction with history tracking"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
 
-        # Detect database type for compatible syntax
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+            # Detect database type for compatible syntax
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        # Get current value for history
-        cursor.execute(
-            f"SELECT * FROM transactions WHERE transaction_id = {placeholder}",
-            (transaction_id,)
-        )
-        current_row = cursor.fetchone()
+            # Get current value for history
+            cursor.execute(
+                f"SELECT * FROM transactions WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            current_row = cursor.fetchone()
 
-        if not current_row:
-            conn.close()
-            return False
+            if not current_row:
+                return False
 
-        # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
-        current_dict = dict(current_row) if current_row else {}
-        current_value = current_dict.get(field) if field in current_dict else None
+            # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
+            current_dict = dict(current_row) if current_row else {}
+            current_value = current_dict.get(field) if field in current_dict else None
 
-        # Update the field
-        update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
-        cursor.execute(update_query, (value, transaction_id))
+            # Update the field
+            update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
+            cursor.execute(update_query, (value, transaction_id))
 
-        # CRITICAL: Commit the UPDATE immediately to ensure it persists
-        # In PostgreSQL, if a later query fails, it can rollback the entire transaction
-        conn.commit()
-
-        print(f"UPDATING: Updated transaction {transaction_id}: field={field}, value={value}")
-
-        # Record change in history (only if table exists)
-        # This is done in a separate transaction so failures don't affect the main update
-        try:
-            # The transaction_history table uses old_values/new_values as JSONB
-            old_values_json = {field: current_value} if current_value is not None else {}
-            new_values_json = {field: value}
-
-            cursor.execute(f"""
-                INSERT INTO transaction_history (transaction_id, old_values, new_values, changed_by)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-            """, (transaction_id, json.dumps(old_values_json), json.dumps(new_values_json), user))
+            # CRITICAL: Commit the UPDATE immediately to ensure it persists
+            # In PostgreSQL, if a later query fails, it can rollback the entire transaction
             conn.commit()
-        except Exception as history_error:
-            print(f"INFO: Could not record history: {history_error}")
-            # Rollback only affects the history insert, main update already committed
-            try:
-                conn.rollback()
-            except:
-                pass
 
-        conn.close()
-        return True
+            print(f"UPDATING: Updated transaction {transaction_id}: field={field}, value={value}")
+
+            # Record change in history (only if table exists)
+            # This is done in a separate transaction so failures don't affect the main update
+            try:
+                # The transaction_history table uses old_values/new_values as JSONB
+                old_values_json = {field: current_value} if current_value is not None else {}
+                new_values_json = {field: value}
+
+                cursor.execute(f"""
+                    INSERT INTO transaction_history (transaction_id, old_values, new_values, changed_by)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+                """, (transaction_id, json.dumps(old_values_json), json.dumps(new_values_json), user))
+                conn.commit()
+            except Exception as history_error:
+                print(f"INFO: Could not record history: {history_error}")
+                # Rollback only affects the history insert, main update already committed
+                try:
+                    conn.rollback()
+                except:
+                    pass
+
+            return True
 
     except Exception as e:
         print(f"ERROR: Error updating transaction field: {e}")
@@ -1220,18 +961,17 @@ Return only the JSON object, no additional text.
         pattern_data = json.loads(response_text)
 
         # Store patterns in database
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        cursor.execute(f"""
-            INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
+            cursor.execute(f"""
+                INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
 
         print(f"SUCCESS: Stored entity patterns for {entity_name}: {pattern_data}")
         return pattern_data
@@ -1258,176 +998,174 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         if not transaction_id or not new_value:
             return []
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        # Get the current transaction
-        cursor.execute(
-            f"SELECT description, classified_entity FROM transactions WHERE transaction_id = {placeholder}",
-            (transaction_id,)
-        )
-        current_tx = cursor.fetchone()
+            # Get the current transaction
+            cursor.execute(
+                f"SELECT description, classified_entity FROM transactions WHERE transaction_id = {placeholder}",
+                (transaction_id,)
+            )
+            current_tx = cursor.fetchone()
 
-        if not current_tx:
-            conn.close()
-            return []
+            if not current_tx:
+                return []
 
-        # Safe extraction of description and entity from current_tx
-        try:
-            if is_postgresql:
-                current_description = current_tx.get('description', '') if isinstance(current_tx, dict) else (current_tx[0] if len(current_tx) > 0 else '')
-                current_entity = current_tx.get('classified_entity', '') if isinstance(current_tx, dict) else (current_tx[1] if len(current_tx) > 1 else '')
-            else:
-                current_description = current_tx[0] if len(current_tx) > 0 else ''
-                current_entity = current_tx[1] if len(current_tx) > 1 else ''
-        except Exception as e:
-            print(f"ERROR: Failed to extract description/entity from current_tx: {e}, type={type(current_tx)}, len={len(current_tx) if hasattr(current_tx, '__len__') else 'N/A'}")
-            conn.close()
-            return []
-
-        # Different logic for entity classification vs description cleanup vs accounting category
-        if field_type == 'similar_entities':
-            # For entity classification: Use learned patterns to pre-filter candidates
-            print(f"DEBUG: Searching for similar entities - current entity: {current_entity}, new entity: {new_value}")
-
-            # First, fetch learned patterns for this entity to build SQL filters
-            pattern_conditions = []
-            params = []  # Initialize params list for SQL query
+            # Safe extraction of description and entity from current_tx
             try:
-                pattern_conn = get_db_connection()
-                pattern_cursor = pattern_conn.cursor()
-                pattern_placeholder_temp = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
+                if is_postgresql:
+                    current_description = current_tx.get('description', '') if isinstance(current_tx, dict) else (current_tx[0] if len(current_tx) > 0 else '')
+                    current_entity = current_tx.get('classified_entity', '') if isinstance(current_tx, dict) else (current_tx[1] if len(current_tx) > 1 else '')
+                else:
+                    current_description = current_tx[0] if len(current_tx) > 0 else ''
+                    current_entity = current_tx[1] if len(current_tx) > 1 else ''
+            except Exception as e:
+                print(f"ERROR: Failed to extract description/entity from current_tx: {e}, type={type(current_tx)}, len={len(current_tx) if hasattr(current_tx, '__len__') else 'N/A'}")
+                return []
 
-                pattern_cursor.execute(f"""
-                    SELECT pattern_data
-                    FROM entity_patterns
-                    WHERE entity_name = {pattern_placeholder_temp}
-                    ORDER BY created_at DESC
-                    LIMIT 5
-                """, (new_value,))
+            # Different logic for entity classification vs description cleanup vs accounting category
+            if field_type == 'similar_entities':
+                # For entity classification: Use learned patterns to pre-filter candidates
+                print(f"DEBUG: Searching for similar entities - current entity: {current_entity}, new entity: {new_value}")
 
-                learned_patterns_rows = pattern_cursor.fetchall()
-                pattern_conn.close()
+                # First, fetch learned patterns for this entity to build SQL filters
+                pattern_conditions = []
+                params = []  # Initialize params list for SQL query
+                try:
+                    pattern_conn = get_db_connection()
+                    pattern_cursor = pattern_conn.cursor()
+                    pattern_placeholder_temp = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
 
-                if learned_patterns_rows and len(learned_patterns_rows) > 0:
-                    print(f"DEBUG: Found {len(learned_patterns_rows)} learned patterns for {new_value}, building SQL filters...")
-                    # Extract all company names, keywords, and bank identifiers from patterns
-                    all_company_names = set()
-                    all_keywords = set()
-                    all_bank_ids = set()
+                    pattern_cursor.execute(f"""
+                        SELECT pattern_data
+                        FROM entity_patterns
+                        WHERE entity_name = {pattern_placeholder_temp}
+                        ORDER BY created_at DESC
+                        LIMIT 5
+                    """, (new_value,))
 
-                    for pattern_row in learned_patterns_rows:
-                        pattern_data = pattern_row.get('pattern_data', '{}') if isinstance(pattern_row, dict) else pattern_row[0]
-                        if isinstance(pattern_data, str):
-                            pattern_data = json.loads(pattern_data)
+                    learned_patterns_rows = pattern_cursor.fetchall()
+                    pattern_conn.close()
 
-                        all_company_names.update(pattern_data.get('company_names', []))
-                        all_keywords.update(pattern_data.get('transaction_keywords', []))
-                        all_bank_ids.update(pattern_data.get('bank_identifiers', []))
+                    if learned_patterns_rows and len(learned_patterns_rows) > 0:
+                        print(f"DEBUG: Found {len(learned_patterns_rows)} learned patterns for {new_value}, building SQL filters...")
+                        # Extract all company names, keywords, and bank identifiers from patterns
+                        all_company_names = set()
+                        all_keywords = set()
+                        all_bank_ids = set()
 
-                    # Build ILIKE conditions for each pattern element
-                    for company in all_company_names:
-                        if company:  # Skip empty strings
-                            pattern_conditions.append(f"description ILIKE {placeholder}")
-                            params.append(f"%{company}%")
+                        for pattern_row in learned_patterns_rows:
+                            pattern_data = pattern_row.get('pattern_data', '{}') if isinstance(pattern_row, dict) else pattern_row[0]
+                            if isinstance(pattern_data, str):
+                                pattern_data = json.loads(pattern_data)
 
-                    for keyword in all_keywords:
-                        if keyword and len(keyword) > 3:  # Skip short/generic keywords
-                            pattern_conditions.append(f"description ILIKE {placeholder}")
-                            params.append(f"%{keyword}%")
+                            all_company_names.update(pattern_data.get('company_names', []))
+                            all_keywords.update(pattern_data.get('transaction_keywords', []))
+                            all_bank_ids.update(pattern_data.get('bank_identifiers', []))
 
-                    for bank_id in all_bank_ids:
-                        if bank_id:
-                            pattern_conditions.append(f"description ILIKE {placeholder}")
-                            params.append(f"%{bank_id}%")
+                        # Build ILIKE conditions for each pattern element
+                        for company in all_company_names:
+                            if company:  # Skip empty strings
+                                pattern_conditions.append(f"description ILIKE {placeholder}")
+                                params.append(f"%{company}%")
 
-                    print(f"DEBUG: Built {len(pattern_conditions)} SQL pattern filters")
-            except Exception as pattern_error:
-                print(f"WARNING: Failed to build pattern filters: {pattern_error}")
+                        for keyword in all_keywords:
+                            if keyword and len(keyword) > 3:  # Skip short/generic keywords
+                                pattern_conditions.append(f"description ILIKE {placeholder}")
+                                params.append(f"%{keyword}%")
 
-            # Build the query with pattern-based filtering if we have patterns
-            if pattern_conditions:
-                # Use learned patterns to pre-filter candidates
-                pattern_filter = " OR ".join(pattern_conditions)
-                base_query = f"""
-                    SELECT transaction_id, date, description, confidence, classified_entity, amount
-                    FROM transactions
-                    WHERE transaction_id != {placeholder}
-                    AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
-                    AND ({pattern_filter})
-                    LIMIT 30
-                """
-                params = [transaction_id] + params
-                print(f"DEBUG: Using pattern-based pre-filtering with {len(pattern_conditions)} conditions")
-            else:
-                # No patterns learned yet - use basic similarity based on current transaction description
-                print(f"DEBUG: No patterns found, using description-based filtering as fallback")
-                # Extract key terms from current description for basic filtering
-                desc_words = [w.strip() for w in current_description.upper().split() if len(w.strip()) > 4]
-                desc_conditions = []
-                for word in desc_words[:5]:  # Use top 5 longest words
-                    if word and not word.isdigit():
-                        desc_conditions.append(f"UPPER(description) LIKE {placeholder}")
-                        params.append(f"%{word}%")
+                        for bank_id in all_bank_ids:
+                            if bank_id:
+                                pattern_conditions.append(f"description ILIKE {placeholder}")
+                                params.append(f"%{bank_id}%")
 
-                if desc_conditions:
-                    desc_filter = " OR ".join(desc_conditions)
+                        print(f"DEBUG: Built {len(pattern_conditions)} SQL pattern filters")
+                except Exception as pattern_error:
+                    print(f"WARNING: Failed to build pattern filters: {pattern_error}")
+
+                # Build the query with pattern-based filtering if we have patterns
+                if pattern_conditions:
+                    # Use learned patterns to pre-filter candidates
+                    pattern_filter = " OR ".join(pattern_conditions)
                     base_query = f"""
                         SELECT transaction_id, date, description, confidence, classified_entity, amount
                         FROM transactions
                         WHERE transaction_id != {placeholder}
                         AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
-                        AND ({desc_filter})
+                        AND ({pattern_filter})
                         LIMIT 30
                     """
                     params = [transaction_id] + params
+                    print(f"DEBUG: Using pattern-based pre-filtering with {len(pattern_conditions)} conditions")
                 else:
-                    # Ultimate fallback - just grab unclassified transactions
-                    base_query = f"""
-                        SELECT transaction_id, date, description, confidence, classified_entity, amount
-                        FROM transactions
-                        WHERE transaction_id != {placeholder}
-                        AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
-                        LIMIT 50
-                    """
-                    params = [transaction_id]
-        elif field_type == 'similar_accounting':
-            # For accounting category: find transactions from same entity that need review
-            # Include: uncategorized, low confidence, OR different category (to suggest recategorization)
-            print(f"DEBUG: Searching for similar accounting categories - entity: {current_entity}, new category: {new_value}")
+                    # No patterns learned yet - use basic similarity based on current transaction description
+                    print(f"DEBUG: No patterns found, using description-based filtering as fallback")
+                    # Extract key terms from current description for basic filtering
+                    desc_words = [w.strip() for w in current_description.upper().split() if len(w.strip()) > 4]
+                    desc_conditions = []
+                    for word in desc_words[:5]:  # Use top 5 longest words
+                        if word and not word.isdigit():
+                            desc_conditions.append(f"UPPER(description) LIKE {placeholder}")
+                            params.append(f"%{word}%")
 
-            base_query = f"""
-                SELECT transaction_id, date, description, amount, accounting_category
-                FROM transactions
-                WHERE transaction_id != {placeholder}
-                AND classified_entity = {placeholder}
-                AND (
-                    accounting_category IS NULL
-                    OR accounting_category = 'N/A'
-                    OR confidence < 0.7
-                    OR (accounting_category != {placeholder} AND accounting_category IS NOT NULL)
-                )
-                LIMIT 30
-            """
-            params = [transaction_id, current_entity, new_value]
-        else:
-            # For description cleanup: find transactions with same entity but different descriptions
-            # Since the description has already been updated, we search by entity
-            print(f"DEBUG: Searching for similar descriptions - entity: {current_entity}, new description: {new_value}")
+                    if desc_conditions:
+                        desc_filter = " OR ".join(desc_conditions)
+                        base_query = f"""
+                            SELECT transaction_id, date, description, confidence, classified_entity, amount
+                            FROM transactions
+                            WHERE transaction_id != {placeholder}
+                            AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
+                            AND ({desc_filter})
+                            LIMIT 30
+                        """
+                        params = [transaction_id] + params
+                    else:
+                        # Ultimate fallback - just grab unclassified transactions
+                        base_query = f"""
+                            SELECT transaction_id, date, description, confidence, classified_entity, amount
+                            FROM transactions
+                            WHERE transaction_id != {placeholder}
+                            AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
+                            LIMIT 50
+                        """
+                        params = [transaction_id]
+            elif field_type == 'similar_accounting':
+                # For accounting category: find transactions from same entity that need review
+                # Include: uncategorized, low confidence, OR different category (to suggest recategorization)
+                print(f"DEBUG: Searching for similar accounting categories - entity: {current_entity}, new category: {new_value}")
 
-            base_query = f"""
-                SELECT transaction_id, date, description, confidence
-                FROM transactions
-                WHERE transaction_id != {placeholder}
-                AND classified_entity = {placeholder}
-                AND description != {placeholder}
-                LIMIT 20
-            """
-            params = [transaction_id, current_entity, new_value]
+                base_query = f"""
+                    SELECT transaction_id, date, description, amount, accounting_category
+                    FROM transactions
+                    WHERE transaction_id != {placeholder}
+                    AND classified_entity = {placeholder}
+                    AND (
+                        accounting_category IS NULL
+                        OR accounting_category = 'N/A'
+                        OR confidence < 0.7
+                        OR (accounting_category != {placeholder} AND accounting_category IS NOT NULL)
+                    )
+                    LIMIT 30
+                """
+                params = [transaction_id, current_entity, new_value]
+            else:
+                # For description cleanup: find transactions with same entity but different descriptions
+                # Since the description has already been updated, we search by entity
+                print(f"DEBUG: Searching for similar descriptions - entity: {current_entity}, new description: {new_value}")
 
-        cursor.execute(base_query, tuple(params))
+                base_query = f"""
+                    SELECT transaction_id, date, description, confidence
+                    FROM transactions
+                    WHERE transaction_id != {placeholder}
+                    AND classified_entity = {placeholder}
+                    AND description != {placeholder}
+                    LIMIT 20
+                """
+                params = [transaction_id, current_entity, new_value]
+
+            cursor.execute(base_query, tuple(params))
         candidate_txs = cursor.fetchall()
 
         conn.close()
@@ -1962,10 +1700,10 @@ def sync_csv_to_database(csv_filename=None):
                 print(f"🔧 DEBUG: Trying alternative path: {alt_path}")
                 if os.path.exists(alt_path):
                     csv_path = alt_path
-                    print(f"✅ DEBUG: Found file at alternative path: {alt_path}")
+                    print(f"[OK] DEBUG: Found file at alternative path: {alt_path}")
                     break
             else:
-                print(f"❌ DEBUG: No alternative paths found")
+                print(f"[ERROR] DEBUG: No alternative paths found")
                 return False
 
         # Read the CSV file
@@ -2237,7 +1975,9 @@ def api_transactions():
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 50))
 
+        print(f"API: About to call load_transactions_from_db with filters={filters}")
         transactions, total_count = load_transactions_from_db(filters, page, per_page)
+        print(f"API: Got result - transactions count={len(transactions)}, total_count={total_count}")
 
         return jsonify({
             'transactions': transactions,
@@ -2260,6 +2000,178 @@ def api_stats():
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test_transactions')
+def api_test_transactions():
+    """Simple test endpoint to debug transaction retrieval"""
+    try:
+        from database import db_manager
+
+        # Direct database query like get_dashboard_stats
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                cursor = conn.cursor()
+
+            is_postgresql = db_manager.db_type == 'postgresql'
+
+            # Test 1: Total count
+            cursor.execute("SELECT COUNT(*) as total FROM transactions")
+            result = cursor.fetchone()
+            total_all = result['total'] if is_postgresql else result[0]
+
+            # Test 2: Non-archived count
+            cursor.execute("SELECT COUNT(*) as total FROM transactions WHERE (archived = FALSE OR archived IS NULL)")
+            result = cursor.fetchone()
+            total_unarchived = result['total'] if is_postgresql else result[0]
+
+            # Test 3: Get first 3 transactions
+            cursor.execute("SELECT transaction_id, date, description, amount, archived FROM transactions LIMIT 3")
+            sample_transactions = cursor.fetchall()
+
+            # Convert to list of dicts
+            sample_list = []
+            for row in sample_transactions:
+                if is_postgresql:
+                    sample_list.append(dict(row))
+                else:
+                    sample_list.append(dict(row))
+
+            return jsonify({
+                'total_all_transactions': total_all,
+                'total_unarchived_transactions': total_unarchived,
+                'sample_transactions': sample_list,
+                'db_type': db_manager.db_type
+            })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/debug/positive-transactions')
+def api_debug_positive_transactions():
+    """Debug endpoint to find positive (revenue) transactions"""
+    try:
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                cursor = conn.cursor()
+
+            is_postgresql = db_manager.db_type == 'postgresql'
+
+            # Find positive transactions
+            cursor.execute("""
+                SELECT transaction_id, date, description, amount, classified_entity, currency
+                FROM transactions
+                WHERE amount > 0
+                ORDER BY amount DESC
+                LIMIT 10
+            """)
+            positive_transactions = cursor.fetchall()
+
+            # Find transactions with highest absolute values (both positive and negative)
+            cursor.execute("""
+                SELECT transaction_id, date, description, amount, classified_entity, currency
+                FROM transactions
+                ORDER BY ABS(amount) DESC
+                LIMIT 10
+            """)
+            highest_transactions = cursor.fetchall()
+
+            # Count positive vs negative
+            cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE amount > 0")
+            result = cursor.fetchone()
+            positive_count = result['count'] if is_postgresql else result[0]
+
+            cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE amount < 0")
+            result = cursor.fetchone()
+            negative_count = result['count'] if is_postgresql else result[0]
+
+            # Convert to list of dicts
+            positive_list = []
+            for row in positive_transactions:
+                if is_postgresql:
+                    positive_list.append(dict(row))
+                else:
+                    positive_list.append(dict(row))
+
+            highest_list = []
+            for row in highest_transactions:
+                if is_postgresql:
+                    highest_list.append(dict(row))
+                else:
+                    highest_list.append(dict(row))
+
+            return jsonify({
+                'positive_transactions': positive_list,
+                'highest_value_transactions': highest_list,
+                'stats': {
+                    'positive_count': positive_count,
+                    'negative_count': negative_count,
+                    'total_count': positive_count + negative_count
+                }
+            })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/revenue/reset-all-matches', methods=['POST'])
+def api_reset_all_matches():
+    """Reset all invoice-transaction matches - remove all links"""
+    try:
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor()
+            else:
+                cursor = conn.cursor()
+
+            # Count current matches
+            cursor.execute("SELECT COUNT(*) FROM invoices WHERE linked_transaction_id IS NOT NULL")
+            current_matches = cursor.fetchone()[0]
+
+            # Remove all matches from invoices table
+            cursor.execute("""
+                UPDATE invoices
+                SET linked_transaction_id = NULL,
+                    match_confidence = NULL,
+                    match_method = NULL
+                WHERE linked_transaction_id IS NOT NULL
+            """)
+
+            # Clear invoice match log table if it exists
+            try:
+                cursor.execute("DELETE FROM invoice_match_log")
+            except:
+                pass  # Table might not exist
+
+            conn.commit()
+
+            return jsonify({
+                'success': True,
+                'message': f'Successfully reset {current_matches} matches',
+                'matches_removed': current_matches
+            })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 @app.route('/api/update_transaction', methods=['POST'])
 def api_update_transaction():
@@ -2740,7 +2652,7 @@ def check_file_duplicates(filepath):
     try:
         # Read the uploaded CSV file
         df = pd.read_csv(filepath)
-        print(f"📊 Checking duplicates in {len(df)} transactions from file")
+        print(f"[STATS] Checking duplicates in {len(df)} transactions from file")
 
         conn = get_db_connection()
         duplicates = []
@@ -2785,7 +2697,7 @@ def check_file_duplicates(filepath):
             'duplicates': duplicates[:5]  # Return first 5 for preview
         }
 
-        print(f"🔍 Duplicate check result: {len(duplicates)} duplicates found out of {len(df)} total transactions")
+        print(f"[CHECK] Duplicate check result: {len(duplicates)} duplicates found out of {len(df)} total transactions")
         return result
 
     except Exception as e:
@@ -2828,7 +2740,7 @@ def upload_file():
         # Always check for duplicates first
         duplicate_info = check_file_duplicates(filepath)
         if duplicate_info['has_duplicates']:
-            print(f"🔍 Found {duplicate_info['duplicate_count']} duplicates, showing confirmation dialog")
+            print(f"[FOUND] Found {duplicate_info['duplicate_count']} duplicates, showing confirmation dialog")
             return jsonify({
                 'success': False,
                 'duplicate_confirmation_needed': True,
@@ -2898,7 +2810,7 @@ else:
 
             # Check for specific error patterns
             if process_result.returncode != 0:
-                print(f"❌ DEBUG: Subprocess failed with return code {process_result.returncode}")
+                print(f"[ERROR] DEBUG: Subprocess failed with return code {process_result.returncode}")
                 if "claude" in process_result.stderr.lower() or "anthropic" in process_result.stderr.lower():
                     print("🔧 DEBUG: Detected Claude/Anthropic related error")
                 if "import" in process_result.stderr.lower():
@@ -2990,7 +2902,7 @@ def process_duplicates():
         if not filename:
             return jsonify({'error': 'No filename provided'}), 400
 
-        print(f"🔄 Processing duplicates for {filename} with mode: {duplicate_handling}")
+        print(f"[PROCESS] Processing duplicates for {filename} with mode: {duplicate_handling}")
 
         # File should already exist from initial upload
         parent_dir = os.path.dirname(os.path.dirname(__file__))
@@ -3127,12 +3039,14 @@ def invoices_page():
 def api_get_invoices():
     """API endpoint to get invoices with pagination and filtering"""
     try:
+        print(f"[DEBUG] api_get_invoices called with args: {request.args}")
         # Get filter parameters
         filters = {
             'business_unit': request.args.get('business_unit'),
             'category': request.args.get('category'),
             'vendor_name': request.args.get('vendor_name'),
-            'customer_name': request.args.get('customer_name')
+            'customer_name': request.args.get('customer_name'),
+            'linked_transaction_id': request.args.get('linked_transaction_id')
         }
 
         # Remove None values
@@ -3143,12 +3057,10 @@ def api_get_invoices():
         per_page = int(request.args.get('per_page', 20))
         offset = (page - 1) * per_page
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        from database import db_manager
 
-        # Detect database type for compatible syntax
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        # Use PostgreSQL placeholders since we're using db_manager
+        placeholder = '%s'
 
         # Build query
         query = "SELECT * FROM invoices WHERE 1=1"
@@ -3170,30 +3082,45 @@ def api_get_invoices():
             query += f" AND customer_name LIKE {placeholder}"
             params.append(f"%{filters['customer_name']}%")
 
+        # Filter by linked_transaction_id (special handling before filters cleanup)
+        linked_filter = request.args.get('linked_transaction_id')
+        if linked_filter:
+            if linked_filter.lower() in ['null', 'none', 'unlinked']:
+                # Show only unlinked invoices
+                query += " AND (linked_transaction_id IS NULL OR linked_transaction_id = '')"
+                print(f"[DEBUG] Applied unlinked filter: {query}")
+            elif linked_filter.lower() in ['not_null', 'linked']:
+                # Show only linked invoices
+                query += " AND linked_transaction_id IS NOT NULL AND linked_transaction_id != ''"
+                print(f"[DEBUG] Applied linked filter: {query}")
+            else:
+                # Show invoices with specific transaction ID
+                query += f" AND linked_transaction_id = {placeholder}"
+                params.append(linked_filter)
+                print(f"[DEBUG] Applied specific ID filter: {query}")
+
         # Get total count
         count_query = query.replace("SELECT *", "SELECT COUNT(*) as total")
-        cursor.execute(count_query, params)
-        count_result = cursor.fetchone()
-        total_count = count_result['total'] if is_postgresql else count_result[0]
+        count_result = db_manager.execute_query(count_query, tuple(params), fetch_one=True)
+        total_count = count_result['total'] if count_result else 0
 
         # Add ordering and pagination
         query += f" ORDER BY created_at DESC LIMIT {placeholder} OFFSET {placeholder}"
         params.extend([per_page, offset])
 
-        cursor.execute(query, params)
+        results = db_manager.execute_query(query, tuple(params), fetch_all=True)
         invoices = []
 
-        for row in cursor.fetchall():
-            invoice = dict(row)
-            # Parse JSON fields
-            if invoice.get('line_items'):
-                try:
-                    invoice['line_items'] = json.loads(invoice['line_items'])
-                except:
-                    invoice['line_items'] = []
-            invoices.append(invoice)
-
-        conn.close()
+        if results:
+            for row in results:
+                invoice = dict(row)
+                # Parse JSON fields
+                if invoice.get('line_items'):
+                    try:
+                        invoice['line_items'] = json.loads(invoice['line_items'])
+                    except:
+                        invoice['line_items'] = []
+                invoices.append(invoice)
 
         return jsonify({
             'invoices': invoices,
@@ -3212,14 +3139,10 @@ def api_get_invoices():
 def api_get_invoice(invoice_id):
     """Get single invoice by ID"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        from database import db_manager
 
-        cursor.execute(f"SELECT * FROM invoices WHERE id = {placeholder}", (invoice_id,))
-        row = cursor.fetchone()
-        conn.close()
+        # Execute query using db_manager
+        row = db_manager.execute_query("SELECT * FROM invoices WHERE id = %s", (invoice_id,), fetch_one=True)
 
         if not row:
             return jsonify({'error': 'Invoice not found'}), 404
@@ -3339,7 +3262,7 @@ def api_upload_invoice():
             'api_key_present': bool(os.getenv('ANTHROPIC_API_KEY')),
             'traceback': traceback.format_exc()
         }
-        print(f"❌ Invoice upload error: {error_details}")
+        print(f"[ERROR] Invoice upload error: {error_details}")
         return jsonify(error_details), 500
 
 @app.route('/api/invoices/upload-batch', methods=['POST'])
@@ -3627,18 +3550,12 @@ def api_upload_batch_invoices_async():
 def api_update_invoice(invoice_id):
     """Update invoice fields - supports single field or multiple fields"""
     try:
+        from database import db_manager
         data = request.get_json()
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
-
         # Check if invoice exists
-        cursor.execute(f"SELECT id FROM invoices WHERE id = {placeholder}", (invoice_id,))
-        existing = cursor.fetchone()
+        existing = db_manager.execute_query("SELECT id FROM invoices WHERE id = %s", (invoice_id,), fetch_one=True)
         if not existing:
-            conn.close()
             return jsonify({'error': 'Invoice not found'}), 404
 
         # Handle both single field update and multiple field update
@@ -3654,11 +3571,10 @@ def api_update_invoice(invoice_id):
                             'business_unit', 'category', 'payment_terms']
 
             if field not in allowed_fields:
-                conn.close()
                 return jsonify({'error': 'Invalid field name'}), 400
 
-            update_query = f"UPDATE invoices SET {field} = ? WHERE id = ?"
-            conn.execute(update_query, (value, invoice_id))
+            update_query = f"UPDATE invoices SET {field} = %s WHERE id = %s"
+            db_manager.execute_query(update_query, (value, invoice_id))
         else:
             # Multiple field update (for modal editing)
             allowed_fields = ['invoice_number', 'date', 'due_date', 'vendor_name', 'vendor_address',
@@ -3671,19 +3587,15 @@ def api_update_invoice(invoice_id):
 
             for field, value in data.items():
                 if field in allowed_fields and value is not None:
-                    updates.append(f"{field} = ?")
+                    updates.append(f"{field} = %s")
                     values.append(value)
 
             if not updates:
-                conn.close()
                 return jsonify({'error': 'No valid fields to update'}), 400
 
-            update_query = f"UPDATE invoices SET {', '.join(updates)} WHERE id = ?"
+            update_query = f"UPDATE invoices SET {', '.join(updates)} WHERE id = %s"
             values.append(invoice_id)
-            conn.execute(update_query, values)
-
-        conn.commit()
-        conn.close()
+            db_manager.execute_query(update_query, tuple(values))
 
         return jsonify({'success': True, 'message': 'Invoice updated'})
 
@@ -3694,16 +3606,12 @@ def api_update_invoice(invoice_id):
 def api_delete_invoice(invoice_id):
     """Delete invoice"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        from database import db_manager
 
-        cursor.execute(f"DELETE FROM invoices WHERE id = {placeholder}", (invoice_id,))
-        conn.commit()
-        conn.close()
+        # Execute delete query
+        rows_affected = db_manager.execute_query("DELETE FROM invoices WHERE id = %s", (invoice_id,))
 
-        if cursor.rowcount == 0:
+        if rows_affected == 0:
             return jsonify({'error': 'Invoice not found'}), 404
 
         return jsonify({'success': True, 'message': 'Invoice deleted'})
@@ -3715,6 +3623,7 @@ def api_delete_invoice(invoice_id):
 def api_bulk_update_invoices():
     """Bulk update multiple invoices"""
     try:
+        from database import db_manager
         data = request.get_json()
         invoice_ids = data.get('invoice_ids', [])
         updates = data.get('updates', {})
@@ -3732,24 +3641,26 @@ def api_bulk_update_invoices():
 
         for field, value in updates.items():
             if field in allowed_fields and value:
-                update_parts.append(f"{field} = ?")
+                update_parts.append(f"{field} = %s")
                 values.append(value)
 
         if not update_parts:
             return jsonify({'error': 'No valid fields to update'}), 400
 
-        conn = get_db_connection()
         updated_count = 0
 
-        # Update each invoice
-        for invoice_id in invoice_ids:
-            update_query = f"UPDATE invoices SET {', '.join(update_parts)} WHERE id = ?"
-            result = conn.execute(update_query, values + [invoice_id])
-            if result.rowcount > 0:
-                updated_count += 1
+        # Use transaction for consistency
+        with db_manager.get_transaction() as conn:
+            cursor = conn.cursor()
 
-        conn.commit()
-        conn.close()
+            # Update each invoice
+            for invoice_id in invoice_ids:
+                update_query = f"UPDATE invoices SET {', '.join(update_parts)} WHERE id = %s"
+                cursor.execute(update_query, values + [invoice_id])
+                if cursor.rowcount > 0:
+                    updated_count += 1
+
+            cursor.close()
 
         return jsonify({
             'success': True,
@@ -3764,26 +3675,26 @@ def api_bulk_update_invoices():
 def api_bulk_delete_invoices():
     """Bulk delete multiple invoices"""
     try:
+        from database import db_manager
         data = request.get_json()
         invoice_ids = data.get('invoice_ids', [])
 
         if not invoice_ids:
             return jsonify({'error': 'No invoice IDs provided'}), 400
 
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
         deleted_count = 0
 
-        # Delete each invoice
-        for invoice_id in invoice_ids:
-            cursor.execute(f"DELETE FROM invoices WHERE id = {placeholder}", (invoice_id,))
-            if cursor.rowcount > 0:
-                deleted_count += 1
+        # Use transaction for consistency
+        with db_manager.get_transaction() as conn:
+            cursor = conn.cursor()
 
-        conn.commit()
-        conn.close()
+            # Delete each invoice
+            for invoice_id in invoice_ids:
+                cursor.execute("DELETE FROM invoices WHERE id = %s", (invoice_id,))
+                if cursor.rowcount > 0:
+                    deleted_count += 1
+
+            cursor.close()
 
         return jsonify({
             'success': True,
@@ -3798,66 +3709,54 @@ def api_bulk_delete_invoices():
 def api_invoice_stats():
     """Get invoice statistics"""
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
+        from database import db_manager
 
         # Total invoices
-        cursor.execute("SELECT COUNT(*) FROM invoices")
-        total_result = cursor.fetchone()
-        total = total_result['count'] if is_postgresql else total_result[0]
+        total_result = db_manager.execute_query("SELECT COUNT(*) as count FROM invoices", fetch_one=True)
+        total = total_result['count'] if total_result else 0
 
         # Total amount
-        cursor.execute("SELECT COALESCE(SUM(total_amount), 0) FROM invoices")
-        amount_result = cursor.fetchone()
-        total_amount = amount_result['coalesce'] if is_postgresql else amount_result[0]
+        amount_result = db_manager.execute_query("SELECT COALESCE(SUM(total_amount), 0) as total FROM invoices", fetch_one=True)
+        total_amount = amount_result['total'] if amount_result else 0
 
         # Unique vendors
-        cursor.execute("SELECT COUNT(DISTINCT vendor_name) FROM invoices WHERE vendor_name IS NOT NULL AND vendor_name != ''")
-        vendors_result = cursor.fetchone()
-        unique_vendors = vendors_result['count'] if is_postgresql else vendors_result[0]
+        vendors_result = db_manager.execute_query("SELECT COUNT(DISTINCT vendor_name) as count FROM invoices WHERE vendor_name IS NOT NULL AND vendor_name != ''", fetch_one=True)
+        unique_vendors = vendors_result['count'] if vendors_result else 0
 
         # Unique customers
-        cursor.execute("SELECT COUNT(DISTINCT customer_name) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''")
-        customers_result = cursor.fetchone()
-        unique_customers = customers_result['count'] if is_postgresql else customers_result[0]
+        customers_result = db_manager.execute_query("SELECT COUNT(DISTINCT customer_name) as count FROM invoices WHERE customer_name IS NOT NULL AND customer_name != ''", fetch_one=True)
+        unique_customers = customers_result['count'] if customers_result else 0
 
         # By business unit
         bu_counts = {}
-        cursor.execute("SELECT business_unit, COUNT(*), SUM(total_amount) FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit")
-        bu_rows = cursor.fetchall()
-        for row in bu_rows:
-            if is_postgresql:
-                bu_counts[row['business_unit']] = {'count': row['count'], 'total': row['sum']}
-            else:
-                bu_counts[row[0]] = {'count': row[1], 'total': row[2]}
+        try:
+            bu_rows = db_manager.execute_query("SELECT business_unit, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE business_unit IS NOT NULL GROUP BY business_unit", fetch_all=True)
+            if bu_rows:
+                for row in bu_rows:
+                    bu_counts[row['business_unit']] = {'count': row['count'], 'total': row['total']}
+        except:
+            pass  # Column might not exist
 
         # By category
         category_counts = {}
-        cursor.execute("SELECT category, COUNT(*), SUM(total_amount) FROM invoices WHERE category IS NOT NULL GROUP BY category")
-        category_rows = cursor.fetchall()
-        for row in category_rows:
-            if is_postgresql:
-                category_counts[row['category']] = {'count': row['count'], 'total': row['sum']}
-            else:
-                category_counts[row[0]] = {'count': row[1], 'total': row[2]}
+        try:
+            category_rows = db_manager.execute_query("SELECT category, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE category IS NOT NULL GROUP BY category", fetch_all=True)
+            if category_rows:
+                for row in category_rows:
+                    category_counts[row['category']] = {'count': row['count'], 'total': row['total']}
+        except:
+            pass  # Column might not exist
 
         # By customer
         customer_counts = {}
-        cursor.execute("SELECT customer_name, COUNT(*), SUM(total_amount) FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10")
-        customer_rows = cursor.fetchall()
-        for row in customer_rows:
-            if is_postgresql:
-                customer_counts[row['customer_name']] = {'count': row['count'], 'total': row['sum']}
-            else:
-                customer_counts[row[0]] = {'count': row[1], 'total': row[2]}
+        customer_rows = db_manager.execute_query("SELECT customer_name, COUNT(*) as count, SUM(total_amount) as total FROM invoices WHERE customer_name IS NOT NULL AND customer_name != '' GROUP BY customer_name ORDER BY COUNT(*) DESC LIMIT 10", fetch_all=True)
+        if customer_rows:
+            for row in customer_rows:
+                customer_counts[row['customer_name']] = {'count': row['count'], 'total': row['total']}
 
         # Recent invoices
-        cursor.execute("SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5")
-        recent_rows = cursor.fetchall()
-        recent_invoices = [dict(row) for row in recent_rows]
-
-        conn.close()
+        recent_rows = db_manager.execute_query("SELECT * FROM invoices ORDER BY created_at DESC LIMIT 5", fetch_all=True)
+        recent_invoices = [dict(row) for row in recent_rows] if recent_rows else []
 
         return jsonify({
             'total_invoices': total,
@@ -3871,6 +3770,7 @@ def api_invoice_stats():
         })
 
     except Exception as e:
+        logger.error(f"Error getting invoice stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
@@ -4312,21 +4212,21 @@ OTHER OPTIONAL FIELDS:
 - subtotal: Subtotal before tax
 - line_items: Array of line items with description, quantity, unit_price, total
 
-🚨 CRITICAL FORMATTING RULES:
+CRITICAL FORMATTING RULES:
 1. DATES: Only use YYYY-MM-DD format or null. NEVER use text like "DUE ON RECEIPT", "NET 30", "PAID"
 2. CURRENCY: Use standard 3-letter codes (USD, EUR, BTC, PYG). If unclear, extract first 3 characters
 3. JSON: MUST be valid JSON with all commas and quotes correct. Double-check syntax
 4. NUMBERS: Use numeric values only (e.g., 150.50, not "$150.50")
 
 ⚡ EXAMPLES:
-❌ "due_date": "DUE ON RECEIPT"
-✅ "due_date": null
+[ERROR] "due_date": "DUE ON RECEIPT"
+[OK] "due_date": null
 
-❌ "currency": "US Dollars"
-✅ "currency": "USD"
+[ERROR] "currency": "US Dollars"
+[OK] "currency": "USD"
 
-❌ "total_amount": "$1,500.00"
-✅ "total_amount": 1500.00
+[ERROR] "total_amount": "$1,500.00"
+[OK] "total_amount": 1500.00
 
 CLASSIFICATION HINTS:
 Based on the customer (who is paying), suggest:
@@ -4403,10 +4303,10 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
             try:
                 extracted_data = json.loads(response_text)
                 if json_parse_attempts > 1:
-                    print(f"✅ JSON parsed successfully on attempt {json_parse_attempts}")
+                    print(f"[OK] JSON parsed successfully on attempt {json_parse_attempts}")
                 break
             except json.JSONDecodeError as e:
-                print(f"⚠️ JSON parse attempt {json_parse_attempts} failed: {str(e)[:100]}")
+                print(f"WARNING: JSON parse attempt {json_parse_attempts} failed: {str(e)[:100]}")
 
                 if json_parse_attempts < max_json_attempts:
                     # LAYER 3A: Auto-repair common JSON issues
@@ -4414,10 +4314,10 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
                     print(f"🔧 Applied JSON auto-repair, retrying...")
                 else:
                     # LAYER 3B: If all repairs fail, try regex fallback
-                    print(f"❌ JSON parsing failed after {max_json_attempts} attempts, trying fallback extraction...")
+                    print(f"[ERROR] JSON parsing failed after {max_json_attempts} attempts, trying fallback extraction...")
                     extracted_data = fallback_extract_invoice_data(response_text)
                     if extracted_data:
-                        print("✅ Fallback extraction succeeded")
+                        print("[OK] Fallback extraction succeeded")
                     else:
                         raise json.JSONDecodeError(f"Failed to parse or repair JSON after {max_json_attempts} attempts", response_text, 0)
 
@@ -4859,6 +4759,973 @@ def debug_sync(filename):
             'success': False
         })
 
+# ===============================================
+# REVENUE MATCHING API ENDPOINTS
+# ===============================================
+
+@app.route('/api/revenue/run-matching', methods=['POST'])
+def api_run_revenue_matching():
+    """
+    Executa matching automático de invoices com transações (versão básica)
+    Body: {
+        "invoice_ids": ["id1", "id2", ...] (opcional - se não fornecido, processa todos),
+        "auto_apply": true/false (se deve aplicar matches automáticos)
+    }
+    """
+    try:
+        from revenue_matcher import run_invoice_matching
+
+        data = request.get_json() or {}
+        invoice_ids = data.get('invoice_ids')
+        auto_apply = data.get('auto_apply', False)
+
+        logger.info(f"Starting revenue matching - Invoice IDs: {invoice_ids}, Auto-apply: {auto_apply}")
+
+        # Run the matching process
+        result = run_invoice_matching(invoice_ids=invoice_ids, auto_apply=auto_apply)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in revenue matching: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/revenue/pending-matches')
+def api_get_pending_matches():
+    """Retorna matches pendentes de revisão"""
+    try:
+        from database import db_manager
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 20)), 100)
+        offset = (page - 1) * per_page
+
+        # Query including explanation and confidence_level fields
+        query = """
+            SELECT
+                pm.id,
+                pm.invoice_id,
+                pm.transaction_id,
+                pm.score,
+                pm.match_type,
+                pm.confidence_level,
+                pm.explanation,
+                pm.created_at,
+                i.invoice_number,
+                i.vendor_name,
+                i.total_amount as invoice_amount,
+                i.currency as invoice_currency,
+                i.date as invoice_date,
+                i.due_date,
+                t.description,
+                t.amount as transaction_amount,
+                t.date as transaction_date,
+                t.classified_entity
+            FROM pending_invoice_matches pm
+            JOIN invoices i ON pm.invoice_id = i.id
+            JOIN transactions t ON pm.transaction_id = t.transaction_id
+            WHERE pm.status = 'pending'
+            ORDER BY pm.score DESC, pm.created_at DESC
+            LIMIT %s OFFSET %s
+        """
+
+        matches = db_manager.execute_query(query, (per_page, offset), fetch_all=True)
+
+        # Get total count
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM pending_invoice_matches
+            WHERE status = 'pending'
+        """
+        total_result = db_manager.execute_query(count_query, fetch_one=True)
+        total = total_result['total'] if total_result else 0
+
+        # Format matches for frontend
+        formatted_matches = []
+        for match in matches:
+            formatted_matches.append({
+                'id': match['id'],
+                'invoice_id': match['invoice_id'],
+                'transaction_id': match['transaction_id'],
+                'score': float(match['score']) if match['score'] else 0.0,
+                'match_type': match['match_type'] or 'AUTO',
+                'confidence_level': match['confidence_level'] or 'MEDIUM',
+                'explanation': match['explanation'] or 'Match found based on automated criteria',
+                'created_at': match['created_at'],
+                'invoice': {
+                    'number': match['invoice_number'],
+                    'vendor_name': match['vendor_name'],
+                    'amount': float(match['invoice_amount']) if match['invoice_amount'] else 0.0,
+                    'currency': match['invoice_currency'],
+                    'date': match['invoice_date'],
+                    'due_date': match['due_date']
+                },
+                'transaction': {
+                    'description': match['description'],
+                    'amount': float(match['transaction_amount']) if match['transaction_amount'] else 0.0,
+                    'date': match['transaction_date'],
+                    'classified_entity': match['classified_entity']
+                }
+            })
+
+        return jsonify({
+            'success': True,
+            'matches': formatted_matches,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting pending matches: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/confirm-match', methods=['POST'])
+def api_confirm_match():
+    """
+    Confirma um match pendente
+    Body: {
+        "match_id": int,
+        "user_id": "string" (opcional)
+    }
+    """
+    try:
+        data = request.get_json()
+        match_id = data.get('match_id')
+        user_id = data.get('user_id', 'Unknown')
+
+        if not match_id:
+            return jsonify({'success': False, 'error': 'match_id is required'}), 400
+
+        # Get match details
+        query = """
+            SELECT invoice_id, transaction_id, score, match_type
+            FROM pending_invoice_matches
+            WHERE id = %s AND status = 'pending'
+        """
+        match = db_manager.execute_query(query, (match_id,), fetch_one=True)
+
+        if not match:
+            return jsonify({'success': False, 'error': 'Match not found or already processed'}), 404
+
+        # Apply the match
+        update_invoice_query = """
+            UPDATE invoices
+            SET linked_transaction_id = %s,
+                status = 'paid',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+        db_manager.execute_query(update_invoice_query, (match['transaction_id'], match['invoice_id']))
+
+        # Mark match as confirmed
+        confirm_query = """
+            UPDATE pending_invoice_matches
+            SET status = 'confirmed',
+                reviewed_by = %s,
+                reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+        db_manager.execute_query(confirm_query, (user_id, match_id))
+
+        # Log the action
+        log_query = """
+            INSERT INTO invoice_match_log
+            (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+            VALUES (%s, %s, 'MANUAL_CONFIRMED', %s, %s, %s, CURRENT_TIMESTAMP)
+        """
+        db_manager.execute_query(log_query, (
+            match['invoice_id'],
+            match['transaction_id'],
+            match['score'],
+            match['match_type'],
+            user_id
+        ))
+
+        return jsonify({
+            'success': True,
+            'message': 'Match confirmed successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error confirming match: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/reject-match', methods=['POST'])
+def api_reject_match():
+    """
+    Rejeita um match pendente
+    Body: {
+        "match_id": int,
+        "user_id": "string" (opcional),
+        "reason": "string" (opcional)
+    }
+    """
+    try:
+        data = request.get_json()
+        match_id = data.get('match_id')
+        user_id = data.get('user_id', 'Unknown')
+        reason = data.get('reason', '')
+
+        if not match_id:
+            return jsonify({'success': False, 'error': 'match_id is required'}), 400
+
+        # Get match details for logging
+        query = """
+            SELECT invoice_id, transaction_id, score, match_type
+            FROM pending_invoice_matches
+            WHERE id = %s AND status = 'pending'
+        """
+        match = db_manager.execute_query(query, (match_id,), fetch_one=True)
+
+        if not match:
+            return jsonify({'success': False, 'error': 'Match not found or already processed'}), 404
+
+        # Mark match as rejected
+        reject_query = """
+            UPDATE pending_invoice_matches
+            SET status = 'rejected',
+                reviewed_by = %s,
+                reviewed_at = CURRENT_TIMESTAMP,
+                explanation = CONCAT(explanation, ' | REJECTED: ', %s)
+            WHERE id = %s
+        """
+        db_manager.execute_query(reject_query, (user_id, reason, match_id))
+
+        # Log the action
+        log_query = """
+            INSERT INTO invoice_match_log
+            (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+            VALUES (%s, %s, 'MANUAL_REJECTED', %s, %s, %s, CURRENT_TIMESTAMP)
+        """
+        db_manager.execute_query(log_query, (
+            match['invoice_id'],
+            match['transaction_id'],
+            match['score'],
+            f"{match['match_type']}_REJECTED",
+            user_id
+        ))
+
+        return jsonify({
+            'success': True,
+            'message': 'Match rejected successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error rejecting match: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/manual-match', methods=['POST'])
+def api_manual_match():
+    """
+    Cria um match manual entre invoice e transação
+    Body: {
+        "invoice_id": "string",
+        "transaction_id": "string",
+        "user_id": "string" (opcional),
+        "reason": "string" (opcional)
+    }
+    """
+    try:
+        data = request.get_json()
+        invoice_id = data.get('invoice_id')
+        transaction_id = data.get('transaction_id')
+        user_id = data.get('user_id', 'Unknown')
+        reason = data.get('reason', 'Manual match by user')
+
+        if not invoice_id or not transaction_id:
+            return jsonify({'success': False, 'error': 'invoice_id and transaction_id are required'}), 400
+
+        # Verify invoice and transaction exist
+        invoice_query = "SELECT id FROM invoices WHERE id = %s"
+        invoice = db_manager.execute_query(invoice_query, (invoice_id,), fetch_one=True)
+
+        transaction_query = "SELECT transaction_id FROM transactions WHERE transaction_id = %s"
+        transaction = db_manager.execute_query(transaction_query, (transaction_id,), fetch_one=True)
+
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+        if not transaction:
+            return jsonify({'success': False, 'error': 'Transaction not found'}), 404
+
+        # Apply the manual match
+        update_query = """
+            UPDATE invoices
+            SET linked_transaction_id = %s,
+                status = 'paid',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+        db_manager.execute_query(update_query, (transaction_id, invoice_id))
+
+        # Log the manual match
+        log_query = """
+            INSERT INTO invoice_match_log
+            (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+            VALUES (%s, %s, 'MANUAL_MATCH', 1.0, 'MANUAL', %s, CURRENT_TIMESTAMP)
+        """
+        db_manager.execute_query(log_query, (invoice_id, transaction_id, user_id))
+
+        return jsonify({
+            'success': True,
+            'message': 'Manual match created successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating manual match: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/matched-pairs')
+def api_get_matched_pairs():
+    """Retorna invoices que já foram matchados com transações"""
+    try:
+        from database import db_manager
+        page = int(request.args.get('page', 1))
+        per_page = min(int(request.args.get('per_page', 20)), 100)
+        offset = (page - 1) * per_page
+
+        query = """
+            SELECT
+                i.id as invoice_id,
+                i.invoice_number,
+                i.vendor_name,
+                i.total_amount as invoice_amount,
+                i.currency,
+                i.date as invoice_date,
+                i.due_date,
+                i.status,
+                t.transaction_id,
+                t.description,
+                t.amount as transaction_amount,
+                t.date as transaction_date,
+                t.classified_entity,
+                log.action,
+                log.score,
+                log.match_type,
+                log.user_id,
+                log.created_at as matched_at
+            FROM invoices i
+            JOIN transactions t ON i.linked_transaction_id = t.transaction_id
+            LEFT JOIN invoice_match_log log ON i.id = log.invoice_id AND t.transaction_id = log.transaction_id
+            WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+            ORDER BY COALESCE(log.created_at, i.created_at) DESC
+            LIMIT %s OFFSET %s
+        """
+
+        pairs = db_manager.execute_query(query, (per_page, offset), fetch_all=True)
+
+        # Get total count
+        count_query = """
+            SELECT COUNT(*) as total
+            FROM invoices
+            WHERE linked_transaction_id IS NOT NULL AND linked_transaction_id != ''
+        """
+        total_result = db_manager.execute_query(count_query, fetch_one=True)
+        total = total_result['total'] if total_result else 0
+
+        # Format pairs for frontend
+        formatted_pairs = []
+        for pair in pairs:
+            formatted_pairs.append({
+                'invoice_id': pair['invoice_id'],
+                'transaction_id': pair['transaction_id'],
+                'matched_at': pair['matched_at'],
+                'match_type': pair['match_type'],
+                'match_action': pair['action'],
+                'match_score': float(pair['score']) if pair['score'] else None,
+                'matched_by': pair['user_id'],
+                'invoice': {
+                    'number': pair['invoice_number'],
+                    'vendor_name': pair['vendor_name'],
+                    'amount': float(pair['invoice_amount']),
+                    'currency': pair['currency'],
+                    'date': pair['invoice_date'],
+                    'due_date': pair['due_date'],
+                    'status': pair['status']
+                },
+                'transaction': {
+                    'description': pair['description'],
+                    'amount': float(pair['transaction_amount']),
+                    'date': pair['transaction_date'],
+                    'classified_entity': pair['classified_entity']
+                }
+            })
+
+        return jsonify({
+            'success': True,
+            'pairs': formatted_pairs,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting matched pairs: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/stats')
+def api_get_revenue_stats():
+    """Retorna estatísticas do sistema de revenue matching"""
+    try:
+        from database import db_manager
+        stats = {}
+
+        # Total invoices
+        query = "SELECT COUNT(*) as total FROM invoices"
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['total_invoices'] = result['total'] if result else 0
+
+        # Matched invoices
+        query = """
+            SELECT COUNT(*) as matched
+            FROM invoices
+            WHERE linked_transaction_id IS NOT NULL AND linked_transaction_id != ''
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['matched_invoices'] = result['matched'] if result else 0
+
+        # Unmatched invoices
+        stats['unmatched_invoices'] = stats['total_invoices'] - stats['matched_invoices']
+
+        # Pending matches for review
+        query = """
+            SELECT COUNT(*) as pending
+            FROM pending_invoice_matches
+            WHERE status = 'pending'
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['pending_matches'] = result['pending'] if result else 0
+
+        # Total revenue amounts
+        query = """
+            SELECT
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL THEN total_amount ELSE 0 END), 0) as matched_revenue,
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL THEN total_amount ELSE 0 END), 0) as unmatched_revenue,
+                COALESCE(SUM(total_amount), 0) as total_revenue
+            FROM invoices
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        if result:
+            stats['matched_revenue'] = float(result['matched_revenue'])
+            stats['unmatched_revenue'] = float(result['unmatched_revenue'])
+            stats['total_revenue'] = float(result['total_revenue'])
+        else:
+            stats['matched_revenue'] = 0
+            stats['unmatched_revenue'] = 0
+            stats['total_revenue'] = 0
+
+        # Match rate percentage
+        if stats['total_invoices'] > 0:
+            stats['match_rate'] = (stats['matched_invoices'] / stats['total_invoices']) * 100
+        else:
+            stats['match_rate'] = 0
+
+        # Recent matching activity (last 30 days)
+        query = """
+            SELECT COUNT(*) as recent_matches
+            FROM invoice_match_log
+            WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['recent_matches'] = result['recent_matches'] if result else 0
+
+        # Match types breakdown
+        query = """
+            SELECT
+                match_type,
+                COUNT(*) as count
+            FROM invoice_match_log
+            WHERE action IN ('AUTO_APPLIED', 'MANUAL_CONFIRMED', 'MANUAL_MATCH')
+            GROUP BY match_type
+            ORDER BY count DESC
+        """
+        result = db_manager.execute_query(query, fetch_all=True)
+        stats['match_types'] = {row['match_type']: row['count'] for row in result} if result else {}
+
+        # Transaction statistics (opposite side of matching)
+        # Total transactions
+        query = "SELECT COUNT(*) as total FROM transactions"
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['total_transactions'] = result['total'] if result else 0
+
+        # Linked transactions (transactions that are already linked to invoices)
+        query = """
+            SELECT COUNT(DISTINCT t.transaction_id) as linked
+            FROM transactions t
+            JOIN invoices i ON i.linked_transaction_id = t.transaction_id
+            WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['linked_transactions'] = result['linked'] if result else 0
+
+        # Unlinked transactions (transactions not linked to any invoice)
+        stats['unlinked_transactions'] = stats['total_transactions'] - stats['linked_transactions']
+
+        # Revenue transactions specifically (positive amounts that could match invoices)
+        query = """
+            SELECT COUNT(*) as revenue_transactions
+            FROM transactions
+            WHERE amount > 0
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['revenue_transactions'] = result['revenue_transactions'] if result else 0
+
+        # Unlinked revenue transactions (positive transactions not linked to invoices)
+        query = """
+            SELECT COUNT(*) as unlinked_revenue_transactions
+            FROM transactions t
+            WHERE t.amount > 0
+            AND t.transaction_id NOT IN (
+                SELECT DISTINCT i.linked_transaction_id
+                FROM invoices i
+                WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+            )
+        """
+        result = db_manager.execute_query(query, fetch_one=True)
+        stats['unlinked_revenue_transactions'] = result['unlinked_revenue_transactions'] if result else 0
+
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting revenue stats: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/unmatch', methods=['POST'])
+def api_unmatch_invoice():
+    """
+    Remove o match de um invoice
+    Body: {
+        "invoice_id": "string",
+        "user_id": "string" (opcional),
+        "reason": "string" (opcional)
+    }
+    """
+    try:
+        data = request.get_json()
+        invoice_id = data.get('invoice_id')
+        user_id = data.get('user_id', 'Unknown')
+        reason = data.get('reason', 'Manual unmatch by user')
+
+        if not invoice_id:
+            return jsonify({'success': False, 'error': 'invoice_id is required'}), 400
+
+        # Get current match info for logging
+        query = """
+            SELECT linked_transaction_id
+            FROM invoices
+            WHERE id = %s AND linked_transaction_id IS NOT NULL
+        """
+        result = db_manager.execute_query(query, (invoice_id,), fetch_one=True)
+
+        if not result:
+            return jsonify({'success': False, 'error': 'Invoice not found or not matched'}), 404
+
+        transaction_id = result['linked_transaction_id']
+
+        # Remove the match
+        update_query = """
+            UPDATE invoices
+            SET linked_transaction_id = NULL,
+                status = 'pending',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """
+        db_manager.execute_query(update_query, (invoice_id,))
+
+        # Log the unmatch action
+        log_query = """
+            INSERT INTO invoice_match_log
+            (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+            VALUES (%s, %s, 'MANUAL_UNMATCHED', 0.0, 'UNMATCH', %s, CURRENT_TIMESTAMP)
+        """
+        db_manager.execute_query(log_query, (invoice_id, transaction_id, user_id))
+
+        return jsonify({
+            'success': True,
+            'message': 'Invoice unmatched successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error unmatching invoice: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ===============================================
+# ROBUST REVENUE MATCHING API ENDPOINTS
+# ===============================================
+
+@app.route('/api/revenue/run-robust-matching', methods=['POST'])
+def api_run_robust_revenue_matching():
+    """
+    Executa matching robusto de invoices com transações para produção
+    Body: {
+        "invoice_ids": ["id1", "id2", ...] (opcional),
+        "auto_apply": true/false,
+        "enable_learning": true/false (padrão: true)
+    }
+    """
+    try:
+        from robust_revenue_matcher import run_robust_invoice_matching
+
+        data = request.get_json() or {}
+        invoice_ids = data.get('invoice_ids')
+        auto_apply = data.get('auto_apply', False)
+        enable_learning = data.get('enable_learning', True)
+
+        # Execute robust matching
+        result = run_robust_invoice_matching(
+            invoice_ids=invoice_ids,
+            auto_apply=auto_apply,
+            enable_learning=enable_learning
+        )
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in robust revenue matching: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'stats': {
+                'total_invoices_processed': 0,
+                'total_matches_found': 0,
+                'errors_count': 1
+            }
+        }), 500
+
+@app.route('/api/revenue/health')
+def api_revenue_health_check():
+    """
+    Health check para o sistema de revenue matching
+    Retorna status de conectividade e performance do banco
+    """
+    try:
+        from database import db_manager
+
+        # Perform database health check
+        health_status = db_manager.health_check()
+
+        # Additional checks specific to revenue matching
+        revenue_health = {
+            'database': health_status,
+            'revenue_tables': {},
+            'claude_api': {
+                'available': bool(os.getenv('ANTHROPIC_API_KEY')),
+                'status': 'configured' if os.getenv('ANTHROPIC_API_KEY') else 'not_configured'
+            }
+        }
+
+        # Check revenue-specific tables
+        revenue_tables = ['invoices', 'transactions', 'pending_invoice_matches', 'invoice_match_log']
+
+        for table in revenue_tables:
+            try:
+                if db_manager.db_type == 'postgresql':
+                    query = """
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables
+                            WHERE table_name = %s
+                        )
+                    """
+                else:
+                    query = """
+                        SELECT name FROM sqlite_master
+                        WHERE type='table' AND name = ?
+                    """
+
+                result = db_manager.execute_query(query, (table,), fetch_one=True)
+
+                if db_manager.db_type == 'postgresql':
+                    exists = result['exists'] if result else False
+                else:
+                    exists = bool(result)
+
+                revenue_health['revenue_tables'][table] = 'exists' if exists else 'missing'
+
+            except Exception as e:
+                revenue_health['revenue_tables'][table] = f'error: {str(e)}'
+
+        # Overall health status
+        overall_status = 'healthy'
+        if health_status['status'] != 'healthy':
+            overall_status = 'unhealthy'
+        elif any(status != 'exists' for status in revenue_health['revenue_tables'].values()):
+            overall_status = 'degraded'
+
+        revenue_health['overall_status'] = overall_status
+
+        return jsonify({
+            'success': True,
+            'health': revenue_health
+        })
+
+    except Exception as e:
+        logger.error(f"Error in revenue health check: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'health': {
+                'overall_status': 'unhealthy',
+                'error': str(e)
+            }
+        }), 500
+
+@app.route('/api/revenue/batch-operations', methods=['POST'])
+def api_revenue_batch_operations():
+    """
+    Executa operações em lote no sistema de revenue
+    Body: {
+        "operations": [
+            {
+                "type": "confirm_match",
+                "invoice_id": "string",
+                "transaction_id": "string",
+                "user_id": "string"
+            },
+            {
+                "type": "reject_match",
+                "invoice_id": "string",
+                "transaction_id": "string",
+                "user_id": "string",
+                "reason": "string"
+            }
+        ]
+    }
+    """
+    try:
+        from database import db_manager
+
+        data = request.get_json() or {}
+        operations = data.get('operations', [])
+
+        if not operations:
+            return jsonify({
+                'success': False,
+                'error': 'No operations provided'
+            }), 400
+
+        # Prepare batch operations for database
+        db_operations = []
+        results = {
+            'total_operations': len(operations),
+            'successful_operations': 0,
+            'failed_operations': 0,
+            'errors': []
+        }
+
+        for i, operation in enumerate(operations):
+            op_type = operation.get('type')
+            invoice_id = operation.get('invoice_id')
+            transaction_id = operation.get('transaction_id')
+            user_id = operation.get('user_id', 'system')
+
+            try:
+                if op_type == 'confirm_match':
+                    # Add operation to update invoice
+                    update_query = """
+                        UPDATE invoices
+                        SET linked_transaction_id = ?,
+                            payment_status = 'paid',
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """
+                    if db_manager.db_type == 'postgresql':
+                        update_query = update_query.replace('?', '%s')
+
+                    db_operations.append({
+                        'query': update_query,
+                        'params': (transaction_id, invoice_id)
+                    })
+
+                    # Add log operation
+                    log_query = """
+                        INSERT INTO invoice_match_log
+                        (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+                        VALUES (?, ?, 'BATCH_CONFIRMED', 1.0, 'BATCH_OPERATION', ?, CURRENT_TIMESTAMP)
+                    """
+                    if db_manager.db_type == 'postgresql':
+                        log_query = log_query.replace('?', '%s')
+
+                    db_operations.append({
+                        'query': log_query,
+                        'params': (invoice_id, transaction_id, user_id)
+                    })
+
+                elif op_type == 'reject_match':
+                    # Remove from pending matches
+                    delete_query = """
+                        DELETE FROM pending_invoice_matches
+                        WHERE invoice_id = ? AND transaction_id = ?
+                    """
+                    if db_manager.db_type == 'postgresql':
+                        delete_query = delete_query.replace('?', '%s')
+
+                    db_operations.append({
+                        'query': delete_query,
+                        'params': (invoice_id, transaction_id)
+                    })
+
+                    # Add log operation
+                    log_query = """
+                        INSERT INTO invoice_match_log
+                        (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
+                        VALUES (?, ?, 'BATCH_REJECTED', 0.0, 'BATCH_OPERATION', ?, CURRENT_TIMESTAMP)
+                    """
+                    if db_manager.db_type == 'postgresql':
+                        log_query = log_query.replace('?', '%s')
+
+                    db_operations.append({
+                        'query': log_query,
+                        'params': (invoice_id, transaction_id, user_id)
+                    })
+
+                else:
+                    results['failed_operations'] += 1
+                    results['errors'].append(f"Operation {i}: Unknown operation type '{op_type}'")
+
+            except Exception as e:
+                results['failed_operations'] += 1
+                results['errors'].append(f"Operation {i}: {str(e)}")
+
+        # Execute batch operations
+        if db_operations:
+            batch_results = db_manager.execute_batch_operation(db_operations, batch_size=50)
+            results['successful_operations'] = batch_results['successful_batches'] * 2  # Each operation has 2 queries
+            results['database_stats'] = batch_results
+
+        return jsonify({
+            'success': True,
+            'results': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error in batch operations: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/performance-stats')
+def api_revenue_performance_stats():
+    """
+    Retorna estatísticas de performance do sistema de matching
+    """
+    try:
+        from database import db_manager
+
+        # Get database health
+        health_status = db_manager.health_check()
+
+        # Performance metrics
+        performance_stats = {
+            'database_response_time_ms': health_status.get('response_time_ms', 0),
+            'connection_pool_status': health_status.get('connection_pool_status'),
+            'recent_activity': {}
+        }
+
+        # Recent matching activity (last 24 hours)
+        query = """
+            SELECT
+                action,
+                COUNT(*) as count,
+                AVG(score) as avg_score
+            FROM invoice_match_log
+            WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+            GROUP BY action
+            ORDER BY count DESC
+        """
+
+        if db_manager.db_type == 'sqlite':
+            query = """
+                SELECT
+                    action,
+                    COUNT(*) as count,
+                    AVG(score) as avg_score
+                FROM invoice_match_log
+                WHERE created_at >= datetime('now', '-24 hours')
+                GROUP BY action
+                ORDER BY count DESC
+            """
+
+        try:
+            result = db_manager.execute_query(query, fetch_all=True)
+            for row in result:
+                performance_stats['recent_activity'][row['action']] = {
+                    'count': row['count'],
+                    'avg_score': round(row['avg_score'], 2) if row['avg_score'] else 0
+                }
+        except Exception as e:
+            logger.warning(f"Could not get recent activity stats: {e}")
+            performance_stats['recent_activity'] = {}
+
+        # Batch processing stats (if available)
+        try:
+            batch_query = """
+                SELECT COUNT(*) as total_batches
+                FROM invoice_match_log
+                WHERE match_type LIKE '%BATCH%'
+                AND created_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+            """
+
+            if db_manager.db_type == 'sqlite':
+                batch_query = """
+                    SELECT COUNT(*) as total_batches
+                    FROM invoice_match_log
+                    WHERE match_type LIKE '%BATCH%'
+                    AND created_at >= datetime('now', '-7 days')
+                """
+
+            result = db_manager.execute_query(batch_query, fetch_one=True)
+            performance_stats['batch_operations_last_week'] = result['total_batches'] if result else 0
+
+        except Exception as e:
+            logger.warning(f"Could not get batch stats: {e}")
+            performance_stats['batch_operations_last_week'] = 0
+
+        return jsonify({
+            'success': True,
+            'performance': performance_stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting performance stats: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
@@ -4885,6 +5752,7 @@ try:
         init_claude_client()
     init_invoice_tables()
     ensure_background_jobs_tables()
-    print("✅ Production initialization completed")
+    print("[OK] Production initialization completed")
 except Exception as e:
-    print(f"⚠️  Production initialization warning: {e}")
+    print(f"WARNING: Production initialization warning: {e}")
+
