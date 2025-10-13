@@ -4899,6 +4899,7 @@ def api_confirm_match():
     }
     """
     try:
+        from database import db_manager
         data = request.get_json()
         match_id = data.get('match_id')
         user_id = data.get('user_id', 'Unknown')
@@ -4921,8 +4922,7 @@ def api_confirm_match():
         update_invoice_query = """
             UPDATE invoices
             SET linked_transaction_id = %s,
-                status = 'paid',
-                updated_at = CURRENT_TIMESTAMP
+                status = 'paid'
             WHERE id = %s
         """
         db_manager.execute_query(update_invoice_query, (match['transaction_id'], match['invoice_id']))
@@ -4974,6 +4974,7 @@ def api_reject_match():
     }
     """
     try:
+        from database import db_manager
         data = request.get_json()
         match_id = data.get('match_id')
         user_id = data.get('user_id', 'Unknown')
@@ -5331,6 +5332,7 @@ def api_unmatch_invoice():
     }
     """
     try:
+        from database import db_manager
         data = request.get_json()
         invoice_id = data.get('invoice_id')
         user_id = data.get('user_id', 'Unknown')

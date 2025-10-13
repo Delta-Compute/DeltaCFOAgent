@@ -19,7 +19,21 @@
       "Bash(set CLOUDSDK_PYTHON=C:Program FilesPython312python.exe)",
       "Bash(curl -s \"https://deltacfoagent-620026562181.southamerica-east1.run.app/api/transactions?page=1&per_page=1\")",
       "Bash(dir:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl -s http://127.0.0.1:5001/health)",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/transactions?page=1&per_page=1\")",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/stats\")",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/transactions?show_archived=true&page=1&per_page=1\")",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/transactions?page=1&per_page=5\")",
+      "Bash(curl -X POST \"http://127.0.0.1:5001/api/revenue/unmatch\" -H \"Content-Type: application/json\" -d '{\"\"invoice_id\"\": \"\"d2112bda-7504-47bc-8aec-53f68b89c0dd\"\", \"\"reason\"\": \"\"Transação duplicada - match incorreto\"\", \"\"user_id\"\": \"\"admin\"\"}')",
+      "Bash(curl -X POST \"http://127.0.0.1:5001/api/revenue/reset-all-matches\")",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/revenue/matched-pairs?per_page=5\")",
+      "Bash(curl -s \"http://127.0.0.1:5001/api/revenue/run-robust-matching\")",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
