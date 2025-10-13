@@ -1707,25 +1707,46 @@ def sync_csv_to_database(csv_filename=None):
         if not os.path.exists(csv_path):
             print(f"WARNING: CSV file not found for sync: {csv_path}")
 
-            # Try alternative paths and files
+            # Try alternative paths and files - ONLY classified files
             alternative_paths = [
                 os.path.join(parent_dir, f'classified_{csv_filename}'),  # Root directory
                 os.path.join(parent_dir, 'web_ui', 'classified_transactions', f'classified_{csv_filename}'),  # web_ui subfolder
-                os.path.join(parent_dir, csv_filename),  # Original filename without classified_ prefix
             ] if csv_filename else []
 
             for alt_path in alternative_paths:
                 print(f"🔧 DEBUG: Trying alternative path: {alt_path}")
                 if os.path.exists(alt_path):
                     csv_path = alt_path
-                    print(f"[OK] DEBUG: Found file at alternative path: {alt_path}")
+                    print(f"✅ DEBUG: Found file at alternative path: {alt_path}")
                     break
             else:
-                print(f"[ERROR] DEBUG: No alternative paths found")
+                print(f"❌ DEBUG: No classified file found - skipping sync")
+                print(f"❌ The file needs to be processed by main.py first to create a classified file")
                 return False
 
         # Read the CSV file
         df = pd.read_csv(csv_path)
+
+        # Validate that this is a classified file with required database columns
+        # Make column check case-insensitive
+        df_columns_lower = [col.lower() for col in df.columns]
+        required_columns = ['date', 'description', 'amount']
+        missing_columns = [col for col in required_columns if col.lower() not in df_columns_lower]
+
+        if missing_columns:
+            print(f"❌ ERROR: CSV file is missing required columns: {missing_columns}")
+            print(f"❌ This appears to be a raw CSV file, not a classified one")
+            print(f"❌ Available columns: {list(df.columns)}")
+            return False
+
+        # Standardize column names to lowercase for database compatibility
+        column_mapping = {}
+        for col in df.columns:
+            col_lower = col.lower()
+            if col_lower in required_columns:
+                column_mapping[col] = col_lower
+        df = df.rename(columns=column_mapping)
+
         print(f"UPDATING: Syncing {len(df)} transactions to database...")
 
         # Connect to database
@@ -1736,18 +1757,14 @@ def sync_csv_to_database(csv_filename=None):
         is_postgresql = hasattr(cursor, 'mogrify')  # PostgreSQL-specific method
         placeholder = '%s' if is_postgresql else '?'
 
-        # For specific file uploads, only clear data from that source file
-        if csv_filename:
-            source_file = csv_filename.replace('classified_', '')
-            if is_postgresql:
-                cursor.execute("DELETE FROM transactions WHERE source_file = %s", (source_file,))
-            else:
-                cursor.execute("DELETE FROM transactions WHERE source_file = ?", (source_file,))
-            print(f"DATABASE: Cleared existing data for source file: {source_file}")
-        else:
-            # Only clear all data if syncing MASTER_TRANSACTIONS.csv (full sync)
-            cursor.execute("DELETE FROM transactions")
-            print("DATABASE: Cleared all existing data for full sync")
+        # SMART RE-UPLOAD: DO NOT delete existing data
+        # Instead, we'll use UPSERT logic to merge/enrich existing records
+        # Track statistics
+        new_count = 0
+        enriched_count = 0
+        skipped_count = 0
+
+        print(f"🔄 SMART RE-UPLOAD MODE: Will merge/enrich existing transactions")
 
         # Insert all transactions
         for _, row in df.iterrows():
@@ -1768,6 +1785,8 @@ def sync_csv_to_database(csv_filename=None):
                 'currency': str(row.get('Currency', row.get('currency', 'USD'))),
                 'usd_equivalent': float(row.get('Amount_USD', row.get('USD_Equivalent', row.get('usd_equivalent', row.get('Amount', row.get('amount', 0)))))),
                 'classified_entity': str(row.get('classified_entity', '')),
+                'accounting_category': str(row.get('accounting_category', '')),
+                'subcategory': str(row.get('subcategory', '')),
                 'justification': str(row.get('Justification', row.get('justification', ''))),
                 'confidence': float(row.get('confidence', 0)),
                 'classification_reason': str(row.get('classification_reason', '')),
@@ -1779,55 +1798,175 @@ def sync_csv_to_database(csv_filename=None):
                 'conversion_note': str(row.get('Conversion_Note', '')) if pd.notna(row.get('Conversion_Note')) else None
             }
 
-            # Insert transaction (database-specific syntax for handling duplicates)
+            # SMART ENRICHMENT: Insert transaction or enrich existing one
             if is_postgresql:
-                cursor.execute("""
-                    INSERT INTO transactions (
-                        transaction_id, date, description, amount, currency, usd_equivalent,
-                        classified_entity, justification, confidence, classification_reason,
-                        origin, destination, identifier, source_file, crypto_amount, conversion_note
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (transaction_id) DO UPDATE SET
-                        date = EXCLUDED.date,
-                        description = EXCLUDED.description,
-                        amount = EXCLUDED.amount,
-                        currency = EXCLUDED.currency,
-                        usd_equivalent = EXCLUDED.usd_equivalent,
-                        classified_entity = EXCLUDED.classified_entity,
-                        justification = EXCLUDED.justification,
-                        confidence = EXCLUDED.confidence,
-                        classification_reason = EXCLUDED.classification_reason,
-                        origin = EXCLUDED.origin,
-                        destination = EXCLUDED.destination,
-                        identifier = EXCLUDED.identifier,
-                        source_file = EXCLUDED.source_file,
-                        crypto_amount = EXCLUDED.crypto_amount,
-                        conversion_note = EXCLUDED.conversion_note
-                """, (
-                    data['transaction_id'], data['date'], data['description'],
-                    data['amount'], data['currency'], data['usd_equivalent'],
-                    data['classified_entity'], data['justification'], data['confidence'],
-                    data['classification_reason'], data['origin'], data['destination'],
-                    data['identifier'], data['source_file'], data['crypto_amount'], data['conversion_note']
-                ))
+                # First, check if transaction exists
+                cursor.execute(
+                    "SELECT transaction_id, confidence, origin, destination, classified_entity, accounting_category, subcategory, justification FROM transactions WHERE transaction_id = %s",
+                    (data['transaction_id'],)
+                )
+                existing = cursor.fetchone()
+
+                if existing:
+                    # Transaction exists - ENRICH mode
+                    # Convert to dict for easier access
+                    existing_dict = dict(existing) if existing else {}
+
+                    # Determine if this is user-edited data (confidence >= 0.90 means likely user-edited or AI-confident)
+                    is_user_edited = existing_dict.get('confidence', 0) >= 0.90
+
+                    # ENRICHMENT RULES:
+                    # 1. ALWAYS update if current value is empty/unknown
+                    # 2. NEVER overwrite user-edited data (confidence >= 90%)
+                    # 3. DO update if new data has higher confidence
+                    # 4. ALWAYS add missing origin/destination data
+
+                    cursor.execute("""
+                        UPDATE transactions SET
+                            -- Always update basic fields (these shouldn't change but keep in sync)
+                            date = %s,
+                            description = %s,
+                            amount = %s,
+                            currency = %s,
+                            usd_equivalent = %s,
+
+                            -- Enrich origin ONLY if currently empty/unknown
+                            origin = CASE
+                                WHEN (origin IS NULL OR origin = '' OR origin = 'Unknown') AND %s IS NOT NULL AND %s != '' AND %s != 'Unknown'
+                                THEN %s
+                                ELSE origin
+                            END,
+
+                            -- Enrich destination ONLY if currently empty/unknown
+                            destination = CASE
+                                WHEN (destination IS NULL OR destination = '' OR destination = 'Unknown') AND %s IS NOT NULL AND %s != '' AND %s != 'Unknown'
+                                THEN %s
+                                ELSE destination
+                            END,
+
+                            -- Enrich classified_entity ONLY if empty or if new confidence is higher
+                            classified_entity = CASE
+                                WHEN (classified_entity IS NULL OR classified_entity = '' OR classified_entity = 'Unclassified')
+                                THEN %s
+                                WHEN confidence < %s
+                                THEN %s
+                                ELSE classified_entity
+                            END,
+
+                            -- Enrich accounting_category ONLY if empty or if new confidence is higher
+                            accounting_category = CASE
+                                WHEN (accounting_category IS NULL OR accounting_category = '' OR accounting_category = 'N/A')
+                                THEN %s
+                                WHEN confidence < %s
+                                THEN %s
+                                ELSE accounting_category
+                            END,
+
+                            -- Enrich subcategory ONLY if empty or if new confidence is higher
+                            subcategory = CASE
+                                WHEN (subcategory IS NULL OR subcategory = '' OR subcategory = 'N/A')
+                                THEN %s
+                                WHEN confidence < %s
+                                THEN %s
+                                ELSE subcategory
+                            END,
+
+                            -- Enrich justification ONLY if currently empty/unknown
+                            justification = CASE
+                                WHEN (justification IS NULL OR justification = '' OR justification = 'Unknown')
+                                THEN %s
+                                ELSE justification
+                            END,
+
+                            -- Update confidence ONLY if new confidence is higher
+                            confidence = CASE
+                                WHEN %s > confidence
+                                THEN %s
+                                ELSE confidence
+                            END,
+
+                            -- Always update these metadata fields
+                            classification_reason = %s,
+                            identifier = %s,
+                            source_file = %s,
+                            crypto_amount = %s,
+                            conversion_note = %s
+                        WHERE transaction_id = %s
+                    """, (
+                        # Basic fields (always update)
+                        data['date'], data['description'], data['amount'], data['currency'], data['usd_equivalent'],
+                        # Origin enrichment (4 placeholders)
+                        data['origin'], data['origin'], data['origin'], data['origin'],
+                        # Destination enrichment (4 placeholders)
+                        data['destination'], data['destination'], data['destination'], data['destination'],
+                        # Entity enrichment (3 placeholders)
+                        data['classified_entity'], data['confidence'], data['classified_entity'],
+                        # Accounting category enrichment (3 placeholders)
+                        data['accounting_category'], data['confidence'], data['accounting_category'],
+                        # Subcategory enrichment (3 placeholders)
+                        data['subcategory'], data['confidence'], data['subcategory'],
+                        # Justification enrichment (1 placeholder)
+                        data['justification'],
+                        # Confidence update (2 placeholders)
+                        data['confidence'], data['confidence'],
+                        # Metadata fields
+                        data['classification_reason'], data['identifier'], data['source_file'],
+                        data['crypto_amount'], data['conversion_note'],
+                        # WHERE clause
+                        data['transaction_id']
+                    ))
+                    enriched_count += 1
+                    print(f"✨ ENRICHED: {data['transaction_id'][:8]}... - {data['description'][:50]}")
+                else:
+                    # Transaction doesn't exist - INSERT new
+                    cursor.execute("""
+                        INSERT INTO transactions (
+                            transaction_id, date, description, amount, currency, usd_equivalent,
+                            classified_entity, accounting_category, subcategory, justification,
+                            confidence, classification_reason, origin, destination, identifier,
+                            source_file, crypto_amount, conversion_note
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        data['transaction_id'], data['date'], data['description'],
+                        data['amount'], data['currency'], data['usd_equivalent'],
+                        data['classified_entity'], data['accounting_category'], data['subcategory'],
+                        data['justification'], data['confidence'], data['classification_reason'],
+                        data['origin'], data['destination'], data['identifier'], data['source_file'],
+                        data['crypto_amount'], data['conversion_note']
+                    ))
+                    new_count += 1
+                    print(f"✅ NEW: {data['transaction_id'][:8]}... - {data['description'][:50]}")
             else:
+                # SQLite - use simple INSERT OR REPLACE for now
                 cursor.execute("""
                     INSERT OR REPLACE INTO transactions (
                         transaction_id, date, description, amount, currency, usd_equivalent,
-                        classified_entity, justification, confidence, classification_reason,
-                        origin, destination, identifier, source_file, crypto_amount, conversion_note
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        classified_entity, accounting_category, subcategory, justification,
+                        confidence, classification_reason, origin, destination, identifier,
+                        source_file, crypto_amount, conversion_note
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['transaction_id'], data['date'], data['description'],
                     data['amount'], data['currency'], data['usd_equivalent'],
-                    data['classified_entity'], data['justification'], data['confidence'],
-                    data['classification_reason'], data['origin'], data['destination'],
-                    data['identifier'], data['source_file'], data['crypto_amount'], data['conversion_note']
+                    data['classified_entity'], data['accounting_category'], data['subcategory'],
+                    data['justification'], data['confidence'], data['classification_reason'],
+                    data['origin'], data['destination'], data['identifier'], data['source_file'],
+                    data['crypto_amount'], data['conversion_note']
                 ))
 
         conn.commit()
         conn.close()
-        print(f"SUCCESS: Successfully synced {len(df)} transactions to database")
+
+        # Print enrichment statistics
+        print(f"")
+        print(f"✅ SUCCESS: Smart Re-Upload Complete!")
+        print(f"📊 Statistics:")
+        print(f"   • Total processed: {len(df)}")
+        print(f"   • New transactions: {new_count}")
+        print(f"   • Enriched existing: {enriched_count}")
+        print(f"   • Skipped (unchanged): {skipped_count}")
+        print(f"")
+
         return True
 
     except Exception as e:

@@ -463,12 +463,20 @@ th:nth-child(2), td:nth-child(2) { /* Date */
 
 th:nth-child(3), td:nth-child(3), /* Origin */
 th:nth-child(4), td:nth-child(4) { /* Destination */
-    width: 100px;
+    width: 150px;
+    min-width: 150px;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 th:nth-child(5), td:nth-child(5) { /* Description */
-    width: 25%;
-    min-width: 200px;
+    width: 250px;
+    min-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 th:nth-child(6), td:nth-child(6) { /* Amount */
@@ -483,26 +491,50 @@ th:nth-child(7), td:nth-child(7) { /* Crypto */
 
 th:nth-child(8), td:nth-child(8) { /* Entity */
     width: 180px;
+    min-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-th:nth-child(9), td:nth-child(9) { /* Accounting Category */
+th:nth-child(9), td:nth-child(9) { /* Primary Category */
+    width: 180px;
+    min-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+th:nth-child(10), td:nth-child(10) { /* Subcategory */
     width: 150px;
+    min-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-th:nth-child(10), td:nth-child(10) { /* Justification */
+th:nth-child(11), td:nth-child(11) { /* Justification */
     width: 200px;
+    min-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-th:nth-child(11), td:nth-child(11) { /* Confidence */
+th:nth-child(12), td:nth-child(12) { /* Confidence */
     width: 90px;
     text-align: center;
 }
 
-th:nth-child(12), td:nth-child(12) { /* Source */
+th:nth-child(13), td:nth-child(13) { /* Source */
     width: 150px;
+    min-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-th:nth-child(13), td:nth-child(13) { /* Actions */
+th:nth-child(14), td:nth-child(14) { /* Actions */
     width: 120px;
     text-align: center;
 }

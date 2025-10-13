@@ -264,6 +264,30 @@ function formatCryptoAmount(amount, currency) {
     return '';
 }
 
+/**
+ * Format accounting category as "PRIMARY: Subcategory"
+ * e.g., "OPERATING_EXPENSE: Bank Fees" or "REVENUE: Mining Revenue"
+ */
+function formatAccountingCategory(primaryCategory, subcategory) {
+    // If neither exists, return N/A
+    if (!primaryCategory && !subcategory) {
+        return 'N/A';
+    }
+
+    // If only primary exists
+    if (primaryCategory && !subcategory) {
+        return primaryCategory;
+    }
+
+    // If only subcategory exists (shouldn't happen, but handle gracefully)
+    if (!primaryCategory && subcategory) {
+        return subcategory;
+    }
+
+    // Both exist - combine as "PRIMARY: Subcategory"
+    return `${primaryCategory}: ${subcategory}`;
+}
+
 // Helper function to truncate text with tooltip
 function truncateText(text, maxLength = 30) {
     if (!text || text.length <= maxLength) return text;
@@ -365,8 +389,11 @@ function renderTransactionTable(transactions) {
                 <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}">
                     <span class="entity-category ${getCategoryClass(transaction.amount)}">${transaction.classified_entity?.replace(' N/A', '') || 'Unclassified'}</span>
                 </td>
-                <td class="editable-field smart-dropdown" data-field="accounting_category" data-transaction-id="${transaction.transaction_id}">
+                <td class="editable-field smart-dropdown primary-category-cell" data-field="accounting_category" data-transaction-id="${transaction.transaction_id}">
                     ${transaction.accounting_category || 'N/A'}
+                </td>
+                <td class="editable-field smart-dropdown subcategory-cell" data-field="subcategory" data-transaction-id="${transaction.transaction_id}">
+                    ${transaction.subcategory || 'N/A'}
                 </td>
                 <td class="editable-field" data-field="justification" data-transaction-id="${transaction.transaction_id}">
                     ${truncateText(transaction.justification, 35) || 'Unknown'}
@@ -529,48 +556,39 @@ async function createSmartDropdown(field, currentValue, fieldName) {
             'Delta Brazil Operations',
             'Internal Transfer',
             'Personal'
+        ],
+        'accounting_category': [
+            'REVENUE',
+            'COGS',
+            'OPERATING EXPENSE',
+            'INTEREST EXPENSE',
+            'OTHER INCOME',
+            'OTHER EXPENSE',
+            'INCOME TAX EXPENSE',
+            'ASSET',
+            'LIABILITY',
+            'EQUITY',
+            'INTERCOMPANY ELIMINATION'
+        ],
+        'subcategory': [
+            'Bank Fees',
+            'Direct Costs',
+            'Fuel',
+            'General Administrative',
+            'Hosting Revenue',
+            'Interest on Operations',
+            'Internal Transfer',
+            'Materials',
+            'Meals',
+            'Personal Expenses',
+            'Return of Funds',
+            'Technology Expense',
+            'Trading Revenue',
+            'Travel'
         ]
     };
 
     let options = fieldOptions[fieldName] || [];
-
-    // For accounting_category, fetch from database
-    if (fieldName === 'accounting_category') {
-        try {
-            const response = await fetch('/api/accounting_categories');
-            if (response.ok) {
-                const data = await response.json();
-                options = data.categories || [];
-            } else {
-                // Fallback to default categories if API fails
-                options = [
-                    'Revenue - Trading',
-                    'Revenue - Mining',
-                    'Revenue - Challenge',
-                    'Interest Income',
-                    'Cost of Goods Sold (COGS)',
-                    'Technology Expense',
-                    'General and Administrative',
-                    'Bank Fees',
-                    'Internal Transfer'
-                ];
-            }
-        } catch (error) {
-            console.error('Failed to fetch accounting categories:', error);
-            // Fallback to default categories
-            options = [
-                'Revenue - Trading',
-                'Revenue - Mining',
-                'Revenue - Challenge',
-                'Interest Income',
-                'Cost of Goods Sold (COGS)',
-                'Technology Expense',
-                'General and Administrative',
-                'Bank Fees',
-                'Internal Transfer'
-            ];
-        }
-    }
 
     // Create smart dropdown with existing options + custom input
     let selectHTML = `<select class="smart-select inline-input">`;
