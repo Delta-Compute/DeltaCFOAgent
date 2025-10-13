@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-DeltaCFOAgent is an AI-powered financial transaction processing and management system that integrates Claude AI for intelligent transaction classification, smart document ingestion, and business intelligence. The system serves multiple Delta business entities with automated invoice processing, cryptocurrency pricing, and comprehensive financial dashboards.
+DeltaCFOAgent is an AI-powered financial transaction processing and management system that integrates Claude AI for intelligent transaction classification, smart document ingestion, and business intelligence. Delta is the entity that is designing the system for its own use, BUT Delta will market this CFO AI Agent to other companies - so all Claude Code changes and code should be written to work for any user. The project is built for a company with multiple business entities with automated invoice processing, cryptocurrency pricing, and comprehensive financial dashboards and all other CFO corporate responsibilities. Reinforcement learning systems should be put in palce wherever and everywhere users input and provide data on the user's business.
 
 ## Development Commands
 

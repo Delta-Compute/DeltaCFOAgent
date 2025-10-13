@@ -350,12 +350,12 @@ function renderTransactionTable(transactions) {
         return `
             <tr data-transaction-id="${transaction.transaction_id || ''}">
                 <td><input type="checkbox" class="transaction-select-cb" data-transaction-id="${transaction.transaction_id || ''}"></td>
-                <td>${formatDate(transaction.date) || (transaction.source_file?.includes('Chase') ? 'Date Missing' : 'N/A')}</td>
+                <td>${formatDate(transaction.date) || 'N/A'}</td>
                 <td class="editable-field" data-field="origin" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.origin || (transaction.source_file?.includes('Chase') ? 'Credit Card' : 'Unknown')}
+                    ${transaction.origin || 'Unknown'}
                 </td>
                 <td class="editable-field" data-field="destination" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.destination || (transaction.source_file?.includes('Chase') ? 'Merchant' : 'Unknown')}
+                    ${transaction.destination || 'Unknown'}
                 </td>
                 <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
                     ${truncateText(transaction.description, 40) || 'N/A'}
@@ -376,7 +376,10 @@ function renderTransactionTable(transactions) {
                 </td>
                 <td class="source-cell">${truncateText(transaction.source_file, 25) || 'N/A'}</td>
                 <td>
-                    <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')">
+                    <button class="btn-secondary btn-sm" onclick="getAISmartSuggestions('${transaction.transaction_id || ''}', ${JSON.stringify(transaction).replace(/'/g, "\\'").replace(/"/g, '&quot;')})" title="Get AI-powered suggestions for this transaction">
+                        🤖 AI
+                    </button>
+                    <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
                         View
                     </button>
                     <button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
@@ -594,6 +597,8 @@ async function createSmartDropdown(field, currentValue, fieldName) {
         }
     });
 
+    // Add AI assistant option (above custom)
+    selectHTML += `<option value="__ai_assistant__">🤖 Ask AI Assistant...</option>`;
     // Add custom option
     selectHTML += `<option value="__custom__">+ Add Custom...</option>`;
     selectHTML += `</select>`;
@@ -650,7 +655,26 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
         lastValue = this.value;
 
-        if (this.value === '__custom__') {
+        if (this.value === '__ai_assistant__') {
+            console.log('🔵 AI Assistant option selected');
+            e.stopPropagation();
+
+            // Get transaction details
+            const transactionId = field.dataset.transactionId;
+            const row = field.closest('tr');
+            const description = row.querySelector('[data-field="description"]')?.textContent?.trim() || '';
+            const amount = row.querySelector('[data-field="amount"]')?.textContent?.trim() || '';
+            const entity = row.querySelector('[data-field="classified_entity"]')?.textContent?.trim() || '';
+
+            // Open AI assistant modal
+            showAIAccountingAssistant(transactionId, { description, amount, entity }, field);
+
+            // Reset dropdown to previous value
+            setTimeout(() => {
+                select.value = currentValue;
+            }, 100);
+
+        } else if (this.value === '__custom__') {
             console.log('🔵 Custom option selected');
             e.stopPropagation(); // Prevent other handlers from firing
 
@@ -736,6 +760,44 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
             showToast('Transaction updated successfully', 'success');
             setupInlineEditing(); // Re-setup event listeners
 
+            // SMART CONFIDENCE UPDATE: Use the updated confidence value from backend
+            console.log('🔍 DEBUG: API response:', result);
+            console.log('🔍 DEBUG: Updated confidence value:', result.updated_confidence);
+
+            if (result.updated_confidence !== undefined && result.updated_confidence !== null) {
+                const row = fieldElement.closest('tr');
+                console.log('🔍 DEBUG: Found row:', row);
+
+                if (row) {
+                    // Find the confidence span by its class name (not data-field)
+                    const confidenceCell = row.querySelector('.confidence-score');
+                    console.log('🔍 DEBUG: Found confidence cell:', confidenceCell);
+
+                    if (confidenceCell) {
+                        const confidencePercent = Math.round(result.updated_confidence * 100);
+                        const oldText = confidenceCell.textContent;
+                        confidenceCell.textContent = confidencePercent + '%';
+
+                        // Update CSS class based on confidence level
+                        if (confidencePercent >= 90) {
+                            confidenceCell.className = 'confidence-score confidence-high';
+                        } else if (confidencePercent >= 70) {
+                            confidenceCell.className = 'confidence-score confidence-medium';
+                        } else {
+                            confidenceCell.className = 'confidence-score confidence-low';
+                        }
+
+                        console.log(`✅ CONFIDENCE UPDATE: Changed from ${oldText} to ${confidencePercent}% for transaction ${transactionId}`);
+                    } else {
+                        console.warn('⚠️  Could not find confidence cell in row');
+                    }
+                } else {
+                    console.warn('⚠️  Could not find parent row');
+                }
+            } else {
+                console.warn('⚠️  No updated_confidence in API response');
+            }
+
             // For description changes, check if we should update similar transactions
             if (field === 'description') {
                 checkForSimilarTransactions(transactionId, value);
@@ -774,8 +836,11 @@ async function showAISuggestions(field) {
     const currentValue = field.textContent.trim();
 
     try {
-        showModal();
+        // CRITICAL FIX: Clear modal content BEFORE showing it to prevent stale data from appearing
         document.getElementById('suggestionsList').innerHTML = '<div class="loading">Loading AI suggestions...</div>';
+
+        // Now show the modal with fresh loading state
+        showModal();
 
         const url = `/api/suggestions?field_type=${fieldType}&transaction_id=${transactionId}&current_value=${encodeURIComponent(currentValue)}`;
         const response = await fetch(url);
@@ -1705,7 +1770,25 @@ document.addEventListener('change', function(e) {
 });
 
 function closeModal() {
-    document.getElementById('suggestionsModal').style.display = 'none';
+    const modal = document.getElementById('suggestionsModal');
+    modal.style.display = 'none';
+
+    // CRITICAL FIX: Clean up modal state to prevent stale data from appearing on next open
+    // Remove any modal-specific CSS classes
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        modalContent.classList.remove('similar-transactions-modal');
+    }
+
+    // Clear modal content to prevent stale data
+    const suggestionsContent = document.getElementById('suggestionsContent');
+    const suggestionsList = document.getElementById('suggestionsList');
+    if (suggestionsContent) {
+        suggestionsContent.innerHTML = '';
+    }
+    if (suggestionsList) {
+        suggestionsList.innerHTML = '';
+    }
 }
 
 function showNotification(message, type = 'success') {
@@ -1997,4 +2080,1122 @@ function toggleArchivedView() {
     button.textContent = showingArchived ? '📦 Hide Archived' : '📦 Show Archived';
     currentPage = 1;
     loadTransactions();
+}
+
+// =============================================================================
+// AI SMART SUGGESTIONS - NEW DYNAMIC CONFIDENCE REASSESSMENT SYSTEM
+// =============================================================================
+
+/**
+ * Get AI-powered suggestions for improving a transaction's classification
+ * This is the main entry point called by the "🤖 AI" button
+ */
+async function getAISmartSuggestions(transactionId, transaction) {
+    try {
+        // Show modal immediately with loading state
+        showModal();
+
+        // Hide any previous error/empty states - with null checks
+        const errorDiv = document.getElementById('suggestionsError');
+        const emptyDiv = document.getElementById('suggestionsEmpty');
+        const assessmentDiv = document.getElementById('suggestionAssessment');
+
+        if (errorDiv) errorDiv.style.display = 'none';
+        if (emptyDiv) emptyDiv.style.display = 'none';
+        if (assessmentDiv) assessmentDiv.style.display = 'none';
+
+        // Clear previous suggestions
+        const suggestionsList = document.getElementById('suggestionsList');
+        if (suggestionsList) {
+            suggestionsList.innerHTML = '<div class="loading">🤖 AI is analyzing this transaction...</div>';
+        }
+
+        // Populate transaction info - with null checks
+        const descEl = document.getElementById('suggestionDescription');
+        const amountEl = document.getElementById('suggestionAmount');
+        const confEl = document.getElementById('suggestionCurrentConfidence');
+
+        if (descEl) descEl.textContent = transaction.description || 'N/A';
+        if (amountEl) amountEl.textContent = formatCurrency(transaction.amount);
+        if (confEl) confEl.textContent = transaction.confidence ? (transaction.confidence * 100).toFixed(0) + '%' : 'N/A';
+
+        // Call the AI suggestions API
+        const response = await fetch(`/api/ai/get-suggestions?transaction_id=${transactionId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            // Show error state
+            if (errorDiv) errorDiv.style.display = 'block';
+            const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+            if (errorMsgEl) errorMsgEl.textContent = data.error;
+            if (suggestionsList) suggestionsList.innerHTML = '';
+            return;
+        }
+
+        // Check if transaction doesn't need reassessment
+        if (data.message && (!data.suggestions || data.suggestions.length === 0)) {
+            // CRITICAL FIX: Only show "No improvements needed" if confidence is actually high
+            // For low confidence transactions without suggestions, show a different message
+            const currentConfidence = transaction.confidence || 0;
+
+            if (currentConfidence >= 0.8) {
+                // High confidence - truly no improvements needed
+                if (emptyDiv) emptyDiv.style.display = 'block';
+                if (suggestionsList) suggestionsList.innerHTML = '';
+            } else {
+                // Low confidence but no suggestions - show error instead
+                if (errorDiv) errorDiv.style.display = 'block';
+                const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+                if (errorMsgEl) {
+                    errorMsgEl.textContent = `AI could not generate suggestions. Current confidence: ${(currentConfidence * 100).toFixed(0)}%. Try editing the fields manually or contact support.`;
+                }
+                if (suggestionsList) suggestionsList.innerHTML = '';
+            }
+            return;
+        }
+
+        // Show AI assessment section
+        if (data.reasoning && assessmentDiv) {
+            assessmentDiv.style.display = 'block';
+            const reasoningEl = document.getElementById('suggestionReasoning');
+            const newConfEl = document.getElementById('suggestionNewConfidence');
+            const contextEl = document.getElementById('suggestionContext');
+
+            if (reasoningEl) reasoningEl.textContent = data.reasoning;
+            if (newConfEl) newConfEl.textContent = (data.new_confidence * 100).toFixed(0) + '%';
+
+            const contextText = `Based on ${data.similar_count || 0} similar transactions and ${data.patterns_count || 0} learned patterns`;
+            if (contextEl) contextEl.textContent = contextText;
+        }
+
+        // Render suggestions with checkboxes for multi-select
+        if (data.suggestions && data.suggestions.length > 0) {
+            // Add selection controls header
+            const selectionHeader = `
+                <div style="padding: 10px; margin-bottom: 15px; background: #f0f0f0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <button onclick="selectAllAISuggestions(true)" class="btn-secondary btn-sm" style="margin-right: 8px;">
+                            ☑ Select All
+                        </button>
+                        <button onclick="selectAllAISuggestions(false)" class="btn-secondary btn-sm">
+                            ☐ Deselect All
+                        </button>
+                    </div>
+                    <div style="color: #666; font-size: 0.9em;">
+                        <span id="aiSuggestionSelectedCount">0</span> of ${data.suggestions.length} selected
+                    </div>
+                </div>
+            `;
+
+            const suggestionsHTML = data.suggestions.map((suggestion, index) => {
+                const fieldLabel = {
+                    'classified_entity': 'Business Entity',
+                    'accounting_category': 'Accounting Category',
+                    'justification': 'Justification'
+                }[suggestion.field] || suggestion.field;
+
+                // Determine if this field should use a dropdown or text input
+                let inputHTML = '';
+                if (suggestion.field === 'classified_entity') {
+                    // Use dropdown for Entity
+                    const entityOptions = [
+                        'Delta LLC',
+                        'Delta Prop Shop LLC',
+                        'Infinity Validator',
+                        'Delta Mining Paraguay S.A.',
+                        'Delta Brazil Operations',
+                        'Internal Transfer',
+                        'Personal'
+                    ];
+                    inputHTML = `
+                        <select class="ai-suggestion-value-input"
+                                id="ai-suggestion-value-${index}"
+                                data-index="${index}"
+                                style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;">
+                            ${entityOptions.map(entity =>
+                                `<option value="${entity}" ${entity === suggestion.suggested_value ? 'selected' : ''}>${entity}</option>`
+                            ).join('')}
+                        </select>
+                    `;
+                } else if (suggestion.field === 'accounting_category') {
+                    // Use dropdown for Category (will be populated dynamically)
+                    inputHTML = `
+                        <select class="ai-suggestion-value-input ai-suggestion-category-dropdown"
+                                id="ai-suggestion-value-${index}"
+                                data-index="${index}"
+                                data-suggested-value="${suggestion.suggested_value}"
+                                style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;">
+                            <option value="">Loading categories...</option>
+                        </select>
+                    `;
+                } else {
+                    // Use text input for Justification
+                    inputHTML = `
+                        <input type="text"
+                               class="ai-suggestion-value-input"
+                               id="ai-suggestion-value-${index}"
+                               value="${suggestion.suggested_value}"
+                               data-index="${index}"
+                               style="width: 100%; padding: 8px; border: 1px solid #0066cc; border-radius: 4px; font-weight: 500; font-size: 14px; background: white;"
+                               placeholder="Edit AI suggestion...">
+                    `;
+                }
+
+                return `
+                    <div class="ai-suggestion-item" style="padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9; display: flex; gap: 15px;">
+                        <div style="display: flex; align-items: flex-start; padding-top: 5px;">
+                            <input type="checkbox"
+                                   class="ai-suggestion-checkbox"
+                                   id="ai-suggestion-cb-${index}"
+                                   data-index="${index}"
+                                   onchange="updateAISuggestionSelectionCount()"
+                                   style="width: 18px; height: 18px; cursor: pointer;">
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="margin-bottom: 8px;">
+                                <strong style="color: #0066cc;">${fieldLabel}</strong>
+                            </div>
+                            <div style="margin: 8px 0; padding: 8px; background: #fff; border-radius: 4px;">
+                                <div style="font-size: 0.85em; color: #666;">Current:</div>
+                                <div style="margin: 4px 0;">${suggestion.current_value || 'N/A'}</div>
+                            </div>
+                            <div style="margin: 8px 0; padding: 8px; background: #e8f4f8; border-radius: 4px; border-left: 3px solid #0066cc;">
+                                <div style="font-size: 0.85em; color: #0066cc; margin-bottom: 6px;">AI Suggests ${suggestion.field === 'justification' ? '(editable)' : '(select from dropdown)'}:</div>
+                                ${inputHTML}
+                            </div>
+                            <div style="margin: 8px 0; color: #666; font-size: 0.9em; font-style: italic;">
+                                "${suggestion.reasoning}"
+                            </div>
+                            <div style="margin-top: 12px;">
+                                <span style="color: #666; font-size: 0.9em;">
+                                    AI Confidence: <strong>${(suggestion.confidence * 100).toFixed(0)}%</strong>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add Apply Selected button at the bottom
+            const applyButton = `
+                <div style="margin-top: 20px; padding: 15px; background: #f0f0f0; border-radius: 6px; text-align: right;">
+                    <button id="applySelectedSuggestionsBtn"
+                            onclick="applySelectedAISuggestions('${transactionId}')"
+                            class="btn-primary"
+                            style="padding: 10px 20px;"
+                            disabled>
+                        Apply Selected Suggestions (<span id="applyBtnCount">0</span>)
+                    </button>
+                </div>
+            `;
+
+            document.getElementById('suggestionsList').innerHTML = selectionHeader + suggestionsHTML + applyButton;
+
+            // Store suggestions in a global variable for easy access when applying
+            window.currentAISuggestions = {
+                transactionId: transactionId,
+                suggestions: data.suggestions
+            };
+
+            // Initialize selection count
+            updateAISuggestionSelectionCount();
+
+            // Populate accounting category dropdowns
+            const categoryDropdowns = document.querySelectorAll('.ai-suggestion-category-dropdown');
+            if (categoryDropdowns.length > 0) {
+                // Fetch categories and populate dropdowns
+                fetch('/api/accounting_categories')
+                    .then(response => response.json())
+                    .then(data => {
+                        const categories = data.categories || [];
+                        categoryDropdowns.forEach(dropdown => {
+                            const suggestedValue = dropdown.getAttribute('data-suggested-value');
+                            dropdown.innerHTML = categories.map(cat =>
+                                `<option value="${cat}" ${cat === suggestedValue ? 'selected' : ''}>${cat}</option>`
+                            ).join('');
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Failed to fetch accounting categories:', error);
+                        // Fallback to default categories
+                        const fallbackCategories = [
+                            'Revenue - Trading',
+                            'Revenue - Mining',
+                            'Revenue - Challenge',
+                            'Interest Income',
+                            'Cost of Goods Sold (COGS)',
+                            'Technology Expense',
+                            'General and Administrative',
+                            'Bank Fees',
+                            'Internal Transfer'
+                        ];
+                        categoryDropdowns.forEach(dropdown => {
+                            const suggestedValue = dropdown.getAttribute('data-suggested-value');
+                            dropdown.innerHTML = fallbackCategories.map(cat =>
+                                `<option value="${cat}" ${cat === suggestedValue ? 'selected' : ''}>${cat}</option>`
+                            ).join('');
+                        });
+                    });
+            }
+        } else {
+            document.getElementById('suggestionsList').innerHTML =
+                '<div style="padding: 20px; text-align: center; color: #666;">No specific suggestions available</div>';
+        }
+
+    } catch (error) {
+        console.error('Error getting AI suggestions:', error);
+        const errorDiv = document.getElementById('suggestionsError');
+        const errorMsgEl = document.getElementById('suggestionsErrorMessage');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        if (errorDiv) errorDiv.style.display = 'block';
+        if (errorMsgEl) errorMsgEl.textContent = 'Failed to load AI suggestions: ' + error.message;
+        if (suggestionsList) suggestionsList.innerHTML = '';
+    }
+}
+
+/**
+ * Apply a specific AI suggestion to the transaction
+ */
+async function applyAISuggestion(transactionId, suggestionIndex) {
+    try {
+        // Get the suggestion from the stored data
+        if (!window.currentAISuggestions || window.currentAISuggestions.transactionId !== transactionId) {
+            showToast('Error: Suggestion data not found', 'error');
+            return;
+        }
+
+        const suggestion = window.currentAISuggestions.suggestions[suggestionIndex];
+        if (!suggestion) {
+            showToast('Error: Invalid suggestion index', 'error');
+            return;
+        }
+
+        // Show loading state on the button
+        const buttons = document.querySelectorAll('.ai-suggestion-item button');
+        if (buttons[suggestionIndex]) {
+            buttons[suggestionIndex].disabled = true;
+            buttons[suggestionIndex].textContent = 'Applying...';
+        }
+
+        // Call the API to apply the suggestion
+        const response = await fetch('/api/ai/apply-suggestion', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                suggestion: suggestion
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✅ AI suggestion applied successfully!', 'success');
+
+            // IMPORTANT: Now look for similar transactions that could benefit from the same change
+            await findSimilarTransactionsAfterAISuggestion(transactionId, suggestion);
+
+            // Clean up stored suggestions
+            delete window.currentAISuggestions;
+        } else {
+            showToast('Error applying suggestion: ' + (data.error || 'Unknown error'), 'error');
+
+            // Re-enable the button
+            if (buttons[suggestionIndex]) {
+                buttons[suggestionIndex].disabled = false;
+                buttons[suggestionIndex].textContent = 'Apply This Suggestion';
+            }
+        }
+
+    } catch (error) {
+        console.error('Error applying AI suggestion:', error);
+        showToast('Error applying suggestion: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Select or deselect all AI suggestions
+ */
+function selectAllAISuggestions(selectAll) {
+    const checkboxes = document.querySelectorAll('.ai-suggestion-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateAISuggestionSelectionCount();
+}
+
+/**
+ * Update the selection count and enable/disable the Apply button
+ */
+function updateAISuggestionSelectionCount() {
+    const checkboxes = document.querySelectorAll('.ai-suggestion-checkbox');
+    const checkedBoxes = document.querySelectorAll('.ai-suggestion-checkbox:checked');
+    const countElement = document.getElementById('aiSuggestionSelectedCount');
+    const applyBtn = document.getElementById('applySelectedSuggestionsBtn');
+    const applyBtnCount = document.getElementById('applyBtnCount');
+
+    // Update count display
+    if (countElement) {
+        countElement.textContent = checkedBoxes.length;
+    }
+
+    // Update button count
+    if (applyBtnCount) {
+        applyBtnCount.textContent = checkedBoxes.length;
+    }
+
+    // Enable/disable the Apply button
+    if (applyBtn) {
+        applyBtn.disabled = checkedBoxes.length === 0;
+        applyBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        applyBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+/**
+ * Apply all selected AI suggestions to the transaction
+ */
+async function applySelectedAISuggestions(transactionId) {
+    try {
+        // Get all selected checkboxes
+        const checkedBoxes = document.querySelectorAll('.ai-suggestion-checkbox:checked');
+
+        if (checkedBoxes.length === 0) {
+            showToast('Please select at least one suggestion to apply', 'warning');
+            return;
+        }
+
+        // Get the selected suggestions with EDITED values from input fields
+        const selectedSuggestions = [];
+        checkedBoxes.forEach(checkbox => {
+            const index = parseInt(checkbox.dataset.index);
+            if (window.currentAISuggestions && window.currentAISuggestions.suggestions[index]) {
+                // Clone the suggestion object
+                const suggestion = {...window.currentAISuggestions.suggestions[index]};
+
+                // Get the edited value from the input field
+                const inputField = document.getElementById(`ai-suggestion-value-${index}`);
+                if (inputField) {
+                    suggestion.suggested_value = inputField.value.trim();
+                }
+
+                selectedSuggestions.push(suggestion);
+            }
+        });
+
+        if (selectedSuggestions.length === 0) {
+            showToast('Error: No valid suggestions selected', 'error');
+            return;
+        }
+
+        // Show confirmation
+        const fieldsList = selectedSuggestions.map(s => {
+            const fieldLabel = {
+                'classified_entity': 'Business Entity',
+                'accounting_category': 'Accounting Category',
+                'justification': 'Justification'
+            }[s.field] || s.field;
+            return `• ${fieldLabel}: "${s.suggested_value}"`;
+        }).join('\n');
+
+        const confirmMsg = `Apply ${selectedSuggestions.length} AI suggestion(s)?\n\n${fieldsList}`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+
+        // Disable the apply button
+        const applyBtn = document.getElementById('applySelectedSuggestionsBtn');
+        if (applyBtn) {
+            applyBtn.disabled = true;
+            applyBtn.textContent = 'Applying...';
+        }
+
+        // Apply each suggestion sequentially and track ALL successful ones
+        let successCount = 0;
+        let appliedSuggestions = [];  // Track ALL successfully applied suggestions
+
+        for (const suggestion of selectedSuggestions) {
+            try {
+                const response = await fetch('/api/ai/apply-suggestion', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        transaction_id: transactionId,
+                        suggestion: suggestion
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    successCount++;
+                    appliedSuggestions.push(suggestion);  // Add to list of applied suggestions
+                } else {
+                    console.error(`Failed to apply suggestion for ${suggestion.field}:`, data.error);
+                }
+            } catch (error) {
+                console.error(`Error applying suggestion for ${suggestion.field}:`, error);
+            }
+        }
+
+        if (successCount > 0) {
+            showToast(`✅ Successfully applied ${successCount} of ${selectedSuggestions.length} suggestion(s)!`, 'success');
+
+            // If at least one suggestion was applied, look for similar transactions
+            // Pass ALL successfully applied suggestions for comprehensive similarity search
+            if (appliedSuggestions.length > 0) {
+                await findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions);
+            } else {
+                // No similar transaction search, just refresh
+                closeModal();
+                loadTransactions();
+            }
+
+            // Clean up stored suggestions
+            delete window.currentAISuggestions;
+        } else {
+            showToast('Error: Failed to apply any suggestions', 'error');
+            if (applyBtn) {
+                applyBtn.disabled = false;
+                applyBtn.textContent = `Apply Selected Suggestions (${selectedSuggestions.length})`;
+            }
+        }
+
+    } catch (error) {
+        console.error('Error applying selected AI suggestions:', error);
+        showToast('Error applying suggestions: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Find similar transactions after applying AI suggestions
+ * Uses Claude AI to find other transactions that could benefit from the same changes
+ * Supports multiple applied suggestions (e.g., entity + category + justification)
+ */
+async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions) {
+    try {
+        // Support both single suggestion (legacy) and array of suggestions
+        if (!Array.isArray(appliedSuggestions)) {
+            appliedSuggestions = [appliedSuggestions];
+        }
+
+        console.log(`🔍 Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
+
+        // Show loading modal
+        const modal = document.getElementById('suggestionsModal');
+        const content = document.getElementById('suggestionsContent');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        // Clear previous content
+        if (suggestionsList) suggestionsList.innerHTML = '';
+
+        // Create a friendly list of what was applied
+        const appliedFieldsList = appliedSuggestions.map(s => {
+            const fieldLabel = {
+                'classified_entity': 'Business Entity',
+                'accounting_category': 'Accounting Category',
+                'justification': 'Justification'
+            }[s.field] || s.field;
+            return `${fieldLabel}: "${s.suggested_value}"`;
+        }).join(', ');
+
+        content.innerHTML = `
+            <div class="modal-header">
+                <h3>🤖 Finding Similar Transactions</h3>
+            </div>
+            <div class="loading-state" style="text-align: center; padding: 40px;">
+                <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
+                <p>Claude AI is analyzing for similar transactions...</p>
+                <div style="margin-top: 10px; color: #666; font-size: 14px;">
+                    Will apply: ${appliedFieldsList}
+                </div>
+            </div>
+        `;
+
+        showModal();
+
+        // Call the API endpoint with ALL applied suggestions
+        const response = await fetch('/api/ai/find-similar-after-suggestion', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                applied_suggestions: appliedSuggestions  // Send all suggestions
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+            console.log('❌ Error finding similar transactions:', data.error);
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        if (!data.similar_transactions || data.similar_transactions.length === 0) {
+            console.log('ℹ️ No similar transactions found');
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        // Show similar transactions modal with selection UI
+        const similarTxs = data.similar_transactions;
+        const appliedFields = data.applied_fields || {};  // All fields that will be applied
+
+        // Store applied fields globally for use in applyAISuggestionToSelected
+        window.currentAppliedFields = appliedFields;
+
+        // Create friendly labels for all fields being applied
+        const fieldLabelMap = {
+            'classified_entity': 'Business Entity',
+            'accounting_category': 'Accounting Category',
+            'justification': 'Justification'
+        };
+
+        // Build list of changes that will be applied
+        const changesHTML = Object.keys(appliedFields).map(field => {
+            const label = fieldLabelMap[field] || field;
+            const value = appliedFields[field];
+            return `<li><strong>${label}:</strong> "${value}"</li>`;
+        }).join('');
+
+        // Format transaction date helper
+        const formatTxDate = (dateStr) => {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        // Format amount helper
+        const formatTxAmount = (amount) => {
+            const val = parseFloat(amount || 0);
+            return `<span class="transaction-amount ${val >= 0 ? 'positive' : 'negative'}">
+                ${val >= 0 ? '+' : ''}$${Math.abs(val).toFixed(2)}
+            </span>`;
+        };
+
+        content.innerHTML = `
+            <div class="modal-header">
+                <h3>🤖 Apply AI Suggestions to Similar Transactions</h3>
+                <span class="close" onclick="closeModalAndRefresh()">&times;</span>
+            </div>
+
+            <div class="similar-selection-header">
+                <div class="selection-controls">
+                    <button onclick="selectAllAISimilar(true)">☑ Select All</button>
+                    <button onclick="selectAllAISimilar(false)">☐ Deselect All</button>
+                </div>
+                <div class="selection-counter">
+                    <span id="aiSimilarSelectedCount">0</span> of ${similarTxs.length} selected
+                </div>
+            </div>
+
+            <div class="modal-body">
+                <div class="update-preview">
+                    <h4>📋 AI Suggestions Application</h4>
+                    <p><strong>Changes to Apply:</strong></p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        ${changesHTML}
+                    </ul>
+                    <p><strong>AI Found:</strong> ${similarTxs.length} similar transaction(s)</p>
+                    <p><strong>Impact:</strong> <span id="aiSimilarImpactSummary">Select transactions below</span></p>
+                    <div class="matching-info">
+                        <small>✨ AI-powered: Claude analyzed transaction patterns across ${Object.keys(appliedFields).length} field(s) to find similar cases</small>
+                    </div>
+                </div>
+
+                <div class="transactions-list">
+                    ${similarTxs.map((t, index) => `
+                        <div class="transaction-item" data-tx-id="${t.transaction_id}">
+                            <input type="checkbox"
+                                   class="transaction-checkbox ai-similar-tx-cb"
+                                   id="ai-similar-cb-${index}"
+                                   data-amount="${t.amount || 0}"
+                                   onchange="updateAISimilarSelectionSummary()">
+                            <div class="transaction-details">
+                                <div class="transaction-info">
+                                    <div class="transaction-date">${formatTxDate(t.date)}</div>
+                                    <div class="transaction-description" title="${t.description}">
+                                        ${t.description}
+                                    </div>
+                                    <div class="transaction-meta">
+                                        ${Object.keys(appliedFields).map(field => {
+                                            const label = fieldLabelMap[field] || field;
+                                            return `<span>Current ${label}: ${t[field] || 'N/A'}</span>`;
+                                        }).join(' <span>•</span> ')}
+                                        <span>•</span>
+                                        <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                    </div>
+                                </div>
+                                ${formatTxAmount(t.amount)}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeModalAndRefresh()">Cancel</button>
+                <button class="btn-secondary" onclick="closeModalAndRefresh()">Skip These</button>
+                <button class="btn-primary" id="updateAISimilarBtn" onclick="applyMultipleFieldsToSelected()">
+                    Apply to Selected Transactions
+                </button>
+            </div>
+        `;
+
+        // Initialize selection - disable button initially
+        updateAISimilarSelectionSummary();
+
+    } catch (error) {
+        console.error('Error finding similar transactions after AI suggestion:', error);
+        closeModal();
+        loadTransactions();
+    }
+}
+
+// Helper function to select all/deselect all for AI similar transactions modal
+function selectAllAISimilar(selectAll) {
+    const checkboxes = document.querySelectorAll('.ai-similar-tx-cb');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateAISimilarSelectionSummary();
+}
+
+// Helper function to update selection summary for AI similar transactions modal
+function updateAISimilarSelectionSummary() {
+    const checkboxes = document.querySelectorAll('.ai-similar-tx-cb');
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const updateBtn = document.getElementById('updateAISimilarBtn');
+    const selectionCounter = document.getElementById('aiSimilarSelectedCount');
+    const impactSummary = document.getElementById('aiSimilarImpactSummary');
+
+    // Update selection counter
+    if (selectionCounter) {
+        selectionCounter.textContent = checkedBoxes.length;
+    }
+
+    // Update impact summary
+    if (impactSummary) {
+        if (checkedBoxes.length === 0) {
+            impactSummary.textContent = 'Select transactions below';
+        } else {
+            let totalAmount = 0;
+            checkedBoxes.forEach(cb => {
+                const amount = parseFloat(cb.getAttribute('data-amount') || 0);
+                totalAmount += amount;
+            });
+            impactSummary.innerHTML = `${checkedBoxes.length} transaction(s), Total: <strong>$${Math.abs(totalAmount).toFixed(2)}</strong>`;
+        }
+    }
+
+    // Enable/disable update button
+    if (updateBtn) {
+        updateBtn.disabled = checkedBoxes.length === 0;
+        updateBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        updateBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+// Helper function to apply AI suggestion to selected similar transactions
+async function applyAISuggestionToSelected(field, newValue) {
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Show confirmation dialog
+    const fieldLabel = {
+        'classified_entity': 'entity',
+        'accounting_category': 'accounting category',
+        'justification': 'justification'
+    }[field] || field;
+
+    const confirmMsg = `Apply the AI suggestion to ${transactionIds.length} transaction(s)?\n\nThis will update the ${fieldLabel} to: "${newValue}"`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        // Make API call to update selected transactions in bulk
+        const endpointMap = {
+            'classified_entity': '/api/update_entity_bulk',
+            'accounting_category': '/api/update_category_bulk'
+        };
+
+        const endpoint = endpointMap[field];
+        if (!endpoint) {
+            // Fallback: update one by one
+            for (const txId of transactionIds) {
+                await fetch('/api/update_transaction', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        transaction_id: txId,
+                        field: field,
+                        value: newValue
+                    })
+                });
+            }
+
+            showToast(`Successfully updated ${transactionIds.length} transaction(s) with AI suggestion!`, 'success');
+            closeModal();
+            loadTransactions();
+            return;
+        }
+
+        // Use bulk endpoint if available
+        const payload = field === 'classified_entity'
+            ? { transaction_ids: transactionIds, new_entity: newValue }
+            : { transaction_ids: transactionIds, new_category: newValue };
+
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast(`Successfully applied AI suggestion to ${transactionIds.length} transaction(s)!`, 'success');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error updating transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error applying AI suggestion to selected transactions. Please try again.', 'error');
+    }
+}
+
+// Helper function to apply MULTIPLE AI suggestion fields to selected similar transactions
+async function applyMultipleFieldsToSelected() {
+    const checkedBoxes = document.querySelectorAll('.ai-similar-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        alert('Please select at least one transaction to update.');
+        return;
+    }
+
+    // Get the fields to apply from window.currentAppliedFields
+    const appliedFields = window.currentAppliedFields || {};
+    const fieldKeys = Object.keys(appliedFields);
+
+    if (fieldKeys.length === 0) {
+        alert('No fields to apply. Please try again.');
+        return;
+    }
+
+    // Build confirmation message showing ALL fields that will be applied
+    const fieldLabels = {
+        'classified_entity': 'Entity',
+        'accounting_category': 'Accounting Category',
+        'justification': 'Justification'
+    };
+
+    const fieldsList = fieldKeys.map(field => {
+        const label = fieldLabels[field] || field;
+        const value = appliedFields[field];
+        return `  • ${label}: "${value}"`;
+    }).join('\n');
+
+    const confirmMsg = `Apply AI suggestions to ${transactionIds.length} transaction(s)?\n\nThe following fields will be updated:\n${fieldsList}`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        let successCount = 0;
+        let errorMessages = [];
+
+        // Process each field
+        for (const field of fieldKeys) {
+            const newValue = appliedFields[field];
+
+            // Determine which endpoint to use
+            const endpointMap = {
+                'classified_entity': '/api/update_entity_bulk',
+                'accounting_category': '/api/update_category_bulk'
+            };
+
+            const endpoint = endpointMap[field];
+
+            if (endpoint) {
+                // Use bulk endpoint for entity and category
+                const payload = field === 'classified_entity'
+                    ? { transaction_ids: transactionIds, new_entity: newValue }
+                    : { transaction_ids: transactionIds, new_category: newValue };
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    successCount++;
+                } else {
+                    errorMessages.push(`${field}: ${data.error || 'Unknown error'}`);
+                }
+            } else {
+                // Fallback: update one by one for justification and other fields
+                let fieldSuccessCount = 0;
+                for (const txId of transactionIds) {
+                    const response = await fetch('/api/update_transaction', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            transaction_id: txId,
+                            field: field,
+                            value: newValue
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.success) {
+                        fieldSuccessCount++;
+                    }
+                }
+
+                if (fieldSuccessCount === transactionIds.length) {
+                    successCount++;
+                } else {
+                    errorMessages.push(`${field}: Only ${fieldSuccessCount}/${transactionIds.length} updated`);
+                }
+            }
+        }
+
+        // Show results
+        if (successCount === fieldKeys.length) {
+            showToast(`Successfully applied ${fieldKeys.length} AI suggestion(s) to ${transactionIds.length} transaction(s)!`, 'success');
+            closeModal();
+            loadTransactions();
+        } else if (successCount > 0) {
+            showToast(`Partially successful: ${successCount}/${fieldKeys.length} fields updated. Errors: ${errorMessages.join(', ')}`, 'warning');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast(`Failed to update transactions. Errors: ${errorMessages.join(', ')}`, 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showToast('Error applying AI suggestions to selected transactions. Please try again.', 'error');
+    }
+}
+
+// Helper function to close modal and refresh transactions
+function closeModalAndRefresh() {
+    closeModal();
+    loadTransactions();
+}
+
+/**
+ * Show AI Accounting Assistant Modal
+ * Helps users categorize expenses by asking natural language questions
+ */
+async function showAIAccountingAssistant(transactionId, transactionContext, targetField) {
+    const modal = document.getElementById('suggestionsModal');
+    const modalContent = modal.querySelector('.modal-content .modal-body');
+
+    // Build modal content
+    modalContent.innerHTML = `
+        <div style="padding: 20px;">
+            <h3 style="margin-bottom: 15px;">🤖 AI Accounting Assistant</h3>
+
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                <p style="margin: 5px 0;"><strong>Transaction:</strong> ${transactionContext.description || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Amount:</strong> ${transactionContext.amount || 'N/A'}</p>
+                <p style="margin: 5px 0;"><strong>Entity:</strong> ${transactionContext.entity || 'N/A'}</p>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500;">
+                    Ask a question about how to categorize this expense:
+                </label>
+                <textarea
+                    id="aiQuestionInput"
+                    placeholder="Example: What category should I use for cloud hosting fees?"
+                    style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                ></textarea>
+                <p style="margin-top: 8px; font-size: 0.9em; color: #666;">
+                    💡 Tip: Be specific about the expense type for better suggestions
+                </p>
+            </div>
+
+            <div id="aiAssistantResult" style="display: none; margin-top: 20px;">
+                <!-- AI response will appear here -->
+            </div>
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                <button onclick="closeModal()" class="btn-secondary">Cancel</button>
+                <button onclick="askAIAccountingQuestion('${transactionId}', '${targetField?.dataset?.transactionId || ''}', '${targetField?.dataset?.field || ''}')"
+                        class="btn-primary"
+                        id="askAIBtn">
+                    Ask AI
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Show modal
+    modal.style.display = 'flex';
+
+    // Focus on textarea
+    setTimeout(() => {
+        document.getElementById('aiQuestionInput').focus();
+    }, 100);
+
+    // Store target field globally for later use
+    window.aiAssistantTargetField = targetField;
+}
+
+/**
+ * Ask AI the accounting question and display results
+ */
+async function askAIAccountingQuestion(transactionId, fieldTransactionId, fieldName) {
+    const questionInput = document.getElementById('aiQuestionInput');
+    const question = questionInput.value.trim();
+    const askBtn = document.getElementById('askAIBtn');
+    const resultDiv = document.getElementById('aiAssistantResult');
+
+    if (!question) {
+        showToast('Please enter a question', 'warning');
+        return;
+    }
+
+    // Disable button and show loading
+    askBtn.disabled = true;
+    askBtn.textContent = 'Asking AI...';
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<div style="text-align: center; padding: 20px;"><div class="loading">🤖 AI is thinking...</div></div>';
+
+    try {
+        // Get transaction context from the row
+        const targetField = window.aiAssistantTargetField;
+        const row = targetField?.closest('tr');
+        const description = row?.querySelector('[data-field="description"]')?.textContent?.trim() || '';
+        const amount = row?.querySelector('[data-field="amount"]')?.textContent?.trim() || '';
+        const entity = row?.querySelector('[data-field="classified_entity"]')?.textContent?.trim() || '';
+
+        // Call AI endpoint
+        const response = await fetch('/api/ai/ask-accounting-category', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                question: question,
+                transaction_context: {
+                    description: description,
+                    amount: amount,
+                    entity: entity
+                }
+            })
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to get AI response');
+        }
+
+        // Display results
+        const result = data.result;
+        let resultHTML = '<div style="background: #e8f4f8; padding: 15px; border-radius: 6px; border-left: 4px solid #0066cc;">';
+        resultHTML += '<h4 style="margin-top: 0; color: #0066cc;">AI Recommendation:</h4>';
+
+        if (result.note) {
+            resultHTML += `<p style="font-style: italic; margin-bottom: 15px; color: #666;">${result.note}</p>`;
+        }
+
+        result.categories.forEach((cat, index) => {
+            resultHTML += `
+                <div style="background: white; padding: 12px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ddd;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="flex: 1;">
+                            <strong style="color: #0066cc; font-size: 1.1em;">${cat.name}</strong>
+                            <p style="margin: 8px 0 0 0; color: #666; font-size: 0.95em;">${cat.explanation}</p>
+                        </div>
+                        <button
+                            onclick="applyAIAccountingCategory('${cat.name}', '${fieldTransactionId}', '${fieldName}')"
+                            class="btn-primary"
+                            style="margin-left: 15px; white-space: nowrap;">
+                            Apply This
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        resultHTML += '</div>';
+
+        resultDiv.innerHTML = resultHTML;
+
+        // Re-enable button but change text
+        askBtn.disabled = false;
+        askBtn.textContent = 'Ask Another Question';
+
+    } catch (error) {
+        console.error('Error asking AI:', error);
+        resultDiv.innerHTML = `
+            <div style="background: #fee; padding: 15px; border-radius: 6px; border-left: 4px solid #c33;">
+                <p style="color: #c33; margin: 0;"><strong>Error:</strong> ${error.message}</p>
+            </div>
+        `;
+        askBtn.disabled = false;
+        askBtn.textContent = 'Try Again';
+    }
+}
+
+/**
+ * Apply the AI-suggested accounting category to the transaction
+ */
+async function applyAIAccountingCategory(categoryName, transactionId, fieldName) {
+    try {
+        const response = await fetch('/api/update_transaction', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                transaction_id: transactionId,
+                field: fieldName,
+                value: categoryName
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`Applied category: ${categoryName}`, 'success');
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error applying category: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error applying category:', error);
+        showToast('Error applying category. Please try again.', 'error');
+    }
 }

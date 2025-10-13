@@ -501,8 +501,8 @@ class DeltaCFOAgent:
                 date_value = row['Date']
             elif 'Transaction Date' in row:
                 date_value = row['Transaction Date']
-            elif 'Details' in row:
-                date_value = row['Details']
+            elif 'Posting Date' in row:
+                date_value = row['Posting Date']
 
             if date_value and pd.notna(date_value):
                 date_str = str(pd.to_datetime(date_value).date())
@@ -686,6 +686,96 @@ class DeltaCFOAgent:
 
         return ''
 
+    def extract_chase_merchant(self, description):
+        """Extract merchant/payee name from Chase DEBIT transaction description"""
+        if not description:
+            return "Unknown Merchant"
+
+        # Remove quotes
+        desc = str(description).strip('"')
+
+        # Pattern 1: ORIG CO NAME: extract company name
+        match = re.search(r'ORIG CO NAME:([^:]+?)(?:ORIG ID:|$)', desc)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 2: Wire transfers - extract beneficiary
+        match = re.search(r'A/C:\s*([^/]+?)(?:\s+REF:|$)', desc)
+        if match:
+            beneficiary = match.group(1).strip()
+            # Clean up location info
+            beneficiary = re.sub(r'\s+[A-Z]{2}\s+\d{5}.*', '', beneficiary)
+            return beneficiary
+
+        # Pattern 3: FEDWIRE/CHIPS - extract B/O (Beneficiary Of)
+        match = re.search(r'B/O:\s*([^/]+?)(?:\s+REF:|\s+IMAD:|\s+TRN:|$)', desc)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 4: IND NAME - Individual name
+        match = re.search(r'IND NAME:([^:]+?)(?:TRN:|$)', desc)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 5: Payment to Chase card
+        if 'PAYMENT TO CHASE CARD' in desc.upper():
+            return "Chase Credit Card"
+
+        # Pattern 6: Online Transfer
+        if 'ONLINE TRANSFER' in desc.upper():
+            match = re.search(r'(?:FROM|TO) CHK \.\.\.(\\d{4})', desc)
+            if match:
+                return f"Chase Checking ...{match.group(1)}"
+            return "Chase Internal Account"
+
+        # Pattern 7: Simple merchant name at start
+        match = re.search(r'^([A-Z][A-Z\s&\.]{3,30}?)(?:\s+FEE|\s+DEBIT|\s+CREDIT|$)', desc)
+        if match:
+            merchant = match.group(1).strip()
+            if len(merchant) > 3:
+                return merchant
+
+        # Fallback: Return first 40 characters cleaned
+        cleaned = re.sub(r'\s+', ' ', desc[:40]).strip()
+        return cleaned if cleaned else "Unknown Merchant"
+
+    def extract_chase_sender(self, description):
+        """Extract sender name from Chase CREDIT transaction description"""
+        if not description:
+            return "Unknown Sender"
+
+        # Remove quotes
+        desc = str(description).strip('"')
+
+        # Pattern 1: ORIG CO NAME: extract company name
+        match = re.search(r'ORIG CO NAME:([^:]+?)(?:ORIG ID:|$)', desc)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 2: FEDWIRE/CHIPS - extract VIA (sending bank) and B/O (sender)
+        match = re.search(r'VIA:\s*([^/]+?)/\d+\s+B/O:\s*([^/]+?)(?:\s+REF:|$)', desc)
+        if match:
+            sender = match.group(2).strip()
+            # Clean up location info
+            sender = re.sub(r'\s+[A-Z]{2}\s+\d{5}.*', '', sender)
+            return sender
+
+        # Pattern 3: IND NAME - Individual name (for ACH)
+        match = re.search(r'IND NAME:([^:]+?)(?:TRN:|$)', desc)
+        if match:
+            return match.group(1).strip()
+
+        # Pattern 4: Online Transfer
+        if 'ONLINE TRANSFER' in desc.upper():
+            match = re.search(r'(?:FROM|TO) CHK \.\.\.(\\d{4})', desc)
+            if match:
+                return f"Chase Checking ...{match.group(1)}"
+            return "Chase Internal Account"
+
+        # Fallback
+        cleaned = re.sub(r'\s+', ' ', desc[:40]).strip()
+        return cleaned if cleaned else "Unknown Sender"
+
     def enhance_structure(self, df):
         """Add Origin, Destination, and clean descriptions"""
         print("🔧 Enhancing transaction structure...")
@@ -749,21 +839,26 @@ class DeltaCFOAgent:
                     minimal_desc = 'Internal Conversion'
 
             elif 'chase' in source_file.lower():
-                # Extract account number
+                # Extract account number from source file name
                 account_match = re.search(r'(\d{4})', source_file)
                 if account_match:
-                    account_name = f"Checking ...{account_match.group(1)}"
+                    account_name = f"Chase Checking ...{account_match.group(1)}"
                 else:
-                    account_name = 'Checking Account'
+                    account_name = 'Chase Checking Account'
 
-                if primary_action in ['RECEIVE', 'DEPOSIT']:
-                    origin = 'External Account'
+                # Determine transaction direction from amount
+                amount = float(str(row.get('Amount', 0)).replace(',', '').replace('$', ''))
+
+                if amount < 0:
+                    # DEBIT - Money leaving account
+                    origin = account_name
+                    destination = self.extract_chase_merchant(description)
+                    minimal_desc = 'Payment'
+                else:
+                    # CREDIT - Money coming into account
+                    origin = self.extract_chase_sender(description)
                     destination = account_name
                     minimal_desc = 'Deposit'
-                elif primary_action in ['SEND', 'PAYMENT', 'WITHDRAW']:
-                    origin = account_name
-                    destination = 'External Account'
-                    minimal_desc = 'Payment'
 
             # Extract meaningful identifiers (TxID, counterparty, reference numbers)
             identifier = self.extract_meaningful_identifier(description, source_file)
@@ -1136,6 +1231,14 @@ class DeltaCFOAgent:
             if len(df) > 0:
                 print(f"📊 Sample: {df.iloc[0][desc_col]} | ${df.iloc[0][amount_col]}")
 
+                # DEBUG: Print detailed first row info
+                print(f"🔧 DEBUG MAIN.PY: First row after receiving from smart ingestion:")
+                print(f"   Date column ({date_col}): {df.iloc[0][date_col]}")
+                print(f"   Amount column ({amount_col}): {df.iloc[0][amount_col]}")
+                print(f"   Description column ({desc_col}): {df.iloc[0][desc_col]}")
+                print(f"   All columns: {list(df.columns)}")
+                print(f"   Full first row: {dict(df.iloc[0])}")
+
             # Continue with classification and processing
             print("🔧 DEBUG: Calling _classify_and_process_dataframe...")
             result = self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
@@ -1228,8 +1331,9 @@ class DeltaCFOAgent:
             print("🔍 Extracting keywords...")
             df = self.extract_keywords(df)
 
-            # Transaction structure already enhanced by smart ingestion
-            print("✅ Transaction structure already standardized by smart ingestion")
+            # Enhance transaction structure (Origin/Destination)
+            print("🔧 Enhancing transaction structure (Origin/Destination)...")
+            df = self.enhance_structure(df)
 
             # Add USD conversion using historic crypto prices
             print("💰 Adding USD conversion using historic crypto prices...")
