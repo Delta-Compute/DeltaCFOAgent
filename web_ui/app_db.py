@@ -2844,6 +2844,23 @@ else:
             print(f"🔧 DEBUG: Database sync result: {sync_result}")
 
             if sync_result:
+                # Auto-trigger revenue matching after successful transaction upload
+                try:
+                    print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching...")
+                    from robust_revenue_matcher import RobustRevenueInvoiceMatcher
+
+                    matcher = RobustRevenueInvoiceMatcher()
+                    matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+
+                    if matches_result and matches_result.get('matches_found', 0) > 0:
+                        print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                    else:
+                        print("ℹ️ AUTO-TRIGGER: No new matches found after transaction upload")
+
+                except Exception as e:
+                    print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+                    # Don't fail the upload if matching fails
+
                 return jsonify({
                     'success': True,
                     'message': f'Successfully processed {filename}',
@@ -3248,6 +3265,24 @@ def api_upload_invoice():
         if 'error' in invoice_data:
             return jsonify(invoice_data), 500
 
+        # Auto-trigger revenue matching after successful invoice upload
+        try:
+            print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching after invoice upload...")
+            from robust_revenue_matcher import RobustRevenueInvoiceMatcher
+
+            matcher = RobustRevenueInvoiceMatcher()
+            # Focus on the newly uploaded invoice
+            matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+
+            if matches_result and matches_result.get('matches_found', 0) > 0:
+                print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+            else:
+                print("ℹ️ AUTO-TRIGGER: No new matches found after invoice upload")
+
+        except Exception as e:
+            print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+            # Don't fail the upload if matching fails
+
         return jsonify({
             'success': True,
             'invoice_id': invoice_data['id'],
@@ -3424,6 +3459,26 @@ def api_upload_batch_invoices():
 
         # Set overall success status
         results['success'] = results['processed'] > 0
+
+        # Auto-trigger revenue matching after successful batch invoice upload
+        if results['processed'] > 0:
+            try:
+                print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching after batch upload ({results['processed']} invoices)...")
+                from robust_revenue_matcher import RobustRevenueInvoiceMatcher
+
+                matcher = RobustRevenueInvoiceMatcher()
+                matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+
+                if matches_result and matches_result.get('matches_found', 0) > 0:
+                    print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                    results['auto_matches_found'] = matches_result['matches_found']
+                else:
+                    print("ℹ️ AUTO-TRIGGER: No new matches found after batch upload")
+                    results['auto_matches_found'] = 0
+
+            except Exception as e:
+                print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+                results['auto_trigger_error'] = str(e)
 
         return jsonify(results)
 
@@ -5068,8 +5123,7 @@ def api_manual_match():
         update_query = """
             UPDATE invoices
             SET linked_transaction_id = %s,
-                status = 'paid',
-                updated_at = CURRENT_TIMESTAMP
+                status = 'paid'
             WHERE id = %s
         """
         db_manager.execute_query(update_query, (transaction_id, invoice_id))
@@ -5358,8 +5412,7 @@ def api_unmatch_invoice():
         update_query = """
             UPDATE invoices
             SET linked_transaction_id = NULL,
-                status = 'pending',
-                updated_at = CURRENT_TIMESTAMP
+                status = 'pending'
             WHERE id = %s
         """
         db_manager.execute_query(update_query, (invoice_id,))
@@ -5559,8 +5612,7 @@ def api_revenue_batch_operations():
                     update_query = """
                         UPDATE invoices
                         SET linked_transaction_id = ?,
-                            payment_status = 'paid',
-                            updated_at = CURRENT_TIMESTAMP
+                            payment_status = 'paid'
                         WHERE id = ?
                     """
                     if db_manager.db_type == 'postgresql':
@@ -5727,6 +5779,116 @@ def api_revenue_performance_stats():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ============================================
+# TRANSACTION CHAIN API ENDPOINTS
+# ============================================
+
+# Import Transaction Chain Analyzer
+try:
+    from transaction_chain_analyzer import TransactionChainAnalyzer
+    CHAIN_ANALYZER_AVAILABLE = True
+except ImportError as e:
+    print(f"WARNING: Transaction Chain Analyzer not available: {e}")
+    CHAIN_ANALYZER_AVAILABLE = False
+
+@app.route('/api/transactions/<transaction_id>/chains', methods=['GET'])
+def api_get_transaction_chains(transaction_id):
+    """Get intelligent transaction chains for a specific transaction"""
+    if not CHAIN_ANALYZER_AVAILABLE:
+        return jsonify({
+            "error": "Transaction Chain Analyzer not available",
+            "fallback_message": "Opening dashboard with transaction search instead"
+        }), 503
+
+    try:
+        analyzer = TransactionChainAnalyzer()
+        chains = analyzer.find_transaction_chains(transaction_id)
+
+        # Add metadata for UI
+        chains['api_version'] = '1.0'
+        chains['timestamp'] = datetime.now().isoformat()
+
+        return jsonify(chains)
+
+    except Exception as e:
+        logger.error(f"Error analyzing transaction chains for {transaction_id}: {e}")
+        return jsonify({
+            "error": str(e),
+            "transaction_id": transaction_id,
+            "fallback_action": "dashboard_search"
+        }), 500
+
+@app.route('/api/system/transaction-chains', methods=['GET'])
+def api_get_system_transaction_chains():
+    """Get system-wide transaction chain analysis"""
+    if not CHAIN_ANALYZER_AVAILABLE:
+        return jsonify({
+            "error": "Transaction Chain Analyzer not available"
+        }), 503
+
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        analyzer = TransactionChainAnalyzer()
+        chains = analyzer.find_transaction_chains(limit=limit)
+
+        # Add metadata
+        chains['api_version'] = '1.0'
+        chains['timestamp'] = datetime.now().isoformat()
+
+        return jsonify(chains)
+
+    except Exception as e:
+        logger.error(f"Error analyzing system transaction chains: {e}")
+        return jsonify({
+            "error": str(e),
+            "system_analysis": True
+        }), 500
+
+@app.route('/api/transactions/chains/stats', methods=['GET'])
+def api_get_chain_stats():
+    """Get transaction chain statistics and insights"""
+    if not CHAIN_ANALYZER_AVAILABLE:
+        return jsonify({
+            "error": "Transaction Chain Analyzer not available"
+        }), 503
+
+    try:
+        analyzer = TransactionChainAnalyzer()
+
+        # Get system-wide analysis for statistics
+        system_analysis = analyzer.find_transaction_chains(limit=100)
+
+        if 'chains_detected' in system_analysis:
+            chains = system_analysis.get('top_chains', [])
+            pattern_distribution = system_analysis.get('pattern_distribution', {})
+
+            stats = {
+                'total_chains_detected': system_analysis['chains_detected'],
+                'total_transactions_analyzed': system_analysis.get('total_transactions_analyzed', 0),
+                'pattern_distribution': pattern_distribution,
+                'top_patterns': sorted(pattern_distribution.items(), key=lambda x: x[1], reverse=True)[:5],
+                'high_confidence_chains': len([c for c in chains if c.get('confidence', 0) > 0.8]),
+                'medium_confidence_chains': len([c for c in chains if 0.6 <= c.get('confidence', 0) <= 0.8]),
+                'low_confidence_chains': len([c for c in chains if c.get('confidence', 0) < 0.6]),
+                'recommendations': system_analysis.get('recommendations', []),
+                'last_analysis': datetime.now().isoformat()
+            }
+        else:
+            stats = {
+                'error': 'No chain analysis data available',
+                'total_chains_detected': 0
+            }
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logger.error(f"Error getting chain stats: {e}")
+        return jsonify({
+            "error": str(e)
+        }), 500
+
 
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")

@@ -1297,80 +1297,276 @@
                             </div>
                         </div>
 
-                        <!-- Comparison Table for Better Visual Alignment -->
+                        <!-- Enhanced Comparison Table with Expanded Information -->
                         <div class="comparison-table" style="margin: 1rem 0;">
-                            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <table style="width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 8px rgba(0,0,0,0.15);">
                                 <thead>
-                                    <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
-                                        <th style="padding: 1rem; text-align: left; color: #374151; font-weight: 600; width: 120px;">Field</th>
-                                        <th style="padding: 1rem; text-align: left; color: #3b82f6; font-weight: 600; border-left: 1px solid #e2e8f0;">📄 Invoice</th>
-                                        <th style="padding: 1rem; text-align: left; color: #10b981; font-weight: 600; border-left: 1px solid #e2e8f0;">💰 Transaction</th>
-                                        <th style="padding: 1rem; text-align: center; color: #6b7280; font-weight: 600; width: 80px; border-left: 1px solid #e2e8f0;">Match</th>
+                                    <tr style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-bottom: 3px solid #cbd5e1;">
+                                        <th style="padding: 1.25rem; text-align: left; color: #374151; font-weight: 700; width: 140px; font-size: 0.95rem;">Criteria</th>
+                                        <th style="padding: 1.25rem; text-align: left; color: #3b82f6; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">📄 Invoice Details</th>
+                                        <th style="padding: 1.25rem; text-align: left; color: #10b981; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">💰 Transaction Details</th>
+                                        <th style="padding: 1.25rem; text-align: center; color: #6b7280; font-weight: 700; width: 120px; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">Match Score</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 0.75rem; font-weight: 600; color: #374151;">Amount</td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fef7f0;">
-                                            <span style="font-weight: 700; color: #1e293b; font-size: 1.1rem;">
+                                    <tr style="border-bottom: 2px solid #f1f5f9;">
+                                        <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">💵 Amount</td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
+                                            <div style="font-weight: 800; color: #1e293b; font-size: 1.2rem; margin-bottom: 0.5rem;">
                                                 ${match.invoice.currency || 'USD'} ${match.invoice.amount.toLocaleString()}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #f0fdf4;">
-                                            <span style="font-weight: 700; color: #1e293b; font-size: 1.1rem;">
-                                                $${match.transaction.amount.toLocaleString()}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 0.75rem; text-align: center; border-left: 1px solid #e2e8f0;">
-                                            ${Math.abs(match.invoice.amount - match.transaction.amount) < 1 ?
-                                                '<span style="color: #10b981; font-weight: bold;">✓</span>' :
-                                                '<span style="color: #f59e0b;">≈</span>'}
-                                        </td>
-                                    </tr>
-                                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 0.75rem; font-weight: 600; color: #374151;">Date</td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fef7f0;">
-                                            <span style="font-weight: 600; color: #374151;">
-                                                ${match.invoice.date}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #f0fdf4;">
-                                            <span style="font-weight: 600; color: #374151;">
-                                                ${match.transaction.date}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 0.75rem; text-align: center; border-left: 1px solid #e2e8f0;">
-                                            ${match.invoice.date === match.transaction.date ?
-                                                '<span style="color: #10b981; font-weight: bold;">✓</span>' :
-                                                '<span style="color: #3b82f6;">~</span>'}
-                                        </td>
-                                    </tr>
-                                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                                        <td style="padding: 0.75rem; font-weight: 600; color: #374151;">Reference</td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fef7f0;">
-                                            <div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">
-                                                #${match.invoice.number}
                                             </div>
-                                            <div style="color: #374151; font-weight: 500;">
+                                            <div style="color: #6b7280; font-size: 0.8rem;">
+                                                <strong>Type:</strong> ${match.invoice.invoice_type || 'Standard'}
+                                            </div>
+                                            ${match.invoice.subtotal ? `
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                                                Subtotal: ${match.invoice.currency || 'USD'} ${match.invoice.subtotal}
+                                            </div>
+                                            ` : ''}
+                                        </td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
+                                            <div style="font-weight: 800; color: #1e293b; font-size: 1.2rem; margin-bottom: 0.5rem;">
+                                                USD $${match.transaction.amount.toLocaleString()}
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.8rem;">
+                                                <strong>Category:</strong> ${match.transaction.accounting_category || 'Unclassified'}
+                                            </div>
+                                            ${match.transaction.crypto_amount ? `
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                                                Crypto: ${match.transaction.crypto_amount}
+                                            </div>
+                                            ` : ''}
+                                        </td>
+                                        <td style="padding: 1rem; text-align: center; border-left: 2px solid #cbd5e1; background: #fafbfc;">
+                                            ${(() => {
+                                                const amountDiff = Math.abs(match.invoice.amount - match.transaction.amount);
+                                                const amountPercent = (amountDiff / match.invoice.amount) * 100;
+                                                if (amountPercent < 1) {
+                                                    return '<div style="color: #10b981; font-weight: bold; font-size: 1.2rem;">💯</div><div style="font-size: 0.7rem; color: #10b981;">EXACT</div>';
+                                                } else if (amountPercent < 5) {
+                                                    return `<div style="color: #f59e0b; font-weight: bold; font-size: 1.1rem;">📊</div><div style="font-size: 0.7rem; color: #f59e0b;">${amountPercent.toFixed(1)}% diff</div>`;
+                                                } else {
+                                                    return `<div style="color: #ef4444; font-weight: bold; font-size: 1.1rem;">📉</div><div style="font-size: 0.7rem; color: #ef4444;">${amountPercent.toFixed(1)}% diff</div>`;
+                                                }
+                                            })()}
+                                        </td>
+                                    </tr>
+                                    <tr style="border-bottom: 2px solid #f1f5f9;">
+                                        <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">📅 Date</td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
+                                            <div style="font-weight: 700; color: #374151; margin-bottom: 0.5rem; font-size: 1rem;">
+                                                ${match.invoice.date}
+                                            </div>
+                                            ${match.invoice.due_date ? `
+                                            <div style="color: #f59e0b; font-size: 0.8rem; margin-bottom: 0.25rem;">
+                                                <strong>Due:</strong> ${match.invoice.due_date}
+                                            </div>
+                                            ` : ''}
+                                            <div style="color: #6b7280; font-size: 0.75rem;">
+                                                ${match.invoice.payment_status ? `Status: ${match.invoice.payment_status.toUpperCase()}` : 'Status: PENDING'}
+                                            </div>
+                                        </td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
+                                            <div style="font-weight: 700; color: #374151; margin-bottom: 0.5rem; font-size: 1rem;">
+                                                ${match.transaction.date}
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.8rem;">
+                                                <strong>Source:</strong> ${match.transaction.source_file || 'Direct entry'}
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                                                ID: ${match.transaction_id}
+                                            </div>
+                                        </td>
+                                        <td style="padding: 1rem; text-align: center; border-left: 2px solid #cbd5e1; background: #fafbfc;">
+                                            ${(() => {
+                                                const invoiceDate = new Date(match.invoice.date);
+                                                const transactionDate = new Date(match.transaction.date);
+                                                const daysDiff = Math.abs(Math.floor((invoiceDate - transactionDate) / (1000 * 60 * 60 * 24)));
+
+                                                if (daysDiff === 0) {
+                                                    return '<div style="color: #10b981; font-weight: bold; font-size: 1.2rem;">🎯</div><div style="font-size: 0.7rem; color: #10b981;">SAME DAY</div>';
+                                                } else if (daysDiff <= 7) {
+                                                    return `<div style="color: #3b82f6; font-weight: bold; font-size: 1.1rem;">📅</div><div style="font-size: 0.7rem; color: #3b82f6;">${daysDiff} days</div>`;
+                                                } else {
+                                                    return `<div style="color: #f59e0b; font-weight: bold; font-size: 1.1rem;">⏰</div><div style="font-size: 0.7rem; color: #f59e0b;">${daysDiff} days</div>`;
+                                                }
+                                            })()}
+                                        </td>
+                                    </tr>
+                                    <tr style="border-bottom: 2px solid #f1f5f9;">
+                                        <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">🏢 Business</td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
+                                            <div style="color: #374151; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem;">
                                                 ${match.invoice.vendor_name}
                                             </div>
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                                                Invoice: #${match.invoice.number}
+                                            </div>
+                                            ${match.invoice.customer_name ? `
+                                            <div style="color: #6b7280; font-size: 0.75rem;">
+                                                Customer: ${match.invoice.customer_name}
+                                            </div>
+                                            ` : ''}
                                         </td>
-                                        <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #f0fdf4;">
-                                            <div style="color: #374151; font-size: 0.875rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${match.transaction.description}">
-                                                ${match.transaction.description.length > 40 ?
-                                                    match.transaction.description.substring(0, 40) + '...' :
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
+                                            <div style="color: #374151; font-size: 0.85rem; margin-bottom: 0.5rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${match.transaction.description}">
+                                                <strong>Description:</strong><br>
+                                                ${match.transaction.description.length > 60 ?
+                                                    match.transaction.description.substring(0, 60) + '...' :
                                                     match.transaction.description}
                                             </div>
-                                            ${match.transaction.classified_entity ?
-                                                `<div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">Entity: ${match.transaction.classified_entity}</div>` :
-                                                ''}
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                                                <strong>Entity:</strong> ${match.transaction.classified_entity || 'Unclassified'}
+                                            </div>
+                                            ${match.transaction.origin && match.transaction.destination ? `
+                                            <div style="color: #6b7280; font-size: 0.7rem;">
+                                                ${match.transaction.origin} → ${match.transaction.destination}
+                                            </div>
+                                            ` : ''}
                                         </td>
-                                        <td style="padding: 0.75rem; text-align: center; border-left: 1px solid #e2e8f0;">
-                                            <span style="color: #6b7280; font-size: 0.75rem;">Pattern</span>
+                                        <td style="padding: 1rem; text-align: center; border-left: 2px solid #cbd5e1; background: #fafbfc;">
+                                            ${(() => {
+                                                // Business entity matching logic
+                                                const vendorName = (match.invoice.vendor_name || '').toLowerCase();
+                                                const entityName = (match.transaction.classified_entity || '').toLowerCase();
+                                                const hasEntityMatch = vendorName.includes(entityName.split(' ')[0]) || entityName.includes(vendorName.split(' ')[0]);
+
+                                                if (hasEntityMatch) {
+                                                    return '<div style="color: #10b981; font-weight: bold; font-size: 1.2rem;">🤝</div><div style="font-size: 0.7rem; color: #10b981;">MATCH</div>';
+                                                } else {
+                                                    return '<div style="color: #6b7280; font-weight: bold; font-size: 1.1rem;">❓</div><div style="font-size: 0.7rem; color: #6b7280;">PATTERN</div>';
+                                                }
+                                            })()}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">📊 Context</td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
+                                            <div style="color: #374151; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                                                <strong>Business Unit:</strong> ${match.invoice.business_unit || 'Not specified'}
+                                            </div>
+                                            ${match.invoice.line_items && match.invoice.line_items.length > 0 ? `
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                                                <strong>Items:</strong> ${match.invoice.line_items.length} line items
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.7rem; max-height: 40px; overflow: hidden;">
+                                                ${match.invoice.line_items.slice(0, 2).map(item =>
+                                                    `• ${item.description || 'Item'}: $${(item.total || 0).toLocaleString()}`
+                                                ).join('<br>')}
+                                                ${match.invoice.line_items.length > 2 ? '<br>...' : ''}
+                                            </div>
+                                            ` : ''}
+                                        </td>
+                                        <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
+                                            <div style="color: #374151; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                                                <strong>Confidence:</strong> ${((match.transaction.confidence || 0) * 100).toFixed(0)}%
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">
+                                                <strong>Justification:</strong>
+                                            </div>
+                                            <div style="color: #6b7280; font-size: 0.7rem; max-height: 40px; overflow: hidden;">
+                                                ${match.transaction.justification || 'Auto-classified'}
+                                            </div>
+                                        </td>
+                                        <td style="padding: 1rem; text-align: center; border-left: 2px solid #cbd5e1; background: #fafbfc;">
+                                            <div style="color: #3b82f6; font-weight: bold; font-size: 1.5rem; margin-bottom: 0.25rem;">
+                                                ${(match.score * 100).toFixed(0)}%
+                                            </div>
+                                            <div style="font-size: 0.7rem; color: #6b7280;">
+                                                ${match.confidence_level}
+                                            </div>
                                         </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Context Actions Panel -->
+                        <div class="context-actions-panel" style="margin: 1rem 0; padding: 1rem; background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-radius: 8px; border: 1px solid #e2e8f0;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <h4 style="margin: 0; color: #374151; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+                                    🔍 Context Actions
+                                </h4>
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <button class="context-btn" onclick="viewInvoiceDetailsModal('${match.invoice_id}')" style="padding: 0.5rem 1rem; background: #3b82f6; color: white; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer;">
+                                        📄 View Invoice
+                                    </button>
+                                    <button class="context-btn" onclick="viewTransactionChain('${match.transaction_id}')" style="padding: 0.5rem 1rem; background: #10b981; color: white; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer;">
+                                        ⛓️ Transaction Chain
+                                    </button>
+                                    <button class="context-btn" onclick="showSimilarMatches('${match.invoice.vendor_name}', '${match.invoice.amount}', '${match.invoice.date}', ${match.id})" style="padding: 0.5rem 1rem; background: #f59e0b; color: white; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer;">
+                                        🔍 Similar Matches
+                                    </button>
+                                    <button class="context-btn" onclick="showVendorHistory('${match.invoice.vendor_name}')" style="padding: 0.5rem 1rem; background: #8b5cf6; color: white; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer;">
+                                        🏢 Vendor History
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Enhanced Match Scoring Breakdown -->
+                            <div style="background: white; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                <h5 style="margin: 0 0 0.75rem 0; color: #374151; font-size: 0.9rem;">📊 Match Criteria Breakdown</h5>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                                    ${(() => {
+                                        // Calculate individual scores for visual representation
+                                        const amountDiff = Math.abs(match.invoice.amount - match.transaction.amount);
+                                        const amountScore = Math.max(0, 100 - (amountDiff / match.invoice.amount * 100));
+
+                                        const invoiceDate = new Date(match.invoice.date);
+                                        const transactionDate = new Date(match.transaction.date);
+                                        const daysDiff = Math.abs(Math.floor((invoiceDate - transactionDate) / (1000 * 60 * 60 * 24)));
+                                        const dateScore = Math.max(0, 100 - (daysDiff * 5));
+
+                                        const vendorName = (match.invoice.vendor_name || '').toLowerCase();
+                                        const entityName = (match.transaction.classified_entity || '').toLowerCase();
+                                        const entityScore = vendorName.includes(entityName.split(' ')[0]) || entityName.includes(vendorName.split(' ')[0]) ? 85 : 30;
+
+                                        const overallScore = match.score * 100;
+
+                                        return `
+                                            <div class="score-item">
+                                                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.8rem; color: #374151; font-weight: 600;">💵 Amount Match</span>
+                                                    <span style="font-size: 0.8rem; color: #3b82f6; font-weight: 700;">${amountScore.toFixed(0)}%</span>
+                                                </div>
+                                                <div style="width: 100%; background: #f1f5f9; border-radius: 4px; height: 6px;">
+                                                    <div style="background: ${amountScore >= 90 ? '#10b981' : amountScore >= 70 ? '#f59e0b' : '#ef4444'}; height: 100%; border-radius: 4px; width: ${amountScore}%; transition: width 0.3s ease;"></div>
+                                                </div>
+                                            </div>
+
+                                            <div class="score-item">
+                                                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.8rem; color: #374151; font-weight: 600;">📅 Date Match</span>
+                                                    <span style="font-size: 0.8rem; color: #3b82f6; font-weight: 700;">${dateScore.toFixed(0)}%</span>
+                                                </div>
+                                                <div style="width: 100%; background: #f1f5f9; border-radius: 4px; height: 6px;">
+                                                    <div style="background: ${dateScore >= 90 ? '#10b981' : dateScore >= 70 ? '#f59e0b' : '#ef4444'}; height: 100%; border-radius: 4px; width: ${dateScore}%; transition: width 0.3s ease;"></div>
+                                                </div>
+                                            </div>
+
+                                            <div class="score-item">
+                                                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.8rem; color: #374151; font-weight: 600;">🏢 Entity Match</span>
+                                                    <span style="font-size: 0.8rem; color: #3b82f6; font-weight: 700;">${entityScore}%</span>
+                                                </div>
+                                                <div style="width: 100%; background: #f1f5f9; border-radius: 4px; height: 6px;">
+                                                    <div style="background: ${entityScore >= 80 ? '#10b981' : entityScore >= 50 ? '#f59e0b' : '#ef4444'}; height: 100%; border-radius: 4px; width: ${entityScore}%; transition: width 0.3s ease;"></div>
+                                                </div>
+                                            </div>
+
+                                            <div class="score-item">
+                                                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 0.5rem;">
+                                                    <span style="font-size: 0.8rem; color: #374151; font-weight: 600;">🎯 Overall Score</span>
+                                                    <span style="font-size: 0.8rem; color: #6366f1; font-weight: 700;">${overallScore.toFixed(0)}%</span>
+                                                </div>
+                                                <div style="width: 100%; background: #f1f5f9; border-radius: 4px; height: 8px;">
+                                                    <div style="background: linear-gradient(90deg, #6366f1, #3b82f6); height: 100%; border-radius: 4px; width: ${overallScore}%; transition: width 0.3s ease; box-shadow: 0 2px 4px rgba(99, 102, 241, 0.3);"></div>
+                                                </div>
+                                            </div>
+                                        `;
+                                    })()}
+                                </div>
+                            </div>
                         </div>
 
                         <div class="explanation">
@@ -1711,6 +1907,838 @@
             } else {
                 advancedOptions.style.display = 'block';
             }
+        }
+
+        // Enhanced Context Actions Functions
+        async function viewTransactionChain(transactionId) {
+            try {
+                showNotification('Analisando cadeia de transações...', 'info');
+
+                // Call new transaction chain API
+                const response = await fetch(`/api/transactions/${transactionId}/chains`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const chainData = await response.json();
+                showTransactionChainModal(transactionId, chainData);
+
+            } catch (error) {
+                console.error('Error loading transaction chain:', error);
+                showNotification('Erro ao carregar cadeia de transações. Abrindo dashboard...', 'warning');
+                // Fallback to old behavior
+                window.open(`/dashboard?search=${transactionId}`, '_blank');
+            }
+        }
+
+        // Transaction Chain Modal
+        async function showTransactionChainModal(transactionId, chainData) {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.display = 'block';
+
+            const baseTransaction = chainData.base_transaction;
+            const chains = chainData.chains || {};
+            const summary = chainData.summary || {};
+
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 1200px; max-height: 90vh; overflow-y: auto;">
+                    <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 1rem;">
+                        <h3 style="margin: 0; color: #1e293b; display: flex; align-items: center; gap: 0.5rem;">
+                            ⛓️ Transaction Chain Analysis
+                        </h3>
+                        <button onclick="this.closest('.modal').remove()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">×</button>
+                    </div>
+
+                    <!-- Base Transaction Info -->
+                    <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+                        <h4 style="margin: 0 0 0.75rem 0; color: #334155; display: flex; align-items: center; gap: 0.5rem;">
+                            🎯 Base Transaction
+                        </h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
+                            <div><strong>Date:</strong> ${baseTransaction?.date || 'N/A'}</div>
+                            <div><strong>Amount:</strong> $${baseTransaction?.amount ? parseFloat(baseTransaction.amount).toLocaleString() : 'N/A'}</div>
+                            <div><strong>Entity:</strong> ${baseTransaction?.classified_entity || 'N/A'}</div>
+                            <div><strong>Category:</strong> ${baseTransaction?.accounting_category || 'N/A'}</div>
+                        </div>
+                        <div style="margin-top: 0.75rem;">
+                            <strong>Description:</strong> ${baseTransaction?.description || 'N/A'}
+                        </div>
+                    </div>
+
+                    <!-- Summary Statistics -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                        <div style="background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 6px; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #166534;">${summary.total_related_transactions || 0}</div>
+                            <div style="color: #166534; font-size: 0.875rem;">Related Transactions</div>
+                        </div>
+                        <div style="background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 6px; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #1d4ed8;">${summary.total_chain_types || 0}</div>
+                            <div style="color: #1d4ed8; font-size: 0.875rem;">Pattern Types Found</div>
+                        </div>
+                        <div style="background: #fef3c7; border: 1px solid #fed7aa; border-radius: 6px; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #d97706;">$${summary.total_amount ? parseFloat(summary.total_amount).toLocaleString() : '0'}</div>
+                            <div style="color: #d97706; font-size: 0.875rem;">Total Chain Value</div>
+                        </div>
+                        <div style="background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 6px; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: bold; color: #7c3aed;">${summary.highest_confidence ? (summary.highest_confidence * 100).toFixed(0) + '%' : 'N/A'}</div>
+                            <div style="color: #7c3aed; font-size: 0.875rem;">Highest Confidence</div>
+                        </div>
+                    </div>
+
+                    <!-- Chain Results -->
+                    <div style="margin-bottom: 1.5rem;">
+                        ${Object.keys(chains).length > 0 ? Object.keys(chains).map(chainType => {
+                            const chainTransactions = chains[chainType];
+                            if (!chainTransactions || chainTransactions.length === 0) return '';
+
+                            const chainInfo = getChainTypeInfo(chainType);
+
+                            return `
+                                <div style="background: white; border: 2px solid ${chainInfo.color}; border-radius: 8px; margin-bottom: 1rem; overflow: hidden;">
+                                    <div style="background: ${chainInfo.background}; padding: 1rem; border-bottom: 1px solid ${chainInfo.color};">
+                                        <h4 style="margin: 0; color: ${chainInfo.textColor}; display: flex; align-items: center; gap: 0.5rem;">
+                                            ${chainInfo.icon} ${chainInfo.title} (${chainTransactions.length} transactions)
+                                        </h4>
+                                        <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: ${chainInfo.textColor}; opacity: 0.8;">
+                                            ${chainInfo.description}
+                                        </p>
+                                    </div>
+                                    <div style="padding: 1rem;">
+                                        <div style="max-height: 400px; overflow-y: auto;">
+                                            ${chainTransactions.map(transaction => `
+                                                <div style="border: 1px solid #e2e8f0; border-radius: 4px; padding: 0.75rem; margin-bottom: 0.75rem; background: #fafafa;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                                                        <div style="flex: 1;">
+                                                            <strong>${transaction.description}</strong>
+                                                            <div style="font-size: 0.875rem; color: #64748b; margin-top: 0.25rem;">
+                                                                ${transaction.date} • ${transaction.classified_entity || 'Unknown Entity'}
+                                                            </div>
+                                                        </div>
+                                                        <div style="text-align: right; margin-left: 1rem;">
+                                                            <div style="font-weight: bold; color: ${parseFloat(transaction.amount) >= 0 ? '#059669' : '#dc2626'};">
+                                                                $${parseFloat(transaction.amount).toLocaleString()}
+                                                            </div>
+                                                            <div style="font-size: 0.75rem; color: #64748b;">
+                                                                ${transaction.confidence ? (transaction.confidence * 100).toFixed(0) + '% confidence' : 'N/A'}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    ${transaction.reasoning ? `
+                                                        <div style="background: #f1f5f9; border-radius: 4px; padding: 0.5rem; font-size: 0.875rem; color: #475569; margin-top: 0.5rem;">
+                                                            <strong>Pattern:</strong> ${transaction.reasoning}
+                                                        </div>
+                                                    ` : ''}
+                                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.75rem;">
+                                                        <button onclick="window.open('/dashboard?search=${transaction.transaction_id}', '_blank')" style="
+                                                            padding: 0.375rem 0.75rem; background: #3b82f6; color: white;
+                                                            border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;
+                                                        ">🔍 View Details</button>
+                                                        ${transaction.transaction_id !== transactionId ? `
+                                                            <button onclick="viewTransactionChain('${transaction.transaction_id}')" style="
+                                                                padding: 0.375rem 0.75rem; background: #10b981; color: white;
+                                                                border: none; border-radius: 4px; font-size: 0.75rem; cursor: pointer;
+                                                            ">⛓️ Analyze Chain</button>
+                                                        ` : `
+                                                            <span style="padding: 0.375rem 0.75rem; background: #e2e8f0; color: #64748b; border-radius: 4px; font-size: 0.75rem;">Current Transaction</span>
+                                                        `}
+                                                    </div>
+                                                </div>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('') : `
+                            <div style="text-align: center; padding: 2rem; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px;">
+                                <div style="font-size: 3rem; margin-bottom: 1rem; opacity: 0.5;">🔍</div>
+                                <h3 style="margin: 0 0 0.5rem 0; color: #64748b;">No Transaction Chains Found</h3>
+                                <p style="margin: 0; color: #64748b;">This transaction appears to be standalone with no related patterns detected.</p>
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- Actions -->
+                    <div style="text-align: center; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
+                        <button onclick="window.open('/dashboard?search=${transactionId}', '_blank')" style="
+                            margin-right: 0.75rem; padding: 0.75rem 1.5rem; background: #3b82f6; color: white;
+                            border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem;
+                        ">🔍 View in Dashboard</button>
+                        <button onclick="this.closest('.modal').remove()" style="
+                            padding: 0.75rem 1.5rem; background: #6b7280; color: white;
+                            border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem;
+                        ">Close</button>
+                    </div>
+                </div>
+            `;
+
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+
+            document.body.appendChild(modal);
+        }
+
+        function getChainTypeInfo(chainType) {
+            const chainTypes = {
+                'crypto_sequence': {
+                    icon: '₿',
+                    title: 'Cryptocurrency Sequence',
+                    description: 'Related cryptocurrency transactions with similar patterns or amounts.',
+                    color: '#f59e0b',
+                    background: '#fef3c7',
+                    textColor: '#92400e'
+                },
+                'vendor_recurring': {
+                    icon: '🏢',
+                    title: 'Vendor Recurring Payments',
+                    description: 'Regular payments to the same vendor or entity.',
+                    color: '#10b981',
+                    background: '#d1fae5',
+                    textColor: '#065f46'
+                },
+                'entity_related': {
+                    icon: '🏬',
+                    title: 'Entity Related Transactions',
+                    description: 'Transactions from the same business entity or classification.',
+                    color: '#3b82f6',
+                    background: '#dbeafe',
+                    textColor: '#1e40af'
+                },
+                'amount_correlation': {
+                    icon: '💰',
+                    title: 'Amount Correlation',
+                    description: 'Transactions with similar amounts or mathematical relationships.',
+                    color: '#8b5cf6',
+                    background: '#ede9fe',
+                    textColor: '#6d28d9'
+                },
+                'invoice_sequence': {
+                    icon: '📄',
+                    title: 'Invoice Sequence',
+                    description: 'Related invoice transactions or structured payment sequences.',
+                    color: '#ef4444',
+                    background: '#fee2e2',
+                    textColor: '#dc2626'
+                }
+            };
+
+            return chainTypes[chainType] || {
+                icon: '🔗',
+                title: 'Related Transactions',
+                description: 'Transactions identified as related to the base transaction.',
+                color: '#64748b',
+                background: '#f1f5f9',
+                textColor: '#334155'
+            };
+        }
+
+        // Enhanced Similar Matches - intelligent matching based on multiple criteria
+        function showSimilarMatches(vendorName, currentAmount, currentDate, currentMatchId) {
+            showSimilarMatchesModal(vendorName, currentAmount, currentDate, currentMatchId);
+        }
+
+        // Enhanced Vendor History with modal
+        function showVendorHistory(vendorName) {
+            showVendorHistoryModal(vendorName);
+        }
+
+        // Smart Similar Matches Modal
+        async function showSimilarMatchesModal(vendorName, amount = null, date = null, currentMatchId = null) {
+            try {
+                showNotification('Buscando matches similares...', 'info');
+
+                // Build intelligent search criteria
+                const searchCriteria = {};
+                if (vendorName && vendorName !== 'undefined') searchCriteria.vendor = vendorName;
+                if (amount) {
+                    // Search for similar amounts (±20% range)
+                    const amountFloat = parseFloat(amount);
+                    if (!isNaN(amountFloat)) {
+                        searchCriteria.min_amount = amountFloat * 0.8;
+                        searchCriteria.max_amount = amountFloat * 1.2;
+                    }
+                }
+
+                // Fetch similar matches
+                const queryParams = new URLSearchParams(searchCriteria).toString();
+                const response = await fetch(`/api/revenue/pending-matches?${queryParams}&per_page=10`);
+                const data = await response.json();
+
+                if (!data.success || !data.matches.length) {
+                    showNotification('Nenhum match similar encontrado', 'warning');
+                    return;
+                }
+
+                // Filter out current match
+                const similarMatches = data.matches.filter(m => m.id !== currentMatchId);
+
+                if (!similarMatches.length) {
+                    showNotification('Nenhum outro match similar encontrado', 'info');
+                    return;
+                }
+
+                // Create enhanced modal
+                const modal = createSimilarMatchesModal(similarMatches, vendorName, amount);
+                document.body.appendChild(modal);
+
+            } catch (error) {
+                console.error('Error fetching similar matches:', error);
+                showNotification('Erro ao buscar matches similares', 'error');
+            }
+        }
+
+        // Create Similar Matches Modal
+        function createSimilarMatchesModal(matches, vendorName, targetAmount) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.7); z-index: 10000; display: flex;
+                align-items: center; justify-content: center; padding: 2rem;
+            `;
+
+            modal.innerHTML = `
+                <div style="
+                    background: white; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+                    border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+                ">
+                    <div style="
+                        padding: 1.5rem 2rem; border-bottom: 2px solid #e2e8f0;
+                        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    ">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0; color: #1f2937; display: flex; align-items: center; gap: 0.75rem;">
+                                🔍 <span style="font-size: 1.25rem;">Matches Similares</span>
+                            </h3>
+                            <button onclick="this.closest('.modal').remove()" style="
+                                background: #ef4444; color: white; border: none; width: 32px; height: 32px;
+                                border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex;
+                                align-items: center; justify-content: center;
+                            ">×</button>
+                        </div>
+                        <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.9rem;">
+                            🎯 Vendor: <strong>${vendorName}</strong> |
+                            💰 Valor base: <strong>$${parseFloat(targetAmount).toLocaleString()}</strong> |
+                            📊 ${matches.length} matches encontrados
+                        </p>
+                    </div>
+
+                    <div style="padding: 1.5rem;">
+                        <div style="display: grid; gap: 1rem;">
+                            ${matches.map((match, idx) => `
+                                <div style="
+                                    border: 2px solid #e2e8f0; border-radius: 8px; padding: 1rem;
+                                    background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+                                    transition: all 0.2s ease; cursor: pointer;
+                                " onmouseover="this.style.borderColor='#3b82f6'" onmouseout="this.style.borderColor='#e2e8f0'">
+
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                                        <div>
+                                            <h4 style="margin: 0; color: #1f2937; font-size: 1rem;">
+                                                Match #${idx + 1} - Score: ${(match.score * 100).toFixed(1)}%
+                                            </h4>
+                                            <div style="margin: 0.25rem 0; color: #6b7280; font-size: 0.85rem;">
+                                                ${match.confidence_level} confidence
+                                            </div>
+                                        </div>
+                                        <div style="text-align: right;">
+                                            <div style="color: #059669; font-weight: 600; font-size: 1.1rem;">
+                                                $${parseFloat(match.invoice.amount).toLocaleString()}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.75rem;">
+                                        <div>
+                                            <strong style="color: #3b82f6;">📄 Invoice:</strong><br>
+                                            <span style="font-size: 0.9rem;">${match.invoice.number || 'N/A'}</span><br>
+                                            <span style="color: #6b7280; font-size: 0.85rem;">
+                                                ${new Date(match.invoice.date).toLocaleDateString('pt-BR')}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <strong style="color: #10b981;">💰 Transaction:</strong><br>
+                                            <span style="font-size: 0.9rem;">$${parseFloat(match.transaction.amount).toLocaleString()}</span><br>
+                                            <span style="color: #6b7280; font-size: 0.85rem;">
+                                                ${match.transaction.classified_entity}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div style="background: #f1f5f9; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.75rem;">
+                                        <div style="font-size: 0.85rem; color: #475569;">
+                                            <strong>Explicação:</strong> ${match.explanation || 'N/A'}
+                                        </div>
+                                    </div>
+
+                                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                                        <button onclick="window.open('/revenue?highlight=${match.id}', '_blank')" style="
+                                            padding: 0.375rem 0.75rem; background: #3b82f6; color: white;
+                                            border: none; border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+                                        ">🔗 Ver Match</button>
+                                        <button onclick="viewInvoiceDetailsModal('${match.invoice_id}')" style="
+                                            padding: 0.375rem 0.75rem; background: #8b5cf6; color: white;
+                                            border: none; border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+                                        ">📄 Ver Invoice</button>
+                                        <button onclick="window.open('/dashboard?search=${match.transaction_id}', '_blank')" style="
+                                            padding: 0.375rem 0.75rem; background: #10b981; color: white;
+                                            border: none; border-radius: 4px; font-size: 0.8rem; cursor: pointer;
+                                        ">⛓️ Ver Transação</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div style="margin-top: 1.5rem; text-align: center;">
+                            <button onclick="window.open('/revenue?vendor=${encodeURIComponent(vendorName)}', '_blank')" style="
+                                padding: 0.75rem 1.5rem; background: #f59e0b; color: white;
+                                border: none; border-radius: 6px; font-size: 0.9rem; cursor: pointer;
+                            ">🔍 Ver Todos os Matches do Vendor</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.className = 'modal';
+
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+
+            return modal;
+        }
+
+        // Enhanced Vendor History Modal
+        async function showVendorHistoryModal(vendorName) {
+            if (!vendorName || vendorName === 'undefined') {
+                showNotification('Vendor name not available', 'warning');
+                return;
+            }
+
+            try {
+                showNotification('Carregando histórico do vendor...', 'info');
+
+                // Fetch vendor transactions and invoices
+                const [invoicesResponse, transactionsResponse] = await Promise.all([
+                    fetch(`/api/invoices?vendor=${encodeURIComponent(vendorName)}&per_page=50`),
+                    fetch(`/api/transactions?search=${encodeURIComponent(vendorName)}&per_page=20`)
+                ]);
+
+                const invoicesData = await invoicesResponse.json();
+                const transactionsData = await transactionsResponse.json();
+
+                const modal = createVendorHistoryModal(vendorName, invoicesData, transactionsData);
+                document.body.appendChild(modal);
+
+            } catch (error) {
+                console.error('Error loading vendor history:', error);
+                showNotification('Erro ao carregar histórico do vendor', 'error');
+            }
+        }
+
+        // Create Vendor History Modal
+        function createVendorHistoryModal(vendorName, invoicesData, transactionsData) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.7); z-index: 10000; display: flex;
+                align-items: center; justify-content: center; padding: 2rem;
+            `;
+
+            const invoices = invoicesData.invoices || [];
+            const transactions = transactionsData.transactions || [];
+            const totalInvoiceAmount = invoices.reduce((sum, inv) => sum + parseFloat(inv.amount || 0), 0);
+            const totalTransactionAmount = transactions.reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+
+            modal.innerHTML = `
+                <div style="
+                    background: white; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+                    border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+                ">
+                    <div style="
+                        padding: 1.5rem 2rem; border-bottom: 2px solid #e2e8f0;
+                        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    ">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0; color: #1f2937; display: flex; align-items: center; gap: 0.75rem;">
+                                🏢 <span>Histórico: ${vendorName}</span>
+                            </h3>
+                            <button onclick="this.closest('.modal').remove()" style="
+                                background: #ef4444; color: white; border: none; width: 32px; height: 32px;
+                                border-radius: 50%; font-size: 1.2rem; cursor: pointer;
+                            ">×</button>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-top: 1rem;">
+                            <div style="text-align: center; padding: 0.75rem; background: #dbeafe; border-radius: 6px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: #1e40af;">${invoices.length}</div>
+                                <div style="color: #64748b; font-size: 0.8rem;">Invoices</div>
+                            </div>
+                            <div style="text-align: center; padding: 0.75rem; background: #d1fae5; border-radius: 6px;">
+                                <div style="font-size: 1.5rem; font-weight: bold; color: #047857;">${transactions.length}</div>
+                                <div style="color: #64748b; font-size: 0.8rem;">Transações</div>
+                            </div>
+                            <div style="text-align: center; padding: 0.75rem; background: #fef3c7; border-radius: 6px;">
+                                <div style="font-size: 1.2rem; font-weight: bold; color: #92400e;">$${totalInvoiceAmount.toLocaleString()}</div>
+                                <div style="color: #64748b; font-size: 0.8rem;">Total Invoices</div>
+                            </div>
+                            <div style="text-align: center; padding: 0.75rem; background: #e0e7ff; border-radius: 6px;">
+                                <div style="font-size: 1.2rem; font-weight: bold; color: #5b21b6;">$${totalTransactionAmount.toLocaleString()}</div>
+                                <div style="color: #64748b; font-size: 0.8rem;">Total Transações</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="padding: 1.5rem;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+
+                            <!-- Invoices Section -->
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    📄 Recent Invoices (${invoices.length})
+                                </h4>
+                                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                                    ${invoices.slice(0, 10).map(invoice => `
+                                        <div style="
+                                            padding: 0.75rem; border-bottom: 1px solid #f1f5f9;
+                                            hover:background-color: #f8fafc;
+                                        ">
+                                            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                                <div>
+                                                    <div style="font-weight: 600; color: #1f2937;">
+                                                        ${invoice.number || 'N/A'}
+                                                    </div>
+                                                    <div style="font-size: 0.85rem; color: #6b7280;">
+                                                        ${new Date(invoice.date).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                </div>
+                                                <div style="text-align: right;">
+                                                    <div style="font-weight: 600; color: #059669;">
+                                                        $${parseFloat(invoice.amount || 0).toLocaleString()}
+                                                    </div>
+                                                    <div style="font-size: 0.8rem; color: ${invoice.status === 'matched' ? '#059669' : '#dc2626'};">
+                                                        ${invoice.status || 'pending'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                    ${invoices.length === 0 ? '<div style="padding: 2rem; text-align: center; color: #9ca3af;">Nenhum invoice encontrado</div>' : ''}
+                                </div>
+                            </div>
+
+                            <!-- Transactions Section -->
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    💰 Recent Transactions (${transactions.length})
+                                </h4>
+                                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                                    ${transactions.slice(0, 10).map(tx => `
+                                        <div style="
+                                            padding: 0.75rem; border-bottom: 1px solid #f1f5f9;
+                                            hover:background-color: #f8fafc; cursor: pointer;
+                                        " onclick="window.open('/dashboard?search=${tx.transaction_id}', '_blank')">
+                                            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                                <div style="flex: 1; margin-right: 1rem;">
+                                                    <div style="font-size: 0.85rem; color: #1f2937; margin-bottom: 0.25rem;">
+                                                        ${(tx.description || 'N/A').substring(0, 60)}${tx.description && tx.description.length > 60 ? '...' : ''}
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #6b7280;">
+                                                        ${tx.classified_entity || 'N/A'} • ${new Date(tx.date).toLocaleDateString('pt-BR')}
+                                                    </div>
+                                                </div>
+                                                <div style="text-align: right;">
+                                                    <div style="font-weight: 600; color: ${parseFloat(tx.amount) >= 0 ? '#059669' : '#dc2626'};">
+                                                        $${Math.abs(parseFloat(tx.amount || 0)).toLocaleString()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                    ${transactions.length === 0 ? '<div style="padding: 2rem; text-align: center; color: #9ca3af;">Nenhuma transação encontrada</div>' : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 2rem; text-align: center; display: flex; gap: 1rem; justify-content: center;">
+                            <button onclick="window.open('/invoices?search=${encodeURIComponent(vendorName)}', '_blank')" style="
+                                padding: 0.75rem 1.5rem; background: #3b82f6; color: white;
+                                border: none; border-radius: 6px; cursor: pointer;
+                            ">📄 Ver Todos os Invoices</button>
+                            <button onclick="window.open('/dashboard?search=${encodeURIComponent(vendorName)}', '_blank')" style="
+                                padding: 0.75rem 1.5rem; background: #10b981; color: white;
+                                border: none; border-radius: 6px; cursor: pointer;
+                            ">💰 Ver Todas as Transações</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.className = 'modal';
+
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+
+            return modal;
+        }
+
+        // Enhanced invoice details viewer with modal
+        async function viewInvoiceDetailsModal(invoiceId) {
+            if (!invoiceId || invoiceId === 'undefined') {
+                showNotification('Invoice ID not available', 'warning');
+                return;
+            }
+
+            try {
+                showNotification('Carregando detalhes do invoice...', 'info');
+
+                // Fetch invoice details
+                const response = await fetch(`/api/invoices/${invoiceId}`);
+                const invoice = await response.json();
+
+                if (!response.ok || !invoice || !invoice.id) {
+                    showNotification('Invoice não encontrado', 'error');
+                    return;
+                }
+                const modal = createInvoiceDetailsModal(invoice);
+                document.body.appendChild(modal);
+
+            } catch (error) {
+                console.error('Error loading invoice details:', error);
+                showNotification('Erro ao carregar detalhes do invoice', 'error');
+            }
+        }
+
+        // Create Invoice Details Modal
+        function createInvoiceDetailsModal(invoice) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background: rgba(0,0,0,0.7); z-index: 10000; display: flex;
+                align-items: center; justify-content: center; padding: 2rem;
+            `;
+
+            // Calculate status color
+            const getStatusColor = (status) => {
+                switch(status?.toLowerCase()) {
+                    case 'matched': return '#10b981';
+                    case 'pending': return '#f59e0b';
+                    case 'paid': return '#059669';
+                    default: return '#6b7280';
+                }
+            };
+
+            // Format line items if available
+            const lineItemsHtml = invoice.line_items && invoice.line_items.length > 0 ? `
+                <div style="margin-top: 1.5rem;">
+                    <h5 style="margin: 0 0 1rem 0; color: #374151; display: flex; align-items: center; gap: 0.5rem;">
+                        📋 Itens do Invoice
+                    </h5>
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                        ${invoice.line_items.map((item, idx) => `
+                            <div style="
+                                padding: 0.75rem; border-bottom: 1px solid #f1f5f9;
+                                display: flex; justify-content: space-between; align-items: center;
+                            ">
+                                <div>
+                                    <div style="font-weight: 500; color: #1f2937;">${item.description || `Item ${idx + 1}`}</div>
+                                    ${item.quantity ? `<div style="font-size: 0.8rem; color: #6b7280;">Qty: ${item.quantity}</div>` : ''}
+                                </div>
+                                <div style="text-align: right; font-weight: 600; color: #059669;">
+                                    $${parseFloat(item.amount || 0).toLocaleString()}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : '';
+
+            modal.innerHTML = `
+                <div style="
+                    background: white; max-width: 800px; max-height: 90vh; overflow-y: auto;
+                    border-radius: 12px; box-shadow: 0 25px 50px rgba(0,0,0,0.25);
+                ">
+                    <div style="
+                        padding: 1.5rem 2rem; border-bottom: 2px solid #e2e8f0;
+                        background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+                    ">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="margin: 0; color: #1f2937; display: flex; align-items: center; gap: 0.75rem;">
+                                📄 <span>Invoice Details</span>
+                            </h3>
+                            <button onclick="this.closest('.modal').remove()" style="
+                                background: #ef4444; color: white; border: none; width: 32px; height: 32px;
+                                border-radius: 50%; font-size: 1.2rem; cursor: pointer;
+                            ">×</button>
+                        </div>
+                        <div style="margin-top: 0.5rem; color: #64748b; display: flex; align-items: center; gap: 1rem;">
+                            <span style="
+                                padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+                                background: ${getStatusColor(invoice.status)}; color: white;
+                            ">${invoice.status || 'pending'}</span>
+                            <span>ID: ${invoice.id}</span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 2rem;">
+                        <!-- Main Invoice Information -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    🏢 Vendor Information
+                                </h4>
+                                <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                    <div style="margin-bottom: 0.75rem;">
+                                        <div style="font-size: 0.8rem; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 0.25rem;">Nome</div>
+                                        <div style="font-weight: 600; color: #1f2937; font-size: 1.1rem;">${invoice.vendor_name || 'N/A'}</div>
+                                    </div>
+                                    ${invoice.vendor_email ? `
+                                        <div style="margin-bottom: 0.75rem;">
+                                            <div style="font-size: 0.8rem; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 0.25rem;">Email</div>
+                                            <div style="color: #3b82f6;">${invoice.vendor_email}</div>
+                                        </div>
+                                    ` : ''}
+                                    ${invoice.vendor_address ? `
+                                        <div>
+                                            <div style="font-size: 0.8rem; color: #6b7280; text-transform: uppercase; font-weight: 600; margin-bottom: 0.25rem;">Endereço</div>
+                                            <div style="color: #4b5563; font-size: 0.9rem;">${invoice.vendor_address}</div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    💰 Financial Information
+                                </h4>
+                                <div style="background: #f0fdf4; padding: 1rem; border-radius: 8px; border: 1px solid #bbf7d0;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                                        <span style="font-size: 0.8rem; color: #166534; text-transform: uppercase; font-weight: 600;">Valor Total</span>
+                                        <span style="font-size: 1.5rem; font-weight: bold; color: #059669;">
+                                            $${parseFloat(invoice.total_amount || 0).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                        <span style="color: #6b7280;">Moeda:</span>
+                                        <span style="font-weight: 600;">${invoice.currency || 'USD'}</span>
+                                    </div>
+                                    ${invoice.tax_amount ? `
+                                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                            <span style="color: #6b7280;">Taxa:</span>
+                                            <span style="color: #059669;">$${parseFloat(invoice.tax_amount || 0).toLocaleString()}</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Invoice Details -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    📋 Invoice Details
+                                </h4>
+                                <div style="background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                    <div style="display: grid; gap: 0.75rem;">
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: #6b7280;">Número:</span>
+                                            <span style="font-weight: 600; font-family: monospace;">${invoice.invoice_number || 'N/A'}</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: #6b7280;">Data:</span>
+                                            <span style="font-weight: 600;">${new Date(invoice.date).toLocaleDateString('pt-BR')}</span>
+                                        </div>
+                                        ${invoice.due_date ? `
+                                            <div style="display: flex; justify-content: space-between;">
+                                                <span style="color: #6b7280;">Vencimento:</span>
+                                                <span style="font-weight: 600; color: #dc2626;">${new Date(invoice.due_date).toLocaleDateString('pt-BR')}</span>
+                                            </div>
+                                        ` : ''}
+                                        ${invoice.payment_terms ? `
+                                            <div style="display: flex; justify-content: space-between;">
+                                                <span style="color: #6b7280;">Termos:</span>
+                                                <span style="font-weight: 600;">${invoice.payment_terms}</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <h4 style="margin: 0 0 1rem 0; color: #1f2937; display: flex; align-items: center; gap: 0.5rem;">
+                                    📊 System Information
+                                </h4>
+                                <div style="background: #fef7ff; padding: 1rem; border-radius: 8px; border: 1px solid #e9d5ff;">
+                                    <div style="display: grid; gap: 0.75rem;">
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: #6b7280;">Criado:</span>
+                                            <span style="font-weight: 600; font-size: 0.9rem;">${new Date(invoice.created_at || invoice.date).toLocaleDateString('pt-BR')}</span>
+                                        </div>
+                                        ${invoice.matched_at ? `
+                                            <div style="display: flex; justify-content: space-between;">
+                                                <span style="color: #6b7280;">Matched:</span>
+                                                <span style="font-weight: 600; color: #10b981; font-size: 0.9rem;">${new Date(invoice.matched_at).toLocaleDateString('pt-BR')}</span>
+                                            </div>
+                                        ` : ''}
+                                        ${invoice.source_file ? `
+                                            <div>
+                                                <span style="color: #6b7280;">Arquivo:</span>
+                                                <div style="font-weight: 600; font-size: 0.85rem; margin-top: 0.25rem; word-break: break-all;">${invoice.source_file}</div>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        ${lineItemsHtml}
+
+                        ${invoice.description ? `
+                            <div style="margin-top: 1.5rem;">
+                                <h5 style="margin: 0 0 0.75rem 0; color: #374151; display: flex; align-items: center; gap: 0.5rem;">
+                                    📝 Descrição
+                                </h5>
+                                <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; border-left: 4px solid #3b82f6;">
+                                    <p style="margin: 0; color: #4b5563; line-height: 1.5;">${invoice.description}</p>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- Action Buttons -->
+                        <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                            <button onclick="window.open('/invoices?search=${invoice.id}', '_blank')" style="
+                                padding: 0.75rem 1.5rem; background: #3b82f6; color: white;
+                                border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+                            ">📄 Ver na Lista de Invoices</button>
+
+                            <button onclick="showVendorHistory('${invoice.vendor_name}')" style="
+                                padding: 0.75rem 1.5rem; background: #8b5cf6; color: white;
+                                border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+                            ">🏢 Histórico do Vendor</button>
+
+                            ${invoice.status !== 'matched' ? `
+                                <button onclick="quickMatchSingle('${invoice.id}'); this.closest('.modal').remove();" style="
+                                    padding: 0.75rem 1.5rem; background: #10b981; color: white;
+                                    border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
+                                ">⚡ Quick Match</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.className = 'modal';
+
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+
+            return modal;
         }
     </script>
 
