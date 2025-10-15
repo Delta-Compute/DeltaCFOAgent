@@ -782,12 +782,25 @@ class DeltaCFOAgent:
         """Add Origin, Destination, and clean descriptions"""
         print("🔧 Enhancing transaction structure...")
 
-        df['Origin'] = None
-        df['Destination'] = None
-        df['Identifier'] = None
-        df['Description_Minimal'] = None
+        # Preserve existing Origin/Destination if already populated by smart ingestion
+        if 'Origin' not in df.columns:
+            df['Origin'] = None
+        if 'Destination' not in df.columns:
+            df['Destination'] = None
+        if 'Identifier' not in df.columns:
+            df['Identifier'] = None
+        if 'Description_Minimal' not in df.columns:
+            df['Description_Minimal'] = None
 
         for idx, row in df.iterrows():
+            # Skip if Origin/Destination already set by smart ingestion
+            existing_origin = row.get('Origin')
+            existing_destination = row.get('Destination')
+            if (existing_origin and existing_origin not in [None, 'None', 'Unknown', ''] and
+                existing_destination and existing_destination not in [None, 'None', 'Unknown', '']):
+                # Already have good data from smart ingestion, skip this row
+                continue
+
             description = str(row.get('Description', ''))
             source_file = str(row.get('source_file', ''))
             primary_action = str(row.get('primary_action', '')).upper()
@@ -1085,13 +1098,19 @@ class DeltaCFOAgent:
 
         date_str = str(date_input)
 
+        # Handle ISO 8601 format with 'Z' suffix (replace with UTC)
+        if date_str.endswith('Z'):
+            date_str = date_str[:-1] + '+00:00'
+
         # Try parsing various date formats
         date_formats = [
-            '%Y-%m-%d %H:%M:%S',      # 2025-08-30 18:30:26
-            '%Y-%m-%d %H:%M:%S UTC',  # 2025-08-30 18:30:26 UTC
-            '%Y-%m-%d',               # 2025-08-30
-            '%m/%d/%Y',               # 08/30/2025
-            '%m/%d/%y',               # 08/30/25
+            '%Y-%m-%dT%H:%M:%S.%f%z',  # 2025-08-06T03:19:38.000+00:00 (ISO 8601)
+            '%Y-%m-%dT%H:%M:%S%z',     # 2025-08-06T03:19:38+00:00 (ISO 8601 without ms)
+            '%Y-%m-%d %H:%M:%S',       # 2025-08-30 18:30:26
+            '%Y-%m-%d %H:%M:%S UTC',   # 2025-08-30 18:30:26 UTC
+            '%Y-%m-%d',                # 2025-08-30
+            '%m/%d/%Y',                # 08/30/2025
+            '%m/%d/%y',                # 08/30/25
         ]
 
         for fmt in date_formats:

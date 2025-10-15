@@ -175,9 +175,16 @@ REQUIRED MAPPINGS:
 OPTIONAL MAPPINGS:
 - TYPE: Transaction type/category ("Type", "Transaction Type", "Category", "Status")
 - CURRENCY: Currency info ("Currency", "Crypto", "Asset", "Symbol")
-- REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number")
+- REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number", "Hash")
 - BALANCE: Account balance ("Balance", "Running Balance")
-- ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Card Number", "Wallet", "Portfolio")
+- ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Card Number", "Wallet", "Portfolio", "UID")
+- DIRECTION: Transaction direction/flow ("Direction", "Type", "Flow", "Side", "In/Out", "Operation Type")
+  * If this column exists, identify values that mean INCOMING vs OUTGOING
+  * Incoming values (amount should be positive): "In", "Incoming", "Received", "Deposit", "Credit", "Credited"
+  * Outgoing values (amount should be negative): "Out", "Outgoing", "Sent", "Withdrawal", "Debit", "Sent"
+- ORIGIN: Source of funds ("From", "Sender", "Origin", "Source", can also be derived from Network/blockchain for crypto)
+- DESTINATION: Destination of funds ("To", "Recipient", "Destination", can be exchange name for crypto deposits)
+- NETWORK: Blockchain network ("Network", "Chain", "Protocol") - used to derive Origin for crypto
 - ADDITIONAL: Any other relevant columns
 
 CRITICAL: MULTI-ACCOUNT DETECTION
@@ -187,10 +194,40 @@ If the file contains transactions from MULTIPLE accounts/cards/wallets in a sing
 - This enables intelligent entity mapping and routing per account
 
 SPECIAL CASES TO HANDLE:
-- Crypto exchanges (MEXC, Coinbase, Binance): May have "Crypto", "Network", "Status", "Progress"
+- Crypto exchange DEPOSITS (MEXC, Coinbase, Binance):
+  * May have "Crypto", "Network", "Status", "Progress", "Deposit Amount", "TxID", "Deposit Address"
+  * For deposits TO exchange:
+    - Origin = Network/blockchain (from "Network" column, e.g., "Ethereum(ERC20)" → "Ethereum")
+    - Destination = Exchange name (derive from filename like "MEXC_Deposits" → "MEXC Exchange")
+  * Network column often contains blockchain info like "Bitcoin(BTC)", "Tron(TRC20)", "Ethereum(ERC20)"
+  * Map "Crypto" → currency_column, "TxID" → reference_column
+  * Amounts should be POSITIVE (money coming in)
+
+- Crypto exchange WITHDRAWALS (MEXC, Coinbase, Binance):
+  * May have columns: "Status", "Withdrawal Address", "Request Amount", "Settlement Amount", "Trading Fee", "TxID", "Crypto", "Network", "UID"
+  * CRITICAL MAPPINGS for withdrawals:
+    - origin_column = NULL (will be derived from exchange name in filename)
+    - destination_column = "Withdrawal Address" (the actual blockchain wallet address where funds were sent)
+    - reference_column = "TxID" (blockchain transaction hash)
+    - currency_column = "Crypto" (e.g., USDT, BTC, TAO)
+    - network_column = "Network" (e.g., "Ethereum(ERC20)", "Tron(TRC20)", "Bittensor(TAO)")
+    - amount_column = "Settlement Amount" preferred over "Request Amount" (actual amount after fees)
+  * For withdrawals FROM exchange:
+    - Origin = Exchange name (derive from filename, e.g., "MEXC" from "MEXC_withdraws..." → "MEXC Exchange")
+    - Destination = Actual withdrawal address from "Withdrawal Address" column (preserve full address)
+  * Amounts should be NEGATIVE (money leaving = expenses)
+  * Status often contains "Withdrawal Successful" or similar
+  * special_handling should be "crypto_withdrawal"
+  * exchange_name should be extracted from filename (e.g., "MEXC" from "MEXC_withdraws_...")
+
 - Bank statements: May have "Debit"/"Credit" instead of "Amount"
 - Credit cards: May have "Transaction Date" vs "Post Date"
 - Investment accounts: May have "Symbol", "Quantity", "Price"
+
+FILENAME ANALYSIS:
+- Extract exchange name from filename patterns like "MEXC_withdraws", "Coinbase_deposits", "Binance_transactions"
+- Use filename context to determine transaction direction (deposits vs withdrawals)
+- Example: "MEXC_withdraws_sep_-_oct_2025_-_Sheet1.csv" → exchange_name = "MEXC", special_handling = "crypto_withdrawal"
 
 CREATE DESCRIPTION RULES:
 If no clear description column exists, provide rules to create one from available columns.
@@ -198,7 +235,7 @@ Example: "Combine Status + Crypto + Network" or "Use Merchant + Category"
 
 Please respond with a JSON object containing:
 {{
-    "format": "chase_checking|chase_credit|coinbase|crypto_exchange|bank_statement|investment|other",
+    "format": "chase_checking|chase_credit|coinbase|mexc_deposits|crypto_exchange|bank_statement|investment|other",
     "date_column": "exact_column_name_for_dates_or_null",
     "description_column": "exact_column_name_or_null",
     "amount_column": "exact_column_name_or_null",
@@ -207,12 +244,20 @@ Please respond with a JSON object containing:
     "reference_column": "exact_column_name_or_null",
     "balance_column": "exact_column_name_or_null",
     "account_identifier_column": "exact_column_name_for_account_card_wallet_or_null",
+    "direction_column": "exact_column_name_for_transaction_direction_or_null",
+    "direction_incoming_values": ["list", "of", "values", "meaning", "incoming"],
+    "direction_outgoing_values": ["list", "of", "values", "meaning", "outgoing"],
+    "origin_column": "exact_column_name_or_null",
+    "destination_column": "exact_column_name_or_null",
+    "network_column": "exact_column_name_for_blockchain_network_or_null",
     "has_multiple_accounts": true|false,
     "account_identifier_type": "card_number|account_number|wallet_address|portfolio_id|null",
     "description_creation_rule": "rule_for_creating_description_if_missing",
+    "origin_destination_rule": "rule_for_deriving_origin_and_destination_or_null",
+    "exchange_name": "MEXC|Coinbase|Binance|null",
     "amount_processing": "single_column|debit_credit_split|calculate_from_quantity_price",
     "date_format": "detected_date_format_pattern",
-    "special_handling": "standard|misaligned_headers|multi_currency|crypto_format|multi_account|none",
+    "special_handling": "standard|misaligned_headers|multi_currency|crypto_deposit|crypto_withdrawal|crypto_format|multi_account|none",
     "confidence": 0.95,
     "processing_method": "python_pandas|claude_extraction",
     "additional_columns": ["list_of_other_important_columns"],
@@ -296,8 +341,7 @@ Only respond with the JSON object, no other text.
 
                     print(f"✅ Cleaned CSV file, reading from temporary file")
                     df = pd.read_csv(temp_path)
-                    # Clean up temp file
-                    import os
+                    # Clean up temp file (os is already imported at module level)
                     os.unlink(temp_path)
                 else:
                     df = pd.read_csv(file_path)
@@ -388,6 +432,35 @@ Only respond with the JSON object, no other text.
                         print("⚠️  No amount column found - setting to 0")
                         standardized_df['Amount'] = 0
 
+            # 2b. APPLY TRANSACTION DIRECTION (if direction column exists)
+            direction_col = structure_info.get('direction_column')
+            if direction_col and direction_col in df.columns:
+                # Get direction value lists from Claude's analysis
+                direction_incoming = structure_info.get('direction_incoming_values', ['in', 'incoming', 'received', 'deposit', 'credit', 'credited'])
+                direction_outgoing = structure_info.get('direction_outgoing_values', ['out', 'outgoing', 'sent', 'withdrawal', 'debit', 'withdraw'])
+
+                # Normalize direction values to lowercase for comparison
+                df_direction = df[direction_col].astype(str).str.lower().str.strip()
+
+                # Determine which rows should be negative (outgoing) or positive (incoming)
+                should_be_negative = df_direction.isin([v.lower() for v in direction_outgoing])
+                should_be_positive = df_direction.isin([v.lower() for v in direction_incoming])
+
+                # Apply sign based on direction
+                # Make outgoing negative, incoming positive
+                if should_be_negative.any():
+                    standardized_df.loc[should_be_negative, 'Amount'] = -standardized_df.loc[should_be_negative, 'Amount'].abs()
+                if should_be_positive.any():
+                    standardized_df.loc[should_be_positive, 'Amount'] = standardized_df.loc[should_be_positive, 'Amount'].abs()
+
+                mapped_columns.append(direction_col)
+                print(f"💱 Applied transaction direction from: {direction_col}")
+                print(f"   Positive (Incoming): {should_be_positive.sum()} transactions")
+                print(f"   Negative (Outgoing): {should_be_negative.sum()} transactions")
+
+                # Store direction in DataFrame for reference
+                standardized_df['Direction'] = df[direction_col]
+
             # 3. MAP OR CREATE DESCRIPTION COLUMN
             desc_col = structure_info.get('description_column')
             if desc_col and desc_col in df.columns:
@@ -397,7 +470,34 @@ Only respond with the JSON object, no other text.
             else:
                 # Create description using Claude's rule
                 creation_rule = structure_info.get('description_creation_rule', '')
-                if creation_rule and 'combine' in creation_rule.lower():
+
+                # Special handler for crypto formats with specific column references
+                if 'crypto' in structure_info.get('format', '').lower() and creation_rule:
+                    desc_parts = []
+                    # Try to build description from direction, currency, and hash as suggested by Claude
+                    if direction_col and direction_col in df.columns:
+                        desc_parts.append(df[direction_col].astype(str))
+
+                    currency_col = structure_info.get('currency_column')
+                    if currency_col and currency_col in df.columns:
+                        desc_parts.append(df[currency_col].astype(str))
+
+                    reference_col = structure_info.get('reference_column')
+                    if reference_col and reference_col in df.columns:
+                        # Truncate hash to first 8 characters for readability
+                        desc_parts.append(df[reference_col].astype(str).str[:8])
+
+                    if desc_parts:
+                        combined_desc = desc_parts[0].astype(str)
+                        for series in desc_parts[1:]:
+                            combined_desc = combined_desc + ' - ' + series.astype(str)
+                        standardized_df['Description'] = combined_desc.str.replace(' - nan', '').str.replace('nan - ', '')
+                        print(f"📝 Created crypto Description from: Direction + Currency + Hash")
+                    else:
+                        standardized_df['Description'] = 'Crypto Transaction'
+                        print("📝 Default Description: Crypto Transaction")
+
+                elif creation_rule and 'combine' in creation_rule.lower():
                     # Parse the creation rule and combine columns
                     desc_parts = []
                     for col in df.columns:
@@ -409,7 +509,11 @@ Only respond with the JSON object, no other text.
                                 mapped_columns.append(col)
 
                     if desc_parts:
-                        standardized_df['Description'] = ' - '.join(desc_parts).str.replace(' - nan', '').str.replace('nan - ', '')
+                        # Concatenate Series objects horizontally with separator
+                        combined_desc = desc_parts[0].astype(str)
+                        for series in desc_parts[1:]:
+                            combined_desc = combined_desc + ' - ' + series.astype(str)
+                        standardized_df['Description'] = combined_desc.str.replace(' - nan', '').str.replace('nan - ', '')
                         print(f"📝 Created Description from: {[col for col in original_columns if col in mapped_columns and col not in [structure_info.get('date_column'), structure_info.get('amount_column')]]}")
                     else:
                         standardized_df['Description'] = 'Transaction'
@@ -441,6 +545,110 @@ Only respond with the JSON object, no other text.
                     mapped_columns.append(source_col)
                     print(f"🔗 Mapped {std_name}: {source_col}")
 
+            # 4b. MAP OR DERIVE ORIGIN/DESTINATION FOR CRYPTO EXCHANGES
+            origin_col = structure_info.get('origin_column')
+            destination_col = structure_info.get('destination_column')
+            network_col = structure_info.get('network_column')
+            exchange_name = structure_info.get('exchange_name')
+            origin_destination_rule = structure_info.get('origin_destination_rule', '')
+            special_handling = structure_info.get('special_handling', 'standard')
+
+            # Apply crypto WITHDRAWAL logic if specified
+            if 'crypto_withdrawal' in special_handling.lower():
+                # Set Origin to exchange name
+                standardized_df['Origin'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+
+                # For Destination, prioritize actual withdrawal address over network
+                if destination_col and destination_col in df.columns:
+                    # Use actual withdrawal address (wallet address)
+                    standardized_df['Destination'] = df[destination_col].astype(str)
+                    mapped_columns.append(destination_col)
+                    print(f"🔗 Mapped Destination to withdrawal address: {destination_col}")
+                elif network_col and network_col in df.columns:
+                    # Fallback to network if no specific destination address
+                    standardized_df['Destination'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip() + " Network"
+                    mapped_columns.append(network_col)
+                    print(f"🔗 Derived Destination from network: {network_col}")
+                else:
+                    # Last resort fallback
+                    standardized_df['Destination'] = 'External Wallet'
+                    print(f"🔗 Default Destination: External Wallet")
+
+                print(f"🔗 Set Origin for withdrawal: {exchange_name} Exchange")
+
+                # NEGATE AMOUNTS for withdrawals (money leaving = expense)
+                standardized_df['Amount'] = -standardized_df['Amount'].abs()
+                print(f"💰 Negated amounts for withdrawal (expenses)")
+
+            # Apply crypto DEPOSIT logic if specified
+            elif 'crypto_deposit' in special_handling.lower() or (exchange_name and 'crypto' in special_handling.lower()):
+                if network_col and network_col in df.columns:
+                    # For deposits: Origin = blockchain network, Destination = exchange
+                    standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
+                    standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+                    mapped_columns.append(network_col)
+                    print(f"🔗 Derived Origin from Network: {network_col}, Destination: {exchange_name} Exchange")
+                elif origin_col and origin_col in df.columns and destination_col and destination_col in df.columns:
+                    standardized_df['Origin'] = df[origin_col]
+                    standardized_df['Destination'] = df[destination_col]
+                    mapped_columns.extend([origin_col, destination_col])
+                    print(f"🔗 Mapped Origin/Destination: {origin_col}, {destination_col}")
+                else:
+                    # Default for exchange deposits
+                    standardized_df['Origin'] = 'Blockchain'
+                    standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+                    print(f"🔗 Default Origin/Destination for crypto deposit")
+
+            # Apply crypto WALLET logic (Ledger Live, etc.) - use Direction to determine flow
+            elif 'crypto_format' in special_handling.lower() and direction_col and direction_col in df.columns:
+                # Derive Origin/Destination from Direction column
+                direction_incoming = structure_info.get('direction_incoming_values', ['in', 'incoming', 'received'])
+                direction_outgoing = structure_info.get('direction_outgoing_values', ['out', 'outgoing', 'sent'])
+
+                # Get wallet name from filename or account column
+                wallet_name = "Crypto Wallet"
+                if 'ledger' in os.path.basename(file_path).lower():
+                    wallet_name = "Ledger Wallet"
+                elif structure_info.get('account_identifier_column'):
+                    wallet_name = "Personal Wallet"
+
+                # Set Origin/Destination based on direction
+                df_direction = df[direction_col].astype(str).str.lower().str.strip()
+
+                # Initialize with default values
+                standardized_df['Origin'] = 'Unknown'
+                standardized_df['Destination'] = 'Unknown'
+
+                # For incoming transactions: Origin = External, Destination = Wallet
+                is_incoming = df_direction.isin([v.lower() for v in direction_incoming])
+                standardized_df.loc[is_incoming, 'Origin'] = 'External Source'
+                standardized_df.loc[is_incoming, 'Destination'] = wallet_name
+
+                # For outgoing transactions: Origin = Wallet, Destination = External
+                is_outgoing = df_direction.isin([v.lower() for v in direction_outgoing])
+                standardized_df.loc[is_outgoing, 'Origin'] = wallet_name
+                standardized_df.loc[is_outgoing, 'Destination'] = 'External Destination'
+
+                print(f"🔗 Derived Origin/Destination from Direction: {is_incoming.sum()} incoming, {is_outgoing.sum()} outgoing")
+
+            else:
+                # Standard origin/destination mapping
+                if origin_col and origin_col in df.columns:
+                    standardized_df['Origin'] = df[origin_col]
+                    mapped_columns.append(origin_col)
+                    print(f"🔗 Mapped Origin: {origin_col}")
+
+                if destination_col and destination_col in df.columns:
+                    standardized_df['Destination'] = df[destination_col]
+                    mapped_columns.append(destination_col)
+                    print(f"🔗 Mapped Destination: {destination_col}")
+
+            # Preserve Network column if present
+            if network_col and network_col in df.columns and network_col not in mapped_columns:
+                standardized_df['Network'] = df[network_col]
+                mapped_columns.append(network_col)
+                print(f"🔗 Preserved Network: {network_col}")
+
             # Store multi-account metadata for downstream processing
             if structure_info.get('has_multiple_accounts'):
                 print(f"🏦 Multi-account file detected - {structure_info.get('account_identifier_type', 'unknown')} type")
@@ -460,6 +668,10 @@ Only respond with the JSON object, no other text.
             special_handling = structure_info.get('special_handling', 'standard')
             if special_handling == 'misaligned_headers':
                 print("✅ Applied misaligned header correction")
+            elif 'crypto_withdrawal' in special_handling:
+                print("✅ Applied crypto withdrawal format processing (amounts negated, Origin/Destination reversed)")
+            elif 'crypto_deposit' in special_handling:
+                print("✅ Applied crypto deposit format processing")
             elif special_handling == 'crypto_format':
                 print("✅ Applied crypto exchange format processing")
             elif special_handling == 'multi_currency':
