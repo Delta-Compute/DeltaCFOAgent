@@ -3,11 +3,15 @@
 let currentTransactions = [];
 let currentPage = 1;
 let itemsPerPage = 50;
+let perPageSize = 50;
 let totalPages = 1;
 let isLoading = false;
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
+
+    // Initialize per-page size from URL or localStorage
+    initializePerPageSize();
 
     // Load initial data
     loadTransactions();
@@ -17,6 +21,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
     console.log('🟢 Initialization complete');
 });
+
+function initializePerPageSize() {
+    // Check URL parameters first
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlPerPage = urlParams.get('per_page');
+
+    if (urlPerPage) {
+        perPageSize = parseInt(urlPerPage);
+    } else {
+        // Check localStorage as fallback
+        const savedPerPage = localStorage.getItem('perPageSize');
+        if (savedPerPage) {
+            perPageSize = parseInt(savedPerPage);
+        }
+    }
+
+    // Update active button state
+    document.querySelectorAll('.btn-per-page').forEach(btn => {
+        const btnPerPage = parseInt(btn.dataset.perPage);
+        if (btnPerPage === perPageSize) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
 
 function setupEventListeners() {
     // Column sorting
@@ -106,6 +136,31 @@ function setupEventListeners() {
         }
     });
 
+    // Per-page size selector buttons
+    document.querySelectorAll('.btn-per-page').forEach(button => {
+        button.addEventListener('click', () => {
+            const newPerPage = parseInt(button.dataset.perPage);
+            if (newPerPage !== perPageSize) {
+                perPageSize = newPerPage;
+                currentPage = 1;
+
+                // Save to localStorage
+                localStorage.setItem('perPageSize', perPageSize);
+
+                // Update URL parameters
+                updateURLParameters();
+
+                // Update active state
+                document.querySelectorAll('.btn-per-page').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                button.classList.add('active');
+
+                loadTransactions();
+            }
+        });
+    });
+
     // Modal close handlers
     document.querySelector('.close').addEventListener('click', closeModal);
     document.getElementById('suggestionsModal').addEventListener('click', (e) => {
@@ -176,9 +231,15 @@ function buildFilterQuery() {
 
     // Add pagination
     params.append('page', currentPage);
-    params.append('per_page', 50);
+    params.append('per_page', perPageSize);
 
     return params.toString();
+}
+
+function updateURLParameters() {
+    const query = buildFilterQuery();
+    const newUrl = `${window.location.pathname}?${query}`;
+    window.history.pushState({}, '', newUrl);
 }
 
 async function loadTransactions() {
@@ -210,6 +271,9 @@ async function loadTransactions() {
         renderTransactionTable(currentTransactions);
         updateTableInfo(data.pagination);
         loadDashboardStats();
+
+        // Update URL parameters to reflect current state
+        updateURLParameters();
 
     } catch (error) {
         console.error('Error loading transactions:', error);
@@ -3216,4 +3280,296 @@ async function applyAIAccountingCategory(categoryName, transactionId, fieldName)
         console.error('Error applying category:', error);
         showToast('Error applying category. Please try again.', 'error');
     }
+}
+
+// ===========================
+// Invoice Matching Functions
+// ===========================
+
+/**
+ * Main function to run invoice matching and display results in modal
+ */
+async function runInvoiceMatching() {
+    const modal = document.getElementById('invoiceMatchingModal');
+    const loadingDiv = document.getElementById('matchingLoading');
+    const summaryDiv = document.getElementById('matchingSummary');
+    const containerDiv = document.getElementById('matchesContainer');
+    const emptyDiv = document.getElementById('matchesEmpty');
+    const errorDiv = document.getElementById('matchesError');
+
+    // Show modal and loading state
+    modal.style.display = 'block';
+    loadingDiv.style.display = 'block';
+    summaryDiv.style.display = 'none';
+    containerDiv.style.display = 'none';
+    emptyDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+
+    try {
+        // Step 1: Run the matching algorithm
+        const matchResponse = await fetch('/api/revenue/run-robust-matching', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                auto_apply: false  // Don't auto-apply, let user review
+            })
+        });
+
+        const matchData = await matchResponse.json();
+
+        if (!matchData.success) {
+            throw new Error(matchData.error || 'Failed to run matching algorithm');
+        }
+
+        // Hide loading
+        loadingDiv.style.display = 'none';
+
+        // Get matches directly from the matching algorithm response
+        const allMatches = matchData.matches || [];
+
+        // Only keep the BEST match for each invoice (highest score)
+        const bestMatches = {};
+        allMatches.forEach(match => {
+            const invoiceId = match.invoice_id;
+            if (!bestMatches[invoiceId] || match.score > bestMatches[invoiceId].score) {
+                bestMatches[invoiceId] = match;
+            }
+        });
+
+        // Convert back to array and filter for medium/high confidence only
+        const matches = Object.values(bestMatches).filter(m => m.score >= 0.4);
+
+        if (matches.length === 0) {
+            emptyDiv.style.display = 'block';
+        } else {
+            // Show summary
+            document.getElementById('totalMatchesCount').textContent = matches.length;
+            summaryDiv.style.display = 'block';
+
+            // Fetch full details for matches and render table
+            await renderMatchesTableWithDetails(matches);
+            containerDiv.style.display = 'block';
+        }
+
+    } catch (error) {
+        console.error('Error running invoice matching:', error);
+        loadingDiv.style.display = 'none';
+        errorDiv.style.display = 'block';
+        document.getElementById('matchesErrorMessage').textContent = error.message;
+    }
+}
+
+/**
+ * Render matches table with invoice and transaction details (provided by backend)
+ */
+async function renderMatchesTableWithDetails(matches) {
+    const tbody = document.getElementById('matchesTableBody');
+    tbody.innerHTML = '';
+
+    // The backend now provides invoice and transaction details inline
+    matches.forEach((match, index) => {
+        const invoice = match.invoice || {};
+        const transaction = match.transaction || {};
+
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #ddd';
+
+        const matchScore = match.score || 0;
+        const confidenceColor = matchScore >= 0.8 ? '#28a745' :
+                               matchScore >= 0.6 ? '#ffc107' : '#dc3545';
+
+        row.innerHTML = `
+            <td style="padding: 12px; border: 1px solid #ddd;">
+                <div><strong>${invoice.customer_name || 'Unknown Client'}</strong></div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Invoice: ${invoice.invoice_number || 'N/A'}
+                </div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Amount: $${parseFloat(invoice.total_amount || 0).toFixed(2)} ${invoice.currency || 'USD'}
+                </div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Date: ${invoice.date ? new Date(invoice.date).toLocaleDateString() : 'N/A'}
+                </div>
+            </td>
+            <td style="padding: 12px; border: 1px solid #ddd;">
+                <div><strong>${transaction.description || 'Unknown'}</strong></div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Amount: $${Math.abs(parseFloat(transaction.amount || 0)).toFixed(2)} ${transaction.currency || 'USD'}
+                </div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Date: ${transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'}
+                </div>
+                <div style="font-size: 0.85em; color: #666;">
+                    Entity: ${transaction.classified_entity || 'N/A'}
+                </div>
+            </td>
+            <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
+                <div style="background: ${confidenceColor}; color: white; padding: 6px 12px; border-radius: 20px; display: inline-block; font-weight: bold;">
+                    ${(matchScore * 100).toFixed(0)}%
+                </div>
+                <div style="font-size: 0.75em; color: #666; margin-top: 4px;">
+                    ${match.match_type || ''}
+                </div>
+            </td>
+            <td style="padding: 12px; border: 1px solid #ddd; font-size: 0.9em;">
+                ${match.explanation || `Matched based on ${match.match_type || 'similarity'}`}
+            </td>
+            <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
+                <button class="btn-primary" style="margin: 4px; padding: 8px 16px; font-size: 0.9em;"
+                        onclick="acceptMatch('${match.invoice_id}', '${match.transaction_id}', '${(invoice.customer_name || '').replace(/'/g, "\\'")}', '${(invoice.invoice_number || '').replace(/'/g, "\\'")}')">
+                    ✓ Accept
+                </button>
+                <button class="btn-secondary" style="margin: 4px; padding: 8px 16px; font-size: 0.9em;"
+                        onclick="rejectMatch('${match.invoice_id}', '${match.transaction_id}')">
+                    ✗ Reject
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * Render the matches in the table
+ * Handles both formats: from run-robust-matching (matches array) and from matched-pairs (pairs array)
+ */
+function renderMatchesTable(matches) {
+    const tbody = document.getElementById('matchesTableBody');
+    tbody.innerHTML = '';
+
+    matches.forEach((match, index) => {
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #ddd';
+
+        // Calculate confidence badge color based on score
+        const matchScore = match.score || match.match_score || 0;
+        const confidenceColor = matchScore >= 0.8 ? '#28a745' :
+                               matchScore >= 0.6 ? '#ffc107' : '#dc3545';
+
+        // Determine if this is from run-robust-matching (has invoice_id/transaction_id directly)
+        // or from matched-pairs (has nested invoice/transaction objects)
+        const isDirectMatch = !match.invoice && !match.transaction;
+
+        row.innerHTML = `
+            <td style="padding: 12px; border: 1px solid #ddd;">
+                <div><strong>Invoice ID: ${match.invoice_id || 'N/A'}</strong></div>
+                <div style="font-size: 0.85em; color: #666; margin-top: 8px;">
+                    <em>View details in /invoices page</em>
+                </div>
+            </td>
+            <td style="padding: 12px; border: 1px solid #ddd;">
+                <div><strong>Transaction ID: ${match.transaction_id || 'N/A'}</strong></div>
+                <div style="font-size: 0.85em; color: #666; margin-top: 8px;">
+                    <em>View details in transactions table</em>
+                </div>
+            </td>
+            <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
+                <div style="background: ${confidenceColor}; color: white; padding: 6px 12px; border-radius: 20px; display: inline-block; font-weight: bold;">
+                    ${(matchScore * 100).toFixed(0)}%
+                </div>
+                <div style="font-size: 0.75em; color: #666; margin-top: 4px;">
+                    ${match.match_type || ''}
+                </div>
+                <div style="font-size: 0.75em; color: #666; margin-top: 2px;">
+                    ${match.confidence_level || ''}
+                </div>
+            </td>
+            <td style="padding: 12px; border: 1px solid #ddd; font-size: 0.9em;">
+                ${match.explanation || match.match_explanation || `Matched based on ${match.match_type || 'amount and date proximity'}`}
+            </td>
+            <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
+                <button class="btn-primary" style="margin: 4px; padding: 8px 16px; font-size: 0.9em;"
+                        onclick="acceptMatch('${match.invoice_id}', '${match.transaction_id}')">
+                    ✓ Accept
+                </button>
+                <button class="btn-secondary" style="margin: 4px; padding: 8px 16px; font-size: 0.9em;"
+                        onclick="rejectMatch('${match.invoice_id}', '${match.transaction_id}')">
+                    ✗ Reject
+                </button>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+/**
+ * Accept a match (confirm the invoice-transaction pairing)
+ */
+async function acceptMatch(invoiceId, transactionId, customerName, invoiceNumber) {
+    try {
+        const response = await fetch('/api/revenue/confirm-match', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                invoice_id: invoiceId,
+                transaction_id: transactionId,
+                customer_name: customerName,
+                invoice_number: invoiceNumber,
+                user_id: 'admin'  // TODO: Replace with actual user ID when auth is implemented
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Match accepted! Transaction reclassified as Revenue.', 'success');
+            // Re-run the matching to refresh the list
+            runInvoiceMatching();
+            // Refresh the transactions table
+            loadTransactions();
+        } else {
+            showToast('Error accepting match: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error accepting match:', error);
+        showToast('Error accepting match. Please try again.', 'error');
+    }
+}
+
+/**
+ * Reject a match (mark as incorrect pairing)
+ */
+async function rejectMatch(invoiceId, transactionId) {
+    const reason = prompt('Please provide a reason for rejecting this match (optional):');
+
+    try {
+        const response = await fetch('/api/revenue/unmatch', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                invoice_id: invoiceId,
+                reason: reason || 'User rejected match',
+                user_id: 'admin'  // TODO: Replace with actual user ID when auth is implemented
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('Match rejected successfully.', 'success');
+            // Re-run the matching to refresh the list
+            runInvoiceMatching();
+        } else {
+            showToast('Error rejecting match: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error rejecting match:', error);
+        showToast('Error rejecting match. Please try again.', 'error');
+    }
+}
+
+/**
+ * Close the invoice matching modal
+ */
+function closeInvoiceMatchingModal() {
+    const modal = document.getElementById('invoiceMatchingModal');
+    modal.style.display = 'none';
 }

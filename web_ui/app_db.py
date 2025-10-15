@@ -3951,7 +3951,8 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                     if db_manager.db_type == 'postgresql':
                         query = """
                             SELECT transaction_id, date, description, amount, currency,
-                                   classified_entity, accounting_category, confidence
+                                   classified_entity, accounting_category, confidence,
+                                   origin, destination
                             FROM transactions
                             WHERE tenant_id = %s
                               AND DATE(date) = %s
@@ -3962,7 +3963,8 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                     else:
                         query = """
                             SELECT transaction_id, date, description, amount, currency,
-                                   classified_entity, accounting_category, confidence
+                                   classified_entity, accounting_category, confidence,
+                                   origin, destination
                             FROM transactions
                             WHERE tenant_id = ?
                               AND DATE(date) = ?
@@ -3997,7 +3999,48 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                     if len(existing_matches) > 1:
                         print(f"   📋 Found {len(existing_matches)} duplicate instances in database")
 
+                    # Track if we found any TRUE duplicates (not inter-company transfers)
+                    found_true_duplicate = False
+
                     for existing in existing_matches:
+                        # INTER-COMPANY TRANSFER DETECTION
+                        # Check if this is an inter-company transfer instead of a true duplicate
+                        # Transfers have: same date, similar amount, same currency BUT opposite signs or directions
+
+                        old_origin = str(existing.get('origin', '')).strip() if existing.get('origin') else ''
+                        old_destination = str(existing.get('destination', '')).strip() if existing.get('destination') else ''
+                        new_origin = str(row.get('Origin', '')).strip()
+                        new_destination = str(row.get('Destination', '')).strip()
+
+                        old_amount = float(existing['amount'])  # Convert Decimal to float if PostgreSQL
+                        new_amount = amount
+
+                        # Check if amounts have opposite signs (one negative, one positive)
+                        # This is the primary indicator of inter-company transfer
+                        is_opposite_signs = (old_amount > 0 and new_amount < 0) or (old_amount < 0 and new_amount > 0)
+
+                        # Check if Origin/Destination indicate different flow directions
+                        # (optional secondary check for when both have Origin/Destination data)
+                        is_reversed_flow = False
+                        if old_origin and old_destination and new_origin and new_destination:
+                            # Check if the flow is reversed (A→B vs B→A or just different directions)
+                            is_reversed_flow = (
+                                (old_origin == new_destination and old_destination == new_origin) or
+                                (old_origin != new_origin and old_destination != new_destination)
+                            )
+
+                        # If either indicator suggests inter-company transfer, skip duplicate detection
+                        if is_opposite_signs or is_reversed_flow:
+                            print(f"   🔄 Row {index + 1}: Detected INTER-COMPANY TRANSFER (not duplicate)")
+                            print(f"      Existing: {old_amount:+.2f} {currency} | {old_origin or 'N/A'} → {old_destination or 'N/A'}")
+                            print(f"      New:      {new_amount:+.2f} {currency} | {new_origin or 'N/A'} → {new_destination or 'N/A'}")
+                            print(f"      Reason: {'Opposite signs' if is_opposite_signs else 'Reversed flow'}")
+                            # Skip this match - don't add to duplicates list
+                            # But we need to break out of the existing_matches loop, not continue the outer loop
+                            # This match isn't a duplicate, but we still need to check other potential matches
+                            continue
+
+                        # If we reach here, it's a TRUE DUPLICATE (same direction, same sign)
                         # Create a copy of transaction_data for each duplicate
                         dup_data = transaction_data.copy()
 
@@ -4036,8 +4079,16 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                                 'amount_diff_pct': amount_diff_pct
                             })
                         duplicates.append(dup_data)
+                        found_true_duplicate = True
+
+                    # After checking all matches, if none were TRUE duplicates (all were inter-company transfers)
+                    # then this transaction is NEW
+                    if not found_true_duplicate:
+                        print(f"   ✅ Row {index + 1}: All matches were inter-company transfers - treating as NEW transaction")
+                        transaction_data['is_duplicate'] = False
+                        new_transactions.append(transaction_data)
                 else:
-                    # It's new
+                    # No matches at all - it's new
                     transaction_data['is_duplicate'] = False
                     new_transactions.append(transaction_data)
 
@@ -4254,7 +4305,7 @@ else:
                     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
                     matcher = RobustRevenueInvoiceMatcher()
-                    matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
+                    matches_result = matcher.run_robust_matching(auto_apply=False)
 
                     if matches_result and matches_result.get('matches_found', 0) > 0:
                         print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
@@ -4333,17 +4384,37 @@ def resolve_duplicates():
 
         if action == 'overwrite':
             # OVERWRITE: Delete old duplicates and insert new enriched data
-            print(f"✅ User chose to OVERWRITE {duplicate_info['duplicate_count']} duplicates with latest business knowledge")
+            # Support selective overwrite based on user selection
+            selected_indices = data.get('selected_indices', [])
+            modifications = data.get('modifications', {})
 
             from database import db_manager
 
-            # Step 1: Delete existing duplicate transactions
-            duplicate_ids = [dup['existing_id'] for dup in duplicate_info.get('duplicates', [])]
+            # Step 1: Determine which duplicates to delete
+            duplicate_ids = []
+            if selected_indices:
+                # User selected specific transactions - only delete those
+                print(f"✅ User chose to OVERWRITE {len(selected_indices)} selected duplicates")
+                all_duplicates = duplicate_info.get('duplicates', [])
+                for idx in selected_indices:
+                    if 0 <= idx < len(all_duplicates):
+                        duplicate_ids.append(all_duplicates[idx]['existing_id'])
+            else:
+                # No selection provided - overwrite ALL duplicates (legacy behavior)
+                print(f"✅ User chose to OVERWRITE ALL {duplicate_info['duplicate_count']} duplicates with latest business knowledge")
+                duplicate_ids = [dup['existing_id'] for dup in duplicate_info.get('duplicates', [])]
+
             if duplicate_ids:
-                # Get ALL duplicate IDs, not just the preview
+                # Get ALL duplicate IDs for selected transactions
                 # Re-run the check to get all IDs with include_all_duplicates=True
                 full_check = check_processed_file_duplicates(pending['filepath'], filename, include_all_duplicates=True)
-                all_duplicate_ids = [dup['existing_id'] for dup in full_check.get('duplicates', [])]
+                all_duplicates_full = full_check.get('duplicates', [])
+
+                # Filter to only selected IDs if user made a selection
+                if selected_indices:
+                    all_duplicate_ids = duplicate_ids  # Use only selected IDs
+                else:
+                    all_duplicate_ids = [dup['existing_id'] for dup in all_duplicates_full]
 
                 # Deduplicate the ID list (in case same transaction matched multiple times)
                 original_count = len(all_duplicate_ids)
@@ -4371,6 +4442,72 @@ def resolve_duplicates():
                         conn.commit()
                         print(f"✅ Deleted {cursor.rowcount} duplicate transactions")
 
+            # Step 1.5: Apply entity modifications to the CSV file before syncing (if any)
+            if modifications:
+                print(f"📝 Applying {len(modifications)} entity modifications to CSV before syncing...")
+                try:
+                    import pandas as pd
+                    import csv
+
+                    # Read the processed CSV file
+                    csv_path = pending.get('processed_file')
+                    if csv_path and os.path.exists(csv_path):
+                        df = pd.read_csv(csv_path)
+
+                        # Apply modifications to matching rows
+                        modifications_applied = 0
+                        for txn_id, mods in modifications.items():
+                            # Find rows matching this transaction (by multiple fields since we don't have ID yet)
+                            # We need to match by the duplicate detection criteria
+                            if 'entity' in mods:
+                                new_entity = mods['entity']
+                                # Update all matching rows in the DataFrame
+                                # Note: This is a best-effort update based on the data we have
+                                # The modifications dict should contain the row indices from the frontend
+                                print(f"   Updating transaction ID {txn_id} -> Entity: {new_entity}")
+                                modifications_applied += 1
+
+                        # For now, we'll apply modifications based on row indices instead
+                        # The frontend sends modifications keyed by existing_id, but for new uploads
+                        # we should match by row index in the duplicates list
+
+                        # Actually, let's use a different approach: match modifications to new rows
+                        # by using the duplicate_info to map indices to new transaction data
+                        if 'duplicates' in duplicate_info:
+                            for idx in selected_indices:
+                                if 0 <= idx < len(duplicate_info['duplicates']):
+                                    dup = duplicate_info['duplicates'][idx]
+                                    # Find the corresponding row in the CSV by matching key fields
+                                    mask = (
+                                        (df['Date'].astype(str) == str(dup.get('date', ''))) &
+                                        (df['Amount'].astype(float).round(2) == float(dup.get('new_amount', 0))) &
+                                        (df['Currency'] == dup.get('currency', ''))
+                                    )
+
+                                    # Apply entity modification if this duplicate has one
+                                    existing_id = dup.get('existing_id')
+                                    if existing_id in modifications and 'entity' in modifications[existing_id]:
+                                        new_entity = modifications[existing_id]['entity']
+                                        matched_count = mask.sum()
+                                        if matched_count > 0:
+                                            df.loc[mask, 'Classified Entity'] = new_entity
+                                            print(f"   ✅ Updated {matched_count} row(s) at index {idx} -> Entity: {new_entity}")
+                                            modifications_applied += 1
+
+                        # Write modified DataFrame back to CSV
+                        if modifications_applied > 0:
+                            df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
+                            print(f"✅ Applied {modifications_applied} entity modifications to CSV file")
+                        else:
+                            print(f"⚠️ No modifications were applied (no matching rows found)")
+                    else:
+                        print(f"⚠️ Could not find processed CSV file at: {csv_path}")
+
+                except Exception as e:
+                    print(f"⚠️ Error applying modifications to CSV: {e}")
+                    import traceback
+                    traceback.print_exc()
+
             # Step 2: Sync the new processed file to database
             print(f"📥 Syncing new enriched transactions to database...")
             sync_result = sync_csv_to_database(filename)
@@ -4383,7 +4520,7 @@ def resolve_duplicates():
                 try:
                     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
                     matcher = RobustRevenueInvoiceMatcher()
-                    matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
+                    matches_result = matcher.run_robust_matching(auto_apply=False)
                     if matches_result and matches_result.get('matches_found', 0) > 0:
                         print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches!")
                 except Exception as e:
@@ -6630,62 +6767,54 @@ def api_confirm_match():
     """
     Confirma um match pendente
     Body: {
-        "match_id": int,
+        "invoice_id": str,
+        "transaction_id": str,
+        "customer_name": str (opcional),
+        "invoice_number": str (opcional),
         "user_id": "string" (opcional)
     }
     """
     try:
         from database import db_manager
         data = request.get_json()
-        match_id = data.get('match_id')
+        invoice_id = data.get('invoice_id')
+        transaction_id = data.get('transaction_id')
+        customer_name = data.get('customer_name', '')
+        invoice_number = data.get('invoice_number', '')
         user_id = data.get('user_id', 'Unknown')
 
-        if not match_id:
-            return jsonify({'success': False, 'error': 'match_id is required'}), 400
+        if not invoice_id or not transaction_id:
+            return jsonify({'success': False, 'error': 'invoice_id and transaction_id are required'}), 400
 
-        # Get match details
-        query = """
-            SELECT invoice_id, transaction_id, score, match_type
-            FROM pending_invoice_matches
-            WHERE id = %s AND status = 'pending'
-        """
-        match = db_manager.execute_query(query, (match_id,), fetch_one=True)
+        # Build the justification field
+        justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
 
-        if not match:
-            return jsonify({'success': False, 'error': 'Match not found or already processed'}), 404
+        # Get database connection using context manager
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholder = '%s' if db_manager.db_type == 'postgresql' else '?'
 
-        # Apply the match
-        update_invoice_query = """
-            UPDATE invoices
-            SET linked_transaction_id = %s,
-                status = 'paid'
-            WHERE id = %s
-        """
-        db_manager.execute_query(update_invoice_query, (match['transaction_id'], match['invoice_id']))
+            # Update the transaction with accounting category and justification
+            update_transaction_query = f"""
+                UPDATE transactions
+                SET accounting_category = 'REVENUE',
+                    justification = {placeholder}
+                WHERE id = {placeholder}
+            """
+            cursor.execute(update_transaction_query, (justification, transaction_id))
 
-        # Mark match as confirmed
-        confirm_query = """
-            UPDATE pending_invoice_matches
-            SET status = 'confirmed',
-                reviewed_by = %s,
-                reviewed_at = CURRENT_TIMESTAMP
-            WHERE id = %s
-        """
-        db_manager.execute_query(confirm_query, (user_id, match_id))
+            # Update the invoice to link it to the transaction
+            update_invoice_query = f"""
+                UPDATE invoices
+                SET linked_transaction_id = {placeholder},
+                    status = 'paid'
+                WHERE id = {placeholder}
+            """
+            cursor.execute(update_invoice_query, (transaction_id, invoice_id))
 
-        # Log the action
-        log_query = """
-            INSERT INTO invoice_match_log
-            (invoice_id, transaction_id, action, score, match_type, user_id, created_at)
-            VALUES (%s, %s, 'MANUAL_CONFIRMED', %s, %s, %s, CURRENT_TIMESTAMP)
-        """
-        db_manager.execute_query(log_query, (
-            match['invoice_id'],
-            match['transaction_id'],
-            match['score'],
-            match['match_type'],
-            user_id
-        ))
+            # Commit the changes
+            conn.commit()
+            cursor.close()
 
         return jsonify({
             'success': True,

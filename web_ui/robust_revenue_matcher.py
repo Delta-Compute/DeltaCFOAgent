@@ -220,8 +220,8 @@ class RobustRevenueInvoiceMatcher:
             SELECT transaction_id, date, description, amount, currency,
                    classified_entity, origin, destination, source_file
             FROM transactions
-            WHERE date >= ? AND amount > 0
-            ORDER BY date DESC, amount DESC
+            WHERE date >= ? AND amount != 0
+            ORDER BY date DESC, ABS(amount) DESC
         """
 
         if db_manager.db_type == 'postgresql':
@@ -517,7 +517,8 @@ class RobustRevenueInvoiceMatcher:
         """Calcula score de matching por valor"""
         try:
             invoice_amount = float(invoice['total_amount'])
-            transaction_amount = float(transaction['amount'])
+            # Use absolute value for transaction amount (handle both positive and negative)
+            transaction_amount = abs(float(transaction['amount']))
 
             if abs(invoice_amount - transaction_amount) < 0.01:
                 return 1.0
@@ -839,11 +840,89 @@ class RobustRevenueInvoiceMatcher:
         for i in range(0, len(lst), chunk_size):
             yield lst[i:i + chunk_size]
 
+    def _enrich_matches_with_details(self, matches: List[MatchResult]) -> List[Dict[str, Any]]:
+        """Enrich matches with full invoice and transaction details"""
+        if not matches:
+            return []
+
+        enriched_matches = []
+
+        # Get all unique invoice and transaction IDs
+        invoice_ids = list(set(m.invoice_id for m in matches))
+        transaction_ids = list(set(m.transaction_id for m in matches))
+
+        # Fetch invoices in batch
+        invoice_map = {}
+        if invoice_ids:
+            placeholders = ', '.join(['?' if db_manager.db_type == 'sqlite' else '%s'] * len(invoice_ids))
+            invoice_query = f"""
+                SELECT id, invoice_number, date, customer_name, total_amount, currency, business_unit
+                FROM invoices
+                WHERE id IN ({placeholders})
+            """
+            try:
+                invoices = db_manager.execute_with_retry(invoice_query, tuple(invoice_ids), fetch_all=True)
+                for inv in invoices:
+                    invoice_map[inv['id']] = inv
+            except Exception as e:
+                logger.error(f"Error fetching invoice details: {e}")
+
+        # Fetch transactions in batch
+        transaction_map = {}
+        if transaction_ids:
+            placeholders = ', '.join(['?' if db_manager.db_type == 'sqlite' else '%s'] * len(transaction_ids))
+            transaction_query = f"""
+                SELECT transaction_id, date, description, amount, currency, classified_entity
+                FROM transactions
+                WHERE transaction_id IN ({placeholders})
+            """
+            try:
+                transactions = db_manager.execute_with_retry(transaction_query, tuple(transaction_ids), fetch_all=True)
+                for trans in transactions:
+                    transaction_map[trans['transaction_id']] = trans
+            except Exception as e:
+                logger.error(f"Error fetching transaction details: {e}")
+
+        # Build enriched match objects
+        for match in matches:
+            invoice = invoice_map.get(match.invoice_id, {})
+            transaction = transaction_map.get(match.transaction_id, {})
+
+            enriched_matches.append({
+                'invoice_id': match.invoice_id,
+                'transaction_id': match.transaction_id,
+                'score': round(match.score, 3),
+                'match_type': match.match_type,
+                'confidence_level': match.confidence_level,
+                'explanation': match.explanation,
+                'auto_match': match.auto_match,
+                'invoice': {
+                    'invoice_number': invoice.get('invoice_number', 'Unknown'),
+                    'customer_name': invoice.get('customer_name', 'N/A'),
+                    'total_amount': float(invoice.get('total_amount', 0)),
+                    'date': str(invoice.get('date', 'N/A')),
+                    'currency': invoice.get('currency', 'USD'),
+                    'business_unit': invoice.get('business_unit', 'N/A')
+                },
+                'transaction': {
+                    'description': transaction.get('description', 'Unknown'),
+                    'amount': abs(float(transaction.get('amount', 0))),
+                    'date': str(transaction.get('date', 'N/A')),
+                    'currency': transaction.get('currency', 'USD'),
+                    'classified_entity': transaction.get('classified_entity', 'N/A')
+                }
+            })
+
+        return enriched_matches
+
     def _build_result_dict(self, stats: MatchingStats, matches: List[MatchResult],
                           start_time: datetime) -> Dict[str, Any]:
         """Constrói dicionário de resultado final"""
         end_time = datetime.now()
         stats.processing_time_seconds = (end_time - start_time).total_seconds()
+
+        # Fetch invoice and transaction details for all matches
+        match_details = self._enrich_matches_with_details(matches)
 
         return {
             'success': True,
@@ -859,18 +938,7 @@ class RobustRevenueInvoiceMatcher:
                 'errors_count': stats.errors_count,
                 'batch_stats': stats.batch_stats
             },
-            'matches': [
-                {
-                    'invoice_id': m.invoice_id,
-                    'transaction_id': m.transaction_id,
-                    'score': round(m.score, 3),
-                    'match_type': m.match_type,
-                    'confidence_level': m.confidence_level,
-                    'explanation': m.explanation,
-                    'auto_match': m.auto_match
-                }
-                for m in matches
-            ]
+            'matches': match_details
         }
 
     def _build_error_result(self, stats: MatchingStats, error_message: str,
