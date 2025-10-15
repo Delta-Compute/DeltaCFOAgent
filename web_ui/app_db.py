@@ -2785,6 +2785,264 @@ def api_unarchive_transactions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ===================================================================
+# WALLET ADDRESS MANAGEMENT API ENDPOINTS
+# ===================================================================
+
+@app.route('/api/wallets', methods=['GET'])
+def api_get_wallets():
+    """Get all wallet addresses for the current tenant"""
+    try:
+        from database import db_manager
+
+        # Hardcoded tenant for now (Delta)
+        tenant_id = 'delta'
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            query = """
+                SELECT id, wallet_address, entity_name, purpose, wallet_type,
+                       confidence_score, is_active, notes, created_at, updated_at
+                FROM wallet_addresses
+                WHERE tenant_id = %s AND is_active = TRUE
+                ORDER BY created_at DESC
+            """
+
+            cursor.execute(query, (tenant_id,))
+
+            wallets = []
+            for row in cursor.fetchall():
+                wallets.append({
+                    'id': str(row[0]),
+                    'wallet_address': row[1],
+                    'entity_name': row[2],
+                    'purpose': row[3],
+                    'wallet_type': row[4],
+                    'confidence_score': float(row[5]) if row[5] else 0.9,
+                    'is_active': row[6],
+                    'notes': row[7],
+                    'created_at': row[8].isoformat() if row[8] else None,
+                    'updated_at': row[9].isoformat() if row[9] else None
+                })
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'wallets': wallets,
+            'count': len(wallets)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching wallets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallets', methods=['POST'])
+def api_add_wallet():
+    """Add a new wallet address"""
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        wallet_address = data.get('wallet_address', '').strip()
+        entity_name = data.get('entity_name', '').strip()
+
+        if not wallet_address:
+            return jsonify({'error': 'wallet_address is required'}), 400
+        if not entity_name:
+            return jsonify({'error': 'entity_name is required'}), 400
+
+        # Optional fields
+        purpose = data.get('purpose', '').strip()
+        wallet_type = data.get('wallet_type', 'internal').strip()
+        confidence_score = float(data.get('confidence_score', 0.9))
+        notes = data.get('notes', '').strip()
+        created_by = data.get('created_by', 'user').strip()
+
+        # Hardcoded tenant for now (Delta)
+        tenant_id = 'delta'
+
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Check for duplicate wallet address
+            check_query = """
+                SELECT id FROM wallet_addresses
+                WHERE tenant_id = %s AND wallet_address = %s
+            """
+            cursor.execute(check_query, (tenant_id, wallet_address))
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.close()
+                return jsonify({'error': 'Wallet address already exists'}), 409
+
+            # Insert new wallet
+            insert_query = """
+                INSERT INTO wallet_addresses (
+                    tenant_id, wallet_address, entity_name, purpose,
+                    wallet_type, confidence_score, notes, created_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+            """
+
+            cursor.execute(insert_query, (
+                tenant_id, wallet_address, entity_name, purpose,
+                wallet_type, confidence_score, notes, created_by
+            ))
+
+            result = cursor.fetchone()
+            wallet_id = str(result[0])
+            created_at = result[1].isoformat() if result[1] else None
+
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Wallet address added successfully',
+            'wallet': {
+                'id': wallet_id,
+                'wallet_address': wallet_address,
+                'entity_name': entity_name,
+                'purpose': purpose,
+                'wallet_type': wallet_type,
+                'confidence_score': confidence_score,
+                'notes': notes,
+                'created_at': created_at
+            }
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error adding wallet: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallets/<wallet_id>', methods=['PUT'])
+def api_update_wallet(wallet_id):
+    """Update an existing wallet address"""
+    try:
+        data = request.get_json()
+
+        # Build update fields dynamically
+        update_fields = []
+        params = []
+
+        if 'entity_name' in data:
+            update_fields.append("entity_name = %s")
+            params.append(data['entity_name'].strip())
+
+        if 'purpose' in data:
+            update_fields.append("purpose = %s")
+            params.append(data['purpose'].strip())
+
+        if 'wallet_type' in data:
+            update_fields.append("wallet_type = %s")
+            params.append(data['wallet_type'].strip())
+
+        if 'confidence_score' in data:
+            update_fields.append("confidence_score = %s")
+            params.append(float(data['confidence_score']))
+
+        if 'notes' in data:
+            update_fields.append("notes = %s")
+            params.append(data['notes'].strip())
+
+        if 'is_active' in data:
+            update_fields.append("is_active = %s")
+            params.append(bool(data['is_active']))
+
+        if not update_fields:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        params.append(wallet_id)
+
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            update_query = f"""
+                UPDATE wallet_addresses
+                SET {', '.join(update_fields)}
+                WHERE id = %s
+                RETURNING wallet_address, entity_name, purpose, wallet_type,
+                          confidence_score, notes, is_active, updated_at
+            """
+
+            cursor.execute(update_query, params)
+            result = cursor.fetchone()
+
+            if not result:
+                cursor.close()
+                return jsonify({'error': 'Wallet not found'}), 404
+
+            conn.commit()
+
+            wallet = {
+                'id': wallet_id,
+                'wallet_address': result[0],
+                'entity_name': result[1],
+                'purpose': result[2],
+                'wallet_type': result[3],
+                'confidence_score': float(result[4]) if result[4] else 0.9,
+                'notes': result[5],
+                'is_active': result[6],
+                'updated_at': result[7].isoformat() if result[7] else None
+            }
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Wallet updated successfully',
+            'wallet': wallet
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating wallet: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallets/<wallet_id>', methods=['DELETE'])
+def api_delete_wallet(wallet_id):
+    """Soft delete a wallet address (set is_active = FALSE)"""
+    try:
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            delete_query = """
+                UPDATE wallet_addresses
+                SET is_active = FALSE
+                WHERE id = %s
+                RETURNING wallet_address
+            """
+
+            cursor.execute(delete_query, (wallet_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                cursor.close()
+                return jsonify({'error': 'Wallet not found'}), 404
+
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Wallet {result[0]} deactivated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting wallet: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/suggestions')
 def api_suggestions():
     """API endpoint to get AI-powered field suggestions"""
