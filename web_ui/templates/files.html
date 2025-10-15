@@ -65,18 +65,67 @@
                         <table>
                             <thead>
                                 <tr>
+                                    <th>Account/Card</th>
                                     <th>File Name</th>
-                                    <th>Size</th>
-                                    <th>Modified</th>
+                                    <th>Statement Period</th>
+                                    <th>Transactions</th>
+                                    <th>Status</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for file in files %}
                                 <tr>
-                                    <td>{{ file.name }}</td>
-                                    <td>{{ "%.1f"|format(file.size / 1024) }} KB</td>
-                                    <td>{{ file.modified }}</td>
+                                    <td>
+                                        <div style="display: flex; flex-direction: column;">
+                                            <span style="font-weight: 600; color: #2d3748;">
+                                                {% if file.account_number %}
+                                                    ...{{ file.account_number }}
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </span>
+                                            <span style="font-size: 0.75rem; color: #718096;">
+                                                {{ file.account_type }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div style="font-size: 0.875rem; color: #4a5568;">
+                                            {{ file.name }}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
+                                            {% if file.file_date_range %}
+                                                <span style="color: #667eea; font-weight: 500;">{{ file.file_date_range }}</span>
+                                            {% else %}
+                                                <span style="color: #718096;">{{ file.earliest_date }} to {{ file.latest_date }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
+                                            <span style="font-weight: 600; color: #2d3748;">
+                                                {{ file.total_transactions }} total
+                                            </span>
+                                            <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                                                <span style="color: #38a169;">{{ file.active_transactions }} active</span>
+                                                {% if file.archived_transactions > 0 %}
+                                                <span style="color: #e53e3e;">{{ file.archived_transactions }} archived</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if file.archived_transactions == file.total_transactions %}
+                                            <span class="status-badge status-archived">All Archived</span>
+                                        {% elif file.archived_transactions > 0 %}
+                                            <span class="status-badge status-partial">Partially Archived</span>
+                                        {% else %}
+                                            <span class="status-badge status-active">Active</span>
+                                        {% endif %}
+                                    </td>
                                     <td>
                                         <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')">
                                             View
@@ -457,6 +506,49 @@
             gap: 1rem;
             justify-content: flex-end;
             margin-top: 2rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .status-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-partial {
+            background: #fefcbf;
+            color: #744210;
+        }
+
+        .status-archived {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        table th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: #4a5568;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        table tr:hover {
+            background: #f7fafc;
         }
     </style>
 </body>

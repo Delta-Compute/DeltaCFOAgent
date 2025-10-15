@@ -49,10 +49,12 @@ class CryptoPricingDB:
         }
 
         if symbol not in binance_symbols or binance_symbols[symbol] is None:
-            print(f"⚠️ {symbol} not available on Binance, using fallback price")
-            # Insert fallback prices for stablecoins
+            # Only insert stable prices for actual stablecoins (USDC, USDT)
             if symbol in ['USDC', 'USDT']:
+                print(f"💵 {symbol} is a stablecoin, inserting fixed $1.00 prices")
                 self.insert_stable_prices(symbol, start_date, end_date, 1.0)
+            else:
+                print(f"❌ {symbol} not available on Binance and not a stablecoin - no price data available")
             return
 
         binance_symbol = binance_symbols[symbol]
@@ -174,19 +176,10 @@ class CryptoPricingDB:
 
         conn.close()
 
-        # Fallback to current approximate prices if no historic data
-        fallback_prices = {
-            'BTC': 45000.0,
-            'TAO': 250.0,
-            'ETH': 2500.0,
-            'BNB': 400.0,
-            'USDC': 1.0,
-            'USDT': 1.0,
-            'USD': 1.0
-        }
-
-        print(f"⚠️ No historic price found for {symbol} on {date_str}, using fallback: ${fallback_prices.get(symbol, 1.0)}")
-        return fallback_prices.get(symbol, 1.0)
+        # No price data available - return None to signal missing data
+        print(f"❌ No historic price found for {symbol} on {date_str} (checked ±7 days)")
+        print(f"💡 Run 'python crypto_pricing.py' to populate historical price data from Binance")
+        return None
 
     def populate_all_prices(self, start_date='2024-01-01'):
         """Populate all supported crypto prices from Binance"""

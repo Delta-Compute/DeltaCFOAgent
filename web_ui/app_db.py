@@ -126,7 +126,9 @@ def init_currency_converter():
 def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -276,6 +278,8 @@ def init_invoice_tables():
             conn.commit()
             print("Invoice tables initialized successfully")
             return True
+        finally:
+            conn.close()
     except Exception as e:
         print(f"ERROR: Failed to initialize invoice tables: {e}")
         return False
@@ -297,7 +301,9 @@ def init_database():
 def ensure_background_jobs_tables():
     """Ensure background jobs tables exist with correct schema"""
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -377,6 +383,8 @@ def ensure_background_jobs_tables():
             conn.commit()
             print("[OK] Background jobs tables ensured")
             return True
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to ensure background jobs tables: {e}")
@@ -394,7 +402,9 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
     created_at = datetime.utcnow().isoformat()
 
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -411,6 +421,8 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
             conn.commit()
             print(f"[OK] Created background job {job_id} with {total_items} items")
             return job_id
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to create background job: {e}")
@@ -422,7 +434,9 @@ def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
     created_at = datetime.utcnow().isoformat()
 
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -440,6 +454,8 @@ def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
 
             conn.commit()
             return item_id
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to add job item: {e}")
@@ -450,7 +466,9 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
     """Update job progress and status"""
 
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -498,6 +516,8 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
                 cursor.execute(update_query, values)
 
             conn.commit()
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to update job progress: {e}")
@@ -507,7 +527,9 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
     """Update individual job item status"""
 
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -522,6 +544,8 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
             """, (status, processed_at, error_message, result_data, processing_time, job_id, item_name))
 
             conn.commit()
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to update job item status: {e}")
@@ -529,7 +553,9 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
 def get_job_status(job_id: str) -> dict:
     """Get complete job status with items"""
     try:
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -549,6 +575,8 @@ def get_job_status(job_id: str) -> dict:
             job_info['items'] = [dict(row) for row in items_rows]
 
             return job_info
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to get job status: {e}")
@@ -864,63 +892,139 @@ def get_dashboard_stats():
 def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user') -> bool:
     """Update a single field in a transaction with history tracking"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
 
-            # Detect database type for compatible syntax
-            is_postgresql = hasattr(cursor, 'mogrify')
-            placeholder = '%s' if is_postgresql else '?'
+        # Detect database type for compatible syntax
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
-            # Get current value for history
+        # Get current value for history
+        cursor.execute(
+            f"SELECT * FROM transactions WHERE transaction_id = {placeholder}",
+            (transaction_id,)
+        )
+        current_row = cursor.fetchone()
+
+        if not current_row:
+            conn.close()
+            return (False, None)
+
+        # Convert tuple to dict for PostgreSQL - must match column order from cursor.description
+        current_dict = {
+            'transaction_id': current_row[0],
+            'date': current_row[1],
+            'description': current_row[2],
+            'amount': current_row[3],
+            'currency': current_row[4],
+            'usd_equivalent': current_row[5],
+            'classified_entity': current_row[6],
+            'justification': current_row[7],
+            'confidence': current_row[8],
+            'classification_reason': current_row[9],
+            'origin': current_row[10],
+            'destination': current_row[11],
+            'identifier': current_row[12],
+            'source_file': current_row[13],
+            'crypto_amount': current_row[14],
+            'conversion_note': current_row[15],
+            'accounting_category': current_row[16],
+            'archived': current_row[17],
+            'confidence_history': current_row[18],
+            'ai_reassessment_count': current_row[19],
+            'last_ai_review': current_row[20],
+            'user_feedback_count': current_row[21],
+            'ai_suggestions': current_row[22],
+            'subcategory': current_row[23]
+        }
+        current_value = current_dict.get(field) if field in current_dict else None
+
+        # Update the field
+        update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
+        cursor.execute(update_query, (value, transaction_id))
+
+        # If user is manually updating a classification field, boost confidence to indicate manual verification
+        classification_fields = ['classified_entity', 'accounting_category', 'subcategory', 'justification', 'description']
+        updated_confidence = None
+        if field in classification_fields:
+            # Check if ALL critical fields are now filled to determine confidence level
+            # Critical fields: classified_entity, accounting_category, subcategory, justification
             cursor.execute(
-                f"SELECT * FROM transactions WHERE transaction_id = {placeholder}",
+                f"SELECT classified_entity, accounting_category, subcategory, justification FROM transactions WHERE transaction_id = {placeholder}",
                 (transaction_id,)
             )
-            current_row = cursor.fetchone()
+            check_row = cursor.fetchone()
 
-            if not current_row:
-                return False
+            if check_row:
+                # Convert to dict for easier access (PostgreSQL returns dict-like objects)
+                if is_postgresql:
+                    entity = check_row[0]
+                    acc_cat = check_row[1]
+                    subcat = check_row[2]
+                    justif = check_row[3]
+                else:
+                    entity = check_row[0]
+                    acc_cat = check_row[1]
+                    subcat = check_row[2]
+                    justif = check_row[3]
 
-            # Handle both RealDictCursor (PostgreSQL) and Row (SQLite)
-            current_dict = dict(current_row) if current_row else {}
-            current_value = current_dict.get(field) if field in current_dict else None
+                # Check if all critical fields are properly filled (not NULL, empty, or 'N/A')
+                all_filled = all([
+                    entity and entity not in ['', 'N/A', 'Unknown'],
+                    acc_cat and acc_cat not in ['', 'N/A', 'Unknown'],
+                    subcat and subcat not in ['', 'N/A', 'Unknown'],
+                    justif and justif not in ['', 'N/A', 'Unknown', 'Unknown expense']
+                ])
 
-            # Update the field
-            update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE transaction_id = {placeholder}"
-            cursor.execute(update_query, (value, transaction_id))
+                # Set confidence to 0.95 if all fields filled, otherwise 0.75 for partial completion
+                updated_confidence = 0.95 if all_filled else 0.75
+                confidence_update_query = f"UPDATE transactions SET confidence = {placeholder} WHERE transaction_id = {placeholder}"
+                cursor.execute(confidence_update_query, (updated_confidence, transaction_id))
 
-            # CRITICAL: Commit the UPDATE immediately to ensure it persists
-            # In PostgreSQL, if a later query fails, it can rollback the entire transaction
+                if all_filled:
+                    print(f"CONFIDENCE: Boosted confidence to 0.95 for transaction {transaction_id} - ALL critical fields filled by manual {field} edit")
+                else:
+                    print(f"CONFIDENCE: Set confidence to 0.75 for transaction {transaction_id} - partial completion by manual {field} edit")
+
+        # CRITICAL: Commit the UPDATE immediately to ensure it persists
+        # In PostgreSQL, if a later query fails, it can rollback the entire transaction
+        conn.commit()
+
+        print(f"UPDATING: Updated transaction {transaction_id}: field={field}, value={value}")
+
+        # Record change in history (only if table exists)
+        # This is done in a separate transaction so failures don't affect the main update
+        try:
+            # The transaction_history table uses old_values/new_values as JSONB
+            old_values_json = {field: current_value} if current_value is not None else {}
+            new_values_json = {field: value}
+
+            cursor.execute(f"""
+                INSERT INTO transaction_history (transaction_id, old_values, new_values, changed_by)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (transaction_id, json.dumps(old_values_json), json.dumps(new_values_json), user))
             conn.commit()
-
-            print(f"UPDATING: Updated transaction {transaction_id}: field={field}, value={value}")
-
-            # Record change in history (only if table exists)
-            # This is done in a separate transaction so failures don't affect the main update
+        except Exception as history_error:
+            print(f"INFO: Could not record history: {history_error}")
+            # Rollback only affects the history insert, main update already committed
             try:
-                # The transaction_history table uses old_values/new_values as JSONB
-                old_values_json = {field: current_value} if current_value is not None else {}
-                new_values_json = {field: value}
+                conn.rollback()
+            except:
+                pass
 
-                cursor.execute(f"""
-                    INSERT INTO transaction_history (transaction_id, old_values, new_values, changed_by)
-                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-                """, (transaction_id, json.dumps(old_values_json), json.dumps(new_values_json), user))
-                conn.commit()
-            except Exception as history_error:
-                print(f"INFO: Could not record history: {history_error}")
-                # Rollback only affects the history insert, main update already committed
-                try:
-                    conn.rollback()
-                except:
-                    pass
-
-            return True
+        # Close connection and return success with updated confidence
+        conn.close()
+        return (True, updated_confidence)
 
     except Exception as e:
         print(f"ERROR: Error updating transaction field: {e}")
         print(f"ERROR TRACEBACK: {traceback.format_exc()}")
-        return False
+        try:
+            conn.close()
+        except:
+            pass
+        return (False, None)
 
 def extract_entity_patterns_with_llm(transaction_id: str, entity_name: str, description: str, claude_client) -> Dict:
     """
@@ -979,17 +1083,19 @@ Return only the JSON object, no additional text.
         pattern_data = json.loads(response_text)
 
         # Store patterns in database
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            is_postgresql = hasattr(cursor, 'mogrify')
-            placeholder = '%s' if is_postgresql else '?'
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
 
-            cursor.execute(f"""
-                INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
-                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-            """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
+        cursor.execute(f"""
+            INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
 
-            conn.commit()
+        conn.commit()
+        conn.close()
 
         print(f"SUCCESS: Stored entity patterns for {entity_name}: {pattern_data}")
         return pattern_data
@@ -1016,7 +1122,9 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         if not transaction_id or not new_value:
             return []
 
-        with get_db_connection() as conn:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -1052,7 +1160,8 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 pattern_conditions = []
                 params = []  # Initialize params list for SQL query
                 try:
-                    pattern_conn = get_db_connection()
+                    from database import db_manager
+                    pattern_conn = db_manager._get_postgresql_connection()
                     pattern_cursor = pattern_conn.cursor()
                     pattern_placeholder_temp = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
 
@@ -1111,12 +1220,21 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                         SELECT transaction_id, date, description, confidence, classified_entity, amount
                         FROM transactions
                         WHERE transaction_id != {placeholder}
-                        AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
+                        AND (
+                            classified_entity = 'NEEDS REVIEW'
+                            OR classified_entity = 'Unclassified Expense'
+                            OR classified_entity = 'Unclassified Revenue'
+                            OR classified_entity IS NULL
+                            OR (classified_entity IS NOT NULL AND classified_entity != {placeholder})
+                        )
                         AND ({pattern_filter})
                         LIMIT 30
                     """
-                    params = [transaction_id] + params
+                    params = [transaction_id, new_value] + params
                     print(f"DEBUG: Using pattern-based pre-filtering with {len(pattern_conditions)} conditions")
+                    print(f"DEBUG: Pattern filter clause: {pattern_filter}")
+                    print(f"DEBUG: Complete SQL query: {base_query}")
+                    print(f"DEBUG: Query parameters: {params}")
                 else:
                     # No patterns learned yet - use basic similarity based on current transaction description
                     print(f"DEBUG: No patterns found, using description-based filtering as fallback")
@@ -1134,21 +1252,33 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                             SELECT transaction_id, date, description, confidence, classified_entity, amount
                             FROM transactions
                             WHERE transaction_id != {placeholder}
-                            AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
+                            AND (
+                                classified_entity = 'NEEDS REVIEW'
+                                OR classified_entity = 'Unclassified Expense'
+                                OR classified_entity = 'Unclassified Revenue'
+                                OR classified_entity IS NULL
+                                OR (classified_entity IS NOT NULL AND classified_entity != {placeholder})
+                            )
                             AND ({desc_filter})
                             LIMIT 30
                         """
-                        params = [transaction_id] + params
+                        params = [transaction_id, new_value] + params
                     else:
                         # Ultimate fallback - just grab unclassified transactions
                         base_query = f"""
                             SELECT transaction_id, date, description, confidence, classified_entity, amount
                             FROM transactions
                             WHERE transaction_id != {placeholder}
-                            AND (classified_entity = 'NEEDS REVIEW' OR classified_entity = 'Unclassified Expense' OR classified_entity = 'Unclassified Revenue' OR classified_entity IS NULL)
+                            AND (
+                                classified_entity = 'NEEDS REVIEW'
+                                OR classified_entity = 'Unclassified Expense'
+                                OR classified_entity = 'Unclassified Revenue'
+                                OR classified_entity IS NULL
+                                OR (classified_entity IS NOT NULL AND classified_entity != {placeholder})
+                            )
                             LIMIT 50
                         """
-                        params = [transaction_id]
+                        params = [transaction_id, new_value]
             elif field_type == 'similar_accounting':
                 # For accounting category: find transactions from same entity that need review
                 # Include: uncategorized, low confidence, OR different category (to suggest recategorization)
@@ -1168,6 +1298,24 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                     LIMIT 30
                 """
                 params = [transaction_id, current_entity, new_value]
+            elif field_type == 'similar_subcategory':
+                # For subcategory: find transactions from same entity that need subcategory or have different subcategory
+                print(f"DEBUG: Searching for similar subcategories - entity: {current_entity}, new subcategory: {new_value}")
+
+                base_query = f"""
+                    SELECT transaction_id, date, description, amount, subcategory
+                    FROM transactions
+                    WHERE transaction_id != {placeholder}
+                    AND classified_entity = {placeholder}
+                    AND (
+                        subcategory IS NULL
+                        OR subcategory = 'N/A'
+                        OR subcategory = ''
+                        OR (subcategory != {placeholder} AND subcategory IS NOT NULL)
+                    )
+                    LIMIT 30
+                """
+                params = [transaction_id, current_entity, new_value]
             else:
                 # For description cleanup: find transactions with same entity but different descriptions
                 # Since the description has already been updated, we search by entity
@@ -1183,231 +1331,262 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 """
                 params = [transaction_id, current_entity, new_value]
 
-            cursor.execute(base_query, tuple(params))
-        candidate_txs = cursor.fetchall()
-
-        conn.close()
-
-        if not candidate_txs:
-            print(f"DEBUG: No candidate transactions found")
-            return []
-
-        print(f"DEBUG: Found {len(candidate_txs)} candidate transactions")
-
-        # Use Claude to analyze which transactions are truly similar
-        candidate_descriptions = []
-        for i, tx in enumerate(candidate_txs):
+            print(f"DEBUG: About to execute query with {len(params)} parameters")
             try:
-                if is_postgresql:
-                    desc = tx.get('description', '') if isinstance(tx, dict) else str(tx[2] if len(tx) > 2 else '')
+                cursor.execute(base_query, tuple(params))
+                candidate_txs = cursor.fetchall()
+                print(f"DEBUG: Query executed successfully, fetched {len(candidate_txs) if candidate_txs else 0} rows")
+            except Exception as query_error:
+                print(f"ERROR: Query execution failed: {query_error}")
+                print(f"ERROR: Query was: {base_query}")
+                print(f"ERROR: Parameters were: {params}")
+                return []
+
+            if not candidate_txs:
+                print(f"DEBUG: No candidate transactions found - returning empty array")
+                return []
+
+            print(f"DEBUG: Found {len(candidate_txs)} candidate transactions, first 3:")
+            for i, tx in enumerate(candidate_txs[:3]):
+                print(f"  - Candidate {i+1}: {tx}")
+
+            # Use Claude to analyze which transactions are truly similar
+            candidate_descriptions = []
+            for i, tx in enumerate(candidate_txs):
+                try:
+                    if is_postgresql:
+                        desc = tx.get('description', '') if isinstance(tx, dict) else str(tx[2] if len(tx) > 2 else '')
+                        if field_type == 'similar_accounting':
+                            amount = tx.get('amount', '') if isinstance(tx, dict) else str(tx[3] if len(tx) > 3 else '')
+                            current_cat = tx.get('accounting_category', 'N/A') if isinstance(tx, dict) else str(tx[4] if len(tx) > 4 else 'N/A')
+                        elif field_type == 'similar_subcategory':
+                            amount = tx.get('amount', '') if isinstance(tx, dict) else str(tx[3] if len(tx) > 3 else '')
+                            current_subcat = tx.get('subcategory', 'N/A') if isinstance(tx, dict) else str(tx[4] if len(tx) > 4 else 'N/A')
+                    else:
+                        desc = tx[2] if len(tx) > 2 else ''
+                        if field_type == 'similar_accounting':
+                            amount = tx[3] if len(tx) > 3 else ''
+                            tx_type = tx[5] if len(tx) > 5 else ''
+                            current_cat = tx[4] if len(tx) > 4 else 'N/A'
+                        elif field_type == 'similar_subcategory':
+                            amount = tx[3] if len(tx) > 3 else ''
+                            current_subcat = tx[4] if len(tx) > 4 else 'N/A'
+
+                    desc_text = f"{desc[:100]}..." if len(desc) > 100 else desc
+
                     if field_type == 'similar_accounting':
-                        amount = tx.get('amount', '') if isinstance(tx, dict) else str(tx[3] if len(tx) > 3 else '')
-                        current_cat = tx.get('accounting_category', 'N/A') if isinstance(tx, dict) else str(tx[4] if len(tx) > 4 else 'N/A')
-                else:
-                    desc = tx[2] if len(tx) > 2 else ''
-                    if field_type == 'similar_accounting':
-                        amount = tx[3] if len(tx) > 3 else ''
-                        tx_type = tx[5] if len(tx) > 5 else ''
-                        current_cat = tx[4] if len(tx) > 4 else 'N/A'
+                        # Determine direction from amount
+                        direction = "DEBIT/Expense" if float(amount) < 0 else "CREDIT/Revenue" if float(amount) > 0 else "Zero"
+                        candidate_descriptions.append(
+                            f"Transaction {i+1}: {desc_text} | Direction: {direction} | Amount: ${amount} | Current Category: {current_cat}"
+                        )
+                    elif field_type == 'similar_subcategory':
+                        # Determine direction from amount
+                        direction = "DEBIT/Expense" if float(amount) < 0 else "CREDIT/Revenue" if float(amount) > 0 else "Zero"
+                        candidate_descriptions.append(
+                            f"Transaction {i+1}: {desc_text} | Direction: {direction} | Amount: ${amount} | Current Subcategory: {current_subcat}"
+                        )
+                    else:
+                        candidate_descriptions.append(f"Transaction {i+1}: {desc_text}")
+                except Exception as e:
+                    print(f"ERROR: Failed to process candidate tx {i}: {e}")
+                    candidate_descriptions.append(f"Transaction {i+1}: [Error loading description]")
 
-                desc_text = f"{desc[:100]}..." if len(desc) > 100 else desc
+            # Different prompts for entity classification vs description cleanup vs accounting category
+            if field_type == 'similar_entities':
+                current_tx_type = context.get('type', '')
+                current_source = context.get('source_file', '')
 
-                if field_type == 'similar_accounting':
-                    # Determine direction from amount
-                    direction = "DEBIT/Expense" if float(amount) < 0 else "CREDIT/Revenue" if float(amount) > 0 else "Zero"
-                    candidate_descriptions.append(
-                        f"Transaction {i+1}: {desc_text} | Direction: {direction} | Amount: ${amount} | Current Category: {current_cat}"
-                    )
-                else:
-                    candidate_descriptions.append(f"Transaction {i+1}: {desc_text}")
-            except Exception as e:
-                print(f"ERROR: Failed to process candidate tx {i}: {e}")
-                candidate_descriptions.append(f"Transaction {i+1}: [Error loading description]")
+                # Fetch learned patterns for this entity from database
+                learned_patterns_text = "No patterns learned yet for this entity."
+                try:
+                    from database import db_manager
+                    pattern_conn = db_manager._get_postgresql_connection()
+                    pattern_cursor = pattern_conn.cursor()
+                    pattern_placeholder = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
 
-        # Different prompts for entity classification vs description cleanup vs accounting category
-        if field_type == 'similar_entities':
-            current_tx_type = context.get('type', '')
-            current_source = context.get('source_file', '')
+                    pattern_cursor.execute(f"""
+                        SELECT pattern_data, confidence_score
+                        FROM entity_patterns
+                        WHERE entity_name = {pattern_placeholder}
+                        ORDER BY created_at DESC
+                        LIMIT 10
+                    """, (new_value,))
 
-            # Fetch learned patterns for this entity from database
-            learned_patterns_text = "No patterns learned yet for this entity."
-            try:
-                pattern_conn = get_db_connection()
-                pattern_cursor = pattern_conn.cursor()
-                pattern_placeholder = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
+                    learned_patterns = pattern_cursor.fetchall()
+                    pattern_conn.close()
 
-                pattern_cursor.execute(f"""
-                    SELECT pattern_data, confidence_score
-                    FROM entity_patterns
-                    WHERE entity_name = {pattern_placeholder}
-                    ORDER BY created_at DESC
-                    LIMIT 10
-                """, (new_value,))
+                    if learned_patterns and len(learned_patterns) > 0:
+                        learned_patterns_text = "LEARNED PATTERNS FOR THIS ENTITY:\n"
+                        for i, pattern_row in enumerate(learned_patterns):
+                            pattern_data = pattern_row.get('pattern_data', '{}') if isinstance(pattern_row, dict) else pattern_row[0]
+                            if isinstance(pattern_data, str):
+                                pattern_data = json.loads(pattern_data)
 
-                learned_patterns = pattern_cursor.fetchall()
-                pattern_conn.close()
+                            learned_patterns_text += f"\nPattern {i+1}:\n"
+                            learned_patterns_text += f"  - Company names: {', '.join(pattern_data.get('company_names', []))}\n"
+                            learned_patterns_text += f"  - Originator patterns: {', '.join(pattern_data.get('originator_patterns', []))}\n"
+                            learned_patterns_text += f"  - Bank identifiers: {', '.join(pattern_data.get('bank_identifiers', []))}\n"
+                            learned_patterns_text += f"  - Keywords: {', '.join(pattern_data.get('transaction_keywords', []))}\n"
+                            learned_patterns_text += f"  - Payment method: {pattern_data.get('payment_method_type', 'N/A')}\n"
 
-                if learned_patterns and len(learned_patterns) > 0:
-                    learned_patterns_text = "LEARNED PATTERNS FOR THIS ENTITY:\n"
-                    for i, pattern_row in enumerate(learned_patterns):
-                        pattern_data = pattern_row.get('pattern_data', '{}') if isinstance(pattern_row, dict) else pattern_row[0]
-                        if isinstance(pattern_data, str):
-                            pattern_data = json.loads(pattern_data)
+                        # Store in context for API response
+                        context['has_learned_patterns'] = True
+                except Exception as pattern_error:
+                    print(f"WARNING: Failed to fetch learned patterns: {pattern_error}")
 
-                        learned_patterns_text += f"\nPattern {i+1}:\n"
-                        learned_patterns_text += f"  - Company names: {', '.join(pattern_data.get('company_names', []))}\n"
-                        learned_patterns_text += f"  - Originator patterns: {', '.join(pattern_data.get('originator_patterns', []))}\n"
-                        learned_patterns_text += f"  - Bank identifiers: {', '.join(pattern_data.get('bank_identifiers', []))}\n"
-                        learned_patterns_text += f"  - Keywords: {', '.join(pattern_data.get('transaction_keywords', []))}\n"
-                        learned_patterns_text += f"  - Payment method: {pattern_data.get('payment_method_type', 'N/A')}\n"
+                # Build the prompt (this should be outside the try-except)
+                prompt = f"""
+                Analyze these unclassified transactions and determine which ones belong to the same business entity as the current transaction.
 
-                    # Store in context for API response
-                    context['has_learned_patterns'] = True
-            except Exception as pattern_error:
-                print(f"WARNING: Failed to fetch learned patterns: {pattern_error}")
+                CURRENT TRANSACTION:
+                - Description: "{current_description}"
+                - Type: {current_tx_type}
+                - NEW Entity Classification: "{new_value}"
+                - Source File: {current_source}
 
-            prompt = f"""
-            Analyze these unclassified transactions and determine which ones belong to the same business entity as the current transaction.
+                {learned_patterns_text}
 
-            CURRENT TRANSACTION:
-            - Description: "{current_description}"
-            - Type: {current_tx_type}
-            - NEW Entity Classification: "{new_value}"
-            - Source File: {current_source}
+                UNCLASSIFIED CANDIDATE TRANSACTIONS:
+                {chr(10).join(candidate_descriptions)}
 
-            {learned_patterns_text}
+                MATCHING INSTRUCTIONS:
+                1. Use the learned patterns above as your PRIMARY matching criteria
+                2. Look for transactions that match the company names, originator patterns, bank identifiers, or payment methods from the learned patterns
+                3. If no patterns are learned yet, use intelligent matching based on:
+                   - Same company/business name (including abbreviations and variations)
+                   - Same payment processor/originator ("ORIG CO NAME", "B/O", "IND NAME")
+                   - Same bank/financial institution
+                   - Consistent business activity patterns
+                4. Be SPECIFIC with payment processors - "PAYPAL ABC COMPANY" is different from "PAYPAL XYZ COMPANY"
+                5. Be conservative: When in doubt, don't match - false negatives are better than false positives
 
-            UNCLASSIFIED CANDIDATE TRANSACTIONS:
-            {chr(10).join(candidate_descriptions)}
+                Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions match.
+                """
+            elif field_type == 'similar_accounting':
+                # Get current transaction type and direction for context
+                current_tx_type = context.get('type', '')
+                current_amount = float(context.get('amount', 0))
+                current_direction = "DEBIT/Expense" if current_amount < 0 else "CREDIT/Revenue" if current_amount > 0 else "Zero"
+                current_source = context.get('source_file', '')
 
-            MATCHING INSTRUCTIONS:
-            1. Use the learned patterns above as your PRIMARY matching criteria
-            2. Look for transactions that match the company names, originator patterns, bank identifiers, or payment methods from the learned patterns
-            3. If no patterns are learned yet, use intelligent matching based on:
-               - Same company/business name (including abbreviations and variations)
-               - Same payment processor/originator ("ORIG CO NAME", "B/O", "IND NAME")
-               - Same bank/financial institution
-               - Consistent business activity patterns
-            4. Be SPECIFIC with payment processors - "PAYPAL ABC COMPANY" is different from "PAYPAL XYZ COMPANY"
-            5. Be conservative: When in doubt, don't match - false negatives are better than false positives
+                prompt = f"""
+                Analyze these transactions and determine which ones should have the same accounting category as the current transaction.
 
-            Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions match.
-            """
-        elif field_type == 'similar_accounting':
-            # Get current transaction type and direction for context
-            current_tx_type = context.get('type', '')
-            current_amount = float(context.get('amount', 0))
-            current_direction = "DEBIT/Expense" if current_amount < 0 else "CREDIT/Revenue" if current_amount > 0 else "Zero"
-            current_source = context.get('source_file', '')
+                CURRENT TRANSACTION:
+                - Description: "{current_description}"
+                - Type: {current_tx_type}
+                - Direction: {current_direction}
+                - Amount: ${current_amount}
+                - NEW Accounting Category: "{new_value}"
+                - Entity: {current_entity}
+                - Source File: {current_source}
 
-            prompt = f"""
-            Analyze these transactions and determine which ones should have the same accounting category as the current transaction.
+                CANDIDATE TRANSACTIONS FROM SAME ENTITY:
+                {chr(10).join(candidate_descriptions)}
 
-            CURRENT TRANSACTION:
-            - Description: "{current_description}"
-            - Type: {current_tx_type}
-            - Direction: {current_direction}
-            - Amount: ${current_amount}
-            - NEW Accounting Category: "{new_value}"
-            - Entity: {current_entity}
-            - Source File: {current_source}
+                MATCHING CRITERIA - Consider these factors:
+                1. **Transaction Purpose**: What is the transaction for? (hosting, trading income, bank fees, power bills, etc.)
+                2. **Transaction Flow**: DEBIT (expense/outgoing) vs CREDIT (revenue/incoming) - must match current transaction
+                3. **Transaction Type**: Wire transfer, ACH, credit card merchant, etc.
+                4. **Business Function**: Same business activity or cost center
+                5. **Recategorization**: If a transaction has a DIFFERENT category but appears to be the SAME type as current, include it (it may be miscategorized)
 
-            CANDIDATE TRANSACTIONS FROM SAME ENTITY:
-            {chr(10).join(candidate_descriptions)}
+                IMPORTANT RULES:
+                - Expenses and revenues are NEVER the same category
+                - A $15 bank fee and a $3000 wire transfer are DIFFERENT (fee vs transfer)
+                - Two hosting payments from same provider ARE the same (even if different amounts)
+                - Ignore amount - focus on transaction nature and purpose
+                - Include transactions with wrong categories if they match the current transaction's purpose
 
-            MATCHING CRITERIA - Consider these factors:
-            1. **Transaction Purpose**: What is the transaction for? (hosting, trading income, bank fees, power bills, etc.)
-            2. **Transaction Flow**: DEBIT (expense/outgoing) vs CREDIT (revenue/incoming) - must match current transaction
-            3. **Transaction Type**: Wire transfer, ACH, credit card merchant, etc.
-            4. **Business Function**: Same business activity or cost center
-            5. **Recategorization**: If a transaction has a DIFFERENT category but appears to be the SAME type as current, include it (it may be miscategorized)
+                Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions match.
+                """
+            else:
+                prompt = f"""
+                Analyze these transaction descriptions from the same entity/business unit and determine which ones should have the same cleaned description.
 
-            IMPORTANT RULES:
-            - Expenses and revenues are NEVER the same category
-            - A $15 bank fee and a $3000 wire transfer are DIFFERENT (fee vs transfer)
-            - Two hosting payments from same provider ARE the same (even if different amounts)
-            - Ignore amount - focus on transaction nature and purpose
-            - Include transactions with wrong categories if they match the current transaction's purpose
+                Current transaction has been updated to: "{new_value}"
+                Entity: {current_entity}
 
-            Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions match.
-            """
-        else:
-            prompt = f"""
-            Analyze these transaction descriptions from the same entity/business unit and determine which ones should have the same cleaned description.
+                Other transactions from the same entity:
+                {chr(10).join(candidate_descriptions)}
 
-            Current transaction has been updated to: "{new_value}"
-            Entity: {current_entity}
+                Respond with ONLY the transaction numbers (1, 2, 3, etc.) that appear to be the same type of transaction and should use the clean description "{new_value}".
+                Look for transactions that seem to be from the same source/purpose, even if the descriptions are messy.
 
-            Other transactions from the same entity:
-            {chr(10).join(candidate_descriptions)}
+                Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions are similar enough.
+                """
 
-            Respond with ONLY the transaction numbers (1, 2, 3, etc.) that appear to be the same type of transaction and should use the clean description "{new_value}".
-            Look for transactions that seem to be from the same source/purpose, even if the descriptions are messy.
+            start_time = time.time()
+            print(f"AI: Calling Claude API for similar descriptions analysis...")
 
-            Response format: Just the numbers separated by commas (e.g., "1, 3, 7") or "none" if no transactions are similar enough.
-            """
-
-        start_time = time.time()
-        print(f"AI: Calling Claude API for similar descriptions analysis...")
-
-        response = claude_client.messages.create(
+            response = claude_client.messages.create(
             model="claude-3-haiku-20240307",
             max_tokens=100,
             messages=[{"role": "user", "content": prompt}]
-        )
+            )
 
-        elapsed_time = time.time() - start_time
-        print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
+            elapsed_time = time.time() - start_time
+            print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
 
-        response_text = response.content[0].text.strip().lower()
-        print(f"DEBUG: Claude response for similar entities: {response_text}")
+            response_text = response.content[0].text.strip().lower()
+            print(f"DEBUG: Claude response for similar entities: {response_text}")
 
-        if response_text == "none" or not response_text:
-            return []
+            if response_text == "none" or not response_text:
+                return []
 
-        # Parse Claude's response to get selected transaction indices
-        # Claude may respond in different formats:
-        # 1. "1, 2, 3" (comma separated)
-        # 2. "transaction 1\ntransaction 2" (line separated with "transaction" prefix)
-        # 3. "1\n2\n3" (line separated numbers)
-        # 4. "based on... 1, 3, 7... explanation" (mixed with explanatory text)
-        try:
-            selected_indices = []
+            # Parse Claude's response to get selected transaction indices
+            # Claude may respond in different formats:
+            # 1. "1, 2, 3" (comma separated)
+            # 2. "transaction 1\ntransaction 2" (line separated with "transaction" prefix)
+            # 3. "1\n2\n3" (line separated numbers)
+            # 4. "based on... 1, 3, 7... explanation" (mixed with explanatory text)
+            try:
+                selected_indices = []
 
-            # First try: Extract all numbers from the response (handles all formats)
-            import re
-            numbers = re.findall(r'\b\d+\b', response_text)
-            for num_str in numbers:
-                try:
-                    num = int(num_str)
-                    # Only include numbers that are valid transaction indices (1-based)
-                    if 1 <= num <= len(candidate_txs):
-                        selected_indices.append(num - 1)  # Convert to 0-based
-                except ValueError:
-                    continue
+                # First try: Extract all numbers from the response (handles all formats)
+                import re
+                numbers = re.findall(r'\b\d+\b', response_text)
+                for num_str in numbers:
+                    try:
+                        num = int(num_str)
+                        # Only include numbers that are valid transaction indices (1-based)
+                        if 1 <= num <= len(candidate_txs):
+                            selected_indices.append(num - 1)  # Convert to 0-based
+                    except ValueError:
+                        continue
 
-            selected_txs = [candidate_txs[i] for i in selected_indices if 0 <= i < len(candidate_txs)]
+                # Remove duplicates while preserving order
+                seen = set()
+                deduplicated_indices = []
+                for idx in selected_indices:
+                    if idx not in seen:
+                        seen.add(idx)
+                        deduplicated_indices.append(idx)
+                selected_indices = deduplicated_indices
 
-            # Return formatted transaction data
-            result = []
-            for tx in selected_txs:
-                try:
-                    if is_postgresql and isinstance(tx, dict):
-                        tx_id = tx.get('transaction_id', '')
-                        date = tx.get('date', '')
-                        desc = tx.get('description', '')
-                        conf = tx.get('confidence', 'N/A')
-                        amount = tx.get('amount', 0)
-                        entity = tx.get('classified_entity', '')
-                        acct_cat = tx.get('accounting_category', 'N/A')
-                    else:
-                        tx_id = tx[0] if len(tx) > 0 else ''
-                        date = tx[1] if len(tx) > 1 else ''
-                        desc = tx[2] if len(tx) > 2 else ''
-                        conf = tx[3] if len(tx) > 3 else 'N/A'
-                        # For entity suggestions: amount is at index 5
-                        # For accounting suggestions: amount is at index 3
-                        # For description suggestions: no amount field
+                selected_txs = [candidate_txs[i] for i in selected_indices if 0 <= i < len(candidate_txs)]
+
+                # Return formatted transaction data
+                result = []
+                for tx in selected_txs:
+                    try:
+                        if is_postgresql and isinstance(tx, dict):
+                            tx_id = tx.get('transaction_id', '')
+                            date = tx.get('date', '')
+                            desc = tx.get('description', '')
+                            conf = tx.get('confidence', 'N/A')
+                            amount = tx.get('amount', 0)
+                            entity = tx.get('classified_entity', '')
+                            acct_cat = tx.get('accounting_category', 'N/A')
+                        else:
+                            tx_id = tx[0] if len(tx) > 0 else ''
+                            date = tx[1] if len(tx) > 1 else ''
+                            desc = tx[2] if len(tx) > 2 else ''
+                            conf = tx[3] if len(tx) > 3 else 'N/A'
+                            # For entity suggestions: amount is at index 5
+                            # For accounting suggestions: amount is at index 3
+                            # For description suggestions: no amount field
                         if field_type == 'similar_entities':
                             entity = tx[4] if len(tx) > 4 else ''
                             amount = tx[5] if len(tx) > 5 else 0
@@ -1421,24 +1600,26 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                             amount = 0
                             acct_cat = 'N/A'
 
-                    result.append({
-                        'transaction_id': tx_id,
-                        'date': date,
-                        'description': desc[:80] + "..." if len(desc) > 80 else desc,
-                        'confidence': conf or 'N/A',
-                        'amount': amount,
-                        'classified_entity': entity,
-                        'accounting_category': acct_cat
-                    })
-                except Exception as e:
-                    print(f"ERROR: Failed to format transaction: {e}")
+                        result.append({
+                            'transaction_id': tx_id,
+                            'date': date,
+                            'description': desc[:80] + "..." if len(desc) > 80 else desc,
+                            'confidence': conf or 'N/A',
+                            'amount': amount,
+                            'classified_entity': entity,
+                            'accounting_category': acct_cat
+                        })
+                    except Exception as e:
+                        print(f"ERROR: Failed to format transaction: {e}")
 
-            print(f"DEBUG: Returning {len(result)} similar transactions")
-            return result
+                print(f"DEBUG: Returning {len(result)} similar transactions")
+                return result
 
-        except (ValueError, IndexError) as e:
-            print(f"ERROR: Error parsing Claude response for similar descriptions: {e}")
-            return []
+            except (ValueError, IndexError) as e:
+                print(f"ERROR: Error parsing Claude response for similar descriptions: {e}")
+                return []
+        finally:
+            conn.close()
 
     except Exception as e:
         import traceback
@@ -1458,7 +1639,8 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
         if not transaction_id or not new_description:
             return []
 
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -1616,8 +1798,8 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             """
         }
 
-        # Special handling for similar_descriptions, similar_entities, and similar_accounting - use Claude to analyze similar transactions
-        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting']:
+        # Special handling for similar_descriptions, similar_entities, similar_accounting, and similar_subcategory - use Claude to analyze similar transactions
+        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting', 'similar_subcategory']:
             return get_claude_analyzed_similar_descriptions(context, claude_client)
 
         prompt = prompts.get(field_type, "")
@@ -1749,8 +1931,9 @@ def sync_csv_to_database(csv_filename=None):
 
         print(f"UPDATING: Syncing {len(df)} transactions to database...")
 
-        # Connect to database
-        conn = get_db_connection()
+        # Connect to database using db_manager
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
         # Detect database type for compatible syntax
@@ -1809,8 +1992,17 @@ def sync_csv_to_database(csv_filename=None):
 
                 if existing:
                     # Transaction exists - ENRICH mode
-                    # Convert to dict for easier access
-                    existing_dict = dict(existing) if existing else {}
+                    # Convert tuple to dict for easier access
+                    existing_dict = {
+                        'transaction_id': existing[0],
+                        'confidence': existing[1],
+                        'origin': existing[2],
+                        'destination': existing[3],
+                        'classified_entity': existing[4],
+                        'accounting_category': existing[5],
+                        'subcategory': existing[6],
+                        'justification': existing[7]
+                    }
 
                     # Determine if this is user-edited data (confidence >= 0.90 means likely user-edited or AI-confident)
                     is_user_edited = existing_dict.get('confidence', 0) >= 0.90
@@ -1990,7 +2182,8 @@ def health_check():
         db_type = os.getenv('DB_TYPE', 'sqlite').lower()
 
         # Test database connection
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
         # Detect which database we're actually using
@@ -2342,13 +2535,21 @@ def api_update_transaction():
         if not all([transaction_id, field]):
             return jsonify({'error': 'Missing required parameters'}), 400
 
-        success = update_transaction_field(transaction_id, field, value)
+        result = update_transaction_field(transaction_id, field, value)
+
+        # update_transaction_field returns (success, updated_confidence) tuple
+        if isinstance(result, tuple):
+            success, updated_confidence = result
+        else:
+            success = result
+            updated_confidence = None
 
         # If classified_entity field is updated, extract and store entity patterns using LLM
         if success and field == 'classified_entity' and value and value != 'N/A':
             try:
                 # Get transaction description for pattern extraction
-                conn = get_db_connection()
+                from database import db_manager
+                conn = db_manager._get_postgresql_connection()
                 cursor = conn.cursor()
                 is_postgresql = hasattr(cursor, 'mogrify')
                 placeholder = '%s' if is_postgresql else '?'
@@ -2372,7 +2573,14 @@ def api_update_transaction():
                 print(f"WARNING: Pattern extraction failed but transaction update succeeded: {pattern_error}")
 
         if success:
-            return jsonify({'success': True, 'message': 'Transaction updated successfully'})
+            response_data = {
+                'success': True,
+                'message': 'Transaction updated successfully'
+            }
+            # Include updated confidence if it was calculated
+            if updated_confidence is not None:
+                response_data['updated_confidence'] = updated_confidence
+            return jsonify(response_data)
         else:
             return jsonify({'error': 'Failed to update transaction'}), 500
 
@@ -2391,7 +2599,8 @@ def api_update_entity_bulk():
             return jsonify({'error': 'Missing required parameters'}), 400
 
         # Update each transaction
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2429,7 +2638,8 @@ def api_update_category_bulk():
             return jsonify({'error': 'Missing required parameters'}), 400
 
         # Update each transaction
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2465,7 +2675,8 @@ def api_archive_transactions():
         if not transaction_ids:
             return jsonify({'error': 'No transaction IDs provided'}), 400
 
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2501,7 +2712,8 @@ def api_unarchive_transactions():
         if not transaction_ids:
             return jsonify({'error': 'No transaction IDs provided'}), 400
 
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2541,7 +2753,8 @@ def api_suggestions():
         # Get transaction context if transaction_id provided
         context = {}
         if transaction_id:
-            conn = get_db_connection()
+            from database import db_manager
+            conn = db_manager._get_postgresql_connection()
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
             placeholder = '%s' if is_postgresql else '?'
@@ -2549,7 +2762,33 @@ def api_suggestions():
             cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
             row = cursor.fetchone()
             if row:
-                context = dict(row)
+                # Convert tuple to dict for PostgreSQL - must match column order
+                context = {
+                    'transaction_id': row[0],
+                    'date': row[1],
+                    'description': row[2],
+                    'amount': row[3],
+                    'currency': row[4],
+                    'usd_equivalent': row[5],
+                    'classified_entity': row[6],
+                    'justification': row[7],
+                    'confidence': row[8],
+                    'classification_reason': row[9],
+                    'origin': row[10],
+                    'destination': row[11],
+                    'identifier': row[12],
+                    'source_file': row[13],
+                    'crypto_amount': row[14],
+                    'conversion_note': row[15],
+                    'accounting_category': row[16],
+                    'archived': row[17],
+                    'confidence_history': row[18],
+                    'ai_reassessment_count': row[19],
+                    'last_ai_review': row[20],
+                    'user_feedback_count': row[21],
+                    'ai_suggestions': row[22],
+                    'subcategory': row[23]
+                }
             conn.close()
 
         # Add special parameters for similar_descriptions, similar_entities, and similar_accounting
@@ -2593,11 +2832,707 @@ def api_suggestions():
             'fallback_available': False
         }), 500
 
+@app.route('/api/ai/get-suggestions', methods=['GET'])
+def api_ai_get_suggestions():
+    """
+    API endpoint for AI Smart Recommendations modal
+    Returns AI-powered suggestions for improving a transaction's classification
+    """
+    try:
+        transaction_id = request.args.get('transaction_id')
+
+        if not transaction_id:
+            return jsonify({'error': 'transaction_id parameter required'}), 400
+
+        # Get transaction from database
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        # Convert row to dict (PostgreSQL returns tuples)
+        # Actual column order: transaction_id, date, description, amount, currency, usd_equivalent,
+        # classified_entity, justification, confidence, classification_reason, origin, destination,
+        # identifier, source_file, crypto_amount, conversion_note, accounting_category, archived,
+        # confidence_history, ai_reassessment_count, last_ai_review, user_feedback_count, ai_suggestions, subcategory
+        transaction = {
+            'transaction_id': row[0] if len(row) > 0 else None,
+            'date': str(row[1]) if len(row) > 1 else None,
+            'description': row[2] if len(row) > 2 else '',
+            'amount': float(row[3]) if len(row) > 3 and row[3] else 0,
+            'currency': row[4] if len(row) > 4 else 'USD',
+            'classified_entity': row[6] if len(row) > 6 else None,
+            'justification': row[7] if len(row) > 7 else None,
+            'confidence': float(row[8]) if len(row) > 8 and row[8] else 0.5,
+            'origin': row[10] if len(row) > 10 else None,  # Raw origin from bank statement
+            'destination': row[11] if len(row) > 11 else None,  # Raw destination from bank statement
+            'accounting_category': row[16] if len(row) > 16 else None,
+            'subcategory': row[23] if len(row) > 23 else None,
+        }
+        conn.close()
+
+        current_confidence = transaction.get('confidence', 0.5)
+        current_entity = transaction.get('classified_entity', 'Unknown')
+        current_accounting_category = transaction.get('accounting_category') or 'Unknown'
+        current_subcategory = transaction.get('subcategory') or 'N/A'
+        current_justification = transaction.get('justification') or 'N/A'
+
+        # If confidence is already high (>= 0.9), no suggestions needed
+        if current_confidence >= 0.9:
+            return jsonify({
+                'message': 'Transaction classification is already confident',
+                'suggestions': [],
+                'reasoning': f'Current confidence ({current_confidence:.0%}) is high. No improvements needed.',
+                'new_confidence': current_confidence,
+                'similar_count': 0,
+                'patterns_count': 0
+            })
+
+        # Use Claude AI to analyze and suggest improvements
+        if not claude_client:
+            return jsonify({
+                'error': 'Claude AI not available. Set ANTHROPIC_API_KEY to enable AI suggestions.',
+                'suggestions': []
+            }), 503
+
+        # Get learned patterns from database for this entity
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT pattern_data, confidence_score
+            FROM entity_patterns
+            WHERE entity_name = {placeholder}
+            ORDER BY confidence_score DESC
+            LIMIT 5
+        """, (current_entity,))
+        learned_patterns = cursor.fetchall()
+        conn.close()
+
+        patterns_context = ""
+        if learned_patterns:
+            patterns_context = "\n\nLearned patterns for this entity:\n"
+            for pattern_data, conf in learned_patterns:
+                try:
+                    pattern_json = json.loads(pattern_data) if isinstance(pattern_data, str) else pattern_data
+                    patterns_context += f"- {json.dumps(pattern_json, indent=2)}\n"
+                except:
+                    pass
+
+        # Build Claude prompt
+        # Include both simplified description AND raw origin/destination for maximum context
+        raw_description_info = ""
+        if transaction.get('origin') or transaction.get('destination'):
+            raw_parts = []
+            if transaction.get('origin'):
+                raw_parts.append(f"Origin: {transaction['origin']}")
+            if transaction.get('destination'):
+                raw_parts.append(f"Destination: {transaction['destination']}")
+            if raw_parts:
+                raw_description_info = f"\n- Raw Bank Data: {' | '.join(raw_parts)}"
+
+        prompt = f"""Analyze this transaction and suggest improvements to its classification.
+
+CURRENT TRANSACTION:
+- Description: {transaction['description']}{raw_description_info}
+- Amount: ${transaction['amount']}
+- Date: {transaction['date']}
+- Current Confidence: {current_confidence:.0%}
+
+CURRENT CLASSIFICATION (User may have already filled some fields):
+- Entity: {current_entity}
+- Accounting Category: {current_accounting_category}
+- Subcategory: {current_subcategory}
+- Justification: {current_justification}
+{patterns_context}
+
+**IMPORTANT**: Even if the transaction is an "Internal Transfer" or "Personal" expense with no P&L impact, you MUST still suggest appropriate categorization to complete the record. Use these guidelines:
+- Internal Transfer → accounting_category: "INTERCOMPANY_ELIMINATION", subcategory: "Internal Transfer", justification: "Movement between company entities"
+- Personal → accounting_category: "OTHER_EXPENSE", subcategory: "Personal Expense", justification: "Personal/non-business expense"
+
+**GEOGRAPHIC & MERCHANT ANALYSIS FOR ENTITY CLASSIFICATION**:
+Before suggesting an entity, analyze these clues from BOTH the simplified description AND raw bank data:
+
+IMPORTANT: Raw Bank Data (Origin/Destination) often contains additional context:
+- Location codes, city names, state/country abbreviations
+- Bank routing information that indicates geographic region
+- Transaction types (FEDWIRE, ACH, WIRE) that suggest US vs international
+- Merchant identifiers with location suffixes (e.g., "PETROBRAS AYOLAS" vs "PETROBRAS")
+
+1. **Geographic Indicators**:
+   - Paraguay names (Ayolas, San Ignacio, Asunción, etc.) → "Delta Mining Paraguay S.A."
+   - Brazil names/locations → "Delta Brazil Operations"
+   - US-based merchants/services → "Delta LLC"
+   - International crypto/trading platforms → "Delta Prop Shop LLC"
+
+2. **Merchant Type Analysis**:
+   - Gas stations (PETROBRAS, PETROPAR, SHELL, BR) → Check location for entity
+   - Restaurants/Food (local names) → Check country/region
+   - Technology/Software (APIs, cloud services, SaaS) → Usually "Delta LLC" or "Delta Prop Shop LLC"
+   - Mining/Industrial suppliers → "Delta Mining Paraguay S.A." if in Paraguay
+   - Professional services → Match to entity using them
+
+3. **Language/Naming Patterns**:
+   - Spanish names (COMERCIAL, AUTOSERVIS, FERRETERIA) → Paraguay → "Delta Mining Paraguay S.A."
+   - Portuguese names (GRUPO, BRASIL) → Brazil → "Delta Brazil Operations"
+   - English names (ANTHROPIC, GITHUB, AWS) → US/Tech → "Delta LLC" or "Delta Prop Shop LLC"
+
+4. **Business Function**:
+   - Staking/validation/crypto → "Infinity Validator"
+   - Prop trading/DeFi → "Delta Prop Shop LLC"
+   - Mining operations/equipment → "Delta Mining Paraguay S.A."
+   - General corporate/admin → "Delta LLC"
+
+Use these clues to make the MOST ACCURATE entity suggestion possible.
+
+TASK: Suggest 1-4 specific improvements to increase classification confidence. Focus on these fields:
+1. **classified_entity** - The business unit/entity (e.g., "Delta Mining Paraguay S.A.", "Delta Prop Shop LLC")
+2. **accounting_category** - Primary accounting category (MUST be ONE of: REVENUE, COGS, OPERATING_EXPENSE, INTEREST_EXPENSE, OTHER_INCOME, OTHER_EXPENSE, INCOME_TAX_EXPENSE, ASSET, LIABILITY, EQUITY, INTERCOMPANY_ELIMINATION)
+3. **subcategory** - Specific subcategory (e.g., "Auto Maintenance", "Employee Meals", "Technology", "Bank Fees", "Professional Services")
+4. **justification** - Business justification (e.g., "Paraguay operations fuel cost", "Team dinner expense", "Required software subscription")
+
+Return JSON in this EXACT format:
+{{
+  "reasoning": "Brief explanation of what could be improved",
+  "new_confidence": 0.85,
+  "suggestions": [
+    {{
+      "field": "classified_entity",
+      "current_value": "{current_entity}",
+      "suggested_value": "Delta Mining Paraguay S.A.",
+      "reason": "Transaction description indicates this is a Paraguay operation",
+      "confidence_impact": 0.2
+    }},
+    {{
+      "field": "accounting_category",
+      "current_value": "{current_accounting_category}",
+      "suggested_value": "OPERATING_EXPENSE",
+      "reason": "This is an operational expense for vehicle maintenance",
+      "confidence_impact": 0.15
+    }},
+    {{
+      "field": "subcategory",
+      "current_value": "{current_subcategory}",
+      "suggested_value": "Auto Maintenance",
+      "reason": "Description indicates auto service/maintenance",
+      "confidence_impact": 0.15
+    }},
+    {{
+      "field": "justification",
+      "current_value": "{current_justification}",
+      "suggested_value": "Paraguay operations vehicle maintenance",
+      "reason": "Specific business justification based on entity and transaction type",
+      "confidence_impact": 0.1
+    }}
+  ]
+}}
+
+**MERCHANT TYPE TO SUBCATEGORY MAPPING**:
+Use merchant type clues to suggest accurate subcategories:
+- Gas stations (PETROBRAS, SHELL, PETROPAR, BR, ENEX) → "Fuel Expense" or "Vehicle Maintenance"
+- Restaurants (local names, food descriptions) → "Employee Meals" or "Client Entertainment"
+- Hardware stores (FERRETERIA, COMERCIAL) → "Office Supplies" or "Repair & Maintenance"
+- Auto services (AUTOSERVIS, CENTRO AUTOMOTIVO) → "Vehicle Maintenance"
+- Technology (API, CLOUD, SaaS names) → "Software Subscriptions" or "Technology Services"
+- Internet/utilities (ISP names, utility companies) → "Telecommunications" or "Utilities"
+- Professional services (consulting, legal, accounting firms) → "Professional Services"
+
+CRITICAL RULES:
+- Only suggest fields that actually need improvement (if user already filled a field correctly, don't suggest it)
+- If user has already categorized Entity, Category, or Subcategory, use those values to inform the justification suggestion
+- For accounting_category, MUST use exact values from the list above
+- For subcategory, use the merchant type analysis above to provide specific, descriptive categories (2-4 words max)
+- For justification, provide a concise business reason (4-6 words) that combines entity + transaction purpose
+- For entity classification, ALWAYS apply the geographic & merchant analysis framework above
+- If current classification is already good for all fields, return empty suggestions array
+- DO NOT suggest "transaction_keywords" or any other fields not listed above"""
+
+        response = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1000,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = response.content[0].text.strip()
+
+        # Remove markdown code blocks if present
+        if response_text.startswith('```json'):
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+        elif response_text.startswith('```'):
+            response_text = response_text.replace('```', '').strip()
+
+        # Try to extract just the JSON object if there's extra text
+        # Look for the first { and last }
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', response_text)
+        if json_match:
+            response_text = json_match.group(0)
+
+        print(f"DEBUG: Cleaned Claude response for parsing: {response_text[:500]}...")
+
+        try:
+            ai_response = json.loads(response_text)
+        except json.JSONDecodeError as e:
+            print(f"ERROR: JSON parsing failed: {e}")
+            print(f"ERROR: Response text was: {response_text}")
+            # Return a safe fallback response
+            return jsonify({
+                'error': f'AI response parsing error: {str(e)}. The AI may have returned malformed data.',
+                'suggestions': [],
+                'reasoning': 'Unable to parse AI response',
+                'new_confidence': current_confidence,
+                'similar_count': 0,
+                'patterns_count': 0
+            }), 500
+
+        # Add metadata
+        ai_response['similar_count'] = len(learned_patterns)
+        ai_response['patterns_count'] = len(learned_patterns)
+
+        return jsonify(ai_response)
+
+    except Exception as e:
+        print(f"ERROR: AI suggestions error: {e}")
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
+        return jsonify({
+            'error': f'Failed to get AI suggestions: {str(e)}',
+            'suggestions': []
+        }), 500
+
+@app.route('/api/ai/apply-suggestion', methods=['POST'])
+def api_ai_apply_suggestion():
+    """
+    Apply an AI suggestion to a transaction
+    Wraps the update_transaction_field function with AI-specific logic
+    """
+    try:
+        data = request.json
+        transaction_id = data.get('transaction_id')
+        suggestion = data.get('suggestion', {})
+
+        if not transaction_id or not suggestion:
+            return jsonify({'error': 'transaction_id and suggestion required'}), 400
+
+        field = suggestion.get('field')
+        suggested_value = suggestion.get('suggested_value')
+
+        if not field or not suggested_value:
+            return jsonify({'error': 'suggestion must contain field and suggested_value'}), 400
+
+        # Use the existing update_transaction_field function
+        success = update_transaction_field(
+            transaction_id=transaction_id,
+            field=field,
+            value=suggested_value,
+            user='ai_assistant'
+        )
+
+        if success:
+            # If this was an entity change, trigger pattern learning
+            if field == 'classified_entity' and claude_client:
+                try:
+                    # Get transaction description for pattern learning
+                    from database import db_manager
+                    conn = db_manager._get_postgresql_connection()
+                    cursor = conn.cursor()
+                    is_postgresql = hasattr(cursor, 'mogrify')
+                    placeholder = '%s' if is_postgresql else '?'
+
+                    cursor.execute(f"SELECT description FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+                    row = cursor.fetchone()
+                    conn.close()
+
+                    if row and row[0]:
+                        description = row[0]
+                        # Extract and store entity patterns for future learning
+                        extract_entity_patterns_with_llm(transaction_id, suggested_value, description, claude_client)
+                        print(f"✅ AI suggestion applied and pattern learning triggered for {field} = {suggested_value}")
+                except Exception as pattern_error:
+                    print(f"⚠️ Pattern learning failed (non-critical): {pattern_error}")
+
+            return jsonify({
+                'success': True,
+                'field': field,
+                'value': suggested_value,
+                'message': f'Successfully updated {field} to {suggested_value}'
+            })
+        else:
+            return jsonify({
+                'error': f'Failed to update {field}',
+                'success': False
+            }), 500
+
+    except Exception as e:
+        print(f"ERROR: Apply AI suggestion error: {e}")
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
+        return jsonify({
+            'error': f'Failed to apply suggestion: {str(e)}',
+            'success': False
+        }), 500
+
+@app.route('/api/ai/ask-accounting-category', methods=['POST'])
+def api_ask_accounting_category():
+    """API endpoint to ask Claude AI about accounting categorization"""
+    try:
+        data = request.json
+        question = data.get('question', '').strip()
+        transaction_context = data.get('transaction_context', {})
+
+        if not question:
+            return jsonify({'error': 'Question parameter required'}), 400
+
+        # Extract transaction details
+        description = transaction_context.get('description', '')
+        amount = transaction_context.get('amount', '')
+        entity = transaction_context.get('entity', '')
+
+        # Build prompt for Claude
+        prompt = f"""You are an expert CFO and accounting assistant. A user is asking about how to categorize a transaction for accounting purposes.
+
+Transaction Details:
+- Description: {description}
+- Amount: {amount}
+- Business Entity: {entity}
+
+User Question: {question}
+
+Please suggest the most appropriate accounting categories for this transaction. Provide 1-3 category suggestions with brief explanations.
+
+For each suggestion, you MUST provide BOTH:
+1. **Primary Category** - Choose ONE from this exact list:
+   - REVENUE
+   - COGS
+   - OPERATING_EXPENSE
+   - INTEREST_EXPENSE
+   - OTHER_INCOME
+   - OTHER_EXPENSE
+   - INCOME_TAX_EXPENSE
+   - ASSET
+   - LIABILITY
+   - EQUITY
+   - INTERCOMPANY_ELIMINATION
+
+2. **Subcategory** - A specific classification like "Bank Fees", "Hosting Revenue", "Technology", "Power/Utilities", "Employee Meals", "Travel Expense", etc.
+
+Return your response in this exact JSON format:
+{{
+  "note": "Brief context or general observation (optional)",
+  "categories": [
+    {{
+      "primary_category": "OPERATING_EXPENSE",
+      "subcategory": "Employee Meals",
+      "explanation": "Why this category is appropriate"
+    }}
+  ]
+}}
+
+Consider standard accounting practices, tax implications, and best practices for financial reporting."""
+
+        print(f"AI: Calling Claude API for accounting category guidance...")
+        start_time = time.time()
+
+        # Call Claude API
+        response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=500,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        elapsed_time = time.time() - start_time
+        print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
+
+        answer_text = response.content[0].text.strip()
+        print(f"DEBUG: Claude accounting category response: {answer_text[:200]}...")
+
+        # Parse JSON response from Claude
+        import json
+        import re
+
+        # Try to extract JSON from the response
+        json_match = re.search(r'\{[\s\S]*\}', answer_text)
+        if json_match:
+            result = json.loads(json_match.group(0))
+        else:
+            # Fallback if JSON parsing fails
+            result = {
+                "categories": [{
+                    "primary_category": "OPERATING_EXPENSE",
+                    "subcategory": "General Expense",
+                    "explanation": answer_text[:200]
+                }]
+            }
+
+        return jsonify({
+            'result': result,
+            'success': True
+        })
+
+    except Exception as e:
+        print(f"ERROR: AI accounting category error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to get AI accounting guidance: {str(e)}',
+            'success': False
+        }), 500
+
+@app.route('/api/ai/find-similar-after-suggestion', methods=['POST'])
+def api_ai_find_similar_after_suggestion():
+    """API endpoint to use Claude AI to find transactions similar to one just categorized"""
+    try:
+        data = request.json
+        transaction_id = data.get('transaction_id')
+        applied_suggestions = data.get('applied_suggestions', [])
+
+        if not transaction_id or not applied_suggestions:
+            return jsonify({'error': 'transaction_id and applied_suggestions are required'}), 400
+
+        # Get the original transaction
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(f"SELECT * FROM transactions WHERE transaction_id = {placeholder}", (transaction_id,))
+        original_row = cursor.fetchone()
+
+        if not original_row:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        # Convert row to dictionary using column names
+        column_names = [desc[0] for desc in cursor.description]
+        original = dict(zip(column_names, original_row))
+
+        # Extract fields that were applied
+        applied_fields = {}
+        for suggestion in applied_suggestions:
+            field = suggestion.get('field')
+            value = suggestion.get('suggested_value')
+            if field and value:
+                applied_fields[field] = value
+
+        # Get a sample of transactions that could benefit from similar categorization
+        # Focus on transactions that are either uncategorized OR have low confidence
+        # AND exclude transactions that already have the same categorization we just applied
+
+        # Build WHERE clause based on what fields were applied
+        exclude_conditions = []
+        query_params = [transaction_id]
+
+        for field, value in applied_fields.items():
+            if field == 'accounting_category':
+                exclude_conditions.append(f"accounting_category != {placeholder}")
+                query_params.append(value)
+            elif field == 'subcategory':
+                exclude_conditions.append(f"subcategory != {placeholder}")
+                query_params.append(value)
+
+        exclude_clause = " AND ".join(exclude_conditions) if exclude_conditions else "1=1"
+
+        cursor.execute(f"""
+            SELECT transaction_id, date, description, amount, classified_entity,
+                   accounting_category, subcategory, confidence
+            FROM transactions
+            WHERE transaction_id != {placeholder}
+            AND ({exclude_clause})
+            AND (
+                accounting_category IS NULL
+                OR accounting_category = 'N/A'
+                OR accounting_category = ''
+                OR subcategory IS NULL
+                OR subcategory = 'N/A'
+                OR subcategory = ''
+                OR confidence < 0.8
+            )
+            ORDER BY
+                CASE
+                    WHEN confidence IS NULL THEN 0
+                    WHEN confidence < 0.5 THEN 1
+                    WHEN confidence < 0.8 THEN 2
+                    ELSE 3
+                END ASC,
+                date DESC
+            LIMIT 200
+        """, tuple(query_params))
+
+        # Convert candidate rows to dictionaries
+        candidate_rows = cursor.fetchall()
+        candidate_column_names = [desc[0] for desc in cursor.description]
+        candidate_transactions = [dict(zip(candidate_column_names, row)) for row in candidate_rows]
+        conn.close()
+
+        if not candidate_transactions:
+            return jsonify({
+                'similar_transactions': [],
+                'applied_fields': applied_fields
+            })
+
+        # PRE-FILTER: Extract vendor keywords from original transaction and prioritize exact matches
+        # This ensures transactions from the SAME vendor are always included, even if dated before/after
+        original_description = original.get('description', '').upper()
+
+        # Extract potential vendor keywords (words 3+ chars, excluding common words)
+        import re
+        common_words = {'THE', 'AND', 'FOR', 'WITH', 'FROM', 'DATE', 'TRANSACTION', 'PAYMENT', 'PURCHASE', 'SALE'}
+        vendor_keywords = [
+            word for word in re.findall(r'\b[A-Z0-9]{3,}\b', original_description)
+            if word not in common_words
+        ]
+
+        # Separate candidates into exact vendor matches and others
+        exact_vendor_matches = []
+        other_candidates = []
+
+        for candidate in candidate_transactions:
+            candidate_desc = candidate.get('description', '').upper()
+            # Check if ANY vendor keyword appears in candidate description
+            is_vendor_match = any(keyword in candidate_desc for keyword in vendor_keywords if keyword)
+
+            if is_vendor_match:
+                exact_vendor_matches.append(candidate)
+            else:
+                other_candidates.append(candidate)
+
+        # Reorder candidates: exact vendor matches first, then others
+        # This ensures Claude sees the most relevant matches first
+        candidate_transactions = exact_vendor_matches + other_candidates
+
+        print(f"PRE-FILTER: Found {len(exact_vendor_matches)} exact vendor matches out of {len(candidate_transactions)} candidates")
+        print(f"PRE-FILTER: Vendor keywords extracted: {vendor_keywords[:5]}")  # Show first 5 keywords
+
+        # Build simplified transaction list for Claude prompt
+        candidate_list = [
+            {
+                'id': t.get('transaction_id', ''),
+                'description': t.get('description', ''),
+                'amount': str(t.get('amount', '0')),
+                'entity': t.get('classified_entity', 'N/A')
+            }
+            for t in candidate_transactions
+        ]
+
+        # Build prompt for Claude to identify similar transactions
+        exact_match_note = ""
+        if len(exact_vendor_matches) > 0:
+            exact_match_note = f"\n\n⚠️  IMPORTANT: The first {len(exact_vendor_matches)} transactions in the list are EXACT VENDOR MATCHES (same vendor name). These should almost always be included unless the transaction type is clearly different."
+
+        prompt = f"""You are a CFO analyzing financial transactions. A transaction was just categorized with these values:
+
+Original Transaction:
+- Description: {original.get('description', 'N/A')}
+- Amount: ${original.get('amount', '0')}
+- Business Entity: {original.get('classified_entity', 'N/A')}
+- Applied categorization: {json.dumps(applied_fields, indent=2)}
+
+Below are {len(candidate_transactions)} other transactions. Identify which ones are similar enough that they should have the SAME categorization applied.{exact_match_note}
+
+IMPORTANT MATCHING CRITERIA:
+1. **HIGHEST PRIORITY: Exact Vendor Matches** - If a transaction is from the SAME vendor (same company name in description):
+   - ✅ ALWAYS include unless transaction type is clearly different
+   - Example: "Amazon web services" → "Amazon web services" (MUST MATCH)
+   - Example: "PETROBRAS AYOLAS" → "PETROBRAS AYOLAS" (MUST MATCH)
+   - Example: "Netflix.com" → "Netflix.com" (MUST MATCH)
+
+2. **SECONDARY: Similar transaction intent/purpose** - Match transactions with similar business purposes:
+   - Restaurants should match with other restaurants (even if different restaurant names)
+   - Technology software/SaaS should match with other technology software/SaaS
+   - Cloud services should match with other cloud services
+   - Office supplies should match with other office supplies
+   - Professional services should match with other professional services
+
+3. **TERTIARY: Business Entity context** - Use the business entity to further refine subcategory assignments:
+   - Same entity transactions may have more specific subcategories
+   - Different entities may need different subcategory nuances
+
+4. **Consider transaction characteristics**:
+   - Similar transaction amounts may indicate similar types of expenses
+   - Recurring patterns suggest similar vendor relationships
+
+**EXAMPLES OF GOOD MATCHES**:
+- "Anthropic API" (tech software) → "OpenAI API", "Google Cloud AI" (other tech software)
+- "McDonald's" (restaurant) → "Burger King", "Chipotle", "Starbucks" (other food/beverage)
+- "AWS" (cloud infrastructure) → "Google Cloud", "Azure", "DigitalOcean" (other cloud providers)
+- "Staples" (office supplies) → "Office Depot", "Amazon - office supplies" (other office supplies)
+
+**EXAMPLES OF BAD MATCHES**:
+- "Anthropic API" (tech software) → "Bittensor wallet transfer" (cryptocurrency, different intent)
+- "McDonald's" (restaurant) → "Whole Foods grocery" (food retail, different purpose)
+
+Candidate Transactions:
+{json.dumps(candidate_list, indent=2)}
+
+Return ONLY a JSON array of transaction IDs that match the SAME INTENT/PURPOSE as the original transaction.
+
+Example response format:
+["tx_id_1", "tx_id_2", "tx_id_3"]
+
+If no transactions have similar intent, return an empty array: []"""
+
+        print(f"AI: Calling Claude API to find similar transactions...")
+        start_time = time.time()
+
+        # Call Claude API
+        response = claude_client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=1000,
+            temperature=0.3,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        elapsed_time = time.time() - start_time
+        print(f"LOADING: Claude API response time: {elapsed_time:.2f} seconds")
+
+        answer_text = response.content[0].text.strip()
+        print(f"DEBUG: Claude similar transactions response: {answer_text}")
+
+        # Parse JSON response from Claude
+        import re
+
+        # Try to extract JSON array from the response
+        json_match = re.search(r'\[[\s\S]*?\]', answer_text)
+        if json_match:
+            similar_ids = json.loads(json_match.group(0))
+        else:
+            similar_ids = []
+
+        # Filter candidate transactions to only those identified as similar
+        similar_transactions = [
+            t for t in candidate_transactions
+            if t.get('transaction_id') in similar_ids
+        ]
+
+        print(f"AI: Found {len(similar_transactions)} similar transactions out of {len(candidate_transactions)} candidates")
+
+        return jsonify({
+            'similar_transactions': similar_transactions,
+            'applied_fields': applied_fields,
+            'success': True
+        })
+
+    except Exception as e:
+        print(f"ERROR: AI find similar transactions error: {e}", flush=True)
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to find similar transactions: {str(e)}',
+            'success': False
+        }), 500
+
 @app.route('/api/accounting_categories', methods=['GET'])
 def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""
     try:
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -2639,7 +3574,8 @@ def api_update_similar_categories():
             return jsonify({'error': 'Missing required parameters'}), 400
 
         # Get the original transaction to find similar ones
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2715,7 +3651,8 @@ def api_update_similar_descriptions():
             return jsonify({'error': 'Missing required parameters'}), 400
 
         # Get the original transaction to find similar ones
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -2781,27 +3718,81 @@ def api_update_similar_descriptions():
 
 @app.route('/files')
 def files_page():
-    """Files management page"""
+    """Files management page - shows uploaded files from database"""
     try:
-        # Get list of CSV files in the parent directory
-        parent_dir = os.path.dirname(os.path.dirname(__file__))
-        csv_files = []
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
 
-        for file in os.listdir(parent_dir):
-            if file.endswith('.csv'):
-                file_path = os.path.join(parent_dir, file)
-                stat = os.stat(file_path)
-                csv_files.append({
-                    'name': file,
-                    'size': stat.st_size,
-                    'modified': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
-                })
+        # Get uploaded files with transaction counts (including archived)
+        cursor.execute("""
+            SELECT
+                source_file,
+                COUNT(*) as total_transactions,
+                SUM(CASE WHEN archived = true THEN 1 ELSE 0 END) as archived_count,
+                SUM(CASE WHEN archived = false THEN 1 ELSE 0 END) as active_count,
+                MIN(date) as earliest_date,
+                MAX(date) as latest_date,
+                MAX(CASE WHEN archived = false THEN date ELSE NULL END) as latest_active_date
+            FROM transactions
+            WHERE source_file IS NOT NULL AND source_file != ''
+            GROUP BY source_file
+            ORDER BY MAX(date) DESC
+        """)
 
-        # Sort by modification time (newest first)
-        csv_files.sort(key=lambda x: x['modified'], reverse=True)
+        files_data = cursor.fetchall()
+        conn.close()
 
-        return render_template('files.html', files=csv_files)
+        # Parse and categorize files
+        categorized_files = []
+        for row in files_data:
+            source_file, total_txns, archived_count, active_count, earliest, latest, latest_active = row
+
+            # Extract account/card number from filename
+            account_number = None
+            account_type = 'Unknown'
+
+            # Parse Chase account patterns (e.g., Chase4774, Chase3687, etc.)
+            import re
+            chase_match = re.search(r'Chase(\d{4})', source_file, re.IGNORECASE)
+            if chase_match:
+                account_number = chase_match.group(1)
+                account_type = 'Chase Credit Card' if account_number in ['4774', '3687', '3911', '5893', '6134'] else 'Chase Account'
+
+            # Parse date range from filename if available
+            date_pattern = re.search(r'(\d{8}).*?(\d{8})', source_file)
+            file_date_range = None
+            if date_pattern:
+                start_date = date_pattern.group(1)
+                end_date = date_pattern.group(2)
+                # Format as YYYY-MM-DD
+                try:
+                    from datetime import datetime
+                    start = datetime.strptime(start_date, '%Y%m%d').strftime('%Y-%m-%d')
+                    end = datetime.strptime(end_date, '%Y%m%d').strftime('%Y-%m-%d')
+                    file_date_range = f"{start} to {end}"
+                except:
+                    pass
+
+            categorized_files.append({
+                'name': source_file,
+                'account_number': account_number,
+                'account_type': account_type,
+                'total_transactions': total_txns,
+                'active_transactions': active_count,
+                'archived_transactions': archived_count,
+                'earliest_date': earliest,
+                'latest_date': latest,
+                'latest_active_date': latest_active,
+                'file_date_range': file_date_range,
+                'size': total_txns * 150  # Approximate size based on transaction count
+            })
+
+        return render_template('files.html', files=categorized_files)
     except Exception as e:
+        print(f"ERROR in files_page: {e}")
+        import traceback
+        traceback.print_exc()
         return f"Error loading files: {str(e)}", 500
 
 def check_file_duplicates(filepath):
@@ -2811,7 +3802,9 @@ def check_file_duplicates(filepath):
         df = pd.read_csv(filepath)
         print(f"[STATS] Checking duplicates in {len(df)} transactions from file")
 
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
         duplicates = []
 
         for index, row in df.iterrows():
@@ -2829,12 +3822,13 @@ def check_file_duplicates(filepath):
             check_key = f"{date_str}|{amount}|{description}"
 
             # Check if this transaction exists in database
-            existing = conn.execute("""
+            cursor.execute("""
                 SELECT transaction_id, date, description, amount
                 FROM transactions
-                WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = ?
+                WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = %s
                 LIMIT 1
-            """, (check_key,)).fetchone()
+            """, (check_key,))
+            existing = cursor.fetchone()
 
             if existing:
                 duplicates.append({
@@ -4149,7 +5143,8 @@ def api_list_jobs():
         status_filter = request.args.get('status')  # pending, processing, completed, failed
         job_type_filter = request.args.get('job_type')  # invoice_batch, etc.
 
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
@@ -4707,7 +5702,8 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                conn = get_db_connection()
+                from database import db_manager
+                conn = db_manager._get_postgresql_connection()
 
                 # Check if invoice_number already exists
                 cursor = conn.cursor()
@@ -4828,7 +5824,8 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
                         transaction_context: dict, session_id: str = None):
     """Log user interactions for learning system"""
     try:
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         conn.execute("""
             INSERT INTO user_interactions (
                 transaction_id, field_type, original_value, ai_suggestions,
@@ -4855,7 +5852,8 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
 def update_ai_performance_metrics(field_type: str, was_accepted: bool):
     """Update daily AI performance metrics"""
     try:
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         today = datetime.now().date()
 
         # Get existing metrics for today
@@ -4890,7 +5888,8 @@ def update_ai_performance_metrics(field_type: str, was_accepted: bool):
 def learn_from_interaction(transaction_id: str, field_type: str, user_choice: str, context: dict):
     """Learn patterns from user interactions"""
     try:
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
 
         # Create pattern condition based on transaction context
         pattern_condition = {}
@@ -4952,7 +5951,8 @@ def learn_from_interaction(transaction_id: str, field_type: str, user_choice: st
 def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
     """Get suggestions based on learned patterns"""
     try:
-        conn = get_db_connection()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         suggestions = []
 
