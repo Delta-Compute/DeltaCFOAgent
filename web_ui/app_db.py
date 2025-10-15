@@ -13,7 +13,7 @@ import time
 import threading
 import traceback
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import anthropic
@@ -63,8 +63,17 @@ sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 # Import historical currency converter
 from historical_currency_converter import HistoricalCurrencyConverter
 
+# Import tenant context manager
+from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
+
+# Configure Flask secret key for sessions
+app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
+
+# Initialize multi-tenant context
+init_tenant_context(app)
 
 # Database connection - DEPRECATED: Now using database manager (database.py)
 # DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
@@ -737,7 +746,6 @@ def get_db_connection():
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
-    # Temporarily removed try/except to see actual error
     from database import db_manager
 
     # Use the exact same pattern as get_dashboard_stats function
@@ -749,37 +757,75 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         is_postgresql = db_manager.db_type == 'postgresql'
 
-        # Simple test - get total count without archived filter first
-        cursor.execute("SELECT COUNT(*) as total FROM transactions")
-        count_result = cursor.fetchone()
-        total_without_filter = count_result['total'] if is_postgresql else count_result[0]
+        # Build WHERE clause from filters
+        where_conditions = ["(archived = FALSE OR archived IS NULL)"]
+        params = []
 
-        # Now get count with archived filter (same as stats API)
-        cursor.execute("SELECT COUNT(*) as total FROM transactions WHERE (archived = FALSE OR archived IS NULL)")
+        if filters:
+            if filters.get('entity'):
+                where_conditions.append("classified_entity = %s" if is_postgresql else "classified_entity = ?")
+                params.append(filters['entity'])
+
+            if filters.get('transaction_type'):
+                # Map "Revenue" -> positive amounts, "Expense" -> negative amounts
+                if filters['transaction_type'] == 'Revenue':
+                    where_conditions.append("amount > 0")
+                elif filters['transaction_type'] == 'Expense':
+                    where_conditions.append("amount < 0")
+
+            if filters.get('source_file'):
+                where_conditions.append("source_file = %s" if is_postgresql else "source_file = ?")
+                params.append(filters['source_file'])
+
+            if filters.get('needs_review'):
+                if filters['needs_review'] == 'true':
+                    where_conditions.append("(confidence < 0.7 OR needs_review = TRUE)")
+
+            if filters.get('min_amount'):
+                where_conditions.append("ABS(amount) >= %s" if is_postgresql else "ABS(amount) >= ?")
+                params.append(float(filters['min_amount']))
+
+            if filters.get('max_amount'):
+                where_conditions.append("ABS(amount) <= %s" if is_postgresql else "ABS(amount) <= ?")
+                params.append(float(filters['max_amount']))
+
+            if filters.get('start_date'):
+                where_conditions.append("date >= %s" if is_postgresql else "date >= ?")
+                params.append(filters['start_date'])
+
+            if filters.get('end_date'):
+                where_conditions.append("date <= %s" if is_postgresql else "date <= ?")
+                params.append(filters['end_date'])
+
+            if filters.get('keyword'):
+                where_conditions.append("(description ILIKE %s OR classification_reason ILIKE %s)" if is_postgresql
+                                      else "(description LIKE ? OR classification_reason LIKE ?)")
+                keyword_pattern = f"%{filters['keyword']}%"
+                params.extend([keyword_pattern, keyword_pattern])
+
+            if filters.get('show_archived') == 'true':
+                # Remove the archived filter if showing archived
+                where_conditions = [c for c in where_conditions if 'archived' not in c]
+
+        where_clause = " AND ".join(where_conditions)
+
+        # Get total count with filters
+        count_query = f"SELECT COUNT(*) as total FROM transactions WHERE {where_clause}"
+        if params:
+            cursor.execute(count_query, tuple(params))
+        else:
+            cursor.execute(count_query)
         count_result = cursor.fetchone()
         total_count = count_result['total'] if is_postgresql else count_result[0]
 
-        # For debugging: return both counts in a way we can see
-        if total_without_filter == 0:
-            return [], 0  # No transactions at all
-
-        if total_count == 0:
-            # All transactions are archived, but let's return some for testing
-            cursor.execute("SELECT * FROM transactions LIMIT 3")
-            results = cursor.fetchall()
-            test_transactions = []
-            for row in results:
-                if is_postgresql:
-                    transaction = dict(row)
-                else:
-                    transaction = dict(row)
-                test_transactions.append(transaction)
-            return test_transactions, total_without_filter
-
-        # Normal path - get transactions with archived filter
+        # Get transactions with filters and pagination
         offset = (page - 1) * per_page if page > 0 else 0
-        query = f"SELECT * FROM transactions WHERE (archived = FALSE OR archived IS NULL) ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
-        cursor.execute(query)
+        query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
+
+        if params:
+            cursor.execute(query, tuple(params))
+        else:
+            cursor.execute(query)
 
         results = cursor.fetchall()
         transactions = []
@@ -3795,76 +3841,247 @@ def files_page():
         traceback.print_exc()
         return f"Error loading files: {str(e)}", 500
 
-def check_file_duplicates(filepath):
-    """Check if uploaded file contains transactions that already exist in database"""
+def check_processed_file_duplicates(processed_filepath, original_filepath, tenant_id=None, include_all_duplicates=False):
+    """
+    Check if PROCESSED file contains transactions that already exist in database
+    This runs AFTER smart ingestion to check enriched transactions
+    Returns detailed duplicate information for user decision
+
+    Args:
+        processed_filepath: Path to processed file
+        original_filepath: Path to original uploaded file
+        tenant_id: Tenant identifier for multi-tenant isolation (defaults to current tenant)
+        include_all_duplicates: If True, return ALL duplicates instead of just first 10 (for deletion)
+    """
     try:
-        # Read the uploaded CSV file
-        df = pd.read_csv(filepath)
-        print(f"[STATS] Checking duplicates in {len(df)} transactions from file")
+        # Get tenant_id from context if not provided
+        if tenant_id is None:
+            tenant_id = get_current_tenant_id()
+
+        print(f"🏢 Checking duplicates for tenant: {tenant_id}")
+
+        # Find the CLASSIFIED CSV file (this has enriched data from smart ingestion)
+        # Go up one level from web_ui to DeltaCFOAgentv2 root directory
+        base_dir = os.path.dirname(os.getcwd())
+        filename = os.path.basename(original_filepath)
+        classified_file = os.path.join(base_dir, 'classified_transactions', f'classified_{filename}')
+
+        if os.path.exists(classified_file):
+            processed_file = classified_file
+            print(f"✅ Using classified file for duplicate check: {classified_file}")
+        else:
+            print(f"⚠️ Classified file not found: {classified_file}, using original")
+            processed_file = processed_filepath
+
+        df = pd.read_csv(processed_file)
+        original_count = len(df)
+        print(f"🔍 Loaded {original_count} transactions from file")
+
+        # Step 1: Deduplicate within the file itself first
+        # Keep only the LAST occurrence of each duplicate (most recent data)
+        df_deduplicated = df.drop_duplicates(
+            subset=['Date', 'Description', 'Amount', 'Currency'],
+            keep='last'
+        )
+
+        file_duplicates_removed = original_count - len(df_deduplicated)
+        if file_duplicates_removed > 0:
+            print(f"📋 Removed {file_duplicates_removed} duplicate rows within the file itself (keeping latest)")
+            df = df_deduplicated
+
+        print(f"🔍 Checking {len(df)} unique transactions against database for duplicates")
 
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        cursor = conn.cursor()
-        duplicates = []
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                cursor = conn.cursor()
 
-        for index, row in df.iterrows():
-            # Create transaction identifier similar to main.py logic
-            date_str = str(row.get('Date', ''))
-            if 'T' in date_str:
-                date_str = date_str.split('T')[0]
-            elif ' ' in date_str:
-                date_str = date_str.split(' ')[0]
+            duplicates = []
+            new_transactions = []
 
-            description = str(row.get('Description', ''))[:50]
-            amount = str(row.get('Amount', ''))
+            for index, row in df.iterrows():
+                # Parse date to consistent format
+                date_str = str(row.get('Date', ''))
 
-            # Create check key
-            check_key = f"{date_str}|{amount}|{description}"
+                # Skip if date is missing or invalid
+                if not date_str or date_str == 'nan' or date_str == 'None':
+                    print(f"⚠️ Skipping row {index + 1} - missing date")
+                    continue
 
-            # Check if this transaction exists in database
-            cursor.execute("""
-                SELECT transaction_id, date, description, amount
-                FROM transactions
-                WHERE (strftime('%Y-%m-%d', date) || '|' || CAST(amount AS TEXT) || '|' || substr(description, 1, 50)) = %s
-                LIMIT 1
-            """, (check_key,))
-            existing = cursor.fetchone()
+                # Extract just the date part (YYYY-MM-DD)
+                if 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+                elif ' ' in date_str:
+                    date_str = date_str.split(' ')[0]
 
-            if existing:
-                duplicates.append({
+                # Validate date format (should be YYYY-MM-DD)
+                if not date_str or len(date_str) < 8 or '-' not in date_str:
+                    print(f"⚠️ Skipping row {index + 1} - invalid date format: {date_str}")
+                    continue
+
+                description = str(row.get('Description', ''))
+                try:
+                    amount = float(row.get('Amount', 0))
+                except (ValueError, TypeError):
+                    print(f"⚠️ Skipping row {index + 1} - invalid amount")
+                    continue
+
+                # Determine if this is a crypto transaction
+                currency = str(row.get('Currency', 'USD')).upper()
+                crypto_currencies = ['BTC', 'ETH', 'TAO', 'USDT', 'USDC', 'BNB', 'SOL', 'ADA', 'XRP', 'DOT', 'MATIC', 'AVAX', 'LINK']
+                is_crypto = currency in crypto_currencies
+
+                # Set tolerance based on transaction type
+                # Crypto: Allow 0.75% variance due to exchange rate fluctuations
+                # Fiat: Require exact match (0.01 cent tolerance for rounding)
+                if is_crypto:
+                    tolerance_pct = 0.0075  # 0.75% variance allowed
+                    amount_tolerance = abs(amount) * tolerance_pct
+                    print(f"🪙 Row {index + 1}: Crypto transaction ({currency}) - allowing {tolerance_pct*100}% variance (±${amount_tolerance:.2f})")
+                else:
+                    amount_tolerance = 0.01  # Exact match for fiat (1 cent tolerance)
+                    print(f"💵 Row {index + 1}: Fiat transaction - requiring exact match (±$0.01)")
+
+                # Check for match: same tenant, same date, similar amount (tolerance based on type), same currency
+                # NOTE: Removed LIMIT 1 to find ALL duplicate instances (e.g., if file uploaded multiple times)
+                # NOTE: Removed description matching to avoid missing duplicates when description changes between uploads
+                try:
+                    if db_manager.db_type == 'postgresql':
+                        query = """
+                            SELECT transaction_id, date, description, amount, currency,
+                                   classified_entity, accounting_category, confidence
+                            FROM transactions
+                            WHERE tenant_id = %s
+                              AND DATE(date) = %s
+                              AND ABS(amount - %s) <= %s
+                              AND currency = %s
+                        """
+                        cursor.execute(query, (tenant_id, date_str, amount, amount_tolerance, currency))
+                    else:
+                        query = """
+                            SELECT transaction_id, date, description, amount, currency,
+                                   classified_entity, accounting_category, confidence
+                            FROM transactions
+                            WHERE tenant_id = ?
+                              AND DATE(date) = ?
+                              AND ABS(amount - ?) <= ?
+                              AND currency = ?
+                        """
+                        cursor.execute(query, (tenant_id, date_str, amount, amount_tolerance, currency))
+
+                    existing_matches = cursor.fetchall()
+                except Exception as query_error:
+                    print(f"⚠️ Error querying row {index + 1}: {query_error}")
+                    existing_matches = []
+
+                # Base transaction data
+                transaction_data = {
                     'file_row': index + 1,
                     'date': date_str,
                     'description': description,
                     'amount': amount,
-                    'existing_id': existing[0]
-                })
+                    'new_entity': row.get('classified_entity', 'Unknown'),
+                    'new_category': row.get('accounting_category', 'Unknown'),
+                    'new_confidence': row.get('confidence', 0),
+                    'origin': row.get('Origin', ''),
+                    'destination': row.get('Destination', ''),
+                    'currency': currency,
+                    'is_crypto': is_crypto
+                }
 
-        conn.close()
+                if existing_matches and len(existing_matches) > 0:
+                    # Found duplicate(s) - create an entry for EACH match
+                    # This handles cases where the same file was uploaded multiple times
+                    if len(existing_matches) > 1:
+                        print(f"   📋 Found {len(existing_matches)} duplicate instances in database")
+
+                    for existing in existing_matches:
+                        # Create a copy of transaction_data for each duplicate
+                        dup_data = transaction_data.copy()
+
+                        if db_manager.db_type == 'postgresql':
+                            old_amount = float(existing['amount'])  # Convert Decimal to float
+                            old_currency = existing.get('currency', 'USD')
+                            amount_diff = abs(amount - old_amount)
+                            amount_diff_pct = (amount_diff / abs(old_amount)) * 100 if old_amount != 0 else 0
+
+                            dup_data.update({
+                                'is_duplicate': True,
+                                'existing_id': existing['transaction_id'],
+                                'old_entity': existing['classified_entity'],
+                                'old_category': existing['accounting_category'],
+                                'old_confidence': existing['confidence'],
+                                'old_amount': old_amount,
+                                'old_currency': old_currency,
+                                'amount_diff': amount_diff,
+                                'amount_diff_pct': amount_diff_pct
+                            })
+                        else:
+                            old_amount = existing[3]
+                            old_currency = existing[4] if len(existing) > 4 else 'USD'
+                            amount_diff = abs(amount - old_amount)
+                            amount_diff_pct = (amount_diff / abs(old_amount)) * 100 if old_amount != 0 else 0
+
+                            dup_data.update({
+                                'is_duplicate': True,
+                                'existing_id': existing[0],
+                                'old_entity': existing[5] if len(existing) > 5 else 'Unknown',
+                                'old_category': existing[6] if len(existing) > 6 else 'Unknown',
+                                'old_confidence': existing[7] if len(existing) > 7 else 0,
+                                'old_amount': old_amount,
+                                'old_currency': old_currency,
+                                'amount_diff': amount_diff,
+                                'amount_diff_pct': amount_diff_pct
+                            })
+                        duplicates.append(dup_data)
+                else:
+                    # It's new
+                    transaction_data['is_duplicate'] = False
+                    new_transactions.append(transaction_data)
 
         result = {
             'has_duplicates': len(duplicates) > 0,
             'duplicate_count': len(duplicates),
+            'new_count': len(new_transactions),
             'total_transactions': len(df),
-            'duplicates': duplicates[:5]  # Return first 5 for preview
+            'duplicates': duplicates if include_all_duplicates else duplicates[:10],  # Return first 10 for preview unless explicitly requested all
+            'processed_file': processed_file,
+            'original_file': original_filepath
         }
 
-        print(f"[CHECK] Duplicate check result: {len(duplicates)} duplicates found out of {len(df)} total transactions")
+        print(f"✅ Duplicate check: {len(duplicates)} duplicates, {len(new_transactions)} new transactions")
         return result
 
     except Exception as e:
-        print(f"ERROR: Error checking duplicates: {e}")
+        print(f"❌ Error checking duplicates: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             'has_duplicates': False,
             'duplicate_count': 0,
+            'new_count': 0,
             'total_transactions': 0,
             'duplicates': []
         }
 
+def check_file_duplicates(filepath):
+    """Legacy function - kept for backwards compatibility"""
+    return check_processed_file_duplicates(filepath, filepath)
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and processing"""
+    import sys
+    sys.stderr.write("=" * 80 + "\n")
+    sys.stderr.write("🚀 UPLOAD ENDPOINT HIT - Starting file upload processing\n")
+    sys.stderr.write("=" * 80 + "\n")
+    sys.stderr.flush()
+    logger.info("🚀 UPLOAD ENDPOINT HIT - Starting file upload processing")
     try:
         if 'file' not in request.files:
+            print("❌ ERROR: No file in request")
             return jsonify({'error': 'No file provided'}), 400
 
         file = request.files['file']
@@ -3888,18 +4105,10 @@ def upload_file():
         backup_path = f"{filepath}.backup"
         shutil.copy2(filepath, backup_path)
 
-        # Always check for duplicates first
-        duplicate_info = check_file_duplicates(filepath)
-        if duplicate_info['has_duplicates']:
-            print(f"[FOUND] Found {duplicate_info['duplicate_count']} duplicates, showing confirmation dialog")
-            return jsonify({
-                'success': False,
-                'duplicate_confirmation_needed': True,
-                'duplicate_info': duplicate_info,
-                'message': f'Found {duplicate_info["duplicate_count"]} duplicate transactions. Please choose how to handle them.'
-            })
+        # STEP 1: Process file with smart ingestion FIRST (always process to get latest business logic)
+        print(f"🔧 DEBUG: Step 1 - Processing file with smart ingestion: {filename}")
 
-        # Process the file in a simpler way to avoid subprocess issues
+        # Process the file to get enriched transactions
         try:
             # Use a subprocess to run the processing in a separate Python instance
             processing_script = f"""
@@ -3954,10 +4163,10 @@ else:
             print(f"🔧 DEBUG: Subprocess stdout length: {len(process_result.stdout)}")
             print(f"🔧 DEBUG: Subprocess stderr length: {len(process_result.stderr)}")
 
-            if process_result.stdout:
-                print(f"🔧 DEBUG: Subprocess stdout: {process_result.stdout}")
+            # Always print subprocess output for debugging
+            print(f"🔧 DEBUG: Subprocess stdout:\n{process_result.stdout}")
             if process_result.stderr:
-                print(f"🔧 DEBUG: Subprocess stderr: {process_result.stderr}")
+                print(f"🔧 DEBUG: Subprocess stderr:\n{process_result.stderr}")
 
             # Check for specific error patterns
             if process_result.returncode != 0:
@@ -3989,8 +4198,52 @@ else:
                     'return_code': process_result.returncode
                 }), 500
 
-            # Now sync to database
-            print(f"🔧 DEBUG: Starting database sync for {filename}...")
+            # STEP 2: Check for duplicates in processed file BEFORE syncing to database
+            print(f"🔧 DEBUG: Step 2 - Checking for duplicates in processed file...")
+            duplicate_info = check_processed_file_duplicates(filepath, filename)
+
+            if duplicate_info['has_duplicates']:
+                print(f"🔍 Found {duplicate_info['duplicate_count']} duplicates, presenting options to user")
+
+                # Convert numpy/decimal types to native Python types for JSON serialization
+                def sanitize_for_json(obj):
+                    """Convert numpy and decimal types to JSON-serializable types"""
+                    import numpy as np
+                    from decimal import Decimal
+
+                    if isinstance(obj, dict):
+                        return {k: sanitize_for_json(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [sanitize_for_json(item) for item in obj]
+                    elif isinstance(obj, (np.integer, np.floating)):
+                        return float(obj)
+                    elif isinstance(obj, Decimal):
+                        return float(obj)
+                    elif isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    else:
+                        return obj
+
+                # Sanitize duplicate_info for JSON serialization
+                sanitized_duplicate_info = sanitize_for_json(duplicate_info)
+
+                # Store processed file info in session for later resolution
+                session['pending_upload'] = {
+                    'filename': filename,
+                    'filepath': filepath,
+                    'processed_file': duplicate_info.get('processed_file'),
+                    'duplicate_info': sanitized_duplicate_info,
+                    'transactions_processed': transactions_processed
+                }
+                return jsonify({
+                    'success': False,
+                    'duplicate_confirmation_needed': True,
+                    'duplicate_info': sanitized_duplicate_info,
+                    'message': f'Found {duplicate_info["duplicate_count"]} duplicate transactions. {duplicate_info["new_count"]} new transactions found.'
+                })
+
+            # STEP 3: No duplicates, proceed with database sync
+            print(f"🔧 DEBUG: No duplicates found, starting database sync for {filename}...")
             sync_result = sync_csv_to_database(filename)
             print(f"🔧 DEBUG: Database sync result: {sync_result}")
 
@@ -4001,7 +4254,7 @@ else:
                     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
                     matcher = RobustRevenueInvoiceMatcher()
-                    matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+                    matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
 
                     if matches_result and matches_result.get('matches_found', 0) > 0:
                         print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
@@ -4042,6 +4295,147 @@ else:
 
     except Exception as e:
         return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/upload/test', methods=['GET'])
+def test_upload_endpoint():
+    """Test endpoint to verify server version"""
+    from datetime import datetime
+    return jsonify({
+        'message': 'Upload endpoint is active and updated',
+        'version': '2.0_crypto_duplicates',
+        'timestamp': datetime.now().isoformat()
+    })
+
+@app.route('/api/upload/resolve-duplicates', methods=['POST'])
+def resolve_duplicates():
+    """Handle user's decision on duplicate transactions"""
+    try:
+        data = request.json
+        action = data.get('action')  # 'overwrite' or 'discard'
+
+        # Retrieve pending upload info from session
+        pending = session.get('pending_upload')
+        if not pending:
+            return jsonify({
+                'success': False,
+                'error': 'No pending upload found. Please upload the file again.'
+            }), 400
+
+        filename = pending['filename']
+        processed_file = pending.get('processed_file')
+        duplicate_info = pending['duplicate_info']
+
+        print(f"🔧 DEBUG: Resolving duplicates with action: {action}")
+        print(f"🔧 DEBUG: File: {filename}, Duplicates: {duplicate_info['duplicate_count']}")
+
+        if action == 'overwrite':
+            # OVERWRITE: Delete old duplicates and insert new enriched data
+            print(f"✅ User chose to OVERWRITE {duplicate_info['duplicate_count']} duplicates with latest business knowledge")
+
+            from database import db_manager
+
+            # Step 1: Delete existing duplicate transactions
+            duplicate_ids = [dup['existing_id'] for dup in duplicate_info.get('duplicates', [])]
+            if duplicate_ids:
+                # Get ALL duplicate IDs, not just the preview
+                # Re-run the check to get all IDs with include_all_duplicates=True
+                full_check = check_processed_file_duplicates(pending['filepath'], filename, include_all_duplicates=True)
+                all_duplicate_ids = [dup['existing_id'] for dup in full_check.get('duplicates', [])]
+
+                # Deduplicate the ID list (in case same transaction matched multiple times)
+                original_count = len(all_duplicate_ids)
+                all_duplicate_ids = list(set(all_duplicate_ids))
+                deduped_count = len(all_duplicate_ids)
+
+                if original_count != deduped_count:
+                    print(f"⚠️ Found {original_count} duplicate references but only {deduped_count} unique transaction IDs")
+
+                print(f"🗑️ Deleting {len(all_duplicate_ids)} unique duplicate transactions...")
+
+                with db_manager.get_connection() as conn:
+                    if db_manager.db_type == 'postgresql':
+                        cursor = conn.cursor()
+                        # Delete duplicates
+                        delete_query = "DELETE FROM transactions WHERE transaction_id = ANY(%s)"
+                        cursor.execute(delete_query, (all_duplicate_ids,))
+                        conn.commit()
+                        print(f"✅ Deleted {cursor.rowcount} duplicate transactions")
+                    else:
+                        cursor = conn.cursor()
+                        placeholders = ','.join('?' * len(all_duplicate_ids))
+                        delete_query = f"DELETE FROM transactions WHERE transaction_id IN ({placeholders})"
+                        cursor.execute(delete_query, all_duplicate_ids)
+                        conn.commit()
+                        print(f"✅ Deleted {cursor.rowcount} duplicate transactions")
+
+            # Step 2: Sync the new processed file to database
+            print(f"📥 Syncing new enriched transactions to database...")
+            sync_result = sync_csv_to_database(filename)
+
+            if sync_result:
+                # Clear session
+                session.pop('pending_upload', None)
+
+                # Auto-trigger revenue matching
+                try:
+                    from robust_revenue_matcher import RobustRevenueInvoiceMatcher
+                    matcher = RobustRevenueInvoiceMatcher()
+                    matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
+                    if matches_result and matches_result.get('matches_found', 0) > 0:
+                        print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches!")
+                except Exception as e:
+                    print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+
+                return jsonify({
+                    'success': True,
+                    'action': 'overwrite',
+                    'message': f'Successfully updated {duplicate_info["duplicate_count"]} transactions with latest business knowledge',
+                    'duplicates_updated': duplicate_info['duplicate_count'],
+                    'new_added': duplicate_info.get('new_count', 0),
+                    'sync_result': sync_result
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to sync new transactions to database'
+                }), 500
+
+        elif action == 'discard':
+            # DISCARD: Delete processed files and keep existing database entries
+            print(f"🚫 User chose to DISCARD upload, keeping existing {duplicate_info['duplicate_count']} transactions")
+
+            # Delete processed CSV file
+            if processed_file and os.path.exists(processed_file):
+                os.remove(processed_file)
+                print(f"🗑️ Deleted processed file: {processed_file}")
+
+            # Delete uploaded file
+            if os.path.exists(pending['filepath']):
+                os.remove(pending['filepath'])
+                print(f"🗑️ Deleted uploaded file: {pending['filepath']}")
+
+            # Clear session
+            session.pop('pending_upload', None)
+
+            return jsonify({
+                'success': True,
+                'action': 'discard',
+                'message': f'Upload discarded. Existing {duplicate_info["duplicate_count"]} transactions preserved.',
+                'duplicates_kept': duplicate_info['duplicate_count']
+            })
+
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid action: {action}. Must be "overwrite" or "discard".'
+            }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
         }), 500
@@ -4423,7 +4817,7 @@ def api_upload_invoice():
 
             matcher = RobustRevenueInvoiceMatcher()
             # Focus on the newly uploaded invoice
-            matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+            matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
 
             if matches_result and matches_result.get('matches_found', 0) > 0:
                 print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
@@ -4618,7 +5012,7 @@ def api_upload_batch_invoices():
                 from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
                 matcher = RobustRevenueInvoiceMatcher()
-                matches_result = matcher.process_revenue_matching(auto_apply=False, match_all=True)
+                matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
 
                 if matches_result and matches_result.get('matches_found', 0) > 0:
                     print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
@@ -7062,6 +7456,101 @@ def api_revenue_performance_stats():
 
     except Exception as e:
         logger.error(f"Error getting performance stats: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/sync-classifications', methods=['POST'])
+def api_sync_revenue_classifications():
+    """
+    Sync transaction classifications with revenue recognition matches
+    Updates transactions that are matched to invoices but not classified as Revenue
+
+    This endpoint is called automatically when users visit the dashboard
+    """
+    try:
+        from revenue_sync import sync_revenue_now
+        from flask import session
+
+        # Get session ID for tracking
+        session_id = session.get('user_id', 'anonymous')
+
+        logger.info(f"🔄 Revenue sync triggered by session: {session_id}")
+
+        # Execute sync
+        sync_result = sync_revenue_now(session_id)
+
+        if sync_result['success']:
+            # Store in session for notification display
+            if sync_result['transactions_updated'] > 0:
+                session['revenue_sync_notification'] = {
+                    'count': sync_result['transactions_updated'],
+                    'timestamp': sync_result['timestamp'],
+                    'changes': sync_result['changes'][:10]  # Limit to 10 for display
+                }
+                logger.info(f"✅ Revenue sync: {sync_result['transactions_updated']} transactions updated")
+            else:
+                logger.info("✅ Revenue sync: No updates needed")
+
+        return jsonify(sync_result)
+
+    except Exception as e:
+        logger.error(f"❌ Error in revenue sync endpoint: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'transactions_updated': 0
+        }), 500
+
+@app.route('/api/revenue/sync-notification', methods=['GET'])
+def api_get_sync_notification():
+    """
+    Get pending sync notification for current session
+    Called by dashboard to check if there are updates to display
+    """
+    try:
+        from flask import session
+
+        notification = session.get('revenue_sync_notification')
+
+        if notification:
+            return jsonify({
+                'success': True,
+                'has_notification': True,
+                'notification': notification
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'has_notification': False
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting sync notification: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/revenue/dismiss-sync-notification', methods=['POST'])
+def api_dismiss_sync_notification():
+    """
+    Dismiss the sync notification for current session
+    """
+    try:
+        from flask import session
+
+        if 'revenue_sync_notification' in session:
+            del session['revenue_sync_notification']
+
+        return jsonify({
+            'success': True,
+            'message': 'Notification dismissed'
+        })
+
+    except Exception as e:
+        logger.error(f"Error dismissing notification: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
