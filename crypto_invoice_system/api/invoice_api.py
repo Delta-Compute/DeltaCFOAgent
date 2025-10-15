@@ -19,7 +19,7 @@ load_dotenv(env_path)
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.database import DatabaseManager, InvoiceStatus
+from models.database_postgresql import CryptoInvoiceDatabaseManager, InvoiceStatus
 from services.mexc_service import MEXCService, MEXCAPIError
 from services.invoice_generator import InvoiceGenerator
 from services.payment_poller import PaymentPoller
@@ -40,10 +40,10 @@ logger = logging.getLogger(__name__)
 
 # Initialize services with absolute paths
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-db_path = os.path.join(base_dir, "crypto_invoices.db")
 invoice_dir = os.path.join(base_dir, "generated_invoices")
 
-db_manager = DatabaseManager(db_path)
+# Initialize PostgreSQL database manager (no longer using SQLite)
+db_manager = CryptoInvoiceDatabaseManager()
 invoice_generator = InvoiceGenerator(invoice_dir)
 
 # Initialize MEXC service (API keys from environment)

@@ -84,10 +84,10 @@ NOTIFICATION_EMAIL_CC=aldo@deltaenergy.com,tiago@deltaenergy.com
 ### Step 3: Initialize Database
 
 ```bash
-python3 -c "from models.database import DatabaseManager; DatabaseManager()"
+python3 -c "from models.database_postgresql import CryptoInvoiceDatabaseManager; CryptoInvoiceDatabaseManager()"
 
-# Verify database created
-ls -lh crypto_invoices.db
+# Verify PostgreSQL connection and table creation
+python3 -c "from models.database_postgresql import CryptoInvoiceDatabaseManager; db = CryptoInvoiceDatabaseManager(); print('PostgreSQL database initialized successfully')"
 ```
 
 ### Step 4: Test MEXC Connection

@@ -2,13 +2,22 @@
 """
 Database models for Crypto Invoice Payment System
 Delta Energy - Paraguay Colocation Operations
+Migrated to use PostgreSQL via centralized DatabaseManager
 """
 
-import sqlite3
+import sys
+import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from enum import Enum
 import json
+from pathlib import Path
+
+# Add main project path for DatabaseManager import
+current_dir = Path(__file__).parent.parent.parent
+sys.path.append(str(current_dir / 'web_ui'))
+
+from database import db_manager
 
 
 class InvoiceStatus(Enum):
@@ -38,18 +47,13 @@ class CryptoNetwork(Enum):
     TAO = "TAO"
 
 
-class DatabaseManager:
-    """Database manager for crypto invoice system"""
+class CryptoInvoiceDatabaseManager:
+    """Database manager for crypto invoice system using centralized DatabaseManager"""
 
-    def __init__(self, db_path: str = "crypto_invoices.db"):
-        self.db_path = db_path
+    def __init__(self):
+        """Initialize using centralized DatabaseManager"""
+        self.db = db_manager
         self.init_database()
-
-    def get_connection(self):
-        """Get database connection"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
 
     def init_database(self):
         """Initialize database schema"""

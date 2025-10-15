@@ -182,5 +182,43 @@ def api_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/dashboard')
+def dashboard_page():
+    """Dashboard page (alias for main page)"""
+    return dashboard()
+
+@app.route('/revenue')
+def revenue_page():
+    """Revenue Recognition page"""
+    try:
+        df = load_master_transactions()
+        stats = get_dashboard_stats(df)
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('dashboard.html', stats=stats, cache_buster=cache_buster, page_type='revenue')
+    except Exception as e:
+        return f"Error loading revenue page: {str(e)}", 500
+
+@app.route('/invoices')
+def invoices_page():
+    """Invoices management page"""
+    try:
+        df = load_master_transactions()
+        stats = get_dashboard_stats(df)
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('dashboard.html', stats=stats, cache_buster=cache_buster, page_type='invoices')
+    except Exception as e:
+        return f"Error loading invoices page: {str(e)}", 500
+
+@app.route('/files')
+def files_page():
+    """File Manager page"""
+    try:
+        df = load_master_transactions()
+        stats = get_dashboard_stats(df)
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('dashboard.html', stats=stats, cache_buster=cache_buster, page_type='files')
+    except Exception as e:
+        return f"Error loading files page: {str(e)}", 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5002, debug=True)

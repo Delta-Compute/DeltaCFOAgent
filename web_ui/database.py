@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self):
-        self.db_type = os.getenv('DB_TYPE', 'sqlite')  # 'sqlite' or 'postgresql'
+        self.db_type = os.getenv('DB_TYPE', 'postgresql')  # Default to PostgreSQL after migration
         self.connection_config = self._get_connection_config()
         self.connection_pool = None
         self._init_connection_pool()

@@ -20,7 +20,7 @@ cp .env.example .env
 
 ### Running the Application
 ```bash
-# Main web dashboard (SQLite/PostgreSQL)
+# Main web dashboard (PostgreSQL)
 cd web_ui && python app_db.py
 # Access: http://localhost:5001
 
@@ -65,7 +65,7 @@ python validate_simple.py
 The system follows a modular microservices architecture with three main layers:
 
 1. **Processing Layer**: Smart document ingestion with Claude AI classification
-2. **Data Layer**: Dual database support (SQLite development, PostgreSQL production)
+2. **Data Layer**: PostgreSQL-only architecture (production-ready)
 3. **Presentation Layer**: Multiple web interfaces for different use cases
 
 ### Key Components
@@ -93,9 +93,10 @@ The system follows a modular microservices architecture with three main layers:
 
 ### Database Architecture
 
-**Dual Database Strategy**:
-- **Development**: SQLite (`web_ui/delta_transactions.db`)
+**PostgreSQL-Only Strategy**:
+- **All Environments**: PostgreSQL (development and production)
 - **Production**: PostgreSQL on Google Cloud SQL
+- **Development**: Direct connection to production PostgreSQL instance
 
 **Key Tables**:
 - `transactions`: Main transaction records with AI classifications
@@ -103,7 +104,7 @@ The system follows a modular microservices architecture with three main layers:
 - `learned_patterns`: Machine learning feedback storage
 - `user_interactions`: Reinforcement learning data
 
-**Connection Management**: `DatabaseManager` class in `web_ui/database.py` handles both SQLite and PostgreSQL with automatic detection.
+**Connection Management**: `DatabaseManager` class in `web_ui/database.py` provides centralized PostgreSQL connectivity for all components.
 
 ### AI Integration Patterns
 
@@ -131,7 +132,7 @@ Business entities and rules are defined in `business_knowledge.md`.
 
 **Alternative Deployment**:
 - Vercel support via `api/index.py` and `vercel.json`
-- Local development with SQLite backend
+- Development server with direct PostgreSQL access
 
 ### Security Considerations
 
@@ -176,6 +177,44 @@ The codebase uses a mix of patterns:
 4. AI-powered classification
 5. Database storage with confidence scoring
 6. User feedback integration for learning
+
+## Database Guidelines - PostgreSQL Only
+
+### 🚨 CRITICAL: PostgreSQL-Only Policy
+
+**This project has been fully migrated to PostgreSQL. NO NEW SQLite code should be added.**
+
+### Database Development Rules:
+
+1. **Always Use DatabaseManager**: All database access must go through the centralized `DatabaseManager` in `web_ui/database.py`
+2. **No Direct SQLite**: Never import `sqlite3` or create new SQLite connections
+3. **PostgreSQL Queries**: Write SQL compatible with PostgreSQL syntax
+4. **Connection Pooling**: Use the existing connection management - never create direct connections
+5. **Schema Updates**: All schema changes must be applied to `postgres_unified_schema.sql`
+
+### Available Database Components:
+
+- **Main System**: Uses `db_manager` from `web_ui/database.py`
+- **Crypto Pricing**: Uses `CryptoPricingDB` → `db_manager`
+- **Crypto Invoices**: Uses `CryptoInvoiceDatabaseManager` → `db_manager`
+- **Analytics**: Uses `AnalyticsEngine` → `db_manager`
+
+### Database Testing:
+
+```bash
+# Test PostgreSQL migration
+python test_postgresql_migration.py --verbose
+
+# Test specific component
+python test_postgresql_migration.py --component=main
+```
+
+### Migration Resources:
+
+- **Schema**: `postgres_unified_schema.sql` (unified schema for all components)
+- **Data Migration**: `migrate_data_to_postgresql.py` (SQLite → PostgreSQL)
+- **Testing**: `test_postgresql_migration.py` (comprehensive validation)
+- **Guide**: `POSTGRESQL_MIGRATION_GUIDE.md` (step-by-step instructions)
 
 ## Important Notes
 

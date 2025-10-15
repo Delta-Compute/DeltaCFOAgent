@@ -10,8 +10,6 @@ Provides REST API endpoints for business intelligence and data visualization.
 import os
 import sys
 from flask import Flask, request, jsonify, render_template
-import pandas as pd
-import sqlite3
 from datetime import datetime, timedelta
 import json
 from pathlib import Path
@@ -20,90 +18,96 @@ from pathlib import Path
 current_dir = Path(__file__).parent
 sys.path.append(str(current_dir.parent.parent))
 
+# Import centralized database manager
+from web_ui.database import db_manager
+
 app = Flask(__name__)
 app.config['JSON_SORT_KEYS'] = False
 
 # Configuration
-DATABASE_PATH = os.environ.get('DATABASE_PATH', '../../web_ui/delta_transactions.db')
 PORT = int(os.environ.get('PORT', 8080))
 DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'
 
 class AnalyticsEngine:
-    """Core analytics engine for financial data processing"""
+    """Core analytics engine for financial data processing using PostgreSQL"""
 
     def __init__(self):
-        self.db_path = DATABASE_PATH
+        self.db = db_manager
 
     def get_db_connection(self):
-        """Get database connection"""
+        """Get database connection using centralized DatabaseManager"""
         try:
-            # Check if database file exists
-            if not os.path.exists(self.db_path):
-                print(f"⚠️ Database not found at {self.db_path}")
-                # Create empty database for testing
-                conn = sqlite3.connect(self.db_path)
-                conn.execute('''CREATE TABLE IF NOT EXISTS transactions (
-                    id INTEGER PRIMARY KEY,
-                    date TEXT,
-                    description TEXT,
-                    amount REAL,
-                    entity TEXT,
-                    category TEXT
-                )''')
-                conn.commit()
-                print(f"✅ Created empty database at {self.db_path}")
-            else:
-                conn = sqlite3.connect(self.db_path)
-
-            conn.row_factory = sqlite3.Row
-            return conn
+            return self.db.get_connection()
         except Exception as e:
             print(f"Database connection error: {e}")
             return None
 
     def get_monthly_summary(self, months=12):
         """Get monthly transaction summary"""
-        conn = self.get_db_connection()
-        if not conn:
-            return {"error": "Database connection failed"}
-
         try:
-            query = """
-            SELECT
-                DATE(date, 'start of month') as month,
-                entity,
-                SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as income,
-                SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
-                SUM(amount) as net_flow,
-                COUNT(*) as transaction_count
-            FROM transactions
-            WHERE date >= date('now', '-{} months')
-            GROUP BY month, entity
-            ORDER BY month DESC, entity
-            """.format(months)
+            # PostgreSQL compatible query
+            if self.db.db_type == 'postgresql':
+                query = """
+                SELECT
+                    DATE_TRUNC('month', date::date) as month,
+                    entity,
+                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as income,
+                    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
+                    SUM(amount) as net_flow,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE date::date >= CURRENT_DATE - INTERVAL '%s months'
+                GROUP BY month, entity
+                ORDER BY month DESC, entity
+                """ % months
+            else:
+                # SQLite fallback
+                query = """
+                SELECT
+                    DATE(date, 'start of month') as month,
+                    entity,
+                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as income,
+                    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
+                    SUM(amount) as net_flow,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE date >= date('now', '-%s months')
+                GROUP BY month, entity
+                ORDER BY month DESC, entity
+                """ % months
 
-            df = pd.read_sql_query(query, conn)
-            conn.close()
+            result = self.db.execute_query(query, fetch_all=True)
 
-            # Convert to JSON-friendly format
-            result = {
-                'summary': df.to_dict('records'),
-                'total_months': months,
-                'generated_at': datetime.now().isoformat()
-            }
+            if result:
+                # Convert to pandas-like format for compatibility
+                summary_data = []
+                for row in result:
+                    if hasattr(row, '_asdict'):
+                        summary_data.append(row._asdict())
+                    elif hasattr(row, 'keys'):
+                        summary_data.append(dict(row))
+                    else:
+                        # Handle tuple format
+                        keys = ['month', 'entity', 'income', 'expenses', 'net_flow', 'transaction_count']
+                        summary_data.append(dict(zip(keys, row)))
 
-            return result
+                return {
+                    'summary': summary_data,
+                    'total_months': months,
+                    'generated_at': datetime.now().isoformat()
+                }
+            else:
+                return {
+                    'summary': [],
+                    'total_months': months,
+                    'generated_at': datetime.now().isoformat()
+                }
 
         except Exception as e:
-            conn.close()
             return {"error": f"Query failed: {str(e)}"}
 
     def get_entity_breakdown(self):
         """Get transaction breakdown by business entity"""
-        conn = self.get_db_connection()
-        if not conn:
-            return {"error": "Database connection failed"}
-
         try:
             query = """
             SELECT
@@ -120,26 +124,37 @@ class AnalyticsEngine:
             ORDER BY total_transactions DESC
             """
 
-            df = pd.read_sql_query(query, conn)
-            conn.close()
+            result = self.db.execute_query(query, fetch_all=True)
 
-            result = {
-                'entities': df.to_dict('records'),
-                'generated_at': datetime.now().isoformat()
-            }
+            if result:
+                # Convert to dictionary format
+                entities_data = []
+                for row in result:
+                    if hasattr(row, '_asdict'):
+                        entities_data.append(row._asdict())
+                    elif hasattr(row, 'keys'):
+                        entities_data.append(dict(row))
+                    else:
+                        # Handle tuple format
+                        keys = ['entity', 'total_transactions', 'total_income', 'total_expenses',
+                               'net_position', 'avg_transaction_size', 'first_transaction', 'last_transaction']
+                        entities_data.append(dict(zip(keys, row)))
 
-            return result
+                return {
+                    'entities': entities_data,
+                    'generated_at': datetime.now().isoformat()
+                }
+            else:
+                return {
+                    'entities': [],
+                    'generated_at': datetime.now().isoformat()
+                }
 
         except Exception as e:
-            conn.close()
             return {"error": f"Query failed: {str(e)}"}
 
     def get_category_analysis(self):
         """Analyze spending by category"""
-        conn = self.get_db_connection()
-        if not conn:
-            return {"error": "Database connection failed"}
-
         try:
             query = """
             SELECT
@@ -157,18 +172,33 @@ class AnalyticsEngine:
             LIMIT 50
             """
 
-            df = pd.read_sql_query(query, conn)
-            conn.close()
+            result = self.db.execute_query(query, fetch_all=True)
 
-            result = {
-                'categories': df.to_dict('records'),
-                'generated_at': datetime.now().isoformat()
-            }
+            if result:
+                # Convert to dictionary format
+                categories_data = []
+                for row in result:
+                    if hasattr(row, '_asdict'):
+                        categories_data.append(row._asdict())
+                    elif hasattr(row, 'keys'):
+                        categories_data.append(dict(row))
+                    else:
+                        # Handle tuple format
+                        keys = ['category', 'entity', 'transaction_count', 'total_amount',
+                               'avg_amount', 'income_transactions', 'expense_transactions']
+                        categories_data.append(dict(zip(keys, row)))
 
-            return result
+                return {
+                    'categories': categories_data,
+                    'generated_at': datetime.now().isoformat()
+                }
+            else:
+                return {
+                    'categories': [],
+                    'generated_at': datetime.now().isoformat()
+                }
 
         except Exception as e:
-            conn.close()
             return {"error": f"Query failed: {str(e)}"}
 
 # Initialize analytics engine
@@ -234,17 +264,16 @@ def dashboard_data():
 def service_status():
     """Get service status and database connectivity"""
     try:
-        conn = analytics.get_db_connection()
-        if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM transactions")
-            transaction_count = cursor.fetchone()[0]
-            conn.close()
+        # Test database connection using DatabaseManager
+        result = analytics.db.execute_query("SELECT COUNT(*) FROM transactions", fetch_one=True)
+
+        if result:
+            transaction_count = result[0] if isinstance(result, tuple) else result['count']
 
             return jsonify({
                 'service': 'analytics-service',
                 'status': 'operational',
-                'database': 'connected',
+                'database': f'connected ({analytics.db.db_type})',
                 'transaction_count': transaction_count,
                 'timestamp': datetime.now().isoformat()
             })
@@ -252,7 +281,7 @@ def service_status():
             return jsonify({
                 'service': 'analytics-service',
                 'status': 'degraded',
-                'database': 'disconnected',
+                'database': 'query_failed',
                 'timestamp': datetime.now().isoformat()
             }), 503
 
@@ -260,6 +289,7 @@ def service_status():
         return jsonify({
             'service': 'analytics-service',
             'status': 'error',
+            'database': 'disconnected',
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
@@ -288,7 +318,7 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print(f"🚀 Starting Delta CFO Analytics Service on port {PORT}")
-    print(f"📊 Database: {DATABASE_PATH}")
+    print(f"📊 Database: {analytics.db.db_type} (centralized)")
     print(f"🔧 Debug mode: {DEBUG}")
 
     app.run(

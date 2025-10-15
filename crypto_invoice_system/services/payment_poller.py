@@ -15,7 +15,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.mexc_service import MEXCService, MEXCAPIError
-from models.database import DatabaseManager, InvoiceStatus, PaymentStatus
+from models.database_postgresql import CryptoInvoiceDatabaseManager, InvoiceStatus, PaymentStatus
 from services.amount_based_matcher import AmountBasedPaymentMatcher
 
 
@@ -25,7 +25,7 @@ class PaymentPoller:
     Polls MEXC API at regular intervals to detect incoming payments
     """
 
-    def __init__(self, mexc_service: MEXCService, db_manager: DatabaseManager,
+    def __init__(self, mexc_service: MEXCService, db_manager: CryptoInvoiceDatabaseManager,
                  poll_interval: int = 30, payment_callback: Callable = None,
                  amount_matcher: AmountBasedPaymentMatcher = None):
         """
@@ -33,7 +33,7 @@ class PaymentPoller:
 
         Args:
             mexc_service: MEXC API service instance
-            db_manager: Database manager instance
+            db_manager: CryptoInvoiceDatabaseManager instance for PostgreSQL
             poll_interval: Polling interval in seconds (default 30)
             payment_callback: Optional callback function when payment detected
             amount_matcher: Amount-based matcher for shared addresses

@@ -1,6 +1,6 @@
 # DELTA CFO AGENT - AI-POWERED FINANCIAL PLATFORM
 
-Enterprise-grade AI-powered financial transaction processing and management system for Delta businesses with advanced web interface, SQLite backend, Claude AI integration, and smart document ingestion.
+Enterprise-grade AI-powered financial transaction processing and management system for Delta businesses with advanced web interface, PostgreSQL backend, Claude AI integration, and smart document ingestion.
 
 ## 🚀 QUICK START
 
@@ -34,7 +34,7 @@ cd web_ui && python3 app_db.py
 ### Production-Ready Features ✅
 - **🌐 Advanced Web Dashboard** - Modern responsive interface with 800+ transactions
 - **🤖 Claude AI Integration** - Real-time AI suggestions for descriptions, categories, entities
-- **📊 SQLite Database Backend** - Fast querying, filtering, pagination, advanced search
+- **📊 PostgreSQL Database Backend** - Enterprise-grade database with fast querying, filtering, pagination, advanced search
 - **🧠 Smart Document Ingestion** - Auto-detects Chase checking, credit card, and standard CSV formats
 - **🔄 Reinforcement Learning** - Learns from user choices and improves suggestions over time
 - **✏️ Professional Inline Editing** - Click-to-edit with dropdowns, modals, and bulk operations
@@ -71,7 +71,7 @@ cd web_ui && python3 app_db.py
 ## ⚠️ KNOWN ISSUES & LIMITATIONS
 
 ### Active Issues
-- **SQLite Date Adapter Warnings** - Python 3.12 deprecation warnings (functional but noisy)
+- **Database Connection Pooling** - PostgreSQL connection management optimized for concurrent access
 - **500 Errors on Similar Descriptions** - Occasional server errors during bulk similar transaction analysis
 - **Visual Selection System** - Advanced wire fee attribution UI not yet implemented
 
@@ -89,7 +89,7 @@ cd web_ui && python3 app_db.py
 ## 🔧 TECHNICAL ARCHITECTURE
 
 ### Backend Components
-- **`app_db.py`** - Flask web server with SQLite database integration
+- **`app_db.py`** - Flask web server with PostgreSQL database integration
 - **`smart_ingestion.py`** - Claude-powered document structure analysis
 - **`main.py`** - Core DeltaCFOAgent processing pipeline
 - **`crypto_pricing.py`** - Real-time cryptocurrency price conversion

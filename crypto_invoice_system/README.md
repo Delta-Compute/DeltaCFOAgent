@@ -31,7 +31,8 @@ Automated invoice generation, MEXC API integration, and real-time payment monito
 ```
 crypto_invoice_system/
 ├── models/
-│   └── database.py          # SQLite database models and operations
+│   ├── database.py          # Legacy SQLite (deprecated)
+│   └── database_postgresql.py # PostgreSQL database models and operations
 ├── services/
 │   ├── mexc_service.py      # MEXC API wrapper
 │   ├── invoice_generator.py # PDF invoice generation with QR codes
@@ -43,7 +44,7 @@ crypto_invoice_system/
 │   ├── dashboard.html       # Main dashboard
 │   └── create_invoice.html  # Invoice creation form
 ├── generated_invoices/      # Output directory for PDFs and QR codes
-├── crypto_invoices.db       # SQLite database
+├── config/                  # PostgreSQL connection settings
 ├── requirements.txt         # Python dependencies
 ├── .env.example             # Environment configuration template
 └── README.md                # This file
@@ -83,10 +84,10 @@ SMTP_PASSWORD=your_app_password
 ### 3. Initialize Database
 
 ```bash
-python -c "from models.database import DatabaseManager; DatabaseManager()"
+python -c "from models.database_postgresql import CryptoInvoiceDatabaseManager; CryptoInvoiceDatabaseManager()"
 ```
 
-This creates `crypto_invoices.db` with all required tables and default clients.
+This initializes the PostgreSQL database with all required tables and default clients (no longer using SQLite).
 
 ### 4. Start the Server
 
@@ -348,8 +349,8 @@ INVOICE_OVERDUE_DAYS=7
 
 ```bash
 # Reinitialize database (WARNING: deletes all data)
-rm crypto_invoices.db
-python -c "from models.database import DatabaseManager; DatabaseManager()"
+# Drop and recreate PostgreSQL tables
+python -c "from models.database_postgresql import CryptoInvoiceDatabaseManager; db = CryptoInvoiceDatabaseManager(); db.init_database(force_recreate=True)"
 ```
 
 ### MEXC API Errors
@@ -407,7 +408,7 @@ Built with:
 - Flask (Web framework)
 - ReportLab (PDF generation)
 - MEXC API (Crypto exchange)
-- SQLite (Database)
+- PostgreSQL (Database)
 - QRCode (Payment QR codes)
 
 **Developed for Delta Energy Paraguay colocation operations - Production-ready crypto invoice payment system**
