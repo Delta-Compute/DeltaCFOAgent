@@ -268,15 +268,23 @@ function updateKPICards() {
 
     // Safe update function
     function safeUpdate(elementId, value) {
+        console.log(`safeUpdate called: ${elementId} = ${value}`);
         const element = document.getElementById(elementId);
         if (element) {
             element.textContent = formatCurrency(value || 0);
+            console.log(`Element ${elementId} updated with: ${element.textContent}`);
+        } else {
+            console.error(`Element with ID '${elementId}' not found!`);
         }
     }
 
     // Update cash position
+    console.log('Cash Data:', cashData);
     if (cashData) {
-        safeUpdate('cashPosition', cashData.total_cash);
+        console.log('Updating cashPosition with:', cashData.total_cash_usd);
+        safeUpdate('cashPosition', cashData.total_cash_usd);
+    } else {
+        console.warn('Cash data not available');
     }
 
     // Update P&L data
@@ -1083,4 +1091,1305 @@ function showReportGenerationStatus(message, isSuccess = true) {
             document.body.removeChild(notification);
         }
     }, 3000);
+}
+
+/**
+ * Generate Balance Sheet Report (show modal first)
+ */
+function generateBalanceSheetReport() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Load Balance Sheet data and show preview modal
+        loadBalanceSheetPreviewData();
+
+    } catch (error) {
+        console.error('Error loading Balance Sheet preview:', error);
+        showError('Failed to load Balance Sheet preview. Please try again.');
+        showLoading(false);
+    }
+}
+
+/**
+ * Load Balance Sheet data and show preview modal
+ */
+async function loadBalanceSheetPreviewData() {
+    try {
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Fetch Balance Sheet data from simple JSON endpoint
+        const response = await fetch(`/api/reports/balance-sheet/simple?${params.toString()}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load Balance Sheet data');
+        }
+
+        // Show modal first to ensure it exists
+        openBalanceSheetModal();
+
+        // Then populate modal with data with small delay to ensure DOM is ready
+        setTimeout(() => {
+            populateBalanceSheetModal(data.statement, companyName);
+        }, 100);
+
+    } catch (error) {
+        console.error('Error loading Balance Sheet data:', error);
+        showError('Erro ao carregar dados do Balanço Patrimonial: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Generate Cash Flow Report (show modal first)
+ */
+function generateCashFlowReport() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Load Cash Flow data and show preview modal
+        loadCashFlowPreviewData();
+
+    } catch (error) {
+        console.error('Error loading Cash Flow preview:', error);
+        showError('Failed to load Cash Flow preview. Please try again.');
+        showLoading(false);
+    }
+}
+
+/**
+ * Load Cash Flow data and show preview modal
+ */
+async function loadCashFlowPreviewData() {
+    try {
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Fetch Cash Flow data from simple JSON endpoint
+        const response = await fetch(`/api/reports/cash-flow/simple?${params.toString()}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load Cash Flow data');
+        }
+
+        // Show modal first to ensure it exists
+        openCashFlowModal();
+
+        // Then populate modal with data with small delay to ensure DOM is ready
+        setTimeout(() => {
+            populateCashFlowModal(data.statement, companyName);
+        }, 100);
+
+    } catch (error) {
+        console.error('Error loading Cash Flow data:', error);
+        showError('Erro ao carregar dados do Fluxo de Caixa: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Generate DMPL Report (show modal first)
+ */
+function generateDMPLReport() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Load DMPL data and show preview modal
+        loadDMPLPreviewData();
+
+    } catch (error) {
+        console.error('Error loading DMPL preview:', error);
+        showError('Failed to load DMPL preview. Please try again.');
+        showLoading(false);
+    }
+}
+
+/**
+ * Load DMPL data and show preview modal
+ */
+async function loadDMPLPreviewData() {
+    try {
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Fetch DMPL data from simple JSON endpoint
+        const response = await fetch(`/api/reports/dmpl/simple?${params.toString()}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load DMPL data');
+        }
+
+        // Show modal first to ensure it exists
+        openDMPLModal();
+
+        // Then populate modal with data with small delay to ensure DOM is ready
+        setTimeout(() => {
+            populateDMPLModal(data.statement, companyName);
+        }, 100);
+
+    } catch (error) {
+        console.error('Error loading DMPL data:', error);
+        showError('Erro ao carregar dados do DMPL: ' + error.message);
+    } finally {
+        showLoading(false);
+    }
+}
+
+/**
+ * Balance Sheet Modal Functions
+ */
+
+/**
+ * Populate Balance Sheet modal with data
+ */
+function populateBalanceSheetModal(balanceSheetData, companyName) {
+    console.log('populateBalanceSheetModal called with:', balanceSheetData, companyName);
+
+    // Check if modal exists first
+    const modal = document.getElementById('balanceSheetPreviewModal');
+    if (!modal) {
+        console.error('balanceSheetPreviewModal not found in DOM');
+        return;
+    }
+
+    // Extract metrics from API response
+    let totalAssets, totalLiabilities, totalEquity;
+
+    if (balanceSheetData.summary_metrics) {
+        const summaryMetrics = balanceSheetData.summary_metrics;
+        totalAssets = summaryMetrics.total_assets || 0;
+        totalLiabilities = summaryMetrics.total_liabilities || 0;
+        totalEquity = summaryMetrics.total_equity || 0;
+    } else {
+        // Fallback to assets structure if available
+        totalAssets = balanceSheetData.assets?.total || 0;
+        totalLiabilities = balanceSheetData.liabilities?.total || 0;
+        totalEquity = balanceSheetData.equity?.total || 0;
+    }
+
+    console.log('Balance Sheet metrics:', {totalAssets, totalLiabilities, totalEquity});
+
+    // Safe element updates with null checks
+    const safeUpdateElement = (id, value, styleUpdates = null) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            if (styleUpdates) {
+                Object.assign(element.style, styleUpdates);
+            }
+            console.log(`Successfully updated element '${id}' with value: ${value}`);
+        } else {
+            console.warn(`Element with ID '${id}' not found in DOM`);
+        }
+    };
+
+    safeUpdateElement('balanceSheetPreviewAssets', formatCurrency(totalAssets));
+    safeUpdateElement('balanceSheetPreviewLiabilities', formatCurrency(totalLiabilities));
+    safeUpdateElement('balanceSheetPreviewEquity', formatCurrency(totalEquity), {
+        color: totalEquity >= 0 ? '#48bb78' : '#f56565'
+    });
+
+    // Update period information
+    const periodInfo = balanceSheetData.period || {};
+    const periodName = periodInfo.period_name || 'Período completo';
+    safeUpdateElement('balanceSheetPeriodInfo', periodName);
+
+    // Update company information
+    safeUpdateElement('balanceSheetCompanyInfo', companyName);
+    safeUpdateElement('balanceSheetGeneratedAt', new Date().toLocaleDateString('pt-BR'));
+
+    // Populate detailed table with Balance Sheet structure
+    populateBalanceSheetTable(balanceSheetData);
+}
+
+/**
+ * Populate Balance Sheet detailed table
+ */
+function populateBalanceSheetTable(balanceSheetData) {
+    const tableBody = document.getElementById('balanceSheetDetailsList');
+    if (!tableBody) {
+        console.error('balanceSheetDetailsList element not found');
+        return;
+    }
+    tableBody.innerHTML = '';
+
+    // Extract values for Balance Sheet calculation
+    const totalAssets = balanceSheetData.assets?.total || balanceSheetData.summary_metrics?.total_assets || 0;
+    const totalLiabilities = balanceSheetData.liabilities?.total || balanceSheetData.summary_metrics?.total_liabilities || 0;
+    const totalEquity = balanceSheetData.equity?.total || balanceSheetData.summary_metrics?.total_equity || 0;
+
+    // Build Balance Sheet structure following Brazilian standards
+    const balanceSheetStructure = [
+        {
+            name: 'ATIVO',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Total do Ativo',
+            amount: totalAssets,
+            isMain: true,
+            type: 'asset'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'PASSIVO E PATRIMÔNIO LÍQUIDO',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Total do Passivo',
+            amount: totalLiabilities,
+            isMain: true,
+            type: 'liability'
+        },
+        {
+            name: 'Total do Patrimônio Líquido',
+            amount: totalEquity,
+            isMain: true,
+            type: 'equity'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'TOTAL DO PASSIVO + PATRIMÔNIO LÍQUIDO',
+            amount: totalLiabilities + totalEquity,
+            isMain: true,
+            type: 'total'
+        }
+    ];
+
+    balanceSheetStructure.forEach(item => {
+        if (item.type === 'spacer' && !item.name) {
+            // Add empty row for spacing
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="2" style="padding: 0.25rem;"></td>`;
+            tableBody.appendChild(row);
+            return;
+        }
+
+        const row = document.createElement('tr');
+
+        if (item.isHeader) {
+            row.innerHTML = `
+                <td colspan="2" style="padding: 0.75rem 0; font-weight: bold; font-size: 1.1rem; color: #2d3748; background: #f7fafc; border-bottom: 2px solid #e2e8f0;">
+                    ${item.name}
+                </td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td style="padding: 0.5rem 0; padding-left: ${item.isMain ? '20px' : '40px'}; font-weight: ${item.isMain ? 'bold' : 'normal'}; border-bottom: 1px solid #f1f5f9;">
+                    ${item.name}
+                </td>
+                <td style="text-align: right; padding: 0.5rem 0; font-weight: ${item.isMain ? 'bold' : 'normal'}; color: ${getBalanceSheetAmountColor(item.amount, item.type)}; border-bottom: 1px solid #f1f5f9;">
+                    ${formatCurrency(item.amount)}
+                </td>
+            `;
+        }
+
+        // Add special styling for main categories
+        if (item.isMain) {
+            row.style.backgroundColor = '#f8f9fa';
+        }
+
+        // Special styling for total
+        if (item.type === 'total') {
+            row.style.backgroundColor = '#e8f5e8';
+            row.style.fontWeight = 'bold';
+        }
+
+        tableBody.appendChild(row);
+    });
+}
+
+/**
+ * Get color for Balance Sheet amounts based on type and value
+ */
+function getBalanceSheetAmountColor(amount, type) {
+    if (amount === null || amount === 0) return '#6c757d';
+
+    switch (type) {
+        case 'asset':
+            return amount > 0 ? '#4299e1' : '#f56565';
+        case 'liability':
+            return amount > 0 ? '#f56565' : '#4299e1';
+        case 'equity':
+        case 'total':
+            return amount >= 0 ? '#48bb78' : '#f56565';
+        default:
+            return amount > 0 ? '#4299e1' : '#f56565';
+    }
+}
+
+/**
+ * Open Balance Sheet preview modal
+ */
+function openBalanceSheetModal() {
+    let modal = document.getElementById('balanceSheetPreviewModal');
+
+    // If modal doesn't exist, create it dynamically
+    if (!modal) {
+        console.log('Modal not found, creating dynamically...');
+        modal = createBalanceSheetModal();
+    }
+
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        modal.style.zIndex = '1000';
+        modal.style.justifyContent = 'center';
+        modal.style.alignItems = 'center';
+
+        // Focus trap for accessibility
+        modal.focus();
+
+        console.log('Balance Sheet modal opened successfully');
+    } else {
+        console.error('Failed to create or find Balance Sheet modal');
+    }
+}
+
+/**
+ * Create Balance Sheet modal dynamically
+ */
+function createBalanceSheetModal() {
+    const modalHTML = `
+        <div id="balanceSheetPreviewModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 800px; width: 90%; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: #2d3748;">⚖️ Balanço Patrimonial (BP)</h3>
+                    <span class="close" onclick="closeBalanceSheetModal()" style="font-size: 1.5rem; cursor: pointer; color: #718096; border: none; background: none;">&times;</span>
+                </div>
+                <div class="modal-body" style="padding: 1.5rem;">
+                    <div id="balanceSheetPreviewContent">
+                        <div class="balance-sheet-summary" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">📋 Resumo do Período</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Total do Ativo</div>
+                                    <div id="balanceSheetPreviewAssets" style="font-size: 1.2rem; font-weight: bold; color: #4299e1;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Total do Passivo</div>
+                                    <div id="balanceSheetPreviewLiabilities" style="font-size: 1.2rem; font-weight: bold; color: #f56565;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Patrimônio Líquido</div>
+                                    <div id="balanceSheetPreviewEquity" style="font-size: 1.2rem; font-weight: bold;">$0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="balance-sheet-details" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">📊 Estrutura Patrimonial</h4>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="border-bottom: 2px solid #e2e8f0;">
+                                            <th style="text-align: left; padding: 0.75rem 0; color: #4a5568;">Item</th>
+                                            <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="balanceSheetDetailsList">
+                                        <!-- Items will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="balance-sheet-period-info" style="background: #edf2f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div><strong>Período:</strong> <span id="balanceSheetPeriodInfo">-</span></div>
+                                <div><strong>Empresa:</strong> <span id="balanceSheetCompanyInfo">-</span></div>
+                                <div><strong>Gerado em:</strong> <span id="balanceSheetGeneratedAt">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display: flex; gap: 1rem; justify-content: flex-end; padding: 1.5rem; border-top: 1px solid #e2e8f0;">
+                    <button onclick="closeBalanceSheetModal()" style="background-color: #e2e8f0; color: #4a5568; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">❌ Fechar</button>
+                    <button onclick="downloadBalanceSheetPDF()" style="background-color: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">📄 Baixar PDF</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const modal = document.getElementById('balanceSheetPreviewModal');
+    console.log('Balance Sheet modal created dynamically:', modal);
+    return modal;
+}
+
+/**
+ * Close Balance Sheet preview modal
+ */
+function closeBalanceSheetModal() {
+    const modal = document.getElementById('balanceSheetPreviewModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Download Balance Sheet PDF (called from modal)
+ */
+function downloadBalanceSheetPDF() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Build URL
+        const url = `/api/reports/balance-sheet-pdf?${params.toString()}`;
+
+        // Create a temporary link to download the PDF
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = ''; // Let the server set the filename
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Close modal
+        closeBalanceSheetModal();
+
+        // Show success notification
+        showReportGenerationStatus('⚖️ Balanço Patrimonial PDF gerado com sucesso!', true);
+
+        // Hide loading after a short delay
+        setTimeout(() => {
+            showLoading(false);
+        }, 1000);
+
+    } catch (error) {
+        console.error('Error downloading Balance Sheet PDF:', error);
+        showError('Failed to download Balance Sheet PDF. Please try again.');
+        showLoading(false);
+    }
+}
+
+/**
+ * Cash Flow Modal Functions
+ */
+
+/**
+ * Populate Cash Flow modal with data
+ */
+function populateCashFlowModal(cashFlowData, companyName) {
+    console.log('populateCashFlowModal called with:', cashFlowData, companyName);
+
+    // Check if modal exists first
+    const modal = document.getElementById('cashFlowPreviewModal');
+    if (!modal) {
+        console.error('cashFlowPreviewModal not found in DOM');
+        return;
+    }
+
+    // Extract metrics from API response
+    let netCashFlow, cashReceipts, cashPayments, endingCash;
+
+    if (cashFlowData.summary_metrics) {
+        const summaryMetrics = cashFlowData.summary_metrics;
+        netCashFlow = summaryMetrics.net_cash_flow || 0;
+        cashReceipts = summaryMetrics.cash_receipts || 0;
+        cashPayments = summaryMetrics.cash_payments || 0;
+        endingCash = summaryMetrics.ending_cash || 0;
+    } else if (cashFlowData.operating_activities) {
+        // Fallback to operating activities structure
+        const operating = cashFlowData.operating_activities;
+        cashReceipts = operating.cash_receipts || 0;
+        cashPayments = operating.cash_payments || 0;
+        netCashFlow = operating.net_operating || 0;
+        endingCash = netCashFlow; // Simplified
+    } else {
+        // Default values
+        cashReceipts = 0;
+        cashPayments = 0;
+        netCashFlow = 0;
+        endingCash = 0;
+    }
+
+    console.log('Cash Flow metrics:', {netCashFlow, cashReceipts, cashPayments, endingCash});
+
+    // Safe element updates with null checks
+    const safeUpdateElement = (id, value, styleUpdates = null) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            if (styleUpdates) {
+                Object.assign(element.style, styleUpdates);
+            }
+            console.log(`Successfully updated element '${id}' with value: ${value}`);
+        } else {
+            console.warn(`Element with ID '${id}' not found in DOM`);
+        }
+    };
+
+    safeUpdateElement('cashFlowPreviewReceipts', formatCurrency(cashReceipts));
+    safeUpdateElement('cashFlowPreviewPayments', formatCurrency(cashPayments));
+    safeUpdateElement('cashFlowPreviewNetFlow', formatCurrency(netCashFlow), {
+        color: netCashFlow >= 0 ? '#48bb78' : '#f56565'
+    });
+
+    // Update period information
+    const periodInfo = cashFlowData.period || {};
+    const periodName = periodInfo.period_name || 'Período completo';
+    safeUpdateElement('cashFlowPeriodInfo', periodName);
+
+    // Update company information
+    safeUpdateElement('cashFlowCompanyInfo', companyName);
+    safeUpdateElement('cashFlowGeneratedAt', new Date().toLocaleDateString('pt-BR'));
+
+    // Populate detailed table with Cash Flow structure
+    populateCashFlowTable(cashFlowData);
+}
+
+/**
+ * Populate Cash Flow detailed table
+ */
+function populateCashFlowTable(cashFlowData) {
+    const tableBody = document.getElementById('cashFlowDetailsList');
+    if (!tableBody) {
+        console.error('cashFlowDetailsList element not found');
+        return;
+    }
+    tableBody.innerHTML = '';
+
+    // Extract values for Cash Flow calculation
+    const cashReceipts = cashFlowData.summary_metrics?.cash_receipts || cashFlowData.operating_activities?.cash_receipts || 0;
+    const cashPayments = cashFlowData.summary_metrics?.cash_payments || cashFlowData.operating_activities?.cash_payments || 0;
+    const netOperating = cashFlowData.summary_metrics?.net_cash_flow || cashFlowData.operating_activities?.net_operating || (cashReceipts - cashPayments);
+
+    // Build Cash Flow structure following Brazilian standards
+    const cashFlowStructure = [
+        {
+            name: 'FLUXOS DE CAIXA DAS ATIVIDADES OPERACIONAIS',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Recebimentos de Clientes',
+            amount: cashReceipts,
+            isMain: false,
+            type: 'operating_inflow'
+        },
+        {
+            name: 'Pagamentos a Fornecedores e Funcionários',
+            amount: -cashPayments,
+            isMain: false,
+            type: 'operating_outflow'
+        },
+        {
+            name: 'Caixa Líquido das Atividades Operacionais',
+            amount: netOperating,
+            isMain: true,
+            type: 'operating_total'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE INVESTIMENTO',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Caixa Líquido das Atividades de Investimento',
+            amount: 0, // Simplified
+            isMain: true,
+            type: 'investing_total'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE FINANCIAMENTO',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Caixa Líquido das Atividades de Financiamento',
+            amount: 0, // Simplified
+            isMain: true,
+            type: 'financing_total'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'AUMENTO (DIMINUIÇÃO) LÍQUIDA DE CAIXA',
+            amount: netOperating,
+            isMain: true,
+            type: 'net_change'
+        }
+    ];
+
+    cashFlowStructure.forEach(item => {
+        if (item.type === 'spacer' && !item.name) {
+            // Add empty row for spacing
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="2" style="padding: 0.25rem;"></td>`;
+            tableBody.appendChild(row);
+            return;
+        }
+
+        const row = document.createElement('tr');
+
+        if (item.isHeader) {
+            row.innerHTML = `
+                <td colspan="2" style="padding: 0.75rem 0; font-weight: bold; font-size: 1.1rem; color: #2d3748; background: #f7fafc; border-bottom: 2px solid #e2e8f0;">
+                    ${item.name}
+                </td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td style="padding: 0.5rem 0; padding-left: ${item.isMain ? '20px' : '40px'}; font-weight: ${item.isMain ? 'bold' : 'normal'}; border-bottom: 1px solid #f1f5f9;">
+                    ${item.name}
+                </td>
+                <td style="text-align: right; padding: 0.5rem 0; font-weight: ${item.isMain ? 'bold' : 'normal'}; color: ${getCashFlowAmountColor(item.amount, item.type)}; border-bottom: 1px solid #f1f5f9;">
+                    ${formatCurrency(item.amount)}
+                </td>
+            `;
+        }
+
+        // Add special styling for main categories
+        if (item.isMain) {
+            row.style.backgroundColor = '#f8f9fa';
+        }
+
+        // Special styling for net change
+        if (item.type === 'net_change') {
+            row.style.backgroundColor = '#e8f5e8';
+            row.style.fontWeight = 'bold';
+        }
+
+        tableBody.appendChild(row);
+    });
+}
+
+/**
+ * Get color for Cash Flow amounts based on type and value
+ */
+function getCashFlowAmountColor(amount, type) {
+    if (amount === null || amount === 0) return '#6c757d';
+
+    switch (type) {
+        case 'operating_inflow':
+            return amount > 0 ? '#48bb78' : '#f56565';
+        case 'operating_outflow':
+            return '#f56565'; // Always red for outflows (shown as negative)
+        case 'operating_total':
+        case 'investing_total':
+        case 'financing_total':
+        case 'net_change':
+            return amount >= 0 ? '#48bb78' : '#f56565';
+        default:
+            return amount > 0 ? '#48bb78' : '#f56565';
+    }
+}
+
+/**
+ * Open Cash Flow preview modal
+ */
+function openCashFlowModal() {
+    let modal = document.getElementById('cashFlowPreviewModal');
+
+    // If modal doesn't exist, create it dynamically
+    if (!modal) {
+        console.log('Modal not found, creating dynamically...');
+        modal = createCashFlowModal();
+    }
+
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        modal.style.zIndex = '1000';
+        modal.style.justifyContent = 'center';
+        modal.style.alignItems = 'center';
+
+        // Focus trap for accessibility
+        modal.focus();
+
+        console.log('Cash Flow modal opened successfully');
+    } else {
+        console.error('Failed to create or find Cash Flow modal');
+    }
+}
+
+/**
+ * Create Cash Flow modal dynamically
+ */
+function createCashFlowModal() {
+    const modalHTML = `
+        <div id="cashFlowPreviewModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 800px; width: 90%; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: #2d3748;">💰 Demonstração de Fluxo de Caixa (DFC)</h3>
+                    <span class="close" onclick="closeCashFlowModal()" style="font-size: 1.5rem; cursor: pointer; color: #718096; border: none; background: none;">&times;</span>
+                </div>
+                <div class="modal-body" style="padding: 1.5rem;">
+                    <div id="cashFlowPreviewContent">
+                        <div class="cash-flow-summary" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">📋 Resumo do Período</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Recebimentos</div>
+                                    <div id="cashFlowPreviewReceipts" style="font-size: 1.2rem; font-weight: bold; color: #48bb78;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Pagamentos</div>
+                                    <div id="cashFlowPreviewPayments" style="font-size: 1.2rem; font-weight: bold; color: #f56565;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Fluxo Líquido</div>
+                                    <div id="cashFlowPreviewNetFlow" style="font-size: 1.2rem; font-weight: bold;">$0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="cash-flow-details" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">💸 Fluxos de Caixa por Atividade</h4>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="border-bottom: 2px solid #e2e8f0;">
+                                            <th style="text-align: left; padding: 0.75rem 0; color: #4a5568;">Item</th>
+                                            <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cashFlowDetailsList">
+                                        <!-- Items will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="cash-flow-period-info" style="background: #edf2f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div><strong>Período:</strong> <span id="cashFlowPeriodInfo">-</span></div>
+                                <div><strong>Empresa:</strong> <span id="cashFlowCompanyInfo">-</span></div>
+                                <div><strong>Gerado em:</strong> <span id="cashFlowGeneratedAt">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display: flex; gap: 1rem; justify-content: flex-end; padding: 1.5rem; border-top: 1px solid #e2e8f0;">
+                    <button onclick="closeCashFlowModal()" style="background-color: #e2e8f0; color: #4a5568; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">❌ Fechar</button>
+                    <button onclick="downloadCashFlowPDF()" style="background-color: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">📄 Baixar PDF</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const modal = document.getElementById('cashFlowPreviewModal');
+    console.log('Cash Flow modal created dynamically:', modal);
+    return modal;
+}
+
+/**
+ * Close Cash Flow preview modal
+ */
+function closeCashFlowModal() {
+    const modal = document.getElementById('cashFlowPreviewModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Download Cash Flow PDF (called from modal)
+ */
+function downloadCashFlowPDF() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Build URL
+        const url = `/api/reports/cash-flow-pdf?${params.toString()}`;
+
+        // Create a temporary link to download the PDF
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = ''; // Let the server set the filename
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Close modal
+        closeCashFlowModal();
+
+        // Show success notification
+        showReportGenerationStatus('💰 Demonstração de Fluxo de Caixa PDF gerado com sucesso!', true);
+
+        // Hide loading after a short delay
+        setTimeout(() => {
+            showLoading(false);
+        }, 1000);
+
+    } catch (error) {
+        console.error('Error downloading Cash Flow PDF:', error);
+        showError('Failed to download Cash Flow PDF. Please try again.');
+        showLoading(false);
+    }
+}
+
+/**
+ * DMPL Modal Functions
+ */
+
+/**
+ * Populate DMPL modal with data
+ */
+function populateDMPLModal(dmplData, companyName) {
+    console.log('populateDMPLModal called with:', dmplData, dmplData);
+
+    // Check if modal exists first
+    const modal = document.getElementById('dmplPreviewModal');
+    if (!modal) {
+        console.error('dmplPreviewModal not found in DOM');
+        return;
+    }
+
+    // Extract metrics from API response
+    let beginningEquity, netIncome, endingEquity;
+
+    if (dmplData.summary_metrics) {
+        const summaryMetrics = dmplData.summary_metrics;
+        beginningEquity = summaryMetrics.beginning_equity || 0;
+        netIncome = summaryMetrics.net_income || 0;
+        endingEquity = summaryMetrics.ending_equity || 0;
+    } else if (dmplData.equity_movements) {
+        // Fallback to equity movements structure
+        const equity = dmplData.equity_movements;
+        beginningEquity = equity.beginning_equity || 0;
+        netIncome = equity.net_income || 0;
+        endingEquity = equity.ending_equity || 0;
+    } else {
+        // Default values
+        beginningEquity = 0;
+        netIncome = 0;
+        endingEquity = 0;
+    }
+
+    console.log('DMPL metrics:', {beginningEquity, netIncome, endingEquity});
+
+    // Safe element updates with null checks
+    const safeUpdateElement = (id, value, styleUpdates = null) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.textContent = value;
+            if (styleUpdates) {
+                Object.assign(element.style, styleUpdates);
+            }
+            console.log(`Successfully updated element '${id}' with value: ${value}`);
+        } else {
+            console.warn(`Element with ID '${id}' not found in DOM`);
+        }
+    };
+
+    safeUpdateElement('dmplPreviewBeginningEquity', formatCurrency(beginningEquity));
+    safeUpdateElement('dmplPreviewNetIncome', formatCurrency(netIncome), {
+        color: netIncome >= 0 ? '#48bb78' : '#f56565'
+    });
+    safeUpdateElement('dmplPreviewEndingEquity', formatCurrency(endingEquity), {
+        color: endingEquity >= 0 ? '#48bb78' : '#f56565'
+    });
+
+    // Update period information
+    const periodInfo = dmplData.period || {};
+    const periodName = periodInfo.period_name || 'Período completo';
+    safeUpdateElement('dmplPeriodInfo', periodName);
+
+    // Update company information
+    safeUpdateElement('dmplCompanyInfo', companyName);
+    safeUpdateElement('dmplGeneratedAt', new Date().toLocaleDateString('pt-BR'));
+
+    // Populate detailed table with DMPL structure
+    populateDMPLTable(dmplData);
+}
+
+/**
+ * Populate DMPL detailed table
+ */
+function populateDMPLTable(dmplData) {
+    const tableBody = document.getElementById('dmplDetailsList');
+    if (!tableBody) {
+        console.error('dmplDetailsList element not found');
+        return;
+    }
+    tableBody.innerHTML = '';
+
+    // Extract values for DMPL calculation
+    const beginningEquity = dmplData.summary_metrics?.beginning_equity || dmplData.equity_movements?.beginning_equity || 0;
+    const netIncome = dmplData.summary_metrics?.net_income || dmplData.equity_movements?.net_income || 0;
+    const endingEquity = dmplData.summary_metrics?.ending_equity || dmplData.equity_movements?.ending_equity || 0;
+
+    // Build DMPL structure following Brazilian standards
+    const dmplStructure = [
+        {
+            name: 'PATRIMÔNIO LÍQUIDO - INÍCIO DO PERÍODO',
+            amount: beginningEquity,
+            isMain: true,
+            type: 'beginning'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'MUTAÇÕES DO PERÍODO:',
+            amount: null,
+            isHeader: true,
+            type: 'header'
+        },
+        {
+            name: 'Lucro/Prejuízo do Exercício',
+            amount: netIncome,
+            isMain: false,
+            type: 'income'
+        },
+        {
+            name: 'Aportes de Capital',
+            amount: 0, // Simplified
+            isMain: false,
+            type: 'capital'
+        },
+        {
+            name: 'Distribuições de Resultado',
+            amount: 0, // Simplified
+            isMain: false,
+            type: 'distribution'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'TOTAL DAS MUTAÇÕES',
+            amount: netIncome, // Simplified - just net income for now
+            isMain: true,
+            type: 'total_changes'
+        },
+        {
+            name: '',
+            amount: null,
+            isHeader: false,
+            type: 'spacer'
+        },
+        {
+            name: 'PATRIMÔNIO LÍQUIDO - FINAL DO PERÍODO',
+            amount: endingEquity,
+            isMain: true,
+            type: 'ending'
+        }
+    ];
+
+    dmplStructure.forEach(item => {
+        if (item.type === 'spacer' && !item.name) {
+            // Add empty row for spacing
+            const row = document.createElement('tr');
+            row.innerHTML = `<td colspan="2" style="padding: 0.25rem;"></td>`;
+            tableBody.appendChild(row);
+            return;
+        }
+
+        const row = document.createElement('tr');
+
+        if (item.isHeader) {
+            row.innerHTML = `
+                <td colspan="2" style="padding: 0.75rem 0; font-weight: bold; font-size: 1.1rem; color: #2d3748; background: #f7fafc; border-bottom: 2px solid #e2e8f0;">
+                    ${item.name}
+                </td>
+            `;
+        } else {
+            row.innerHTML = `
+                <td style="padding: 0.5rem 0; padding-left: ${item.isMain ? '0px' : '20px'}; font-weight: ${item.isMain ? 'bold' : 'normal'}; border-bottom: 1px solid #f1f5f9;">
+                    ${item.name}
+                </td>
+                <td style="text-align: right; padding: 0.5rem 0; font-weight: ${item.isMain ? 'bold' : 'normal'}; color: ${getDMPLAmountColor(item.amount, item.type)}; border-bottom: 1px solid #f1f5f9;">
+                    ${formatCurrency(item.amount)}
+                </td>
+            `;
+        }
+
+        // Add special styling for main categories
+        if (item.isMain) {
+            row.style.backgroundColor = '#f8f9fa';
+        }
+
+        // Special styling for ending equity
+        if (item.type === 'ending') {
+            row.style.backgroundColor = '#e8f5e8';
+            row.style.fontWeight = 'bold';
+        }
+
+        tableBody.appendChild(row);
+    });
+}
+
+/**
+ * Get color for DMPL amounts based on type and value
+ */
+function getDMPLAmountColor(amount, type) {
+    if (amount === null || amount === 0) return '#6c757d';
+
+    switch (type) {
+        case 'beginning':
+        case 'ending':
+            return amount >= 0 ? '#48bb78' : '#f56565';
+        case 'income':
+            return amount >= 0 ? '#48bb78' : '#f56565';
+        case 'capital':
+            return amount > 0 ? '#4299e1' : '#6c757d';
+        case 'distribution':
+            return amount > 0 ? '#f56565' : '#6c757d';
+        case 'total_changes':
+            return amount >= 0 ? '#48bb78' : '#f56565';
+        default:
+            return amount >= 0 ? '#48bb78' : '#f56565';
+    }
+}
+
+/**
+ * Open DMPL preview modal
+ */
+function openDMPLModal() {
+    let modal = document.getElementById('dmplPreviewModal');
+
+    // If modal doesn't exist, create it dynamically
+    if (!modal) {
+        console.log('Modal not found, creating dynamically...');
+        modal = createDMPLModal();
+    }
+
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        modal.style.zIndex = '1000';
+        modal.style.justifyContent = 'center';
+        modal.style.alignItems = 'center';
+
+        // Focus trap for accessibility
+        modal.focus();
+
+        console.log('DMPL modal opened successfully');
+    } else {
+        console.error('Failed to create or find DMPL modal');
+    }
+}
+
+/**
+ * Create DMPL modal dynamically
+ */
+function createDMPLModal() {
+    const modalHTML = `
+        <div id="dmplPreviewModal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 800px; width: 90%; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin: 0; color: #2d3748;">📈 Demonstração das Mutações do Patrimônio Líquido (DMPL)</h3>
+                    <span class="close" onclick="closeDMPLModal()" style="font-size: 1.5rem; cursor: pointer; color: #718096; border: none; background: none;">&times;</span>
+                </div>
+                <div class="modal-body" style="padding: 1.5rem;">
+                    <div id="dmplPreviewContent">
+                        <div class="dmpl-summary" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">📋 Resumo do Período</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">PL Inicial</div>
+                                    <div id="dmplPreviewBeginningEquity" style="font-size: 1.2rem; font-weight: bold; color: #4299e1;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">Resultado do Período</div>
+                                    <div id="dmplPreviewNetIncome" style="font-size: 1.2rem; font-weight: bold;">$0</div>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 0.9rem; color: #666;">PL Final</div>
+                                    <div id="dmplPreviewEndingEquity" style="font-size: 1.2rem; font-weight: bold;">$0</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dmpl-details" style="margin-bottom: 2rem;">
+                            <h4 style="color: #2d3748; margin-bottom: 1rem;">📊 Movimentação do Patrimônio Líquido</h4>
+                            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
+                                <table style="width: 100%; border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="border-bottom: 2px solid #e2e8f0;">
+                                            <th style="text-align: left; padding: 0.75rem 0; color: #4a5568;">Item</th>
+                                            <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;">Valor</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dmplDetailsList">
+                                        <!-- Items will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="dmpl-period-info" style="background: #edf2f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                                <div><strong>Período:</strong> <span id="dmplPeriodInfo">-</span></div>
+                                <div><strong>Empresa:</strong> <span id="dmplCompanyInfo">-</span></div>
+                                <div><strong>Gerado em:</strong> <span id="dmplGeneratedAt">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="display: flex; gap: 1rem; justify-content: flex-end; padding: 1.5rem; border-top: 1px solid #e2e8f0;">
+                    <button onclick="closeDMPLModal()" style="background-color: #e2e8f0; color: #4a5568; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">❌ Fechar</button>
+                    <button onclick="downloadDMPLPDF()" style="background-color: #667eea; color: white; border: none; border-radius: 6px; cursor: pointer; padding: 0.75rem 1.5rem;">📄 Baixar PDF</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    const modal = document.getElementById('dmplPreviewModal');
+    console.log('DMPL modal created dynamically:', modal);
+    return modal;
+}
+
+/**
+ * Close DMPL preview modal
+ */
+function closeDMPLModal() {
+    const modal = document.getElementById('dmplPreviewModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Download DMPL PDF (called from modal)
+ */
+function downloadDMPLPDF() {
+    try {
+        // Show loading
+        showLoading(true);
+
+        // Get current filters
+        const params = new URLSearchParams(getAPIParams());
+
+        // Add company name
+        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
+        params.set('company_name', companyName);
+
+        // Build URL
+        const url = `/api/reports/dmpl-pdf?${params.toString()}`;
+
+        // Create a temporary link to download the PDF
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = ''; // Let the server set the filename
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // Close modal
+        closeDMPLModal();
+
+        // Show success notification
+        showReportGenerationStatus('📈 DMPL PDF gerado com sucesso!', true);
+
+        // Hide loading after a short delay
+        setTimeout(() => {
+            showLoading(false);
+        }, 1000);
+
+    } catch (error) {
+        console.error('Error downloading DMPL PDF:', error);
+        showError('Failed to download DMPL PDF. Please try again.');
+        showLoading(false);
+    }
 }
