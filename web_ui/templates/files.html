@@ -363,8 +363,7 @@
                         </h3>
                         <div style="background: #e6f4ff; border-left: 4px solid #667eea; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px;">
                             <span style="color: #2c5282; font-size: 0.8rem; font-weight: 600;">
-                                Showing first ${Math.min(duplicateInfo.duplicates.length, 10)} of ${duplicateInfo.duplicate_count} total duplicates.
-                                ${duplicateInfo.duplicate_count > 10 ? 'All ' + duplicateInfo.duplicate_count + ' duplicates will be affected when you click "Overwrite".' : ''}
+                                📋 All ${duplicateInfo.duplicate_count} duplicate transactions are shown below. You can scroll to review each one and select which to overwrite.
                             </span>
                         </div>
                         <div style="max-height: 450px; overflow-y: auto; overflow-x: auto; border-radius: 8px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
@@ -402,7 +401,7 @@
                     <!-- Action Buttons -->
                     <div style="display: flex; gap: 12px; justify-content: space-between; align-items: center; padding-top: 12px; border-top: 2px solid #e2e8f0;">
                         <div style="flex: 1; font-size: 0.8rem; color: #718096;">
-                            <div style="margin-bottom: 4px;"><strong style="color: #2d3748;">Overwrite:</strong> Delete ALL ${duplicateInfo.duplicate_count} existing transactions and replace with new AI classifications</div>
+                            <div style="margin-bottom: 4px;"><strong style="color: #2d3748;">Overwrite:</strong> Delete selected duplicate transactions and replace with new AI classifications (${duplicateInfo.duplicate_count} total available)</div>
                             <div><strong style="color: #2d3748;">Discard:</strong> Cancel upload and keep all existing data unchanged</div>
                         </div>
                         <div style="display: flex; gap: 10px;">

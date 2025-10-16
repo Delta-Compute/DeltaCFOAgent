@@ -34,7 +34,15 @@
       "Bash(curl -s \"http://127.0.0.1:5001/api/revenue/matched-pairs?per_page=5\")",
       "Bash(curl -s \"http://127.0.0.1:5001/api/revenue/run-robust-matching\")",
       "Bash(curl:*)",
-      "Bash(if exist test_dre.pdf del test_dre.pdf)"
+      "Bash(if exist test_dre.pdf del test_dre.pdf)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Read(//dev/**)",
+      "Bash(psql:*)",
+      "Bash(python3:*)",
+      "Read(//private/tmp/**)",
+      "Bash(xargs:*)",
+      "Read(///**)"
     ],
     "deny": [],
     "ask": []

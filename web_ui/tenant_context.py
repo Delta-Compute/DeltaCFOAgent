@@ -1,129 +1,164 @@
 #!/usr/bin/env python3
 """
-Tenant Context Manager for Delta CFO Agent
-Manages multi-tenant context for the application
+Tenant Context Manager for Multi-Tenant SaaS
+Handles tenant identification and session management
 """
 
-import os
-from flask import g, request, session
+from flask import session, g, request
 from functools import wraps
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Default tenant ID for Delta (main company)
+# Default tenant (for backward compatibility)
 DEFAULT_TENANT_ID = 'delta'
 
-def init_tenant_context(app):
-    """Initialize tenant context for Flask app"""
+def get_current_tenant_id() -> str:
+    """
+    Get the current tenant ID from session or default to 'delta'
 
-    @app.before_request
-    def load_tenant_context():
-        """Load tenant context before each request"""
-        # For now, use default tenant (Delta)
-        # In the future, this can be determined from:
-        # - Subdomain (tenant.deltacfo.com)
-        # - Header (X-Tenant-ID)
-        # - URL path (/tenant/dashboard)
-        # - Authentication token
+    Priority:
+    1. Flask g object (set per request)
+    2. Flask session (persists across requests)
+    3. Request header (X-Tenant-ID for API calls)
+    4. Default tenant 'delta'
 
+    Returns:
+        str: Tenant ID
+    """
+    try:
+        # Check Flask g object first (set per request)
+        if hasattr(g, 'tenant_id'):
+            return g.tenant_id
+
+        # Check session
+        if 'tenant_id' in session:
+            tenant_id = session['tenant_id']
+            g.tenant_id = tenant_id  # Cache in g
+            return tenant_id
+
+        # Check request header for API calls
+        if request:
+            tenant_id = request.headers.get('X-Tenant-ID')
+            if tenant_id:
+                g.tenant_id = tenant_id
+                return tenant_id
+
+        # Default to 'delta' for backward compatibility
         tenant_id = DEFAULT_TENANT_ID
+        g.tenant_id = tenant_id
+        return tenant_id
 
-        # Store in Flask's request context
+    except RuntimeError:
+        # Outside of Flask application context - return default
+        return DEFAULT_TENANT_ID
+
+def set_tenant_id(tenant_id: str):
+    """
+    Set the current tenant ID in session
+
+    Args:
+        tenant_id: Tenant identifier
+    """
+    session['tenant_id'] = tenant_id
+    g.tenant_id = tenant_id
+    logger.info(f"Tenant context set to: {tenant_id}")
+
+def clear_tenant_id():
+    """
+    Clear the tenant ID from session (reset to default)
+    """
+    if 'tenant_id' in session:
+        del session['tenant_id']
+    if hasattr(g, 'tenant_id'):
+        delattr(g, 'tenant_id')
+    logger.info("Tenant context cleared (reset to default)")
+
+def require_tenant(f):
+    """
+    Decorator to ensure tenant_id is set before executing a function
+
+    Usage:
+        @app.route('/api/transactions')
+        @require_tenant
+        def get_transactions():
+            tenant_id = get_current_tenant_id()
+            # ... query with tenant_id filter
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        tenant_id = get_current_tenant_id()
+
+        if not tenant_id:
+            return {
+                'error': 'Tenant context not set',
+                'message': 'Please set tenant_id in session or X-Tenant-ID header'
+            }, 400
+
+        logger.debug(f"Request processing for tenant: {tenant_id}")
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+def init_tenant_context(app):
+    """
+    Initialize tenant context for Flask app
+
+    This sets up before_request handlers to ensure tenant_id is always available
+
+    Args:
+        app: Flask application instance
+    """
+    @app.before_request
+    def set_tenant_context():
+        """
+        Before each request, ensure tenant_id is available in g
+        """
+        tenant_id = get_current_tenant_id()
         g.tenant_id = tenant_id
 
-        # Also store in session for consistency
-        session['tenant_id'] = tenant_id
+        # Log tenant context for debugging (only in development)
+        if app.debug:
+            logger.debug(f"Request: {request.method} {request.path} | Tenant: {tenant_id}")
 
-        logger.debug(f"Request tenant context set to: {tenant_id}")
+    @app.after_request
+    def add_tenant_header(response):
+        """
+        Add tenant ID to response headers for debugging
+        """
+        if hasattr(g, 'tenant_id'):
+            response.headers['X-Current-Tenant'] = g.tenant_id
+        return response
 
-def get_current_tenant_id():
-    """Get the current tenant ID from request context"""
-    # Try to get from Flask's g object first
-    if hasattr(g, 'tenant_id'):
-        return g.tenant_id
+    logger.info("Tenant context initialized for Flask app")
 
-    # Fallback to session
-    if 'tenant_id' in session:
-        return session['tenant_id']
+# Convenience function for database queries
+def get_tenant_filter() -> dict:
+    """
+    Get a dictionary filter for database queries
 
-    # Ultimate fallback to default
-    return DEFAULT_TENANT_ID
+    Returns:
+        dict: {'tenant_id': 'current_tenant'}
 
-def set_tenant_id(tenant_id):
-    """Set the tenant ID for current request"""
-    g.tenant_id = tenant_id
-    session['tenant_id'] = tenant_id
-    logger.info(f"Tenant context changed to: {tenant_id}")
-
-def require_tenant(tenant_id=None):
-    """Decorator to require specific tenant access"""
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            current_tenant = get_current_tenant_id()
-
-            if tenant_id and current_tenant != tenant_id:
-                logger.warning(f"Access denied: Required tenant {tenant_id}, current tenant {current_tenant}")
-                return {"error": "Access denied: Invalid tenant"}, 403
-
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
-
-def get_tenant_database_config(tenant_id=None):
-    """Get database configuration for specific tenant"""
-    if not tenant_id:
+    Usage:
+        query = "SELECT * FROM transactions WHERE tenant_id = %s AND date = %s"
         tenant_id = get_current_tenant_id()
+        results = db.execute(query, (tenant_id, date))
+    """
+    return {'tenant_id': get_current_tenant_id()}
 
-    # For now, all tenants use the same database with tenant_id filtering
-    # In the future, this could return tenant-specific database configs
+def build_tenant_query_params(*additional_params):
+    """
+    Build query parameters tuple starting with tenant_id
 
-    return {
-        'tenant_id': tenant_id,
-        'use_tenant_filtering': True,
-        'database_type': 'postgresql'  # All tenants use PostgreSQL
-    }
+    Args:
+        *additional_params: Additional query parameters
 
-def get_tenant_config(tenant_id=None):
-    """Get configuration for specific tenant"""
-    if not tenant_id:
-        tenant_id = get_current_tenant_id()
+    Returns:
+        tuple: (tenant_id, *additional_params)
 
-    # Default configuration for Delta tenant
-    configs = {
-        'delta': {
-            'name': 'Delta Mining',
-            'currency': 'USD',
-            'timezone': 'America/New_York',
-            'date_format': 'MM/DD/YYYY',
-            'features': {
-                'crypto_pricing': True,
-                'invoice_processing': True,
-                'revenue_matching': True,
-                'advanced_analytics': True
-            }
-        }
-    }
-
-    return configs.get(tenant_id, configs['delta'])
-
-# Tenant-aware utility functions
-def add_tenant_filter_to_query(query, table_alias='t'):
-    """Add tenant filter to SQL query"""
-    tenant_id = get_current_tenant_id()
-
-    # Add WHERE clause for tenant filtering
-    if 'WHERE' in query.upper():
-        return query + f" AND {table_alias}.tenant_id = '{tenant_id}'"
-    else:
-        return query + f" WHERE {table_alias}.tenant_id = '{tenant_id}'"
-
-def get_tenant_table_name(base_table_name, tenant_id=None):
-    """Get tenant-specific table name (if using table-per-tenant strategy)"""
-    if not tenant_id:
-        tenant_id = get_current_tenant_id()
-
-    # For now, using shared tables with tenant_id column
-    # In the future, could return tenant-specific table names
-    return base_table_name
+    Usage:
+        params = build_tenant_query_params(date, amount)
+        # Returns: ('delta', '2024-10-14', 100.00)
+    """
+    return (get_current_tenant_id(),) + additional_params

@@ -7,11 +7,31 @@ let perPageSize = 50;
 let totalPages = 1;
 let isLoading = false;
 
+// Cache for dynamically loaded dropdown options
+let cachedAccountingCategories = [];
+let cachedSubcategories = [];
+
+// Drag-down fill state
+let dragFillState = {
+    isDragging: false,
+    startRow: null,
+    startCell: null,
+    fieldName: null,
+    value: null,
+    affectedRows: []
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
 
     // Initialize per-page size from URL or localStorage
     initializePerPageSize();
+
+    // Initialize filter fields from URL parameters
+    initializeFiltersFromURL();
+
+    // Load dropdown options from API
+    loadDropdownOptions();
 
     // Load initial data
     loadTransactions();
@@ -46,6 +66,82 @@ function initializePerPageSize() {
             btn.classList.remove('active');
         }
     });
+}
+
+function initializeFiltersFromURL() {
+    // Read URL parameters and populate filter fields
+    const urlParams = new URLSearchParams(window.location.search);
+
+    const sourceFile = urlParams.get('source_file');
+    if (sourceFile) {
+        const sourceFileField = document.getElementById('sourceFile');
+        if (sourceFileField) {
+            sourceFileField.value = sourceFile;
+            console.log(`📋 Initialized source_file filter from URL: ${sourceFile}`);
+        }
+    }
+
+    const entity = urlParams.get('entity');
+    if (entity) {
+        const entityField = document.getElementById('entityFilter');
+        if (entityField) {
+            entityField.value = entity;
+            console.log(`📋 Initialized entity filter from URL: ${entity}`);
+        }
+    }
+
+    const transactionType = urlParams.get('transaction_type');
+    if (transactionType) {
+        const typeField = document.getElementById('transactionType');
+        if (typeField) {
+            typeField.value = transactionType;
+            console.log(`📋 Initialized transaction_type filter from URL: ${transactionType}`);
+        }
+    }
+
+    const needsReview = urlParams.get('needs_review');
+    if (needsReview) {
+        const reviewField = document.getElementById('needsReview');
+        if (reviewField) {
+            reviewField.value = needsReview;
+            console.log(`📋 Initialized needs_review filter from URL: ${needsReview}`);
+        }
+    }
+}
+
+async function loadDropdownOptions() {
+    // Load accounting categories from API
+    try {
+        const categoriesResponse = await fetch('/api/accounting_categories');
+        const categoriesData = await categoriesResponse.json();
+        cachedAccountingCategories = categoriesData.categories || [];
+        console.log(`✅ Loaded ${cachedAccountingCategories.length} accounting categories from API`);
+    } catch (error) {
+        console.error('Failed to load accounting categories:', error);
+        // Use fallback if API fails
+        cachedAccountingCategories = [
+            'REVENUE', 'OPERATING_EXPENSE', 'COGS', 'INTEREST_EXPENSE',
+            'OTHER_INCOME', 'OTHER_EXPENSE', 'INCOME_TAX_EXPENSE',
+            'ASSET', 'LIABILITY', 'EQUITY', 'INTERCOMPANY_ELIMINATION'
+        ];
+    }
+
+    // Load subcategories from API
+    try {
+        const subcategoriesResponse = await fetch('/api/subcategories');
+        const subcategoriesData = await subcategoriesResponse.json();
+        cachedSubcategories = subcategoriesData.subcategories || [];
+        console.log(`✅ Loaded ${cachedSubcategories.length} subcategories from API`);
+    } catch (error) {
+        console.error('Failed to load subcategories:', error);
+        // Use fallback if API fails
+        cachedSubcategories = [
+            'Bank Fees', 'Direct Costs', 'Fuel', 'General Administrative',
+            'Hosting Revenue', 'Interest on Operations', 'Internal Transfer',
+            'Materials', 'Meals', 'Personal Expenses', 'Return of Funds',
+            'Technology Expense', 'Trading Revenue', 'Travel'
+        ];
+    }
 }
 
 function setupEventListeners() {
@@ -508,6 +604,11 @@ function renderTransactionTable(transactions) {
         });
         console.log('✅ Select All checkbox event listener attached (from renderTransactionTable)');
     }
+
+    // Set up drag-down handles for Excel-like fill
+    setTimeout(() => {
+        setupDragDownHandles();
+    }, 100);
 }
 
 // Track if we've already set up the delegated event listener
@@ -524,6 +625,13 @@ function setupInlineEditing() {
     if (!tbody) return;
 
     tbody.addEventListener('click', (e) => {
+        // CRITICAL: Don't start editing if clicking on drag handle or sort dot
+        if (e.target.classList.contains('drag-handle') ||
+            e.target.classList.contains('sort-dot')) {
+            console.log('🚫 Click on drag-handle/sort-dot - skipping inline edit');
+            return;
+        }
+
         // Find the closest editable field
         const field = e.target.closest('.editable-field');
         if (!field) return;
@@ -611,6 +719,7 @@ function startEditing(field) {
 
 async function createSmartDropdown(field, currentValue, fieldName) {
     // Define options for different field types
+    // Use cached API data for accounting_category and subcategory
     const fieldOptions = {
         'classified_entity': [
             'Delta LLC',
@@ -621,20 +730,20 @@ async function createSmartDropdown(field, currentValue, fieldName) {
             'Internal Transfer',
             'Personal'
         ],
-        'accounting_category': [
+        'accounting_category': cachedAccountingCategories.length > 0 ? cachedAccountingCategories : [
             'REVENUE',
             'COGS',
-            'OPERATING EXPENSE',
-            'INTEREST EXPENSE',
-            'OTHER INCOME',
-            'OTHER EXPENSE',
-            'INCOME TAX EXPENSE',
+            'OPERATING_EXPENSE',
+            'INTEREST_EXPENSE',
+            'OTHER_INCOME',
+            'OTHER_EXPENSE',
+            'INCOME_TAX_EXPENSE',
             'ASSET',
             'LIABILITY',
             'EQUITY',
-            'INTERCOMPANY ELIMINATION'
+            'INTERCOMPANY_ELIMINATION'
         ],
-        'subcategory': [
+        'subcategory': cachedSubcategories.length > 0 ? cachedSubcategories : [
             'Bank Fees',
             'Direct Costs',
             'Fuel',
@@ -718,6 +827,12 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
     // Try multiple event approaches since change isn't firing reliably
     const handleSelection = async function(e) {
+        // CRITICAL: Skip if drag operation is in progress
+        if (dragFillState.isDragging) {
+            console.log('🚫 Skipping inline edit - drag operation in progress');
+            return;
+        }
+
         console.log('🔵 Selection handler called! Event:', e.type);
         console.log('🔵 Current value:', this.value);
         console.log('🔵 Last value:', lastValue);
@@ -841,6 +956,11 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
             fieldElement.innerHTML = value || 'N/A';
             showToast('Transaction updated successfully', 'success');
             setupInlineEditing(); // Re-setup event listeners
+
+            // Re-add drag handles after cell content changes
+            setTimeout(() => {
+                setupDragDownHandles();
+            }, 50);
 
             // SMART CONFIDENCE UPDATE: Use the updated confidence value from backend
             console.log('🔍 DEBUG: API response:', result);
@@ -3572,4 +3692,369 @@ async function rejectMatch(invoiceId, transactionId) {
 function closeInvoiceMatchingModal() {
     const modal = document.getElementById('invoiceMatchingModal');
     modal.style.display = 'none';
+}
+
+/**
+ * Run blockchain enrichment for all pending transactions
+ */
+async function runBlockchainEnrichment() {
+    const button = document.getElementById('runBlockchainEnrichment');
+    const originalText = button.textContent;
+
+    // Disable button and show loading state
+    button.disabled = true;
+    button.textContent = '⏳ Enriching...';
+    button.style.opacity = '0.6';
+
+    try {
+        showToast('🔗 Starting blockchain enrichment for all pending transactions...', 'info');
+
+        // Call the enrichment endpoint
+        const response = await fetch('/api/transactions/enrich/all-pending', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                batch_size: 100  // Process 100 at a time
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const results = data.results;
+            const successRate = results.total_processed > 0
+                ? ((results.successful / results.total_processed) * 100).toFixed(1)
+                : 0;
+
+            // Show detailed results
+            const message = `
+✅ Blockchain Enrichment Complete!
+
+📊 Results:
+• Total Pending: ${results.total_pending}
+• Processed: ${results.total_processed}
+• ✅ Successful: ${results.successful}
+• ❌ Failed: ${results.failed}
+• ⏭️ Skipped: ${results.skipped}
+• Success Rate: ${successRate}%
+• Batches: ${results.batches_processed}
+
+Transactions have been enriched with:
+• Blockchain wallet addresses
+• Matched against known wallets
+• Auto-categorized based on wallet types
+            `.trim();
+
+            showToast(message, 'success');
+
+            // Refresh the transaction table to show updated data
+            setTimeout(() => {
+                if (typeof loadTransactions === 'function') {
+                    loadTransactions();
+                }
+            }, 1500);
+
+        } else {
+            throw new Error(data.error || 'Failed to run blockchain enrichment');
+        }
+
+    } catch (error) {
+        console.error('Error running blockchain enrichment:', error);
+        showToast('❌ Error running blockchain enrichment: ' + error.message, 'error');
+    } finally {
+        // Re-enable button
+        button.disabled = false;
+        button.textContent = originalText;
+        button.style.opacity = '1';
+    }
+}
+
+// ============================================================================
+// EXCEL-LIKE DRAG-DOWN FILL FUNCTIONALITY
+// ============================================================================
+
+function setupDragDownHandles() {
+    // Add drag handles and sort dots to editable cells
+    document.querySelectorAll('.editable-field').forEach(cell => {
+        // Add drag handle (bottom-right)
+        if (!cell.querySelector('.drag-handle')) {
+            const handle = document.createElement('div');
+            handle.className = 'drag-handle';
+            handle.title = 'Drag to fill down';
+            cell.style.position = 'relative';
+            cell.appendChild(handle);
+
+            // Handle mousedown on drag handle
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                startDragFill(cell);
+            });
+        }
+
+        // Add sort dot (top-right)
+        if (!cell.querySelector('.sort-dot')) {
+            const sortDot = document.createElement('div');
+            sortDot.className = 'sort-dot';
+            sortDot.title = 'Sort all by this value';
+            cell.appendChild(sortDot);
+
+            // Handle click on sort dot
+            sortDot.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                sortByCell(cell);
+            });
+        }
+    });
+}
+
+function startDragFill(cell) {
+    const row = cell.closest('tr');
+    const fieldName = cell.dataset.field;
+    let value;
+
+    // Get current value from cell
+    if (cell.classList.contains('smart-dropdown')) {
+        // For dropdown fields, get the text content
+        const span = cell.querySelector('span');
+        value = span ? span.textContent.trim() : cell.textContent.trim();
+    } else {
+        value = cell.textContent.trim();
+    }
+
+    // Initialize drag state
+    dragFillState = {
+        isDragging: true,
+        startRow: row,
+        startCell: cell,
+        fieldName: fieldName,
+        value: value,
+        affectedRows: [row]
+    };
+
+    // Add visual feedback
+    row.classList.add('drag-fill-source');
+    cell.classList.add('drag-fill-active');
+
+    // Add document-level event listeners
+    document.addEventListener('mousemove', handleDragFillMove);
+    document.addEventListener('mouseup', handleDragFillEnd);
+
+    console.log(`🎯 Started drag fill: field="${fieldName}", value="${value}"`);
+}
+
+function handleDragFillMove(e) {
+    if (!dragFillState.isDragging) return;
+
+    // Find the row under the mouse
+    const targetElement = document.elementFromPoint(e.clientX, e.clientY);
+    if (!targetElement) return;
+
+    const targetRow = targetElement.closest('tr');
+    if (!targetRow || !targetRow.dataset.transactionId) return;
+
+    // Get all rows in the table
+    const tbody = document.getElementById('transactionTableBody');
+    const allRows = Array.from(tbody.querySelectorAll('tr[data-transaction-id]'));
+    const startIndex = allRows.indexOf(dragFillState.startRow);
+    const targetIndex = allRows.indexOf(targetRow);
+
+    // Determine range of affected rows
+    const minIndex = Math.min(startIndex, targetIndex);
+    const maxIndex = Math.max(startIndex, targetIndex);
+
+    // Clear previous highlights
+    dragFillState.affectedRows.forEach(row => {
+        row.classList.remove('drag-fill-target');
+    });
+
+    // Highlight affected rows
+    dragFillState.affectedRows = [];
+    for (let i = minIndex; i <= maxIndex; i++) {
+        const row = allRows[i];
+        row.classList.add('drag-fill-target');
+        dragFillState.affectedRows.push(row);
+    }
+}
+
+async function handleDragFillEnd(e) {
+    if (!dragFillState.isDragging) return;
+
+    // Remove event listeners
+    document.removeEventListener('mousemove', handleDragFillMove);
+    document.removeEventListener('mouseup', handleDragFillEnd);
+
+    const affectedCount = dragFillState.affectedRows.length;
+
+    console.log(`🖱️ Drag ended. Affected rows: ${affectedCount}`);
+
+    if (affectedCount > 1) {
+        // Apply the value to all affected rows
+        console.log(`📝 Applying "${dragFillState.value}" to ${affectedCount} rows for field "${dragFillState.fieldName}"`);
+        console.log('Affected rows:', dragFillState.affectedRows.map(r => r.dataset.transactionId));
+
+        const updates = [];
+        for (const row of dragFillState.affectedRows) {
+            const transactionId = row.dataset.transactionId;
+            if (transactionId) {
+                updates.push({
+                    transaction_id: transactionId,
+                    field: dragFillState.fieldName,
+                    value: dragFillState.value
+                });
+                console.log(`  ✓ Queuing update for transaction: ${transactionId}`);
+            } else {
+                console.warn(`  ✗ Row missing transaction ID:`, row);
+            }
+        }
+
+        console.log(`📦 Prepared ${updates.length} updates out of ${affectedCount} affected rows`);
+        console.log('Updates:', JSON.stringify(updates, null, 2));
+
+        // Show loading toast
+        showToast(`⏳ Updating ${updates.length} transactions...`, 'info');
+
+        // Send bulk update to backend
+        try {
+            const response = await fetch('/api/bulk_update_transactions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showToast(`✅ Successfully updated ${updates.length} transactions`, 'success');
+
+                // Update the cells in place instead of reloading
+                // This preserves the current sort order and avoids page reset
+                dragFillState.affectedRows.forEach(row => {
+                    const cell = row.querySelector(`[data-field="${dragFillState.fieldName}"]`);
+                    if (cell) {
+                        // Update the cell's displayed value
+                        if (cell.classList.contains('smart-dropdown')) {
+                            const span = cell.querySelector('span');
+                            if (span) {
+                                span.textContent = dragFillState.value;
+                            } else {
+                                cell.textContent = dragFillState.value;
+                            }
+                        } else {
+                            cell.textContent = dragFillState.value;
+                        }
+                    }
+                });
+
+                // Refresh stats only (not the full table)
+                await loadDashboardStats();
+
+                // Re-add drag handles to updated cells
+                setTimeout(() => {
+                    setupDragDownHandles();
+                }, 100);
+            } else {
+                throw new Error(result.error || 'Update failed');
+            }
+        } catch (error) {
+            console.error('Bulk update error:', error);
+            showToast(`❌ Error updating transactions: ${error.message}`, 'error');
+        }
+    }
+
+    // Clear drag state and visual feedback
+    dragFillState.affectedRows.forEach(row => {
+        row.classList.remove('drag-fill-target', 'drag-fill-source');
+    });
+    dragFillState.startCell?.classList.remove('drag-fill-active');
+
+    dragFillState = {
+        isDragging: false,
+        startRow: null,
+        startCell: null,
+        fieldName: null,
+        value: null,
+        affectedRows: []
+    };
+}
+
+// ============================================================================
+// SORT BY CELL VALUE FUNCTIONALITY
+// ============================================================================
+
+function sortByCell(cell) {
+    const fieldName = cell.dataset.field;
+    let value;
+
+    // Get current value from cell
+    if (cell.classList.contains('smart-dropdown')) {
+        const span = cell.querySelector('span');
+        value = span ? span.textContent.trim() : cell.textContent.trim();
+    } else {
+        value = cell.textContent.trim();
+    }
+
+    console.log(`🔍 Sorting by ${fieldName} = "${value}"`);
+
+    // Get the table body
+    const tbody = document.getElementById('transactionTableBody');
+    if (!tbody) {
+        console.error('Transaction table body not found');
+        return;
+    }
+
+    // Get all rows
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // Separate matching rows from non-matching rows
+    const matchingRows = [];
+    const nonMatchingRows = [];
+
+    rows.forEach(row => {
+        // Find the cell in this row that corresponds to the same field
+        const rowCell = row.querySelector(`[data-field="${fieldName}"]`);
+        if (rowCell) {
+            let rowValue;
+            if (rowCell.classList.contains('smart-dropdown')) {
+                const span = rowCell.querySelector('span');
+                rowValue = span ? span.textContent.trim() : rowCell.textContent.trim();
+            } else {
+                rowValue = rowCell.textContent.trim();
+            }
+
+            // Check if values match (case-insensitive for text fields)
+            if (rowValue.toLowerCase() === value.toLowerCase()) {
+                matchingRows.push(row);
+            } else {
+                nonMatchingRows.push(row);
+            }
+        }
+    });
+
+    // Clear the table
+    tbody.innerHTML = '';
+
+    // Add matching rows first (grouped together)
+    matchingRows.forEach(row => {
+        row.classList.add('sort-highlight');
+        tbody.appendChild(row);
+    });
+
+    // Then add non-matching rows
+    nonMatchingRows.forEach(row => {
+        row.classList.remove('sort-highlight');
+        tbody.appendChild(row);
+    });
+
+    // Remove highlight after 2 seconds
+    setTimeout(() => {
+        matchingRows.forEach(row => {
+            row.classList.remove('sort-highlight');
+        });
+    }, 2000);
+
+    showToast(`✅ Sorted ${matchingRows.length} transactions by ${fieldName} = "${value}"`, 'success');
 }

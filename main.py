@@ -116,6 +116,23 @@ class DeltaCFOAgent:
                     }
                 patterns_loaded += 1
 
+            # Load wallet addresses for the tenant
+            cursor.execute("""
+                SELECT wallet_address, entity_name, purpose, wallet_type, confidence_score
+                FROM wallet_addresses
+                WHERE tenant_id = %s AND is_active = TRUE
+                ORDER BY created_at DESC
+            """, (tenant_id,))
+
+            for wallet_address, entity_name, purpose, wallet_type, confidence_score in cursor.fetchall():
+                # Store wallet with lowercase address for case-insensitive matching
+                self.wallets[wallet_address.lower()] = {
+                    'entity': entity_name,
+                    'purpose': purpose or '',
+                    'type': wallet_type or 'unknown',
+                    'confidence': float(confidence_score) if confidence_score else 0.9
+                }
+
             cursor.close()
             conn.close()
 
@@ -1342,8 +1359,8 @@ class DeltaCFOAgent:
             return entity, 0.9, reason, acct_cat, subcat
 
         # PRIORITY 1: Check wallet intelligence for withdrawals
-        if withdrawal_address and withdrawal_address in self.wallets:
-            wallet_info = self.wallets[withdrawal_address]
+        if withdrawal_address and withdrawal_address.lower() in self.wallets:
+            wallet_info = self.wallets[withdrawal_address.lower()]
             # Check if it's a known routing wallet
             if '0x86cc1529bdf444200f06957ab567b56a385c5e90' in withdrawal_address:  # Whit Mercado Bitcoin
                 entity = 'Internal Transfer'
@@ -1629,6 +1646,28 @@ class DeltaCFOAgent:
 
         # Ensure directory exists
         os.makedirs('classified_transactions', exist_ok=True)
+
+        # Normalize Date column to YYYY-MM-DD format before saving
+        if 'Date' in df.columns:
+            # Force conversion to string first
+            df['Date'] = df['Date'].astype(str)
+
+            # Use vectorized string operations (much more reliable than .apply())
+            # First handle ISO format (2025-09-28T04:21:16)
+            df['Date'] = df['Date'].str.replace(r'T.*$', '', regex=True)
+            # Then handle datetime format (2025-09-28 04:21:16 UTC) - keep only first 10 chars
+            df['Date'] = df['Date'].str[:10]
+
+            sample_date = df['Date'].iloc[0] if len(df) > 0 else 'N/A'
+            print(f"🔧 DEBUG: After normalize_date - sample: '{sample_date}' (len={len(sample_date) if sample_date != 'N/A' else 0})")
+
+            # Double-check all dates are YYYY-MM-DD format (10 chars max)
+            if len(df) > 0:
+                max_len = df['Date'].str.len().max()
+                if max_len > 10:
+                    print(f"⚠️ WARNING: Some dates are longer than 10 characters (max={max_len})!")
+                    long_dates = df[df['Date'].str.len() > 10]['Date'].head(3).tolist()
+                    print(f"   Examples: {long_dates}")
 
         try:
             df.to_csv(output_file, index=False)
