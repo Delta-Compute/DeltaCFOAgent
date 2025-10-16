@@ -316,6 +316,18 @@ Only respond with the JSON object, no other text.
                 import tempfile
                 import shutil
 
+                # Special handling for Coinbase CSV format which has irregular headers
+                skiprows = None
+                if structure_info.get('format') == 'coinbase':
+                    # Coinbase CSVs have:
+                    # Line 1: Empty or "Transactions"
+                    # Line 2: "Transactions"
+                    # Line 3: "User,Name,ID" (3 fields - user info)
+                    # Line 4: "ID,Timestamp,..." (11 fields - actual headers)
+                    # We need to skip lines 0-2 (first 3 lines) and use line 3 as header
+                    skiprows = [0, 1, 2]
+                    print(f"🪙 Detected Coinbase format - skipping first 3 header rows")
+
                 needs_cleaning = False
                 with open(file_path, 'r') as f:
                     first_two_lines = [f.readline() for _ in range(2)]
@@ -340,11 +352,11 @@ Only respond with the JSON object, no other text.
                                 temp_file.write(cleaned_line + '\n')
 
                     print(f"✅ Cleaned CSV file, reading from temporary file")
-                    df = pd.read_csv(temp_path)
+                    df = pd.read_csv(temp_path, skiprows=skiprows)
                     # Clean up temp file (os is already imported at module level)
                     os.unlink(temp_path)
                 else:
-                    df = pd.read_csv(file_path)
+                    df = pd.read_csv(file_path, skiprows=skiprows)
 
                 # Drop columns that are completely empty (safety check)
                 df = df.dropna(axis=1, how='all')
@@ -384,6 +396,18 @@ Only respond with the JSON object, no other text.
             amount_processing = structure_info.get('amount_processing', 'single_column')
             amount_col = structure_info.get('amount_column')
 
+            # Helper function to clean currency values (remove $ and commas)
+            def clean_currency(series):
+                """Remove currency symbols and commas from values"""
+                if series.dtype == 'object':
+                    return pd.to_numeric(series.astype(str).str.replace('$', '').str.replace(',', ''), errors='coerce')
+                return pd.to_numeric(series, errors='coerce')
+
+            # SPECIAL HANDLING: For Coinbase, override to use crypto quantity instead of USD value
+            if structure_info.get('format') == 'coinbase' and 'Quantity Transacted' in df.columns:
+                amount_col = 'Quantity Transacted'
+                print(f"🪙 Coinbase detected - using crypto quantity column: {amount_col}")
+
             if amount_processing == 'debit_credit_split':
                 # Handle separate debit/credit columns
                 debit_cols = [col for col in df.columns if 'debit' in col.lower()]
@@ -417,7 +441,7 @@ Only respond with the JSON object, no other text.
             else:
                 # Standard single amount column
                 if amount_col and amount_col in df.columns:
-                    standardized_df['Amount'] = pd.to_numeric(df[amount_col], errors='coerce')
+                    standardized_df['Amount'] = clean_currency(df[amount_col])
                     mapped_columns.append(amount_col)
                     print(f"💰 Mapped Amount: {amount_col}")
                 else:
@@ -425,7 +449,7 @@ Only respond with the JSON object, no other text.
                     amount_candidates = [col for col in df.columns if any(keyword in col.lower()
                                        for keyword in ['amount', 'value', 'total', 'sum'])]
                     if amount_candidates:
-                        standardized_df['Amount'] = pd.to_numeric(df[amount_candidates[0]], errors='coerce')
+                        standardized_df['Amount'] = clean_currency(df[amount_candidates[0]])
                         mapped_columns.append(amount_candidates[0])
                         print(f"💰 Auto-detected Amount: {amount_candidates[0]}")
                     else:
@@ -553,8 +577,10 @@ Only respond with the JSON object, no other text.
             origin_destination_rule = structure_info.get('origin_destination_rule', '')
             special_handling = structure_info.get('special_handling', 'standard')
 
-            # Apply crypto WITHDRAWAL logic if specified
-            if 'crypto_withdrawal' in special_handling.lower():
+            # Apply crypto WITHDRAWAL logic ONLY if the ENTIRE file is withdrawals (not mixed with deposits)
+            # For files with BOTH deposits and withdrawals (like "crypto_deposit|crypto_withdrawal"),
+            # skip file-level logic and rely on per-transaction direction logic instead
+            if special_handling.lower() == 'crypto_withdrawal':
                 # Set Origin to exchange name
                 standardized_df['Origin'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
 
@@ -580,8 +606,8 @@ Only respond with the JSON object, no other text.
                 standardized_df['Amount'] = -standardized_df['Amount'].abs()
                 print(f"💰 Negated amounts for withdrawal (expenses)")
 
-            # Apply crypto DEPOSIT logic if specified
-            elif 'crypto_deposit' in special_handling.lower() or (exchange_name and 'crypto' in special_handling.lower()):
+            # Apply crypto DEPOSIT logic ONLY if the ENTIRE file is deposits (not mixed with withdrawals)
+            elif special_handling.lower() == 'crypto_deposit' or (exchange_name and special_handling.lower() == 'crypto_format'):
                 if network_col and network_col in df.columns:
                     # For deposits: Origin = blockchain network, Destination = exchange
                     standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()

@@ -27,6 +27,7 @@ class DatabaseManager:
         self.db_type = os.getenv('DB_TYPE', 'postgresql')  # Default to PostgreSQL after migration
         self.connection_config = self._get_connection_config()
         self.connection_pool = None
+        self._pooled_connections = set()  # Track connection IDs from pool
         self._init_connection_pool()
 
     def _get_connection_config(self) -> dict:
@@ -86,6 +87,7 @@ class DatabaseManager:
         """Get database connection with proper error handling and retries"""
         connection = None
         max_retries = 3
+        connection_acquired = False
 
         for attempt in range(max_retries):
             try:
@@ -94,14 +96,22 @@ class DatabaseManager:
                 else:
                     connection = self._get_sqlite_connection()
 
+                connection_acquired = True
                 yield connection
                 break
 
             except Exception as e:
-                if connection:
+                # Only clean up if we failed to acquire or use the connection
+                if connection and not connection_acquired:
                     try:
-                        if self.db_type == 'postgresql' and self.connection_pool:
-                            self.connection_pool.putconn(connection)
+                        if self.db_type == 'postgresql':
+                            # Only return to pool if connection came from pool
+                            conn_id = id(connection)
+                            if conn_id in self._pooled_connections and self.connection_pool:
+                                self._pooled_connections.discard(conn_id)
+                                self.connection_pool.putconn(connection)
+                            else:
+                                connection.close()
                         else:
                             connection.close()
                     except:
@@ -113,15 +123,24 @@ class DatabaseManager:
                     logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
                     logger.warning(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
+                    connection_acquired = False
                     continue
                 else:
                     logger.error(f"All database connection attempts failed: {e}")
                     raise
             finally:
-                if connection:
+                # Only return connection to pool if it was successfully acquired
+                if connection and connection_acquired:
                     try:
-                        if self.db_type == 'postgresql' and self.connection_pool:
-                            self.connection_pool.putconn(connection)
+                        if self.db_type == 'postgresql':
+                            # Only return to pool if connection came from pool
+                            conn_id = id(connection)
+                            if conn_id in self._pooled_connections and self.connection_pool:
+                                self._pooled_connections.discard(conn_id)
+                                self.connection_pool.putconn(connection)
+                            else:
+                                # Direct connection, just close it
+                                connection.close()
                         else:
                             connection.close()
                     except Exception as e:
@@ -134,6 +153,8 @@ class DatabaseManager:
                 conn = self.connection_pool.getconn()
                 if conn:
                     conn.autocommit = False  # Use transactions
+                    # Track this connection as from pool
+                    self._pooled_connections.add(id(conn))
                     return conn
             except Exception as e:
                 logger.warning(f"Failed to get connection from pool, creating new one: {e}")
@@ -153,6 +174,7 @@ class DatabaseManager:
 
         conn = psycopg2.connect(**config)
         conn.autocommit = False  # Use transactions
+        # Direct connections are NOT tracked in _pooled_connections
         return conn
 
     def _get_sqlite_connection(self):
