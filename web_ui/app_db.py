@@ -71,8 +71,12 @@ from reporting_api import register_reporting_routes
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
-app.config['TEMPLATES_AUTO_RELOAD'] = True  # Force template reloading
-app.jinja_env.auto_reload = True  # Force Jinja template auto-reload
+
+# Auto-reload templates only in debug mode
+debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+if debug_mode:
+    app.config['TEMPLATES_AUTO_RELOAD'] = True
+    app.jinja_env.auto_reload = True
 
 # Configure Flask secret key for sessions
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
@@ -8797,7 +8801,8 @@ if __name__ == '__main__':
     print(f"Starting server on port {port}")
     print("Invoice processing module integrated")
     print("[NEW] Blockchain enrichment API enabled")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    print(f"Debug mode: {'ON' if debug_mode else 'OFF'}")
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)
 
 # Initialize Claude client and database on module import (for production deployments like Cloud Run)
 try:
