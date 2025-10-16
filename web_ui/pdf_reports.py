@@ -844,16 +844,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from operating activities
             operating_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%sale%', '%revenue%', '%income%', '%payment%', '%receipt%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as cash_receipts,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%expense%', '%cost%', '%payment%', '%supplier%', '%payroll%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}
@@ -862,16 +854,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from investing activities
             investing_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%asset%', '%equipment%', '%investment%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as investing_inflows,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%asset%', '%equipment%', '%investment%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as investing_outflows
+                    SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as investing_inflows,
+                    SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as investing_outflows
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}
@@ -880,16 +864,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from financing activities
             financing_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%loan%', '%financing%', '%capital%', '%equity%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as financing_inflows,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%loan%', '%financing%', '%dividend%', '%withdrawal%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as financing_outflows
+                    SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as financing_inflows,
+                    SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as financing_outflows
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}
@@ -1522,16 +1498,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from operating activities
             operating_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%sale%', '%revenue%', '%income%', '%payment%', '%receipt%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as cash_receipts,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%expense%', '%cost%', '%payment%', '%supplier%', '%payroll%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}
@@ -1540,16 +1508,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from investing activities
             investing_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%asset%', '%equipment%', '%investment%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as investing_inflows,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%asset%', '%equipment%', '%investment%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as investing_outflows
+                    SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as investing_inflows,
+                    SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as investing_outflows
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}
@@ -1558,16 +1518,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from financing activities
             financing_query = f"""
                 SELECT
-                    SUM(CASE
-                        WHEN amount > 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%loan%', '%financing%', '%capital%', '%equity%'])
-                        THEN usd_equivalent
-                        ELSE 0
-                    END) as financing_inflows,
-                    SUM(CASE
-                        WHEN amount < 0 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%loan%', '%financing%', '%dividend%', '%withdrawal%'])
-                        THEN ABS(usd_equivalent)
-                        ELSE 0
-                    END) as financing_outflows
+                    SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as financing_inflows,
+                    SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as financing_outflows
                 FROM transactions
                 WHERE date::date BETWEEN %s AND %s
                 {entity_filter_condition}

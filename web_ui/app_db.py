@@ -71,6 +71,8 @@ from reporting_api import register_reporting_routes
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
+app.config['TEMPLATES_AUTO_RELOAD'] = True  # Force template reloading
+app.jinja_env.auto_reload = True  # Force Jinja template auto-reload
 
 # Configure Flask secret key for sessions
 app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
@@ -8085,11 +8087,11 @@ if __name__ == '__main__':
     ensure_background_jobs_tables()
 
     # Get port from environment (Cloud Run sets PORT automatically)
-    port = int(os.environ.get('PORT', 5002))
+    port = int(os.environ.get('PORT', 5001))
 
     print(f"Starting server on port {port}")
     print("Invoice processing module integrated")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=True)
 
 # Initialize Claude client and database on module import (for production deployments like Cloud Run)
 try:

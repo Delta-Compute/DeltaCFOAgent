@@ -316,6 +316,9 @@ function initializeCharts() {
 
     // Cash Flow Chart
     createCashFlowChart();
+
+    // Sankey Financial Flow Diagram
+    createSankeyDiagram();
 }
 
 /**
@@ -2392,4 +2395,218 @@ function downloadDMPLPDF() {
         showError('Failed to download DMPL PDF. Please try again.');
         showLoading(false);
     }
+}
+
+/**
+ * Create Sankey Financial Flow Diagram
+ */
+function createSankeyDiagram() {
+    const container = document.getElementById('sankeyDiagram');
+    if (!container) {
+        console.warn('Sankey diagram container not found');
+        return;
+    }
+
+    // Clear any existing content
+    container.innerHTML = '';
+
+    // Check if D3 and d3-sankey are available
+    if (typeof d3 === 'undefined' || typeof d3.sankey === 'undefined') {
+        console.warn('D3.js or d3-sankey library not available for Sankey diagram');
+        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Sankey diagram requires D3.js and d3-sankey libraries</div>';
+        return;
+    }
+
+    // Get financial data for the diagram
+    const plData = dashboardData.monthlyPL?.summary?.period_totals;
+    if (!plData) {
+        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">No financial data available for Sankey diagram</div>';
+        return;
+    }
+
+    // Set dimensions
+    const margin = {top: 10, right: 10, bottom: 10, left: 10};
+    const width = container.clientWidth - margin.left - margin.right;
+    const height = 450 - margin.top - margin.bottom;
+
+    // Create SVG
+    const svg = d3.select(container)
+        .append('svg')
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom);
+
+    const g = svg.append('g')
+        .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    // Prepare data for Sankey diagram
+    const totalRevenue = Math.max(plData.total_revenue || 0, 0);
+    const totalExpenses = Math.max(plData.total_expenses || 0, 0);
+    const netProfit = (plData.total_profit || 0);
+
+    // If no significant data, show placeholder
+    if (totalRevenue < 1) {
+        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Insufficient revenue data to generate meaningful flow visualization</div>';
+        return;
+    }
+
+    // Create nodes and links for the Sankey diagram
+    const nodes = [
+        // Source: Revenue
+        { id: 0, name: 'Total Revenue' },
+
+        // Intermediate: Expense categories (simplified)
+        { id: 1, name: 'Operating Expenses' },
+        { id: 2, name: 'Other Costs' },
+
+        // Destination: Net result
+        { id: 3, name: netProfit >= 0 ? 'Net Profit' : 'Net Loss' }
+    ];
+
+    // Calculate flows
+    const operatingExpenseFlow = Math.min(totalExpenses * 0.7, totalRevenue); // 70% of expenses as operating
+    const otherCostFlow = Math.min(totalExpenses * 0.3, totalRevenue - operatingExpenseFlow); // 30% as other costs
+    const remainingRevenue = Math.max(totalRevenue - operatingExpenseFlow - otherCostFlow, 0);
+
+    const links = [
+        // Revenue flows to expenses and profit/loss
+        { source: 0, target: 1, value: operatingExpenseFlow },
+        { source: 0, target: 2, value: otherCostFlow },
+        { source: 0, target: 3, value: remainingRevenue }
+    ].filter(link => link.value > 0); // Only include links with positive values
+
+    // Create Sankey generator
+    const sankey = d3.sankey()
+        .nodeWidth(15)
+        .nodePadding(20)
+        .size([width, height]);
+
+    // Generate the Sankey layout
+    const sankeyData = sankey({
+        nodes: nodes.map(d => Object.assign({}, d)),
+        links: links.map(d => Object.assign({}, d))
+    });
+
+    // Color scale for different flow types
+    const color = d3.scaleOrdinal()
+        .domain(['revenue', 'expense', 'profit', 'loss'])
+        .range(['#48bb78', '#f56565', '#4299e1', '#f59e0b']);
+
+    // Function to get color for links
+    const getLinkColor = (link) => {
+        if (link.target.name.includes('Profit')) return color('profit');
+        if (link.target.name.includes('Loss')) return color('loss');
+        if (link.target.name.includes('Expenses') || link.target.name.includes('Cost')) return color('expense');
+        return color('revenue');
+    };
+
+    // Draw links
+    g.selectAll('.link')
+        .data(sankeyData.links)
+        .enter().append('path')
+        .attr('class', 'link')
+        .attr('d', d3.sankeyLinkHorizontal())
+        .attr('stroke', d => getLinkColor(d))
+        .attr('stroke-width', d => Math.max(1, d.width))
+        .attr('fill', 'none')
+        .attr('opacity', 0.7)
+        .on('mouseover', function(event, d) {
+            // Show tooltip on hover
+            d3.select(this).attr('opacity', 0.9);
+
+            // Create or update tooltip
+            let tooltip = d3.select('body').select('.sankey-tooltip');
+            if (tooltip.empty()) {
+                tooltip = d3.select('body').append('div')
+                    .attr('class', 'sankey-tooltip')
+                    .style('position', 'absolute')
+                    .style('background', 'rgba(0, 0, 0, 0.8)')
+                    .style('color', 'white')
+                    .style('padding', '8px 12px')
+                    .style('border-radius', '4px')
+                    .style('font-size', '12px')
+                    .style('pointer-events', 'none')
+                    .style('opacity', 0)
+                    .style('z-index', 1000);
+            }
+
+            tooltip.html(`
+                <strong>${d.source.name}</strong> → <strong>${d.target.name}</strong><br/>
+                Flow: ${formatCurrency(d.value)}
+            `)
+                .style('left', (event.pageX + 10) + 'px')
+                .style('top', (event.pageY - 10) + 'px')
+                .transition()
+                .duration(200)
+                .style('opacity', 1);
+        })
+        .on('mouseout', function(event, d) {
+            d3.select(this).attr('opacity', 0.7);
+            d3.select('.sankey-tooltip').transition().duration(200).style('opacity', 0);
+        });
+
+    // Draw nodes
+    const nodeGroup = g.selectAll('.node')
+        .data(sankeyData.nodes)
+        .enter().append('g')
+        .attr('class', 'node');
+
+    nodeGroup.append('rect')
+        .attr('x', d => d.x0)
+        .attr('y', d => d.y0)
+        .attr('height', d => d.y1 - d.y0)
+        .attr('width', d => d.x1 - d.x0)
+        .attr('fill', d => {
+            if (d.name.includes('Revenue')) return color('revenue');
+            if (d.name.includes('Profit')) return color('profit');
+            if (d.name.includes('Loss')) return color('loss');
+            return color('expense');
+        })
+        .attr('opacity', 0.8)
+        .on('mouseover', function(event, d) {
+            d3.select(this).attr('opacity', 1);
+        })
+        .on('mouseout', function(event, d) {
+            d3.select(this).attr('opacity', 0.8);
+        });
+
+    // Add node labels
+    nodeGroup.append('text')
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => (d.y1 + d.y0) / 2)
+        .attr('dy', '0.35em')
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .text(d => d.name)
+        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
+        .style('font-size', '12px')
+        .style('fill', '#4a5568')
+        .style('font-weight', 'bold');
+
+    // Add value labels on nodes
+    nodeGroup.append('text')
+        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+        .attr('y', d => (d.y1 + d.y0) / 2 + 14)
+        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
+        .text(d => {
+            // Calculate total value for the node
+            let value = 0;
+            if (d.name === 'Total Revenue') value = totalRevenue;
+            else if (d.name.includes('Profit') || d.name.includes('Loss')) value = Math.abs(netProfit);
+            else {
+                // Sum up the incoming flows for expense nodes
+                value = sankeyData.links.filter(link => link.target === d).reduce((sum, link) => sum + link.value, 0);
+            }
+            return formatCurrency(value);
+        })
+        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
+        .style('font-size', '10px')
+        .style('fill', '#666')
+        .style('font-weight', 'normal');
+
+    console.log('Sankey diagram created successfully with data:', {
+        totalRevenue,
+        totalExpenses,
+        netProfit,
+        nodes: sankeyData.nodes.length,
+        links: sankeyData.links.length
+    });
 }

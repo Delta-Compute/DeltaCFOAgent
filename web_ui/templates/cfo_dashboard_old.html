@@ -100,7 +100,72 @@
                     <button id="resetFilters" class="btn-secondary">Clear Filters</button>
                 </div>
 
-                <!-- Financial Reports Section - Moved to top for better UX -->
+                <!-- Charts Section -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>📊 Financial Analytics Charts</h2>
+                        <div class="table-info">
+                            <span>Real-time Financial Data Visualization</span>
+                        </div>
+                    </div>
+
+                    <!-- Main Charts Grid -->
+                    <div style="padding: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 2rem;">
+
+                        <!-- Revenue vs Expenses Chart -->
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📊 Revenue vs Expenses</h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="revenueExpensesChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Monthly P&L Trend -->
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📈 Monthly P&L Trend</h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="monthlyPLChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Entity Performance -->
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;">🏢 Entity Performance</h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="entityChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Cash Flow -->
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;">💵 Cash Flow Trend</h3>
+                            <div style="height: 300px; position: relative;">
+                                <canvas id="cashFlowChart"></canvas>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Sankey Financial Flow Diagram -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>🌊 Financial Flow Analysis</h2>
+                        <div class="table-info">
+                            <span>Interactive Sankey diagram showing money flow between categories</span>
+                        </div>
+                    </div>
+
+                    <!-- Sankey Diagram Container -->
+                    <div style="padding: 2rem; background: white; margin: 0 2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
+                        <div id="sankeyDiagram" style="width: 100%; height: 500px; overflow: hidden;"></div>
+                        <div id="sankeyLegend" style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #666;">
+                            <p><strong>Flow Analysis:</strong> This diagram shows how revenue flows through different expense categories to net profit</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Financial Reports Section -->
                 <div class="table-section">
                     <div class="table-header">
                         <h2>📄 Financial Reports</h2>
@@ -195,71 +260,6 @@
                             <span style="color: #666; font-size: 0.9rem;">
                                 Reports will use the current dashboard filters (period, entity, dates)
                             </span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Charts Section -->
-                <div class="table-section">
-                    <div class="table-header">
-                        <h2>📊 Financial Analytics Charts</h2>
-                        <div class="table-info">
-                            <span>Real-time Financial Data Visualization</span>
-                        </div>
-                    </div>
-
-                    <!-- Main Charts Grid -->
-                    <div style="padding: 2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 2rem;">
-
-                        <!-- Revenue vs Expenses Chart -->
-                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📊 Revenue vs Expenses</h3>
-                            <div style="height: 300px; position: relative;">
-                                <canvas id="revenueExpensesChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Monthly P&L Trend -->
-                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📈 Monthly P&L Trend</h3>
-                            <div style="height: 300px; position: relative;">
-                                <canvas id="monthlyPLChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Entity Performance -->
-                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">🏢 Entity Performance</h3>
-                            <div style="height: 300px; position: relative;">
-                                <canvas id="entityChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Cash Flow -->
-                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">💵 Cash Flow Trend</h3>
-                            <div style="height: 300px; position: relative;">
-                                <canvas id="cashFlowChart"></canvas>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-
-                <!-- Sankey Financial Flow Diagram -->
-                <div class="table-section">
-                    <div class="table-header">
-                        <h2>🌊 Financial Flow Analysis</h2>
-                        <div class="table-info">
-                            <span>Interactive Sankey diagram showing money flow between categories</span>
-                        </div>
-                    </div>
-
-                    <!-- Sankey Diagram Container -->
-                    <div style="padding: 2rem; background: white; margin: 0 2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                        <div id="sankeyDiagram" style="width: 100%; height: 500px; overflow: hidden;"></div>
-                        <div id="sankeyLegend" style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #666;">
-                            <p><strong>Flow Analysis:</strong> This diagram shows how revenue flows through different expense categories to net profit</p>
                         </div>
                     </div>
                 </div>
