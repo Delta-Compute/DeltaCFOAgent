@@ -66,6 +66,9 @@ from historical_currency_converter import HistoricalCurrencyConverter
 # Import tenant context manager
 from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
 
+# Import reporting API
+from reporting_api import register_reporting_routes
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
 
@@ -74,6 +77,9 @@ app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
 
 # Initialize multi-tenant context
 init_tenant_context(app)
+
+# Register CFO reporting routes
+register_reporting_routes(app)
 
 # Database connection - DEPRECATED: Now using database manager (database.py)
 # DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
@@ -2345,6 +2351,15 @@ def revenue():
         return render_template('revenue.html', stats=stats, cache_buster=cache_buster)
     except Exception as e:
         return f"Error loading revenue dashboard: {str(e)}", 500
+
+@app.route('/cfo-dashboard')
+def cfo_dashboard():
+    """CFO Financial Dashboard with charts and analytics"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('cfo_dashboard.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading CFO dashboard: {str(e)}", 500
 
 @app.route('/api/transactions')
 def api_transactions():
