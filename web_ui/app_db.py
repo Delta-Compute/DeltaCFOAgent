@@ -137,6 +137,12 @@ def init_currency_converter():
     global currency_converter
     try:
         from database import db_manager
+
+        # Check if database connection is available before proceeding
+        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
+            print("WARNING: PostgreSQL connection pool not available - skipping currency converter initialization")
+            return False
+
         currency_converter = HistoricalCurrencyConverter(db_manager)
         print("[OK] Historical Currency Converter initialized successfully")
         return True
@@ -148,8 +154,13 @@ def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        try:
+
+        # Check if database connection is available before proceeding
+        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
+            print("WARNING: PostgreSQL connection pool not available - skipping invoice tables initialization")
+            return False
+
+        with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -299,8 +310,6 @@ def init_invoice_tables():
             conn.commit()
             print("Invoice tables initialized successfully")
             return True
-        finally:
-            conn.close()
     except Exception as e:
         print(f"ERROR: Failed to initialize invoice tables: {e}")
         return False
@@ -323,8 +332,13 @@ def ensure_background_jobs_tables():
     """Ensure background jobs tables exist with correct schema"""
     try:
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        try:
+
+        # Check if database connection is available before proceeding
+        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
+            print("WARNING: PostgreSQL connection pool not available - skipping background jobs tables initialization")
+            return False
+
+        with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -404,8 +418,6 @@ def ensure_background_jobs_tables():
             conn.commit()
             print("[OK] Background jobs tables ensured")
             return True
-        finally:
-            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to ensure background jobs tables: {e}")
