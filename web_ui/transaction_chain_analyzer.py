@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
 import sqlite3
 import psycopg2
-from database import db_manager
+from .database import db_manager
 
 
 class TransactionChainAnalyzer:

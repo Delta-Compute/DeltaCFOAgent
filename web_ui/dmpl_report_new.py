@@ -16,8 +16,8 @@ from reportlab.lib.colors import HexColor
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from database import db_manager
-from pdf_reports import DeltaCFOReportTemplate
+from .database import db_manager
+from .pdf_reports import DeltaCFOReportTemplate
 
 logger = logging.getLogger(__name__)
 

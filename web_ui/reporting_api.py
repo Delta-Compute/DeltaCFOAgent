@@ -25,10 +25,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from reporting.financial_statements import FinancialStatementsGenerator
 from reporting.cash_dashboard import CashDashboard
-from database import db_manager
-from pdf_reports import DREReport, BalanceSheetReport
-from cash_flow_report_new import CashFlowReport
-from dmpl_report_new import DMPLReport
+from .database import db_manager
+from .pdf_reports import DREReport, BalanceSheetReport
+from .cash_flow_report_new import CashFlowReport
+from .dmpl_report_new import DMPLReport
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import anthropic
-from database import db_manager
+from .database import db_manager
 from learning_system import apply_learning_to_scores, record_match_feedback
 
 # Configure logging

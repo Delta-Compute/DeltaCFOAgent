@@ -61,13 +61,13 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 
 # Import historical currency converter
-from historical_currency_converter import HistoricalCurrencyConverter
+from .historical_currency_converter import HistoricalCurrencyConverter
 
 # Import tenant context manager
-from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
+from .tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
 
 # Import reporting API
-from reporting_api import register_reporting_routes
+from .reporting_api import register_reporting_routes
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
