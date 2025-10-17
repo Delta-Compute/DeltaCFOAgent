@@ -33,16 +33,26 @@ class DatabaseManager:
     def _get_connection_config(self) -> dict:
         """Get database connection configuration based on environment"""
         if self.db_type == 'postgresql':
-            return {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'port': os.getenv('DB_PORT', '5432'),
-                'database': os.getenv('DB_NAME', 'delta_cfo'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'sslmode': os.getenv('DB_SSL_MODE', 'require'),
-                # Cloud SQL specific
-                'unix_sock': os.getenv('DB_SOCKET_PATH'),  # For Cloud SQL socket connection
-            }
+            # Handle Cloud SQL socket path directly
+            socket_path = os.getenv('DB_SOCKET_PATH')
+            if socket_path:
+                return {
+                    'host': socket_path,
+                    'port': os.getenv('DB_PORT', '5432'),
+                    'database': os.getenv('DB_NAME', 'delta_cfo'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'sslmode': 'disable',  # SSL disabled for Unix socket
+                }
+            else:
+                return {
+                    'host': os.getenv('DB_HOST', 'localhost'),
+                    'port': os.getenv('DB_PORT', '5432'),
+                    'database': os.getenv('DB_NAME', 'delta_cfo'),
+                    'user': os.getenv('DB_USER', 'postgres'),
+                    'password': os.getenv('DB_PASSWORD', ''),
+                    'sslmode': os.getenv('DB_SSL_MODE', 'require'),
+                }
         else:
             # SQLite configuration
             db_path = os.getenv('SQLITE_DB_PATH', 'delta_transactions.db')
@@ -57,12 +67,6 @@ class DatabaseManager:
         if self.db_type == 'postgresql':
             try:
                 config = self.connection_config.copy()
-
-                # Handle Cloud SQL socket connection FIRST
-                if config.get('unix_sock'):
-                    config['host'] = config['unix_sock']
-                    config.pop('unix_sock', None)
-                    config['sslmode'] = 'disable'
 
                 # Check if essential credentials are provided
                 if not config.get('host') or not config.get('user'):
@@ -167,13 +171,6 @@ class DatabaseManager:
 
         # Fallback to direct connection
         config = self.connection_config.copy()
-
-        # Handle Cloud SQL socket connection
-        if config.get('unix_sock'):
-            config['host'] = config['unix_sock']
-            config.pop('unix_sock', None)
-            # For Unix socket connections, SSL is not applicable
-            config['sslmode'] = 'disable'
 
         # Remove None values
         config = {k: v for k, v in config.items() if v is not None}
