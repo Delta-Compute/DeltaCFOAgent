@@ -58,17 +58,17 @@ class DatabaseManager:
             try:
                 config = self.connection_config.copy()
 
+                # Handle Cloud SQL socket connection FIRST
+                if config.get('unix_sock'):
+                    config['host'] = config['unix_sock']
+                    config.pop('unix_sock', None)
+                    config['sslmode'] = 'disable'
+
                 # Check if essential credentials are provided
                 if not config.get('host') or not config.get('user'):
                     logger.warning("PostgreSQL credentials not configured - connection pool disabled")
                     self.connection_pool = None
                     return
-
-                # Handle Cloud SQL socket connection
-                if config.get('unix_sock'):
-                    config['host'] = config['unix_sock']
-                    config.pop('unix_sock', None)
-                    config['sslmode'] = 'disable'
 
                 # Remove None values
                 config = {k: v for k, v in config.items() if v is not None}
