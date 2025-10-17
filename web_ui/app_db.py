@@ -136,7 +136,7 @@ def init_currency_converter():
     """Initialize Historical Currency Converter"""
     global currency_converter
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Check if database connection is available before proceeding
         if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
@@ -153,7 +153,7 @@ def init_currency_converter():
 def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Check if database connection is available before proceeding
         if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
@@ -317,7 +317,7 @@ def init_invoice_tables():
 def init_database():
     """Initialize database and create tables if they don't exist - now uses database manager"""
     try:
-        from database import db_manager
+        from .database import db_manager
         db_manager.init_database()
         print("[OK] Database initialized successfully")
     except Exception as e:
@@ -331,7 +331,7 @@ def init_database():
 def ensure_background_jobs_tables():
     """Ensure background jobs tables exist with correct schema"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Check if database connection is available before proceeding
         if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
@@ -435,7 +435,7 @@ def create_background_job(job_type: str, total_items: int, created_by: str = 'sy
     created_at = datetime.utcnow().isoformat()
 
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -467,7 +467,7 @@ def add_job_item(job_id: str, item_name: str, item_path: str = None) -> int:
     created_at = datetime.utcnow().isoformat()
 
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -499,7 +499,7 @@ def update_job_progress(job_id: str, processed_items: int = None, successful_ite
     """Update job progress and status"""
 
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -560,7 +560,7 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
     """Update individual job item status"""
 
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -586,7 +586,7 @@ def update_job_item_status(job_id: str, item_name: str, status: str,
 def get_job_status(job_id: str) -> dict:
     """Get complete job status with items"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -761,7 +761,7 @@ def start_background_job(job_id: str, job_type: str = 'invoice_batch'):
 def get_db_connection():
     """Get database connection using the centralized database manager"""
     try:
-        from database import db_manager
+        from .database import db_manager
         # Return a connection context - this will be used in a 'with' statement
         return db_manager.get_connection()
     except Exception as e:
@@ -770,7 +770,7 @@ def get_db_connection():
 
 def load_transactions_from_db(filters=None, page=1, per_page=50):
     """Load transactions from database with filtering and pagination"""
-    from database import db_manager
+    from .database import db_manager
     tenant_id = get_current_tenant_id()
 
     # Use the exact same pattern as get_dashboard_stats function
@@ -871,7 +871,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 def get_dashboard_stats():
     """Calculate dashboard statistics from database"""
     try:
-        from database import db_manager
+        from .database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Use the robust database manager instead of old get_db_connection
@@ -985,7 +985,7 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
@@ -1176,7 +1176,7 @@ Return only the JSON object, no additional text.
         pattern_data = json.loads(response_text)
 
         # Store patterns in database
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -1218,7 +1218,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         try:
             cursor = conn.cursor()
@@ -1277,7 +1277,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 pattern_conditions = []
                 params = []  # Initialize params list for SQL query
                 try:
-                    from database import db_manager
+                    from .database import db_manager
                     pattern_conn = db_manager._get_postgresql_connection()
                     pattern_cursor = pattern_conn.cursor()
                     pattern_placeholder_temp = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
@@ -1572,7 +1572,7 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                 # Fetch learned patterns for this entity from database
                 learned_patterns_text = "No patterns learned yet for this entity."
                 try:
-                    from database import db_manager
+                    from .database import db_manager
                     pattern_conn = db_manager._get_postgresql_connection()
                     pattern_cursor = pattern_conn.cursor()
                     pattern_placeholder = '%s' if hasattr(pattern_cursor, 'mogrify') else '?'
@@ -1814,7 +1814,7 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -2110,7 +2110,7 @@ def sync_csv_to_database(csv_filename=None):
         print(f"UPDATING: Syncing {len(df)} transactions to database...")
 
         # Connect to database using db_manager
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
@@ -2385,7 +2385,7 @@ def health_check():
 
         # Try to get database status using the database manager health check
         try:
-            from database import db_manager
+            from .database import db_manager
             db_health = db_manager.health_check()
             health_response["database"] = db_health
         except Exception as db_error:
@@ -2549,7 +2549,7 @@ def api_test_transactions():
     """Simple test endpoint to debug transaction retrieval"""
     try:
         tenant_id = get_current_tenant_id()
-        from database import db_manager
+        from .database import db_manager
 
         # Direct database query like get_dashboard_stats
         with db_manager.get_connection() as conn:
@@ -2602,7 +2602,7 @@ def api_debug_positive_transactions():
     """Debug endpoint to find positive (revenue) transactions"""
     try:
         tenant_id = get_current_tenant_id()
-        from database import db_manager
+        from .database import db_manager
 
         with db_manager.get_connection() as conn:
             if db_manager.db_type == 'postgresql':
@@ -2679,7 +2679,7 @@ def api_reset_all_matches():
     """Reset all invoice-transaction matches - remove all links"""
     try:
         tenant_id = get_current_tenant_id()
-        from database import db_manager
+        from .database import db_manager
 
         with db_manager.get_connection() as conn:
             if db_manager.db_type == 'postgresql':
@@ -2753,7 +2753,7 @@ def api_update_transaction():
                 tenant_id = get_current_tenant_id()
 
                 # Get transaction description for pattern extraction
-                from database import db_manager
+                from .database import db_manager
                 conn = db_manager._get_postgresql_connection()
                 cursor = conn.cursor()
                 is_postgresql = hasattr(cursor, 'mogrify')
@@ -2807,7 +2807,7 @@ def api_update_entity_bulk():
         tenant_id = get_current_tenant_id()
 
         # Update each transaction
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -2849,7 +2849,7 @@ def api_update_category_bulk():
         tenant_id = get_current_tenant_id()
 
         # Update each transaction
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -2889,7 +2889,7 @@ def api_archive_transactions():
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -2929,7 +2929,7 @@ def api_unarchive_transactions():
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -2964,7 +2964,7 @@ def api_unarchive_transactions():
 def api_get_wallets():
     """Get all wallet addresses for the current tenant"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Hardcoded tenant for now (Delta)
         tenant_id = 'delta'
@@ -3035,7 +3035,7 @@ def api_add_wallet():
         # Hardcoded tenant for now (Delta)
         tenant_id = 'delta'
 
-        from database import db_manager
+        from .database import db_manager
 
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
@@ -3132,7 +3132,7 @@ def api_update_wallet(wallet_id):
 
         params.append(wallet_id)
 
-        from database import db_manager
+        from .database import db_manager
 
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
@@ -3183,7 +3183,7 @@ def api_update_wallet(wallet_id):
 def api_delete_wallet(wallet_id):
     """Soft delete a wallet address (set is_active = FALSE)"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
@@ -3231,7 +3231,7 @@ def api_suggestions():
             # Get current tenant_id for multi-tenant isolation
             tenant_id = get_current_tenant_id()
 
-            from database import db_manager
+            from .database import db_manager
             conn = db_manager._get_postgresql_connection()
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
@@ -3326,7 +3326,7 @@ def api_ai_get_suggestions():
         tenant_id = get_current_tenant_id()
 
         # Get transaction from database
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -3624,7 +3624,7 @@ def api_ai_apply_suggestion():
                     tenant_id = get_current_tenant_id()
 
                     # Get transaction description for pattern learning
-                    from database import db_manager
+                    from .database import db_manager
                     conn = db_manager._get_postgresql_connection()
                     cursor = conn.cursor()
                     is_postgresql = hasattr(cursor, 'mogrify')
@@ -3681,7 +3681,7 @@ def api_ask_accounting_category():
         destination = transaction_context.get('destination', '')
 
         # Get known wallets for wallet matching context
-        from database import db_manager
+        from .database import db_manager
         wallet_conn = db_manager._get_postgresql_connection()
         wallet_cursor = wallet_conn.cursor()
         wallet_cursor.execute("""
@@ -3844,7 +3844,7 @@ def api_ai_find_similar_after_suggestion():
         tenant_id = get_current_tenant_id()
 
         # Get the original transaction
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4175,7 +4175,7 @@ If no transactions have similar intent, return an empty array: []"""
 def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4210,7 +4210,7 @@ def api_get_accounting_categories():
 def api_get_subcategories():
     """API endpoint to fetch distinct subcategories from database"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4352,7 +4352,7 @@ def api_update_similar_categories():
         tenant_id = get_current_tenant_id()
 
         # Get the original transaction to find similar ones
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4434,7 +4434,7 @@ def api_update_similar_descriptions():
         tenant_id = get_current_tenant_id()
 
         # Get the original transaction to find similar ones
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4505,7 +4505,7 @@ def api_update_similar_descriptions():
 def files_page():
     """Files management page - shows uploaded files from database"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
@@ -4630,7 +4630,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
 
         print(f"🔍 Checking {len(df)} unique transactions against database for duplicates")
 
-        from database import db_manager
+        from .database import db_manager
         with db_manager.get_connection() as conn:
             if db_manager.db_type == 'postgresql':
                 cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -5140,7 +5140,7 @@ def resolve_duplicates():
             selected_indices = data.get('selected_indices', [])
             modifications = data.get('modifications', {})
 
-            from database import db_manager
+            from .database import db_manager
 
             # Step 1: Determine which duplicates to delete
             duplicate_ids = []
@@ -5521,7 +5521,7 @@ def api_get_invoices():
         per_page = int(request.args.get('per_page', 20))
         offset = (page - 1) * per_page
 
-        from database import db_manager
+        from .database import db_manager
 
         # Use PostgreSQL placeholders since we're using db_manager
         placeholder = '%s'
@@ -5604,7 +5604,7 @@ def api_get_invoice(invoice_id):
     """Get single invoice by ID"""
     try:
         tenant_id = get_current_tenant_id()
-        from database import db_manager
+        from .database import db_manager
 
         # Execute query using db_manager - filter by tenant_id
         row = db_manager.execute_query("SELECT * FROM invoices WHERE tenant_id = %s AND id = %s", (tenant_id, invoice_id), fetch_one=True)
@@ -6053,7 +6053,7 @@ def api_upload_batch_invoices_async():
 def api_update_invoice(invoice_id):
     """Update invoice fields - supports single field or multiple fields"""
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
 
         # Get current tenant_id for multi-tenant isolation
@@ -6112,7 +6112,7 @@ def api_update_invoice(invoice_id):
 def api_delete_invoice(invoice_id):
     """Delete invoice"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
@@ -6132,7 +6132,7 @@ def api_delete_invoice(invoice_id):
 def api_bulk_update_invoices():
     """Bulk update multiple invoices"""
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
         invoice_ids = data.get('invoice_ids', [])
         updates = data.get('updates', {})
@@ -6184,7 +6184,7 @@ def api_bulk_update_invoices():
 def api_bulk_delete_invoices():
     """Bulk delete multiple invoices"""
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
         invoice_ids = data.get('invoice_ids', [])
 
@@ -6221,7 +6221,7 @@ def api_bulk_delete_invoices():
 def api_invoice_stats():
     """Get invoice statistics"""
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
@@ -6380,7 +6380,7 @@ def api_convert_single_invoice(invoice_id):
         if not currency_converter:
             return jsonify({'error': 'Currency converter not available'}), 503
 
-        from database import db_manager
+        from .database import db_manager
 
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
@@ -6455,7 +6455,7 @@ def api_list_jobs():
         status_filter = request.args.get('status')  # pending, processing, completed, failed
         job_type_filter = request.args.get('job_type')  # invoice_batch, etc.
 
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -7020,7 +7020,7 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                from database import db_manager
+                from .database import db_manager
                 conn = db_manager._get_postgresql_connection()
 
                 # Check if invoice_number already exists
@@ -7142,7 +7142,7 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
                         transaction_context: dict, session_id: str = None):
     """Log user interactions for learning system"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         conn.execute("""
             INSERT INTO user_interactions (
@@ -7170,7 +7170,7 @@ def log_user_interaction(transaction_id: str, field_type: str, original_value: s
 def update_ai_performance_metrics(field_type: str, was_accepted: bool):
     """Update daily AI performance metrics"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         today = datetime.now().date()
 
@@ -7206,7 +7206,7 @@ def update_ai_performance_metrics(field_type: str, was_accepted: bool):
 def learn_from_interaction(transaction_id: str, field_type: str, user_choice: str, context: dict):
     """Learn patterns from user interactions"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
 
         # Create pattern condition based on transaction context
@@ -7269,7 +7269,7 @@ def learn_from_interaction(transaction_id: str, field_type: str, user_choice: st
 def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
     """Get suggestions based on learned patterns"""
     try:
-        from database import db_manager
+        from .database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         suggestions = []
@@ -7458,7 +7458,7 @@ def api_run_revenue_matching():
 def api_get_pending_matches():
     """Retorna matches pendentes de revisão"""
     try:
-        from database import db_manager
+        from .database import db_manager
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 20)), 100)
         offset = (page - 1) * per_page
@@ -7562,7 +7562,7 @@ def api_confirm_match():
     }
     """
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
         invoice_id = data.get('invoice_id')
         transaction_id = data.get('transaction_id')
@@ -7626,7 +7626,7 @@ def api_reject_match():
     }
     """
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
         match_id = data.get('match_id')
         user_id = data.get('user_id', 'Unknown')
@@ -7752,7 +7752,7 @@ def api_manual_match():
 def api_get_matched_pairs():
     """Retorna invoices que já foram matchados com transações"""
     try:
-        from database import db_manager
+        from .database import db_manager
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 20)), 100)
         offset = (page - 1) * per_page
@@ -7846,7 +7846,7 @@ def api_get_matched_pairs():
 def api_get_revenue_stats():
     """Retorna estatísticas do sistema de revenue matching"""
     try:
-        from database import db_manager
+        from .database import db_manager
         stats = {}
 
         # Get current tenant_id for multi-tenant isolation
@@ -7990,7 +7990,7 @@ def api_unmatch_invoice():
     }
     """
     try:
-        from database import db_manager
+        from .database import db_manager
         data = request.get_json()
         invoice_id = data.get('invoice_id')
         user_id = data.get('user_id', 'Unknown')
@@ -8091,7 +8091,7 @@ def api_revenue_health_check():
     Retorna status de conectividade e performance do banco
     """
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Perform database health check
         health_status = db_manager.health_check()
@@ -8184,7 +8184,7 @@ def api_revenue_batch_operations():
     }
     """
     try:
-        from database import db_manager
+        from .database import db_manager
 
         data = request.get_json() or {}
         operations = data.get('operations', [])
@@ -8301,7 +8301,7 @@ def api_revenue_performance_stats():
     Retorna estatísticas de performance do sistema de matching
     """
     try:
-        from database import db_manager
+        from .database import db_manager
 
         # Get database health
         health_status = db_manager.health_check()
@@ -8689,7 +8689,7 @@ def api_enrich_all_pending():
     """
     try:
         from transaction_enrichment import enricher
-        from database import db_manager
+        from .database import db_manager
 
         data = request.get_json() or {}
         batch_size = data.get('batch_size', 100)  # Process in batches

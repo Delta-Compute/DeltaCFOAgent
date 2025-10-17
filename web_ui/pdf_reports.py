@@ -460,7 +460,7 @@ class DREReport(DeltaCFOReportTemplate):
 
     def _fetch_financial_data(self) -> Dict[str, Any]:
         """Fetch financial data from the reporting APIs"""
-        from database import db_manager
+        from .database import db_manager
 
         try:
             # Get P&L data from the monthly-pl endpoint logic
@@ -828,7 +828,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
 
     def _fetch_cash_flow_data(self) -> Dict[str, Any]:
         """Fetch cash flow data from the database"""
-        from database import db_manager
+        from .database import db_manager
 
         try:
             # Get cash flow data
@@ -1168,7 +1168,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
 
     def _fetch_balance_sheet_data(self) -> Dict[str, Any]:
         """Fetch balance sheet data from the database"""
-        from database import db_manager
+        from .database import db_manager
 
         try:
             # Get balance sheet data
@@ -1482,7 +1482,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
 
     def _fetch_cash_flow_data(self) -> Dict[str, Any]:
         """Fetch cash flow data from the database"""
-        from database import db_manager
+        from .database import db_manager
 
         try:
             # Get cash flow data
