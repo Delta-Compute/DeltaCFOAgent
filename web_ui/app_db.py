@@ -2369,42 +2369,34 @@ def homepage():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint that returns database type and status"""
+    """Health check endpoint that returns application and database status"""
     try:
         db_type = os.getenv('DB_TYPE', 'sqlite').lower()
 
-        # Test database connection
-        from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        cursor = conn.cursor()
-
-        # Detect which database we're actually using
-        try:
-            if hasattr(cursor, 'mogrify'):  # PostgreSQL cursor has mogrify
-                cursor.execute("SELECT version()")
-                db_info = "PostgreSQL"
-            else:
-                cursor.execute("SELECT sqlite_version()")
-                db_info = "SQLite"
-        except:
-            # Fallback detection
-            try:
-                cursor.execute("SELECT sqlite_version()")
-                db_info = "SQLite"
-            except:
-                cursor.execute("SELECT version()")
-                db_info = "PostgreSQL"
-
-        conn.close()
-
-        return jsonify({
+        # Basic application health
+        health_response = {
             "status": "healthy",
-            "database": db_info,
+            "application": "running",
             "db_type_env": db_type,
             "postgresql_available": POSTGRESQL_AVAILABLE,
             "timestamp": datetime.now().isoformat(),
             "version": "2.0"
-        }), 200
+        }
+
+        # Try to get database status using the database manager health check
+        try:
+            from database import db_manager
+            db_health = db_manager.health_check()
+            health_response["database"] = db_health
+        except Exception as db_error:
+            # Database unavailable but application is still healthy
+            health_response["database"] = {
+                "status": "unavailable",
+                "error": str(db_error),
+                "note": "Application can run without database for basic operations"
+            }
+
+        return jsonify(health_response), 200
 
     except Exception as e:
         return jsonify({

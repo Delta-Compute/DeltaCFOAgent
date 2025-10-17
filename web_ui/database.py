@@ -58,6 +58,12 @@ class DatabaseManager:
             try:
                 config = self.connection_config.copy()
 
+                # Check if essential credentials are provided
+                if not config.get('host') or not config.get('user'):
+                    logger.warning("PostgreSQL credentials not configured - connection pool disabled")
+                    self.connection_pool = None
+                    return
+
                 # Handle Cloud SQL socket connection
                 if config.get('unix_sock'):
                     config['host'] = config['unix_sock']
@@ -76,7 +82,7 @@ class DatabaseManager:
                 logger.info("PostgreSQL connection pool initialized successfully")
 
             except Exception as e:
-                logger.error(f"Failed to initialize connection pool: {e}")
+                logger.warning(f"Failed to initialize connection pool: {e}")
                 self.connection_pool = None
         else:
             # SQLite doesn't need connection pooling
