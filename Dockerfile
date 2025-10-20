@@ -75,12 +75,12 @@ ENV ANTHROPIC_API_KEY=""
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# Health check using Python instead of curl
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+# Health check using Python instead of curl with longer start period
+HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:$PORT/health').getcode()" || exit 1
 
 # Expose port
 EXPOSE 8080
 
-# Start command optimized for Cloud Run
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 --max-requests 1000 --max-requests-jitter 100 --preload web_ui.app_db:app
+# Start command optimized for Cloud Run with faster startup
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 900 --max-requests 1000 --max-requests-jitter 100 --worker-class sync --worker-connections 1000 --preload web_ui.app_db:app

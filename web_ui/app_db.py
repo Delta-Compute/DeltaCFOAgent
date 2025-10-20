@@ -2666,18 +2666,22 @@ def health_check():
             "version": "2.0"
         }
 
-        # Try to get database status using the database manager health check
-        try:
-            from database import db_manager
-            db_health = db_manager.health_check()
-            health_response["database"] = db_health
-        except Exception as db_error:
-            # Database unavailable but application is still healthy
-            health_response["database"] = {
-                "status": "unavailable",
-                "error": str(db_error),
-                "note": "Application can run without database for basic operations"
-            }
+        # Only check database if specifically requested to avoid startup delays
+        check_db = request.args.get('check_db', '').lower() == 'true'
+        if check_db:
+            try:
+                from database import db_manager
+                db_health = db_manager.health_check()
+                health_response["database"] = db_health
+            except Exception as db_error:
+                # Database unavailable but application is still healthy
+                health_response["database"] = {
+                    "status": "unavailable",
+                    "error": str(db_error),
+                    "note": "Application can run without database for basic operations"
+                }
+        else:
+            health_response["database"] = "skipped_for_fast_startup"
 
         return jsonify(health_response), 200
 
@@ -9737,14 +9741,12 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
 
 # Initialize Claude client and database on module import (for production deployments like Cloud Run)
+# Optimized for Cloud Run startup - lazy initialization to avoid timeouts
 try:
     if not claude_client:
         init_claude_client()
-    init_invoice_tables()
-    if not currency_converter:
-        init_currency_converter()
-    ensure_background_jobs_tables()
-    print("[OK] Production initialization completed")
+    # Defer heavy database operations to first request to avoid startup timeout
+    print("[OK] Basic production initialization completed - database ops deferred")
 except Exception as e:
     print(f"WARNING: Production initialization warning: {e}")
 

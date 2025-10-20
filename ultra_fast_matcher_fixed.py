@@ -191,7 +191,7 @@ class UltraFastMatcher:
                 SELECT vendor_name, customer_name, invoice_number, category, business_unit
                 FROM invoices
                 WHERE id = %s
-            """, (invoice_id,), fetch_all=False)
+            """, (invoice_id,), fetch_one=True)
 
             if not invoice_data:
                 return False

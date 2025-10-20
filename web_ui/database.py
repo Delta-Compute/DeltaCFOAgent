@@ -478,7 +478,7 @@ class DatabaseManager:
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
-            # Create transactions table
+            # Create transactions table (removed updated_at column to match PostgreSQL schema)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     transaction_id TEXT PRIMARY KEY,
@@ -499,12 +499,11 @@ class DatabaseManager:
                     conversion_note TEXT,
                     accounting_category TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     updated_by TEXT
                 )
             """)
 
-            # Create invoices table
+            # Create invoices table (removed updated_at column to match PostgreSQL schema)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS invoices (
                     id TEXT PRIMARY KEY,
@@ -520,7 +519,6 @@ class DatabaseManager:
                     confidence REAL,
                     processing_notes TEXT,
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                     vendor_address TEXT,
                     vendor_tax_id TEXT,
                     vendor_contact TEXT,
