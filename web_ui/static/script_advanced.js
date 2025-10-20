@@ -163,9 +163,9 @@ function setupEventListeners() {
     // Clear filters button
     document.getElementById('clearFilters').addEventListener('click', clearFilters);
 
-    // Refresh button
+    // Refresh button - mantém página atual
     document.getElementById('refreshData').addEventListener('click', () => {
-        currentPage = 1;
+        // NÃO reseta currentPage - mantém a página atual do usuário
         loadTransactions();
     });
 

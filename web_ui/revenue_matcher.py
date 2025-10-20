@@ -16,13 +16,16 @@ import os
 import re
 import json
 import logging
+import concurrent.futures
+import threading
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import anthropic
-from .database import db_manager
-from learning_system import apply_learning_to_scores, record_match_feedback
+from database import db_manager
+# from learning_system import apply_learning_to_scores, record_match_feedback  # TODO: Implement learning system
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -47,9 +50,19 @@ class RevenueInvoiceMatcher:
 
     def __init__(self):
         self.claude_client = self._init_claude_client()
-        self.match_threshold_high = 0.90  # Match automático
-        self.match_threshold_medium = 0.70  # Match sugerido
-        self.amount_tolerance = 0.02  # 2% tolerance for amount matching
+        self.match_threshold_high = 0.80  # Match automático (reduzido de 0.90)
+        self.match_threshold_medium = 0.55  # Match sugerido (reduzido de 0.70)
+        self.amount_tolerance = 0.03  # 3% tolerance for amount matching (aumentado de 0.02)
+
+        # Progress tracking
+        self.progress_lock = threading.Lock()
+        self.current_progress = 0
+        self.total_progress = 0
+        self.start_time = None
+        self.ai_filter_threshold_low = 0.4   # Apenas IA para scores 0.4-0.8
+        self.ai_filter_threshold_high = 0.8
+        self.batch_size = 18  # Batch processing size
+        self.max_workers = 3  # Parallel threads
 
     def _init_claude_client(self):
         """Inicializa cliente Claude para matching semântico"""
@@ -63,6 +76,49 @@ class RevenueInvoiceMatcher:
         except Exception as e:
             logger.error(f"Error initializing Claude: {e}")
             return None
+
+    def _sanitize_text(self, text: str) -> str:
+        """Sanitiza texto para evitar erros JSON em Claude API"""
+        if not text:
+            return ""
+        # Remove caracteres de controle que causam JSON errors
+        sanitized = text.encode('ascii', 'ignore').decode('ascii')
+        # Remove quebras de linha que podem corromper JSON
+        sanitized = sanitized.replace('\n', ' ').replace('\r', ' ')
+        # Remove aspas duplas que podem quebrar JSON
+        sanitized = sanitized.replace('"', "'")
+        return sanitized.strip()
+
+    def update_progress(self, processed: int = None):
+        """Atualiza progresso thread-safe"""
+        with self.progress_lock:
+            if processed is not None:
+                self.current_progress = processed
+            else:
+                self.current_progress += 1
+
+    def get_progress_info(self) -> Dict[str, Any]:
+        """Retorna informações de progresso thread-safe"""
+        with self.progress_lock:
+            if self.total_progress == 0:
+                return {"progress": 0, "eta": "N/A", "matches_processed": 0, "total": 0}
+
+            progress_percent = (self.current_progress / self.total_progress) * 100
+
+            if self.start_time and self.current_progress > 0:
+                elapsed = time.time() - self.start_time
+                rate = self.current_progress / elapsed
+                remaining = (self.total_progress - self.current_progress) / rate if rate > 0 else 0
+                eta = f"{int(remaining//60)}:{int(remaining%60):02d}"
+            else:
+                eta = "N/A"
+
+            return {
+                "progress": round(progress_percent, 1),
+                "eta": eta,
+                "matches_processed": self.current_progress,
+                "total": self.total_progress
+            }
 
     def find_matches_for_invoices(self, invoice_ids: List[str] = None) -> List[MatchResult]:
         """
@@ -124,15 +180,23 @@ class RevenueInvoiceMatcher:
             logger.error(f"Error fetching unmatched invoices: {e}")
             return []
 
-    def _get_candidate_transactions(self, days_back: int = 180) -> List[Dict]:
-        """Busca transações candidatas para matching (últimos X dias)"""
+    def _get_candidate_transactions(self, days_back: int = None) -> List[Dict]:
+        """
+        🚀 OTIMIZADO: Busca transações candidatas com filtro de data INTELIGENTE
+        Prioriza transações recentes mas permite histórico razoável para matches
+        """
+        # Use parâmetro ou default inteligente: 2 anos para dados históricos
+        if days_back is None:
+            days_back = 730  # 2 anos máximo - invoices não são pagos após anos
+
         cutoff_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
 
         query = """
             SELECT transaction_id, date, description, amount, currency,
                    classified_entity, origin, destination, source_file
             FROM transactions
-            WHERE date >= ? AND amount > 0
+            WHERE ABS(amount) > 0.01
+              AND date >= ?
             ORDER BY date DESC
         """
 
@@ -141,7 +205,32 @@ class RevenueInvoiceMatcher:
             query = query.replace('?', '%s')
 
         try:
-            return db_manager.execute_query(query, (cutoff_date,), fetch_all=True)
+            transactions = db_manager.execute_query(query, (cutoff_date,), fetch_all=True)
+            logger.info(f"🚀 SMART FILTERING: Found {len(transactions)} transactions from last {days_back} days ({cutoff_date}+)")
+
+            # Clean and validate transactions
+            valid_transactions = []
+            for t in transactions:
+                try:
+                    # Validate amount field - convert Decimal to float safely
+                    if hasattr(t['amount'], 'to_eng_string'):  # PostgreSQL Decimal
+                        t['amount'] = float(t['amount'])
+                    elif isinstance(t['amount'], str):
+                        t['amount'] = float(t['amount'])
+
+                    # Skip transactions with invalid amounts
+                    if abs(t['amount']) > 0.01:  # Only meaningful amounts
+                        valid_transactions.append(t)
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.warning(f"Skipping transaction {t.get('transaction_id', 'unknown')} with invalid amount: {e}")
+                    continue
+
+            # Log breakdown
+            positive = len([t for t in valid_transactions if t['amount'] > 0])
+            negative = len([t for t in valid_transactions if t['amount'] < 0])
+            logger.info(f"   📊 Valid transactions: {len(valid_transactions)} ({positive} positive, {negative} negative)")
+
+            return valid_transactions
         except Exception as e:
             logger.error(f"Error fetching candidate transactions: {e}")
             return []
@@ -183,14 +272,26 @@ class RevenueInvoiceMatcher:
         pattern_score = self._calculate_pattern_match_score(invoice, transaction)
         criteria_scores['pattern'] = pattern_score
 
-        # Calcular score final ponderado
-        final_score = (
-            amount_score * 0.35 +      # Valor é muito importante
-            date_score * 0.20 +        # Data é importante
-            vendor_score * 0.25 +      # Vendor matching é crucial
-            entity_score * 0.10 +      # Entity matching é útil
-            pattern_score * 0.10       # Patterns são bônus
-        )
+        # Calcular score final ponderado com lógica adaptativa
+        # Se vendor score é baixo mas entity score é alto, reduzir peso do vendor
+        if vendor_score < 0.3 and entity_score > 0.7:
+            # Crypto transactions ou casos onde vendor não aparece na descrição
+            final_score = (
+                amount_score * 0.45 +      # Aumentar peso do valor
+                date_score * 0.25 +        # Aumentar peso da data
+                vendor_score * 0.10 +      # Reduzir peso do vendor
+                entity_score * 0.15 +      # Aumentar peso da entity
+                pattern_score * 0.05       # Patterns como bônus
+            )
+        else:
+            # Matching tradicional onde vendor é disponível
+            final_score = (
+                amount_score * 0.35 +      # Valor é muito importante
+                date_score * 0.20 +        # Data é importante
+                vendor_score * 0.25 +      # Vendor matching é crucial
+                entity_score * 0.10 +      # Entity matching é útil
+                pattern_score * 0.10       # Patterns são bônus
+            )
 
         # Só retorna se score mínimo atingido
         if final_score < self.match_threshold_medium:
@@ -225,63 +326,106 @@ class RevenueInvoiceMatcher:
         )
 
     def _calculate_amount_match_score(self, invoice: Dict, transaction: Dict) -> float:
-        """Calcula score de matching por valor"""
+        """
+        🚀 OTIMIZADO: Calcula score de matching por valor incluindo transações negativas
+        Considera estornos, reembolsos e diferentes direções de pagamento
+        """
         try:
             invoice_amount = float(invoice['total_amount'])
             transaction_amount = float(transaction['amount'])
 
-            # Exact match
-            if abs(invoice_amount - transaction_amount) < 0.01:
-                return 1.0
+            # Use absolute value for comparison but track if it's negative
+            abs_transaction_amount = abs(transaction_amount)
+            is_negative = transaction_amount < 0
+
+            # Exact match (consider both positive and negative)
+            if abs(invoice_amount - abs_transaction_amount) < 0.01:
+                # Negative transactions might be refunds/cancellations - still valid matches
+                return 1.0 if not is_negative else 0.95
 
             # Percentage difference
-            diff_percentage = abs(invoice_amount - transaction_amount) / invoice_amount
+            diff_percentage = abs(invoice_amount - abs_transaction_amount) / invoice_amount
 
-            if diff_percentage <= self.amount_tolerance:
-                return 0.95  # Very close match
+            # Base scoring
+            base_score = 0.0
+            if diff_percentage <= 0.01:  # 1%
+                base_score = 0.98
+            elif diff_percentage <= self.amount_tolerance:  # 3%
+                base_score = 0.95
             elif diff_percentage <= 0.05:  # 5%
-                return 0.80
-            elif diff_percentage <= 0.10:  # 10%
-                return 0.60
-            elif diff_percentage <= 0.20:  # 20%
-                return 0.30
+                base_score = 0.85
+            elif diff_percentage <= 0.08:  # 8%
+                base_score = 0.75
+            elif diff_percentage <= 0.15:  # 15%
+                base_score = 0.60
+            elif diff_percentage <= 0.25:  # 25%
+                base_score = 0.40
             else:
                 return 0.0
+
+            # Adjust for negative transactions (slightly lower but still valid)
+            if is_negative and base_score > 0:
+                base_score *= 0.90  # 10% penalty for negative amounts
+
+            return base_score
 
         except (ValueError, TypeError, ZeroDivisionError):
             return 0.0
 
     def _calculate_date_match_score(self, invoice: Dict, transaction: Dict) -> float:
-        """Calcula score de matching por data"""
+        """
+        🚀 OTIMIZADO: Calcula score de matching por data com tolerância expandida
+        🔒 REGRA DE NEGÓCIO: Invoice SEMPRE anterior à transação (pagamento)
+        """
         try:
             # Parse dates
             invoice_date = datetime.strptime(invoice['date'], '%Y-%m-%d')
             transaction_date = datetime.strptime(transaction['date'], '%Y-%m-%d')
 
+            # 🚨 REGRA CRÍTICA: Invoice deve ser anterior ao pagamento
+            if invoice_date > transaction_date:
+                logger.warning(f"TEMPORAL VIOLATION: Invoice {invoice.get('invoice_number', 'N/A')} "
+                             f"dated {invoice_date.strftime('%Y-%m-%d')} is AFTER transaction "
+                             f"dated {transaction_date.strftime('%Y-%m-%d')}")
+                return 0.0  # Score zero para violações temporais
+
             # Use due date if available, otherwise invoice date
             due_date = invoice.get('due_date')
             if due_date:
                 target_date = datetime.strptime(due_date, '%Y-%m-%d')
+                # Due date também deve ser anterior ou igual à transação
+                if target_date > transaction_date:
+                    # Permitir pequena tolerância para due date (alguns dias)
+                    days_after_due = (target_date - transaction_date).days
+                    if days_after_due > 7:  # Máximo 7 dias de atraso no pagamento
+                        return 0.0
             else:
                 target_date = invoice_date
 
-            # Calculate difference in days
-            diff_days = abs((transaction_date - target_date).days)
+            # Calculate difference in days (transaction deve ser >= target_date)
+            diff_days = (transaction_date - target_date).days
 
+            # Realistic scoring - invoices são pagos em semanas/meses, não anos
             if diff_days == 0:
                 return 1.0
             elif diff_days <= 3:
-                return 0.90
+                return 0.95  # Mesmo período próximo
             elif diff_days <= 7:
-                return 0.80
+                return 0.90  # Mesma semana
             elif diff_days <= 15:
-                return 0.70
+                return 0.80  # Mesmo período quinzenal
             elif diff_days <= 30:
-                return 0.50
+                return 0.70  # Mesmo mês
             elif diff_days <= 60:
-                return 0.30
+                return 0.55  # Até 2 meses (normal)
+            elif diff_days <= 90:
+                return 0.40  # Até 3 meses (aceitável)
+            elif diff_days <= 180:
+                return 0.25  # Até 6 meses (possível para casos especiais)
+            elif diff_days <= 365:
+                return 0.10  # Até 1 ano (raro mas possível)
             else:
-                return 0.10
+                return 0.02  # Mais de 1 ano (muito improvável)
 
         except (ValueError, TypeError):
             return 0.0
@@ -320,29 +464,61 @@ class RevenueInvoiceMatcher:
 
     def _calculate_entity_match_score(self, invoice: Dict, transaction: Dict) -> float:
         """Calcula score de matching por business unit/entity"""
-        invoice_entity = (invoice.get('business_unit') or '').lower().strip()
+        invoice_vendor = (invoice.get('vendor_name') or '').lower().strip()
         transaction_entity = (transaction.get('classified_entity') or '').lower().strip()
+        transaction_desc = (transaction.get('description') or '').lower().strip()
 
-        if not invoice_entity or not transaction_entity:
-            return 0.5  # Neutral quando não tem info
+        # Melhorar reconhecimento de entidades Delta
+        delta_indicators = [
+            'delta mining paraguay s.a.',
+            'delta mining paraguay',
+            'delta mining',
+            'delta',
+            'tether transaction',  # Crypto payments para Delta
+            'usdc transaction',    # Crypto payments para Delta
+            'usd coin transaction' # Crypto payments para Delta
+        ]
 
-        # Direct match
-        if invoice_entity == transaction_entity:
-            return 1.0
+        # Se invoice é de Delta Mining Paraguay S.A., verificar se transação é relacionada
+        if 'delta mining paraguay' in invoice_vendor:
+            # Crypto transactions são geralmente para Delta Mining
+            if any(indicator in transaction_desc for indicator in ['tether transaction', 'usdc transaction', 'usd coin transaction']):
+                return 0.90  # Alta probabilidade de ser pagamento para Delta
 
-        # Partial matches
+            # Se entidade está como NEEDS REVIEW mas descrição sugere crypto, assumir Delta
+            if transaction_entity == 'needs review' and 'transaction' in transaction_desc:
+                return 0.85
+
+            # Direct entity match
+            if 'delta' in transaction_entity:
+                return 1.0
+
+        # Mapping expandido para entidades Delta
         entity_mapping = {
-            'delta llc': ['delta', 'delta llc'],
-            'delta mining': ['delta mining', 'mining'],
-            'delta prop': ['delta prop', 'prop shop'],
-            'delta brazil': ['delta brazil', 'brazil']
+            'delta mining paraguay': ['delta', 'delta mining', 'mining', 'needs review'],
+            'delta llc': ['delta', 'delta llc', 'llc'],
+            'delta prop': ['delta prop', 'prop shop', 'prop'],
+            'delta brazil': ['delta brazil', 'brazil', 'brasil']
         }
 
+        # Check vendor to entity mapping
         for main_entity, variants in entity_mapping.items():
-            if invoice_entity in variants and transaction_entity in variants:
-                return 0.8
+            if main_entity in invoice_vendor:
+                if any(variant in transaction_entity for variant in variants):
+                    return 0.85
+                # Se transaction está como NEEDS REVIEW, dar benefit of doubt para Delta
+                if transaction_entity == 'needs review':
+                    return 0.70
 
-        return 0.2
+        # Direct match
+        if invoice_vendor and transaction_entity and invoice_vendor == transaction_entity:
+            return 1.0
+
+        # Se nenhuma info específica, mas transaction é crypto e invoice é Delta
+        if 'delta' in invoice_vendor and 'transaction' in transaction_desc:
+            return 0.60
+
+        return 0.30  # Mais neutro que antes
 
     def _calculate_pattern_match_score(self, invoice: Dict, transaction: Dict) -> float:
         """Calcula score baseado em padrões (invoice number, etc.)"""
@@ -408,34 +584,195 @@ class RevenueInvoiceMatcher:
     def apply_semantic_matching(self, matches: List[MatchResult],
                               invoices: List[Dict], transactions: List[Dict]) -> List[MatchResult]:
         """
-        Aplica matching semântico usando Claude AI para matches ambíguos
+        🚀 OTIMIZADO: Aplica matching semântico com IA usando:
+        - Smart filtering (IA apenas para scores 0.4-0.8)
+        - Batch processing (15-20 matches por chamada)
+        - Paralelização (3 threads simultâneas)
+        - Sanitização de dados
         """
         if not self.claude_client:
-            logger.warning("Claude client not available - skipping semantic matching")
+            logger.warning("Claude client not available - skipping AI evaluation")
             return matches
 
-        # Apenas para matches com score médio que podem se beneficiar de análise semântica
-        ambiguous_matches = [m for m in matches if 0.7 <= m.score < 0.85]
-
-        if not ambiguous_matches:
+        if not matches:
             return matches
 
-        logger.info(f"Applying semantic matching to {len(ambiguous_matches)} ambiguous matches")
+        # Initialize progress tracking
+        self.start_time = time.time()
+        self.current_progress = 0
+
+        # 1. SMART FILTERING - IA apenas para casos ambíguos (0.4-0.8)
+        ai_candidates = []
+        auto_approved = []
+        auto_rejected = []
+
+        for match in matches:
+            if match.score >= self.ai_filter_threshold_high:
+                # Score alto (≥0.8) - AUTO APROVADO
+                auto_approved.append(match)
+            elif match.score >= self.ai_filter_threshold_low:
+                # Score ambíguo (0.4-0.8) - ENVIAR PARA IA
+                ai_candidates.append(match)
+            else:
+                # Score baixo (<0.4) - AUTO REJEITADO
+                auto_rejected.append(match)
+
+        self.total_progress = len(ai_candidates)
+
+        logger.info(f"🧠 SMART AI FILTERING: {len(ai_candidates)} ambiguous cases for AI analysis")
+        logger.info(f"✅ Auto-approved: {len(auto_approved)} (score ≥{self.ai_filter_threshold_high})")
+        logger.info(f"❌ Auto-rejected: {len(auto_rejected)} (score <{self.ai_filter_threshold_low})")
+
+        if not ai_candidates:
+            logger.info("🚀 NO AI PROCESSING NEEDED - All matches filtered automatically!")
+            return auto_approved + auto_rejected
+
+        # 2. BATCH PROCESSING + PARALELIZAÇÃO para casos ambíguos
+        logger.info(f"🚀 BATCH PROCESSING: {len(ai_candidates)} matches in {self.batch_size}-match batches")
 
         enhanced_matches = []
-        for match in ambiguous_matches:
-            try:
-                enhanced_match = self._enhance_match_with_ai(match, invoices, transactions)
-                enhanced_matches.append(enhanced_match)
-            except Exception as e:
-                logger.error(f"Error in semantic matching for {match.invoice_id}: {e}")
-                enhanced_matches.append(match)  # Keep original if AI fails
+        batches = [ai_candidates[i:i + self.batch_size] for i in range(0, len(ai_candidates), self.batch_size)]
 
-        # Replace ambiguous matches with enhanced ones
-        final_matches = [m for m in matches if m not in ambiguous_matches]
-        final_matches.extend(enhanced_matches)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_batch = {
+                executor.submit(self._process_batch_with_ai, batch, invoices, transactions): batch
+                for batch in batches
+            }
 
-        return final_matches
+            for future in concurrent.futures.as_completed(future_to_batch):
+                try:
+                    batch_results = future.result()
+                    enhanced_matches.extend(batch_results)
+                except Exception as e:
+                    batch = future_to_batch[future]
+                    logger.error(f"Error processing batch: {e}")
+                    enhanced_matches.extend(batch)  # Keep originals if batch fails
+
+        # Combine all results
+        all_matches = auto_approved + enhanced_matches + auto_rejected
+
+        elapsed = time.time() - self.start_time
+        logger.info(f"🚀 OPTIMIZATION COMPLETE: {len(ai_candidates)} AI evaluations in {elapsed:.1f}s")
+        logger.info(f"⚡ Performance: {len(ai_candidates)/elapsed:.1f} matches/second")
+
+        return all_matches
+
+    def _process_batch_with_ai(self, batch: List[MatchResult],
+                              invoices: List[Dict], transactions: List[Dict]) -> List[MatchResult]:
+        """🚀 Processa um lote de matches usando Claude AI com dados sanitizados"""
+        if not batch:
+            return []
+
+        # Build batch prompt with sanitized data
+        batch_data = []
+        for i, match in enumerate(batch):
+            invoice = next((inv for inv in invoices if inv['id'] == match.invoice_id), None)
+            transaction = next((txn for txn in transactions if txn['transaction_id'] == match.transaction_id), None)
+
+            if invoice and transaction:
+                batch_data.append({
+                    "match_id": i,
+                    "invoice": {
+                        "number": self._sanitize_text(str(invoice.get('invoice_number', 'N/A'))),
+                        "vendor": self._sanitize_text(str(invoice.get('vendor_name', 'N/A'))),
+                        "amount": float(invoice.get('total_amount', 0)),
+                        "currency": self._sanitize_text(str(invoice.get('currency', 'USD'))),
+                        "date": self._sanitize_text(str(invoice.get('date', 'N/A'))),
+                        "due_date": self._sanitize_text(str(invoice.get('due_date', 'N/A')))
+                    },
+                    "transaction": {
+                        "description": self._sanitize_text(str(transaction.get('description', 'N/A'))),
+                        "amount": float(transaction.get('amount', 0)),
+                        "currency": self._sanitize_text(str(transaction.get('currency', 'USD'))),
+                        "date": self._sanitize_text(str(transaction.get('date', 'N/A'))),
+                        "entity": self._sanitize_text(str(transaction.get('classified_entity', 'N/A')))
+                    },
+                    "current_score": round(match.score, 3)
+                })
+
+        if not batch_data:
+            return batch
+
+        prompt = f"""
+        Você é o AVALIADOR PRINCIPAL de revenue recognition. Analise este lote de {len(batch_data)} invoice-transaction pairs:
+
+        {json.dumps(batch_data, indent=2)}
+
+        INSTRUÇÕES CRÍTICAS:
+        1. 🚨 REGRA TEMPORAL OBRIGATÓRIA: Invoice SEMPRE deve ser anterior à transação (pagamento)
+           - Se invoice_date > transaction_date: AUTOMATICAMENTE REJEITAR (is_match: false)
+           - Se due_date > transaction_date por mais de 7 dias: REJEITAR
+        2. Para Delta Mining Paraguay S.A.: Transações crypto (USDT, USDC) são pagamentos típicos
+        3. Pequenas diferenças de valor (até 5%) são normais (taxas, timing)
+        4. Datas próximas (1-5 dias) são aceitáveis APENAS se respeitarem regra temporal
+        5. "NEEDS REVIEW" em entity é comum para crypto transactions
+
+        Para cada match, decida se é válido e ajuste o score se necessário.
+
+        Responda em JSON:
+        {{
+            "evaluations": [
+                {{
+                    "match_id": 0,
+                    "is_match": true/false,
+                    "confidence": 0.0-1.0,
+                    "adjusted_score": 0.0-1.0,
+                    "reasoning": "explicação concisa"
+                }}
+            ]
+        }}
+        """
+
+        try:
+            response = self.claude_client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=2000,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            result = json.loads(response.content[0].text)
+            evaluations = result.get('evaluations', [])
+
+            enhanced_batch = []
+            for i, match in enumerate(batch):
+                eval_result = next((e for e in evaluations if e.get('match_id') == i), None)
+
+                if eval_result and eval_result.get('is_match', False) and eval_result.get('confidence', 0) > 0.6:
+                    # AI aprova o match
+                    ai_score = min(eval_result.get('adjusted_score', match.score), 0.98)
+                    enhanced_match = MatchResult(
+                        invoice_id=match.invoice_id,
+                        transaction_id=match.transaction_id,
+                        score=ai_score,
+                        match_type=f"AI_BATCH_{match.match_type}",
+                        criteria_scores=match.criteria_scores,
+                        confidence_level="HIGH" if ai_score >= 0.85 else "MEDIUM",
+                        explanation=f"🤖 AI BATCH: {eval_result.get('reasoning', '')}",
+                        auto_match=ai_score >= 0.85
+                    )
+                    enhanced_batch.append(enhanced_match)
+                else:
+                    # AI rejeita ou baixa confiança
+                    rejected_score = max(match.score * 0.5, 0.2)
+                    enhanced_match = MatchResult(
+                        invoice_id=match.invoice_id,
+                        transaction_id=match.transaction_id,
+                        score=rejected_score,
+                        match_type=f"AI_BATCH_REJECTED_{match.match_type}",
+                        criteria_scores=match.criteria_scores,
+                        confidence_level="LOW",
+                        explanation=f"🤖 AI BATCH REJECTED: {eval_result.get('reasoning', 'Low confidence') if eval_result else 'AI analysis failed'}",
+                        auto_match=False
+                    )
+                    enhanced_batch.append(enhanced_match)
+
+            # Update progress
+            self.update_progress(self.current_progress + len(batch))
+            return enhanced_batch
+
+        except Exception as e:
+            logger.error(f"Error in batch AI processing: {e}")
+            return batch  # Return original batch if AI fails
 
     def _enhance_match_with_ai(self, match: MatchResult,
                              invoices: List[Dict], transactions: List[Dict]) -> MatchResult:
@@ -449,7 +786,9 @@ class RevenueInvoiceMatcher:
             return match
 
         prompt = f"""
-        Analise se esta transação bancária corresponde ao pagamento desta invoice:
+        Você é o AVALIADOR PRINCIPAL de matching entre invoices e transações. Sua análise tem prioridade sobre algoritmos determinísticos.
+
+        Analise este par invoice-transação como um especialista em revenue recognition:
 
         INVOICE:
         - Número: {invoice.get('invoice_number', 'N/A')}
@@ -467,20 +806,27 @@ class RevenueInvoiceMatcher:
         - Origem: {transaction.get('origin', 'N/A')}
         - Destino: {transaction.get('destination', 'N/A')}
 
-        Score atual: {match.score:.2f}
+        Score algorítmico inicial: {match.score:.2f}
 
-        Considere:
-        1. Variações de nome do vendor (siglas, nomes completos, etc.)
-        2. Diferenças menores de valor (taxas, ajustes, etc.)
-        3. Padrões típicos de pagamento
-        4. Contexto do business unit
+        INSTRUÇÕES CRÍTICAS:
+        1. 🚨 REGRA TEMPORAL OBRIGATÓRIA: Invoice SEMPRE deve ser anterior à transação (pagamento)
+           - Se invoice_date > transaction_date: AUTOMATICAMENTE REJEITAR (is_match: false)
+           - Invoice/Due date deve preceder o pagamento - esta é uma regra fundamental de negócio
+        2. Para Delta Mining Paraguay S.A.: Transações crypto (USDT, USDC) são pagamentos típicos de clientes
+        3. "NEEDS REVIEW" em entity é comum - use contexto da descrição
+        4. Pequenas diferenças de valor ($30-50) são normais (taxas, timing)
+        5. Datas próximas (1-3 dias) são aceitáveis APENAS se respeitarem regra temporal
+        6. Crypto transactions seguem padrão: "Tether transaction - [valor] USDT"
+
+        Como AVALIADOR PRINCIPAL, seja decisivo. Você deve ELEVAR matches bons que algoritmos conservadores subestimaram, MAS sempre respeitar a regra temporal.
 
         Responda em JSON:
         {{
             "is_match": true/false,
             "confidence": 0.0-1.0,
-            "reasoning": "explicação detalhada",
-            "adjusted_score": 0.0-1.0
+            "reasoning": "explicação detalhada do seu raciocínio",
+            "adjusted_score": 0.0-1.0,
+            "ai_priority": true
         }}
         """
 
@@ -493,31 +839,49 @@ class RevenueInvoiceMatcher:
 
             result = json.loads(response.content[0].text)
 
-            # Update match based on AI analysis
-            if result.get('is_match', False) and result.get('confidence', 0) > 0.7:
-                adjusted_score = min(result.get('adjusted_score', match.score), 0.95)
-                enhanced_explanation = f"{match.explanation} | AI: {result.get('reasoning', '')}"
+            # IA como AVALIADOR PRINCIPAL - sua decisão tem prioridade máxima
+            ai_confidence = result.get('confidence', 0)
+            ai_is_match = result.get('is_match', False)
+            ai_score = result.get('adjusted_score', match.score)
+            ai_reasoning = result.get('reasoning', '')
+
+            if ai_is_match and ai_confidence > 0.6:  # IA reduzida de 0.7 para 0.6
+                # IA APROVA o match - usar score da IA com prioridade
+                final_score = min(ai_score, 0.98)  # Permitir scores mais altos
+                enhanced_explanation = f"🤖 AI PRIMARY: {ai_reasoning}"
+
+                # IA determina confidence level baseado no SEU score
+                if final_score >= 0.85:
+                    ai_confidence_level = "HIGH"
+                    ai_auto_match = True
+                elif final_score >= 0.65:
+                    ai_confidence_level = "MEDIUM"
+                    ai_auto_match = False
+                else:
+                    ai_confidence_level = "LOW"
+                    ai_auto_match = False
 
                 return MatchResult(
                     invoice_id=match.invoice_id,
                     transaction_id=match.transaction_id,
-                    score=adjusted_score,
-                    match_type=f"{match.match_type}_AI_ENHANCED",
+                    score=final_score,
+                    match_type=f"AI_PRIMARY_{match.match_type}",
                     criteria_scores=match.criteria_scores,
-                    confidence_level="HIGH" if adjusted_score >= 0.9 else "MEDIUM",
+                    confidence_level=ai_confidence_level,
                     explanation=enhanced_explanation,
-                    auto_match=adjusted_score >= 0.9
+                    auto_match=ai_auto_match
                 )
             else:
-                # AI says it's not a match or low confidence
+                # IA REJEITA o match - reduzir score drasticamente
+                rejected_score = max(match.score * 0.5, 0.2)  # Penalidade maior
                 return MatchResult(
                     invoice_id=match.invoice_id,
                     transaction_id=match.transaction_id,
-                    score=max(match.score * 0.7, 0.3),  # Reduce score
-                    match_type=f"{match.match_type}_AI_REJECTED",
+                    score=rejected_score,
+                    match_type=f"AI_REJECTED_{match.match_type}",
                     criteria_scores=match.criteria_scores,
                     confidence_level="LOW",
-                    explanation=f"{match.explanation} | AI: {result.get('reasoning', '')}",
+                    explanation=f"🤖 AI REJECTED: {ai_reasoning}",
                     auto_match=False
                 )
 
@@ -564,22 +928,71 @@ class RevenueInvoiceMatcher:
         return stats
 
     def _apply_match(self, match: MatchResult):
-        """Aplica um match automaticamente"""
-        query = """
-            UPDATE invoices
-            SET linked_transaction_id = ?,
-                status = 'paid',
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
         """
+        🔗 APLICA LINKING BIDIRECIONAL + AI ENRICHMENT - Atualiza AMBAS as tabelas e enriquece transação
+        invoice.linked_transaction_id E transaction.invoice_id + AI categories
+        """
+        try:
+            # 1. Atualizar INVOICE com linked_transaction_id (no updated_at column)
+            invoice_query = """
+                UPDATE invoices
+                SET linked_transaction_id = ?,
+                    status = 'paid'
+                WHERE id = ?
+            """
 
-        if db_manager.db_type == 'postgresql':
-            query = query.replace('?', '%s')
+            # 2. Atualizar TRANSACTION com invoice_id (NOVO!)
+            transaction_query = """
+                UPDATE transactions
+                SET invoice_id = ?
+                WHERE transaction_id = ?
+            """
 
-        db_manager.execute_query(query, (match.transaction_id, match.invoice_id))
+            if db_manager.db_type == 'postgresql':
+                invoice_query = invoice_query.replace('?', '%s')
+                transaction_query = transaction_query.replace('?', '%s')
 
-        # Log the automatic match
-        self._log_match_action(match, 'AUTO_APPLIED', 'System')
+            # Executar AMBAS as atualizações para linking bidirecional
+            db_manager.execute_query(invoice_query, (match.transaction_id, match.invoice_id))
+            db_manager.execute_query(transaction_query, (match.invoice_id, match.transaction_id))
+
+            logger.info(f"🔗 BIDIRECTIONAL LINK: Invoice {match.invoice_id} ↔ Transaction {match.transaction_id}")
+
+            # 3. 🤖 AI ENRICHMENT AUTOMÁTICO: Enriquecer transação com contexto da invoice
+            try:
+                # Buscar dados da invoice para enrichment
+                invoice_data = db_manager.execute_query("""
+                    SELECT vendor_name, customer_name, invoice_number, total_amount, category, business_unit
+                    FROM invoices
+                    WHERE id = %s
+                """ if db_manager.db_type == 'postgresql' else """
+                    SELECT vendor_name, customer_name, invoice_number, total_amount, category, business_unit
+                    FROM invoices
+                    WHERE id = ?
+                """, (match.invoice_id,), fetch_one=True)
+
+                if invoice_data:
+                    logger.info(f"🤖 AUTO-MATCH AI ENRICHMENT: Starting for transaction {match.transaction_id}")
+                    # TEMPORARILY DISABLED: Runtime import causes generator issues
+                    # from app_db import enrich_transaction_with_invoice_context
+                    # enrichment_success = enrich_transaction_with_invoice_context(match.transaction_id, invoice_data)
+                    # if enrichment_success:
+                    #     logger.info(f"🤖 AUTO-MATCH AI SUCCESS: Enriched transaction {match.transaction_id} with invoice context")
+                    # else:
+                    #     logger.warning(f"🤖 AUTO-MATCH AI FAILED: Could not enrich transaction {match.transaction_id}")
+                    logger.info(f"🤖 AUTO-MATCH: Enrichment disabled to prevent generator errors")
+                else:
+                    logger.warning(f"🤖 AUTO-MATCH: Could not retrieve invoice data for enrichment: {match.invoice_id}")
+            except Exception as e:
+                logger.warning(f"🤖 AUTO-MATCH: AI enrichment failed (non-critical): {e}")
+                # Don't fail the match application due to enrichment errors
+
+            # Log the automatic match
+            self._log_match_action(match, 'AUTO_APPLIED', 'System')
+
+        except Exception as e:
+            logger.error(f"❌ Error applying bidirectional match: {e}")
+            raise
 
     def _save_pending_match(self, match: MatchResult):
         """Salva match para revisão manual"""

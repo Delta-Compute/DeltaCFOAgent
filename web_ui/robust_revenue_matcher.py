@@ -21,8 +21,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 import anthropic
-from .database import db_manager
-from learning_system import apply_learning_to_scores, record_match_feedback
+from database import db_manager
+# from learning_system import apply_learning_to_scores, record_match_feedback  # TODO: Implement learning system
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -278,13 +278,13 @@ class RobustRevenueInvoiceMatcher:
             'pattern': self._calculate_pattern_match_score(invoice, transaction)
         }
 
-        # Score base ponderado
+        # Score base ponderado - VALOR IDENTICO dominante (70%)
         base_score = (
-            criteria_scores['amount'] * 0.35 +
-            criteria_scores['date'] * 0.20 +
-            criteria_scores['vendor'] * 0.25 +
-            criteria_scores['entity'] * 0.10 +
-            criteria_scores['pattern'] * 0.10
+            criteria_scores['amount'] * 0.70 +    # DOMINANTE: 70% para valor exato
+            criteria_scores['date'] * 0.10 +      # Reduzido para 10%
+            criteria_scores['vendor'] * 0.15 +    # Reduzido para 15%
+            criteria_scores['entity'] * 0.03 +    # Reduzido para 3%
+            criteria_scores['pattern'] * 0.02     # Reduzido para 2%
         )
 
         # Aplicar aprendizado de máquina se habilitado
@@ -293,13 +293,13 @@ class RobustRevenueInvoiceMatcher:
                 adjusted_scores = apply_learning_to_scores(
                     criteria_scores, invoice, transaction
                 )
-                # Recalculate final score with adjusted criteria scores
+                # Recalculate final score with adjusted criteria scores - VALOR IDENTICO dominante
                 adjusted_score = (
-                    adjusted_scores['amount'] * 0.35 +
-                    adjusted_scores['date'] * 0.20 +
-                    adjusted_scores['vendor'] * 0.25 +
-                    adjusted_scores['entity'] * 0.10 +
-                    adjusted_scores['pattern'] * 0.10
+                    adjusted_scores['amount'] * 0.70 +    # DOMINANTE: 70% para valor exato
+                    adjusted_scores['date'] * 0.10 +      # Reduzido para 10%
+                    adjusted_scores['vendor'] * 0.15 +    # Reduzido para 15%
+                    adjusted_scores['entity'] * 0.03 +    # Reduzido para 3%
+                    adjusted_scores['pattern'] * 0.02     # Reduzido para 2%
                 )
                 final_score = adjusted_score
             except Exception as e:
@@ -520,19 +520,27 @@ class RobustRevenueInvoiceMatcher:
             # Use absolute value for transaction amount (handle both positive and negative)
             transaction_amount = abs(float(transaction['amount']))
 
+            # SUPER PRIORIDADE para valores exatos
             if abs(invoice_amount - transaction_amount) < 0.01:
                 return 1.0
 
+            # Valores quase exatos (diferença < $1)
+            if abs(invoice_amount - transaction_amount) < 1.0:
+                return 0.98
+
             diff_percentage = abs(invoice_amount - transaction_amount) / invoice_amount
 
-            if diff_percentage <= self.amount_tolerance:
+            # Valores muito próximos têm score alto
+            if diff_percentage <= 0.001:  # 0.1%
                 return 0.95
-            elif diff_percentage <= 0.05:
-                return 0.80
-            elif diff_percentage <= 0.10:
-                return 0.60
-            elif diff_percentage <= 0.20:
-                return 0.30
+            elif diff_percentage <= self.amount_tolerance:  # 2%
+                return 0.90
+            elif diff_percentage <= 0.05:  # 5%
+                return 0.75
+            elif diff_percentage <= 0.10:  # 10%
+                return 0.50
+            elif diff_percentage <= 0.20:  # 20%
+                return 0.25
             else:
                 return 0.0
 
@@ -731,13 +739,13 @@ class RobustRevenueInvoiceMatcher:
             inv_num = invoice.get('invoice_number', '')
             explanations.append(f"🔍 Invoice #{inv_num} na descrição")
 
-        # Generate summary based on match strength
+        # Generate summary based on match strength - VALOR IDENTICO dominante
         final_score = (
-            criteria_scores['amount'] * 0.35 +
-            criteria_scores['date'] * 0.20 +
-            criteria_scores['vendor'] * 0.25 +
-            criteria_scores['entity'] * 0.10 +
-            criteria_scores['pattern'] * 0.10
+            criteria_scores['amount'] * 0.70 +    # DOMINANTE: 70% para valor exato
+            criteria_scores['date'] * 0.10 +      # Reduzido para 10%
+            criteria_scores['vendor'] * 0.15 +    # Reduzido para 15%
+            criteria_scores['entity'] * 0.03 +    # Reduzido para 3%
+            criteria_scores['pattern'] * 0.02     # Reduzido para 2%
         )
 
         if not explanations:

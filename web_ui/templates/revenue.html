@@ -75,6 +75,129 @@
             background: #4b5563;
         }
 
+        .btn-info {
+            background: #0ea5e9;
+            color: white;
+            font-size: 0.75rem;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .btn-info:hover {
+            background: #0284c7;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 0;
+            margin: 1rem;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            animation: slideIn 0.3s ease;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border-radius: 12px 12px 0 0;
+        }
+
+        .modal-header h3 {
+            margin: 0;
+            color: #1f2937;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #6b7280;
+            padding: 0.5rem;
+            border-radius: 50%;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-close:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid #e5e7eb;
+            background: #f9fafb;
+            border-radius: 0 0 12px 12px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .detail-grid {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .detail-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 1rem;
+            padding: 0.75rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: #374151;
+        }
+
+        .detail-value {
+            color: #6b7280;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -607,15 +730,18 @@
 
                 <!-- Matching Controls -->
                 <div class="revenue-controls">
-                    <h2>🔍 Auto-Match Invoices</h2>
-                    <p style="color: #64748b; margin-bottom: 1.5rem;">Run matching to automatically find and link invoices to transactions. Choose between fast matching (seconds) or AI-powered deep analysis (minutes).</p>
+                    <h2>🔗 Invoice Matching</h2>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;">Automatically find and link invoices to transactions with AI-powered matching.</p>
                     <div class="matching-actions">
-                        <button class="action-button btn-primary" onclick="runMatching(false)">
-                            ⚡ Quick Match (Fast)
+                        <button class="action-button btn-primary" onclick="runUltraFastMatching(false)" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;">
+                            ▶️ Run Match
                         </button>
-                        <button class="action-button btn-secondary" onclick="runMatching(true)">
-                            🧠 AI Enhanced Match
+                        <button class="action-button btn-success" onclick="runUltraFastMatching(true)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;">
+                            ⚡ Auto-Match HIGH
                         </button>
+                    </div>
+                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280;">
+                        🔍 <strong>Run Match:</strong> Find matches for manual review | ⚡ <strong>Auto-Match HIGH:</strong> Auto-apply matches ≥80% confidence with AI enrichment
                     </div>
 
                     <!-- Advanced Options (collapsed by default) -->
@@ -636,10 +762,15 @@
                         </div>
                     </div>
 
-                    <div id="matching-progress" style="display: none;">
-                        <p><strong>Running matching process...</strong></p>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: 0%"></div>
+                    <div id="matching-progress" style="display: none; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid #3b82f6;">
+                        <p><strong>🚀 Initializing matching process...</strong></p>
+                        <div class="progress-bar" style="background: #e5e7eb; height: 8px; border-radius: 4px; margin: 1rem 0; overflow: hidden;">
+                            <div class="progress-fill" style="background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%); height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 4px;"></div>
+                        </div>
+                        <div style="font-size: 0.875rem; color: #64748b;">
+                            <div>📊 Status: <span id="progress-status">Starting...</span></div>
+                            <div>⏱️ Time: <span id="progress-time">Calculating...</span></div>
+                            <div>🔧 Optimizations: <span id="progress-optimizations">Loading...</span></div>
                         </div>
                     </div>
                 </div>
@@ -655,6 +786,29 @@
                             <button class="tab-button active" onclick="filterMatches('all')">All</button>
                             <button class="tab-button" onclick="filterMatches('high')">High Confidence</button>
                             <button class="tab-button" onclick="filterMatches('medium')">Medium Confidence</button>
+                        </div>
+                    </div>
+
+                    <!-- Bulk Actions Section -->
+                    <div id="bulk-actions" style="display: none; background: #f8fafc; padding: 1rem; margin: 1rem 0; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem;">
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #374151;">
+                                    <input type="checkbox" id="select-all-matches" onchange="toggleSelectAll()" style="margin: 0;">
+                                    <span id="selection-count">0 matches selected</span>
+                                </label>
+                            </div>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <button class="action-button btn-success" onclick="bulkApproveMatches()" id="bulk-approve-btn" disabled>
+                                    ✅ Approve Selected
+                                </button>
+                                <button class="action-button btn-warning" onclick="bulkRejectMatches()" id="bulk-reject-btn" disabled>
+                                    ❌ Reject Selected
+                                </button>
+                                <button class="action-button btn-secondary" onclick="clearSelection()" id="clear-selection-btn" disabled>
+                                    🔄 Clear Selection
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -724,16 +878,52 @@
         let currentUnlinkedInvoices = [];
         let currentUnlinkedFilter = 'all';
 
+        // Standard date formatting function
+        function formatStandardDate(dateString) {
+            if (!dateString) return 'N/A';
+
+            try {
+                const date = new Date(dateString);
+                if (isNaN(date.getTime())) return 'N/A';
+
+                // Format as "Tue, 02 Sep 2025 00:00:00 GMT"
+                return date.toUTCString();
+            } catch (error) {
+                console.warn('Date formatting error:', error, 'for date:', dateString);
+                return dateString; // Fallback to original string
+            }
+        }
+
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
             loadUnlinkedInvoices();
             loadPendingMatches();
             loadRecentMatches();
+            checkActiveMatching(); // Check if matching is already running
 
             // Auto-refresh every 30 seconds
             setInterval(refreshData, 30000);
         });
+
+        // Check if matching process is already active on page load
+        async function checkActiveMatching() {
+            try {
+                const response = await fetch('/api/revenue/matching-progress');
+                const progress = await response.json();
+
+                if (progress.running) {
+                    matchingInProgress = true;
+                    const progressDiv = document.getElementById('matching-progress');
+                    progressDiv.style.display = 'block';
+                    updateProgressDisplay(progress);
+                    startProgressPolling();
+                    showNotification('🔄 Detected active matching process. Monitoring progress...', 'info');
+                }
+            } catch (error) {
+                console.error('Error checking active matching:', error);
+            }
+        }
 
         // Load revenue matching statistics
         async function loadStats() {
@@ -944,7 +1134,7 @@
                                         <td style="padding: 0.75rem; font-weight: 600; color: #374151;">Date</td>
                                         <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fef7f0;">
                                             <div style="font-weight: 600; color: #374151; margin-bottom: 0.25rem;">
-                                                ${invoice.date || 'N/A'}
+                                                ${formatStandardDate(invoice.date)}
                                             </div>
                                             ${invoice.payment_due_date ? `
                                             <div style="color: #6b7280; font-size: 0.75rem;">
@@ -1178,7 +1368,80 @@
             window.open(`/invoices?search=${invoiceId}`, '_blank');
         }
 
-        // Run matching process
+        // Global polling variables
+        let progressPollingInterval = null;
+
+        // Start progress polling
+        function startProgressPolling() {
+            if (progressPollingInterval) {
+                clearInterval(progressPollingInterval);
+            }
+
+            progressPollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/revenue/matching-progress');
+                    const progress = await response.json();
+
+                    if (progress.running) {
+                        updateProgressDisplay(progress);
+                    } else {
+                        // Process completed
+                        stopProgressPolling();
+                        matchingInProgress = false;
+                        const progressDiv = document.getElementById('matching-progress');
+                        progressDiv.style.display = 'none';
+
+                        showNotification('✅ Matching process completed!', 'success');
+                        await refreshData();
+                    }
+                } catch (error) {
+                    console.error('Error polling progress:', error);
+                }
+            }, 2000); // Poll every 2 seconds
+        }
+
+        // Stop progress polling
+        function stopProgressPolling() {
+            if (progressPollingInterval) {
+                clearInterval(progressPollingInterval);
+                progressPollingInterval = null;
+            }
+        }
+
+        // Update progress display
+        function updateProgressDisplay(progress) {
+            const progressDiv = document.getElementById('matching-progress');
+            const progressFill = progressDiv.querySelector('.progress-fill');
+            const progressText = progressDiv.querySelector('p');
+            const statusSpan = document.getElementById('progress-status');
+            const timeSpan = document.getElementById('progress-time');
+            const optimizationsSpan = document.getElementById('progress-optimizations');
+
+            // Update progress bar
+            if (progressFill) {
+                progressFill.style.width = `${progress.progress}%`;
+            }
+
+            // Update main message
+            if (progressText) {
+                progressText.innerHTML = `<strong>🚀 ${progress.message}</strong>`;
+            }
+
+            // Update detailed status
+            if (statusSpan) {
+                statusSpan.textContent = `${progress.progress.toFixed(1)}% (${progress.matches_processed}/${progress.total})`;
+            }
+
+            if (timeSpan) {
+                timeSpan.textContent = progress.eta;
+            }
+
+            if (optimizationsSpan && progress.optimizations) {
+                optimizationsSpan.textContent = progress.optimizations.join(' • ');
+            }
+        }
+
+        // Run matching process with real-time monitoring
         async function runMatching(autoApply = false) {
             if (matchingInProgress) {
                 showNotification('Matching already in progress', 'warning');
@@ -1188,6 +1451,9 @@
             matchingInProgress = true;
             const progressDiv = document.getElementById('matching-progress');
             progressDiv.style.display = 'block';
+
+            // Start polling for progress
+            startProgressPolling();
 
             try {
                 const response = await fetch('/api/revenue/run-matching', {
@@ -1203,6 +1469,8 @@
                 const result = await response.json();
 
                 if (result.success) {
+                    // Process completed successfully
+                    stopProgressPolling();
                     const message = `Found ${result.total_matches} matches. ` +
                                   `${result.auto_applied} auto-applied, ${result.pending_review} pending review.`;
                     showNotification(message, 'success');
@@ -1210,11 +1478,86 @@
                     // Refresh data
                     await refreshData();
                 } else {
-                    showNotification('Matching failed: ' + result.error, 'error');
+                    // Handle errors
+                    stopProgressPolling();
+                    if (result.error === 'Matching process already running') {
+                        showNotification('🔄 Matching process is already running. Monitoring progress...', 'info');
+                        // Keep polling since process is active
+                        startProgressPolling();
+                        return; // Don't set matchingInProgress to false
+                    } else {
+                        showNotification('Matching failed: ' + result.error, 'error');
+                    }
                 }
             } catch (error) {
                 console.error('Error running matching:', error);
+                stopProgressPolling();
                 showNotification('Error running matching process', 'error');
+            } finally {
+                if (!progressPollingInterval) { // Only reset if not polling
+                    matchingInProgress = false;
+                    progressDiv.style.display = 'none';
+                }
+            }
+        }
+
+        // Run ULTRA FAST matching process
+        async function runUltraFastMatching(autoApply = false) {
+            if (matchingInProgress) {
+                showNotification('Matching already in progress', 'warning');
+                return;
+            }
+
+            matchingInProgress = true;
+            const progressDiv = document.getElementById('matching-progress');
+            progressDiv.style.display = 'block';
+
+            // Show ultra-fast specific message
+            showNotification('⚡ Starting ULTRA FAST matching (target: <100ms per invoice)...', 'info');
+
+            try {
+                const startTime = performance.now();
+                const response = await fetch('/api/revenue/run-ultra-fast-matching', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        auto_apply: autoApply
+                    })
+                });
+
+                const result = await response.json();
+                const endTime = performance.now();
+                const totalTime = ((endTime - startTime) / 1000).toFixed(2);
+
+                if (result.success) {
+                    // Process completed successfully
+                    const message = `⚡ ULTRA FAST SUCCESS! Found ${result.total_matches} matches in ${result.processing_time.toFixed(1)}s. ` +
+                                  `Performance: ${result.ms_per_invoice.toFixed(1)}ms per invoice (${result.performance_status})`;
+                    showNotification(message, 'success');
+
+                    // Show performance details
+                    console.log('ULTRA FAST PERFORMANCE METRICS:');
+                    console.log(`- Total matches: ${result.total_matches}`);
+                    console.log(`- Processing time: ${result.processing_time.toFixed(2)}s`);
+                    console.log(`- Speed: ${result.invoices_per_second.toFixed(1)} invoices/second`);
+                    console.log(`- Performance: ${result.ms_per_invoice.toFixed(1)}ms per invoice`);
+                    console.log(`- Enterprise ready: ${result.enterprise_ready ? 'YES' : 'NO'}`);
+
+                    // Refresh data
+                    await refreshData();
+                } else {
+                    // Handle errors
+                    if (result.error === 'Matching process already running') {
+                        showNotification('🔄 Matching process is already running. Please wait...', 'info');
+                    } else {
+                        showNotification('Ultra-fast matching failed: ' + result.error, 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('Error running ultra-fast matching:', error);
+                showNotification('Error running ultra-fast matching process', 'error');
             } finally {
                 matchingInProgress = false;
                 progressDiv.style.display = 'none';
@@ -1286,14 +1629,43 @@
                                  match.confidence_level === 'MEDIUM' ? 'score-medium' : 'score-low';
 
                 return `
-                    <div class="match-item">
+                    <div class="match-item" data-match-id="${match.id}">
                         <div class="match-header">
-                            <div style="flex: 1;">
-                                <strong>Match Score: <span class="match-score ${scoreClass}">${(match.score * 100).toFixed(1)}%</span></strong>
-                                <span style="margin-left: 1rem; color: #6b7280;">${match.match_type}</span>
+                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                <input type="checkbox" class="match-checkbox" data-match-id="${match.id}" onchange="updateSelection()" style="margin: 0; transform: scale(1.2);">
+                                <div style="flex: 1;">
+                                    <strong>Match Score: <span class="match-score ${scoreClass}">${(match.score * 100).toFixed(1)}%</span></strong>
+                                    <span style="margin-left: 1rem; color: #6b7280;">${match.match_type}</span>
+                                </div>
                             </div>
                             <div class="badge ${match.confidence_level === 'HIGH' ? 'success' : 'warning'}">
                                 ${match.confidence_level}
+                            </div>
+                        </div>
+
+                        <!-- Customer Information - Quick View -->
+                        <div style="background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); padding: 1rem; margin: 0.5rem 0; border-radius: 8px; border-left: 4px solid #10b981;">
+                            ${match.invoice.customer_name ? `
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                                <div style="color: #10b981; font-size: 1.5rem;">👤</div>
+                                <div>
+                                    <div style="color: #065f46; font-weight: 700; font-size: 1.2rem;">${match.invoice.customer_name}</div>
+                                    <div style="color: #6b7280; font-size: 0.85rem;">Cliente da fatura #${match.invoice.number}</div>
+                                </div>
+                            </div>
+                            ` : `
+                            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem;">
+                                <div style="color: #f59e0b; font-size: 1.5rem;">❓</div>
+                                <div>
+                                    <div style="color: #92400e; font-weight: 700; font-size: 1.2rem;">Cliente não identificado</div>
+                                    <div style="color: #6b7280; font-size: 0.85rem;">Fatura #${match.invoice.number} sem informação de cliente</div>
+                                </div>
+                            </div>
+                            `}
+                            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.8rem; color: #6b7280;">
+                                <div><strong>Valor:</strong> ${match.invoice.currency || 'USD'} ${match.invoice.amount.toLocaleString()}</div>
+                                <div><strong>Data:</strong> ${formatStandardDate(match.invoice.date)}</div>
+                                <div><strong>Vendor:</strong> ${match.invoice.vendor_name}</div>
                             </div>
                         </div>
 
@@ -1355,7 +1727,7 @@
                                         <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">📅 Date</td>
                                         <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
                                             <div style="font-weight: 700; color: #374151; margin-bottom: 0.5rem; font-size: 1rem;">
-                                                ${match.invoice.date}
+                                                ${formatStandardDate(match.invoice.date)}
                                             </div>
                                             ${match.invoice.due_date ? `
                                             <div style="color: #f59e0b; font-size: 0.8rem; margin-bottom: 0.25rem;">
@@ -1368,7 +1740,7 @@
                                         </td>
                                         <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
                                             <div style="font-weight: 700; color: #374151; margin-bottom: 0.5rem; font-size: 1rem;">
-                                                ${match.transaction.date}
+                                                ${formatStandardDate(match.transaction.date)}
                                             </div>
                                             <div style="color: #6b7280; font-size: 0.8rem;">
                                                 <strong>Source:</strong> ${match.transaction.source_file || 'Direct entry'}
@@ -1396,17 +1768,21 @@
                                     <tr style="border-bottom: 2px solid #f1f5f9;">
                                         <td style="padding: 1rem; font-weight: 700; color: #374151; background: #fafbfc;">🏢 Business</td>
                                         <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #fef9f4;">
-                                            <div style="color: #374151; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem;">
-                                                ${match.invoice.vendor_name}
+                                            ${match.invoice.customer_name ? `
+                                            <div style="color: #10b981; font-weight: 700; margin-bottom: 0.5rem; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+                                                👤 ${match.invoice.customer_name}
                                             </div>
+                                            ` : `
+                                            <div style="color: #f59e0b; font-weight: 700; margin-bottom: 0.5rem; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem;">
+                                                ❓ Cliente não identificado
+                                            </div>
+                                            `}
                                             <div style="color: #6b7280; font-size: 0.75rem; margin-bottom: 0.25rem;">
                                                 Invoice: #${match.invoice.number}
                                             </div>
-                                            ${match.invoice.customer_name ? `
-                                            <div style="color: #6b7280; font-size: 0.75rem;">
-                                                Customer: ${match.invoice.customer_name}
+                                            <div style="color: #6b7280; font-size: 0.7rem;">
+                                                Emitido por: ${match.invoice.vendor_name}
                                             </div>
-                                            ` : ''}
                                         </td>
                                         <td style="padding: 1rem; border-left: 2px solid #cbd5e1; background: #f0fdf7;">
                                             <div style="color: #374151; font-size: 0.85rem; margin-bottom: 0.5rem; max-width: 250px; overflow: hidden; text-overflow: ellipsis;" title="${match.transaction.description}">
@@ -1787,7 +2163,7 @@
                         <div style="flex: 1;">
                             <strong>Invoice ${pair.invoice.number}</strong>
                             <span style="margin-left: 1rem; color: #6b7280;">
-                                Matched ${new Date(pair.matched_at).toLocaleDateString()}
+                                Matched ${formatStandardDate(pair.matched_at)}
                             </span>
                         </div>
                         <div class="badge success">${pair.match_type || 'CONFIRMED'}</div>
@@ -1826,6 +2202,12 @@
                     <div class="match-actions">
                         <button class="action-btn btn-secondary" onclick="unmatchInvoice('${pair.invoice_id}')">
                             🔗 Unmatch
+                        </button>
+                        <button class="action-btn btn-info" onclick="viewRelatedTransaction('${pair.invoice_id}')" title="View related transaction details">
+                            📊 View Transaction
+                        </button>
+                        <button class="action-btn btn-info" onclick="viewRelatedInvoice('${pair.transaction_id}')" title="View related invoice details">
+                            📄 View Invoice
                         </button>
                     </div>
                 </div>
@@ -1897,6 +2279,134 @@
             }, 3000);
         }
 
+        // 🔗 BIDIRECTIONAL NAVIGATION FUNCTIONS
+
+        // View related transaction from invoice
+        async function viewRelatedTransaction(invoiceId) {
+            try {
+                const response = await fetch(`/api/invoices/${invoiceId}/related-transaction`);
+                const data = await response.json();
+
+                if (data.success && data.linked) {
+                    showTransactionDetails(data.transaction);
+                } else {
+                    showNotification('No related transaction found for this invoice', 'warning');
+                }
+            } catch (error) {
+                console.error('Error fetching related transaction:', error);
+                showNotification('Error fetching transaction details', 'error');
+            }
+        }
+
+        // View related invoice from transaction
+        async function viewRelatedInvoice(transactionId) {
+            try {
+                const response = await fetch(`/api/transactions/${transactionId}/related-invoice`);
+                const data = await response.json();
+
+                if (data.success && data.linked) {
+                    showInvoiceDetails(data.invoice);
+                } else {
+                    showNotification('No related invoice found for this transaction', 'warning');
+                }
+            } catch (error) {
+                console.error('Error fetching related invoice:', error);
+                showNotification('Error fetching invoice details', 'error');
+            }
+        }
+
+        // Show transaction details in a modal
+        function showTransactionDetails(transaction) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>💰 Transaction Details</h3>
+                        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="detail-grid">
+                            <div class="detail-row">
+                                <span class="detail-label">Transaction ID:</span>
+                                <span class="detail-value">${transaction.id}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Amount:</span>
+                                <span class="detail-value">${transaction.amount}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Date:</span>
+                                <span class="detail-value">${formatStandardDate(transaction.date)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Entity:</span>
+                                <span class="detail-value">${transaction.classified_entity || 'Not classified'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Category:</span>
+                                <span class="detail-value">${transaction.accounting_category || 'Not categorized'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Description:</span>
+                                <span class="detail-value" style="word-break: break-word;">${transaction.description}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="action-btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Show invoice details in a modal
+        function showInvoiceDetails(invoice) {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h3>📄 Invoice Details</h3>
+                        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="detail-grid">
+                            <div class="detail-row">
+                                <span class="detail-label">Invoice ID:</span>
+                                <span class="detail-value">${invoice.id}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Invoice Number:</span>
+                                <span class="detail-value">${invoice.invoice_number}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Amount:</span>
+                                <span class="detail-value">${invoice.amount}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Date:</span>
+                                <span class="detail-value">${formatStandardDate(invoice.date)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Vendor:</span>
+                                <span class="detail-value">${invoice.vendor_name}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">Customer:</span>
+                                <span class="detail-value">${invoice.customer_name || 'Not specified'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="action-btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
         // Toggle advanced options
         function toggleAdvancedOptions() {
             const advancedOptions = document.getElementById('advanced-options');
@@ -1956,7 +2466,7 @@
                             🎯 Base Transaction
                         </h4>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.75rem;">
-                            <div><strong>Date:</strong> ${baseTransaction?.date || 'N/A'}</div>
+                            <div><strong>Date:</strong> ${formatStandardDate(baseTransaction?.date)}</div>
                             <div><strong>Amount:</strong> $${baseTransaction?.amount ? parseFloat(baseTransaction.amount).toLocaleString() : 'N/A'}</div>
                             <div><strong>Entity:</strong> ${baseTransaction?.classified_entity || 'N/A'}</div>
                             <div><strong>Category:</strong> ${baseTransaction?.accounting_category || 'N/A'}</div>
@@ -2012,7 +2522,7 @@
                                                         <div style="flex: 1;">
                                                             <strong>${transaction.description}</strong>
                                                             <div style="font-size: 0.875rem; color: #64748b; margin-top: 0.25rem;">
-                                                                ${transaction.date} • ${transaction.classified_entity || 'Unknown Entity'}
+                                                                ${formatStandardDate(transaction.date)} • ${transaction.classified_entity || 'Unknown Entity'}
                                                             </div>
                                                         </div>
                                                         <div style="text-align: right; margin-left: 1rem;">
@@ -2254,7 +2764,7 @@
                                             <strong style="color: #3b82f6;">📄 Invoice:</strong><br>
                                             <span style="font-size: 0.9rem;">${match.invoice.number || 'N/A'}</span><br>
                                             <span style="color: #6b7280; font-size: 0.85rem;">
-                                                ${new Date(match.invoice.date).toLocaleDateString('pt-BR')}
+                                                ${formatStandardDate(match.invoice.date)}
                                             </span>
                                         </div>
                                         <div>
@@ -2411,7 +2921,7 @@
                                                         ${invoice.number || 'N/A'}
                                                     </div>
                                                     <div style="font-size: 0.85rem; color: #6b7280;">
-                                                        ${new Date(invoice.date).toLocaleDateString('pt-BR')}
+                                                        ${formatStandardDate(invoice.date)}
                                                     </div>
                                                 </div>
                                                 <div style="text-align: right;">
@@ -2446,7 +2956,7 @@
                                                         ${(tx.description || 'N/A').substring(0, 60)}${tx.description && tx.description.length > 60 ? '...' : ''}
                                                     </div>
                                                     <div style="font-size: 0.75rem; color: #6b7280;">
-                                                        ${tx.classified_entity || 'N/A'} • ${new Date(tx.date).toLocaleDateString('pt-BR')}
+                                                        ${tx.classified_entity || 'N/A'} • ${formatStandardDate(tx.date)}
                                                     </div>
                                                 </div>
                                                 <div style="text-align: right;">
@@ -2650,12 +3160,12 @@
                                         </div>
                                         <div style="display: flex; justify-content: space-between;">
                                             <span style="color: #6b7280;">Data:</span>
-                                            <span style="font-weight: 600;">${new Date(invoice.date).toLocaleDateString('pt-BR')}</span>
+                                            <span style="font-weight: 600;">${formatStandardDate(invoice.date)}</span>
                                         </div>
                                         ${invoice.due_date ? `
                                             <div style="display: flex; justify-content: space-between;">
                                                 <span style="color: #6b7280;">Vencimento:</span>
-                                                <span style="font-weight: 600; color: #dc2626;">${new Date(invoice.due_date).toLocaleDateString('pt-BR')}</span>
+                                                <span style="font-weight: 600; color: #dc2626;">${formatStandardDate(invoice.due_date)}</span>
                                             </div>
                                         ` : ''}
                                         ${invoice.payment_terms ? `
@@ -2676,12 +3186,12 @@
                                     <div style="display: grid; gap: 0.75rem;">
                                         <div style="display: flex; justify-content: space-between;">
                                             <span style="color: #6b7280;">Criado:</span>
-                                            <span style="font-weight: 600; font-size: 0.9rem;">${new Date(invoice.created_at || invoice.date).toLocaleDateString('pt-BR')}</span>
+                                            <span style="font-weight: 600; font-size: 0.9rem;">${formatStandardDate(invoice.created_at || invoice.date)}</span>
                                         </div>
                                         ${invoice.matched_at ? `
                                             <div style="display: flex; justify-content: space-between;">
                                                 <span style="color: #6b7280;">Matched:</span>
-                                                <span style="font-weight: 600; color: #10b981; font-size: 0.9rem;">${new Date(invoice.matched_at).toLocaleDateString('pt-BR')}</span>
+                                                <span style="font-weight: 600; color: #10b981; font-size: 0.9rem;">${formatStandardDate(invoice.matched_at)}</span>
                                             </div>
                                         ` : ''}
                                         ${invoice.source_file ? `
@@ -2739,6 +3249,168 @@
             });
 
             return modal;
+        }
+
+        // ===== BULK OPERATIONS =====
+
+        // Update selection count and button states
+        function updateSelection() {
+            const checkboxes = document.querySelectorAll('.match-checkbox');
+            const checkedBoxes = document.querySelectorAll('.match-checkbox:checked');
+            const selectAllCheckbox = document.getElementById('select-all-matches');
+            const selectionCount = document.getElementById('selection-count');
+            const bulkActions = document.getElementById('bulk-actions');
+
+            const count = checkedBoxes.length;
+
+            // Update selection count text
+            selectionCount.textContent = `${count} matches selected`;
+
+            // Show/hide bulk actions section
+            if (count > 0) {
+                bulkActions.style.display = 'block';
+            } else {
+                bulkActions.style.display = 'none';
+            }
+
+            // Update select all checkbox state
+            if (count === 0) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = false;
+            } else if (count === checkboxes.length) {
+                selectAllCheckbox.indeterminate = false;
+                selectAllCheckbox.checked = true;
+            } else {
+                selectAllCheckbox.indeterminate = true;
+            }
+
+            // Enable/disable bulk action buttons
+            const approveBtn = document.getElementById('bulk-approve-btn');
+            const rejectBtn = document.getElementById('bulk-reject-btn');
+            const clearBtn = document.getElementById('clear-selection-btn');
+
+            approveBtn.disabled = count === 0;
+            rejectBtn.disabled = count === 0;
+            clearBtn.disabled = count === 0;
+        }
+
+        // Toggle select all matches
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('select-all-matches');
+            const checkboxes = document.querySelectorAll('.match-checkbox');
+
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+
+            updateSelection();
+        }
+
+        // Clear all selections
+        function clearSelection() {
+            const checkboxes = document.querySelectorAll('.match-checkbox');
+            const selectAllCheckbox = document.getElementById('select-all-matches');
+
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            selectAllCheckbox.checked = false;
+
+            updateSelection();
+        }
+
+        // Get selected match IDs
+        function getSelectedMatchIds() {
+            const checkedBoxes = document.querySelectorAll('.match-checkbox:checked');
+            return Array.from(checkedBoxes).map(box => box.dataset.matchId);
+        }
+
+        // Bulk approve selected matches
+        async function bulkApproveMatches() {
+            const selectedIds = getSelectedMatchIds();
+
+            if (selectedIds.length === 0) {
+                showNotification('No matches selected', 'warning');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to approve ${selectedIds.length} matches?`)) {
+                return;
+            }
+
+            try {
+                showNotification(`Approving ${selectedIds.length} matches...`, 'info');
+
+                const response = await fetch('/api/revenue/bulk-approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        match_ids: selectedIds,
+                        user_id: 'admin'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification(`Successfully approved ${result.approved_count} matches`, 'success');
+                    clearSelection();
+                    loadPendingMatches(currentPendingPage); // Reload current page
+                    loadStats(); // Update stats
+                } else {
+                    showNotification(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error in bulk approve:', error);
+                showNotification('Failed to approve matches', 'error');
+            }
+        }
+
+        // Bulk reject selected matches
+        async function bulkRejectMatches() {
+            const selectedIds = getSelectedMatchIds();
+
+            if (selectedIds.length === 0) {
+                showNotification('No matches selected', 'warning');
+                return;
+            }
+
+            const reason = prompt(`Enter reason for rejecting ${selectedIds.length} matches:`);
+            if (!reason) {
+                return; // User cancelled
+            }
+
+            try {
+                showNotification(`Rejecting ${selectedIds.length} matches...`, 'info');
+
+                const response = await fetch('/api/revenue/bulk-reject', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        match_ids: selectedIds,
+                        reason: reason,
+                        user_id: 'admin'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification(`Successfully rejected ${result.rejected_count} matches`, 'success');
+                    clearSelection();
+                    loadPendingMatches(currentPendingPage); // Reload current page
+                    loadStats(); // Update stats
+                } else {
+                    showNotification(`Error: ${result.error}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error in bulk reject:', error);
+                showNotification('Failed to reject matches', 'error');
+            }
         }
     </script>
 
