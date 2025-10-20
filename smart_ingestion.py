@@ -154,17 +154,27 @@ class SmartDocumentIngestion:
             return None
 
     def _build_analysis_prompt(self, sample_content: str, file_path: str) -> str:
-        """Build prompt for Claude to analyze document structure"""
+        """Build prompt for Claude to analyze document structure AND provide parsing instructions"""
         file_name = os.path.basename(file_path)
 
         return f"""
-You are analyzing a financial CSV file to determine optimal processing approach for ANY format.
+You are analyzing a financial CSV file to provide COMPLETE PARSING INSTRUCTIONS for ANY format.
+
+Your job is to tell me EXACTLY HOW TO READ this file, not just identify what type it is.
 
 File: {file_name}
 Content sample:
 {sample_content}
 
-COLUMN MAPPING REQUIREMENTS:
+STEP 1: FILE STRUCTURE ANALYSIS
+Analyze the physical structure of this CSV file:
+- Which rows should be SKIPPED before the header? (often CSVs have title rows, metadata rows, blank rows before headers)
+- Which row number contains the ACTUAL COLUMN HEADERS? (0-indexed)
+- Which row does the DATA start on?
+- Are there footer rows that should be skipped?
+- Are there trailing commas that need to be cleaned?
+
+STEP 2: COLUMN MAPPING REQUIREMENTS
 Analyze ALL columns and map them to standard financial transaction fields:
 
 REQUIRED MAPPINGS:
@@ -233,8 +243,24 @@ CREATE DESCRIPTION RULES:
 If no clear description column exists, provide rules to create one from available columns.
 Example: "Combine Status + Crypto + Network" or "Use Merchant + Category"
 
-Please respond with a JSON object containing:
+STEP 3: DATA CLEANING INSTRUCTIONS
+For each mapped column, provide cleaning instructions:
+- Does the amount column have currency symbols ($, €, etc.) that need removal?
+- Does the amount column have commas for thousands that need removal?
+- Are amounts in parentheses negative? (e.g., "($100.00)" = -100.00)
+- Does the date need timezone handling?
+- Are there any text fields that need trimming or normalization?
+
+Please respond with a JSON object containing COMPLETE PARSING AND PROCESSING INSTRUCTIONS:
 {{
+    "file_structure": {{
+        "skip_rows_before_header": [0, 1, 2],  // List of row indices to skip (0-indexed), or [] if none
+        "header_row_index": 3,                  // Which row (0-indexed) contains column names
+        "data_starts_at_row": 4,                // Which row (0-indexed) data begins
+        "has_trailing_commas": true,            // Does CSV have extra commas at line ends?
+        "has_footer_rows": false,               // Are there summary/total rows at bottom?
+        "footer_row_count": 0                   // How many rows to skip from bottom
+    }},
     "format": "chase_checking|chase_credit|coinbase|mexc_deposits|crypto_exchange|bank_statement|investment|other",
     "date_column": "exact_column_name_for_dates_or_null",
     "description_column": "exact_column_name_or_null",
@@ -257,6 +283,18 @@ Please respond with a JSON object containing:
     "exchange_name": "MEXC|Coinbase|Binance|null",
     "amount_processing": "single_column|debit_credit_split|calculate_from_quantity_price",
     "date_format": "detected_date_format_pattern",
+    "column_cleaning_rules": {{
+        "amount_column": {{
+            "remove_currency_symbols": true,     // Remove $, €, £, etc.
+            "remove_commas": true,                // Remove thousand separators
+            "parentheses_mean_negative": false,   // Is ($100) = -100?
+            "multiply_by": 1                      // Any scaling needed? (e.g., cents to dollars)
+        }},
+        "date_column": {{
+            "format": "%Y-%m-%d %H:%M:%S %Z",    // strptime format string
+            "timezone_handling": "convert_to_utc|keep_local|ignore"
+        }}
+    }},
     "special_handling": "standard|misaligned_headers|multi_currency|crypto_deposit|crypto_withdrawal|crypto_format|multi_account|none",
     "confidence": 0.95,
     "processing_method": "python_pandas|claude_extraction",
@@ -266,10 +304,12 @@ Please respond with a JSON object containing:
 
 CRITICAL RULES:
 1. Use EXACT column names from the header row - be precise with capitalization and spacing
-2. If a standard column doesn't exist, set it to null and provide creation rules
-3. Always provide a description_creation_rule for files without clear description columns
-4. Identify ALL relevant columns, not just the basic ones
-5. Provide specific processing instructions for the detected format
+2. Provide SPECIFIC parsing instructions so NO hardcoded format checks are needed
+3. The file_structure section should tell me EXACTLY how to use pandas.read_csv()
+4. The column_cleaning_rules should tell me EXACTLY how to clean each column
+5. If you see rows before the actual header (like metadata, titles, blank rows), put them in skip_rows_before_header
+6. Example: Coinbase CSVs have 3 rows before headers → skip_rows_before_header: [0, 1, 2], header_row_index: 3
+7. For standard CSVs with header on row 0, use: skip_rows_before_header: [], header_row_index: 0
 
 Only respond with the JSON object, no other text.
 """
@@ -282,10 +322,35 @@ Only respond with the JSON object, no other text.
             if response_text.startswith('```json'):
                 response_text = response_text.replace('```json', '').replace('```', '').strip()
 
-            return json.loads(response_text)
+            result = json.loads(response_text)
+
+            # Ensure file_structure exists with defaults if not provided by Claude
+            if 'file_structure' not in result:
+                result['file_structure'] = {
+                    'skip_rows_before_header': [],
+                    'header_row_index': 0,
+                    'data_starts_at_row': 1,
+                    'has_trailing_commas': False,
+                    'has_footer_rows': False,
+                    'footer_row_count': 0
+                }
+
+            # Ensure column_cleaning_rules exists with defaults
+            if 'column_cleaning_rules' not in result:
+                result['column_cleaning_rules'] = {
+                    'amount_column': {
+                        'remove_currency_symbols': True,
+                        'remove_commas': True,
+                        'parentheses_mean_negative': False,
+                        'multiply_by': 1
+                    }
+                }
+
+            return result
         except Exception as e:
             print(f"❌ Error parsing Claude response: {e}")
-            return self._default_structure()
+            print(f"Response text: {response_text[:500]}")
+            raise ValueError(f"Failed to parse Claude's analysis: {e}")
 
     def _validate_claude_required(self) -> None:
         """Validate that Claude AI is available - no fallback allowed"""
@@ -306,37 +371,39 @@ Only respond with the JSON object, no other text.
             return None
 
     def _python_process_with_mapping(self, file_path: str, structure_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
-        """Process using Python with Claude's comprehensive column mapping"""
+        """Process using Python with Claude's comprehensive column mapping and file structure instructions"""
         try:
             file_ext = Path(file_path).suffix.lower()
 
             # Read the file
             if file_ext == '.csv':
-                # First, check for trailing commas and clean them
                 import tempfile
-                import shutil
 
-                # Special handling for Coinbase CSV format which has irregular headers
-                skiprows = None
-                if structure_info.get('format') == 'coinbase':
-                    # Coinbase CSVs have:
-                    # Line 1: Empty or "Transactions"
-                    # Line 2: "Transactions"
-                    # Line 3: "User,Name,ID" (3 fields - user info)
-                    # Line 4: "ID,Timestamp,..." (11 fields - actual headers)
-                    # We need to skip lines 0-2 (first 3 lines) and use line 3 as header
-                    skiprows = [0, 1, 2]
-                    print(f"🪙 Detected Coinbase format - skipping first 3 header rows")
+                # ===================================================================
+                # USE CLAUDE'S FILE STRUCTURE INSTRUCTIONS (NO HARDCODED FORMATS!)
+                # ===================================================================
+                file_structure = structure_info.get('file_structure', {})
+                skiprows = file_structure.get('skip_rows_before_header', [])
+                has_trailing_commas = file_structure.get('has_trailing_commas', False)
 
-                needs_cleaning = False
-                with open(file_path, 'r') as f:
-                    first_two_lines = [f.readline() for _ in range(2)]
-                    if len(first_two_lines) >= 2:
-                        header_commas = first_two_lines[0].count(',')
-                        data_commas = first_two_lines[1].count(',')
-                        if data_commas > header_commas:
-                            needs_cleaning = True
-                            print(f"⚠️  Detected trailing commas: header has {header_commas} commas, data has {data_commas}")
+                # Log what Claude told us to do
+                if skiprows:
+                    print(f"📋 Claude instructions: Skip rows {skiprows} before header")
+                else:
+                    print(f"📋 Claude instructions: Standard CSV with header on row 0")
+
+                # Clean trailing commas if Claude detected them
+                needs_cleaning = has_trailing_commas
+                if not has_trailing_commas:
+                    # Double-check by reading first two lines
+                    with open(file_path, 'r') as f:
+                        first_two_lines = [f.readline() for _ in range(2)]
+                        if len(first_two_lines) >= 2:
+                            header_commas = first_two_lines[0].count(',')
+                            data_commas = first_two_lines[1].count(',')
+                            if data_commas > header_commas:
+                                needs_cleaning = True
+                                print(f"⚠️  Detected trailing commas: header has {header_commas} commas, data has {data_commas}")
 
                 if needs_cleaning:
                     # Create a cleaned temporary file
@@ -396,17 +463,48 @@ Only respond with the JSON object, no other text.
             amount_processing = structure_info.get('amount_processing', 'single_column')
             amount_col = structure_info.get('amount_column')
 
-            # Helper function to clean currency values (remove $ and commas)
-            def clean_currency(series):
-                """Remove currency symbols and commas from values"""
+            # ===================================================================
+            # INTELLIGENT COLUMN CLEANING BASED ON CLAUDE'S INSTRUCTIONS
+            # ===================================================================
+            cleaning_rules = structure_info.get('column_cleaning_rules', {})
+            amount_cleaning = cleaning_rules.get('amount_column', {})
+
+            def clean_currency_intelligent(series):
+                """Clean currency values based on Claude's instructions (NO HARDCODED RULES!)"""
                 if series.dtype == 'object':
-                    return pd.to_numeric(series.astype(str).str.replace('$', '').str.replace(',', ''), errors='coerce')
+                    cleaned = series.astype(str)
+
+                    # Apply cleaning rules from Claude
+                    if amount_cleaning.get('remove_currency_symbols', True):
+                        # Remove common currency symbols
+                        cleaned = cleaned.str.replace('$', '', regex=False)
+                        cleaned = cleaned.str.replace('€', '', regex=False)
+                        cleaned = cleaned.str.replace('£', '', regex=False)
+                        cleaned = cleaned.str.replace('¥', '', regex=False)
+
+                    if amount_cleaning.get('remove_commas', True):
+                        cleaned = cleaned.str.replace(',', '', regex=False)
+
+                    # Handle parentheses as negative
+                    if amount_cleaning.get('parentheses_mean_negative', False):
+                        # Convert ($100.00) to -100.00
+                        mask = cleaned.str.contains(r'\(.*\)', regex=True, na=False)
+                        cleaned = cleaned.str.replace('(', '', regex=False).str.replace(')', '', regex=False)
+                        result = pd.to_numeric(cleaned, errors='coerce')
+                        result[mask] = -result[mask].abs()
+                        return result
+
+                    result = pd.to_numeric(cleaned, errors='coerce')
+
+                    # Apply scaling if needed
+                    multiply_by = amount_cleaning.get('multiply_by', 1)
+                    if multiply_by != 1:
+                        result = result * multiply_by
+
+                    return result
                 return pd.to_numeric(series, errors='coerce')
 
-            # SPECIAL HANDLING: For Coinbase, override to use crypto quantity instead of USD value
-            if structure_info.get('format') == 'coinbase' and 'Quantity Transacted' in df.columns:
-                amount_col = 'Quantity Transacted'
-                print(f"🪙 Coinbase detected - using crypto quantity column: {amount_col}")
+            # NO MORE HARDCODED FORMAT CHECKS - Claude handles everything!
 
             if amount_processing == 'debit_credit_split':
                 # Handle separate debit/credit columns
@@ -441,17 +539,17 @@ Only respond with the JSON object, no other text.
             else:
                 # Standard single amount column
                 if amount_col and amount_col in df.columns:
-                    standardized_df['Amount'] = clean_currency(df[amount_col])
+                    standardized_df['Amount'] = clean_currency_intelligent(df[amount_col])
                     mapped_columns.append(amount_col)
-                    print(f"💰 Mapped Amount: {amount_col}")
+                    print(f"💰 Mapped Amount: {amount_col} (using Claude's cleaning rules)")
                 else:
                     # Try to auto-detect amount column
                     amount_candidates = [col for col in df.columns if any(keyword in col.lower()
                                        for keyword in ['amount', 'value', 'total', 'sum'])]
                     if amount_candidates:
-                        standardized_df['Amount'] = clean_currency(df[amount_candidates[0]])
+                        standardized_df['Amount'] = clean_currency_intelligent(df[amount_candidates[0]])
                         mapped_columns.append(amount_candidates[0])
-                        print(f"💰 Auto-detected Amount: {amount_candidates[0]}")
+                        print(f"💰 Auto-detected Amount: {amount_candidates[0]} (using Claude's cleaning rules)")
                     else:
                         print("⚠️  No amount column found - setting to 0")
                         standardized_df['Amount'] = 0
