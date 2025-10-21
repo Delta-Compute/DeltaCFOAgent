@@ -362,7 +362,161 @@ Only respond with the JSON object, no other text.
         if not self.claude_client:
             raise ValueError("❌ CLAUDE AI REQUIRED: This application requires a valid ANTHROPIC_API_KEY for intelligent document processing. No fallback processing is available to ensure accuracy and reliability.")
 
+    def _correct_structure_analysis(self, file_path: str, expected_columns: list, actual_columns: list, original_skiprows: list) -> Dict[str, Any]:
+        """
+        Ask Claude to correct its structure analysis using EMPIRICAL RESULTS
+        This is the scalable, LLM-based self-correction approach
 
+        Instead of asking Claude to guess, we try different skiprows values
+        and show Claude the ACTUAL columns that result from each attempt.
+        """
+        print(f"🤖 Using empirical LLM-based correction approach...")
+
+        if not self.claude_client:
+            raise ValueError("❌ Claude AI required for structure correction")
+
+        try:
+            file_name = os.path.basename(file_path)
+
+            # ===================================================================
+            # EMPIRICAL APPROACH: Try different skiprows and collect results
+            # ===================================================================
+            print(f"🔬 Testing different skiprows values empirically...")
+
+            # First, create cleaned CSV if needed (to handle trailing commas)
+            import tempfile
+            needs_cleaning = False
+            with open(file_path, 'r') as f:
+                first_two_lines = [f.readline() for _ in range(2)]
+                if len(first_two_lines) >= 2:
+                    header_commas = first_two_lines[0].count(',')
+                    data_commas = first_two_lines[1].count(',')
+                    if data_commas > header_commas:
+                        needs_cleaning = True
+
+            test_file_path = file_path
+            if needs_cleaning:
+                print(f"🧹 Cleaning trailing commas for empirical testing...")
+                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
+                    test_file_path = temp_file.name
+                    with open(file_path, 'r') as f:
+                        for line in f:
+                            cleaned_line = line.rstrip('\n')
+                            while cleaned_line.endswith(','):
+                                cleaned_line = cleaned_line[:-1]
+                            temp_file.write(cleaned_line + '\n')
+
+            skiprows_options = [
+                [],           # No skipping (header on line 0)
+                [0],          # Skip line 0 (header on line 1)
+                [0, 1],       # Skip lines 0-1 (header on line 2)
+                [0, 1, 2],    # Skip lines 0-2 (header on line 3)
+                [0, 1, 2, 3], # Skip lines 0-3 (header on line 4)
+            ]
+
+            empirical_results = []
+            for skiprows_test in skiprows_options:
+                try:
+                    # Try reading with this skiprows value
+                    test_df = pd.read_csv(test_file_path, skiprows=skiprows_test, nrows=0)  # Just read headers
+                    columns_found = list(test_df.columns)
+                    empirical_results.append({
+                        'skiprows': skiprows_test,
+                        'columns': columns_found,
+                        'success': True
+                    })
+                    print(f"  Option skiprows={skiprows_test} → {columns_found[:3]}...")  # Show first 3 columns
+                except Exception as e:
+                    empirical_results.append({
+                        'skiprows': skiprows_test,
+                        'columns': [],
+                        'success': False,
+                        'error': str(e)
+                    })
+                    print(f"  Option skiprows={skiprows_test} → ERROR")
+
+            # Clean up temp file if created
+            if needs_cleaning and test_file_path != file_path:
+                os.unlink(test_file_path)
+
+            # Build prompt showing Claude the empirical results WITH match indicators
+            results_lines = []
+            for i, result in enumerate(empirical_results):
+                if result['success']:
+                    columns = result['columns']
+                    # Check how many expected columns are found
+                    matches = [col for col in expected_columns if col in columns]
+                    match_indicator = f" ✓ MATCHES {len(matches)}/{len(expected_columns)} expected columns: {matches}" if matches else " ✗ No matches"
+                    results_lines.append(f"Option {i+1}: skiprows={result['skiprows']} → Columns: {columns}{match_indicator}")
+
+            results_text = "\n".join(results_lines)
+
+            correction_prompt = f"""
+You previously analyzed this CSV file and gave WRONG skip_rows instructions.
+
+File: {file_name}
+
+YOUR ORIGINAL (WRONG) ANALYSIS:
+- You said: skip_rows_before_header={original_skiprows}
+- You expected columns: {expected_columns}
+- But that gave WRONG columns (data values, not headers): {actual_columns}
+
+EMPIRICAL TEST RESULTS:
+I tested different skiprows values. Here's what ACTUALLY happens when reading this file:
+
+{results_text}
+
+CRITICAL INSTRUCTIONS:
+1. Look for the option that has "✓ MATCHES {len(expected_columns)}/{len(expected_columns)}" (100% match)
+2. That option has column NAMES like "{expected_columns[0] if expected_columns else 'N/A'}", not data VALUES
+3. Select the skip_rows value from that option
+
+Example logic:
+- If Option 1 shows "✓ MATCHES 3/3" and contains 'Posting Date', 'Description', 'Amount', use skiprows=[]
+- If Option 4 shows "✓ MATCHES 3/3" and contains those headers, use skiprows=[0, 1, 2]
+
+Respond with JSON ONLY (no other text):
+{{
+    "skip_rows_before_header": [],
+    "header_row_index": 0,
+    "explanation": "Option X matches all expected headers"
+}}
+"""
+
+            print(f"🔧 DEBUG: Correction prompt with empirical results (length: {len(correction_prompt)})")
+            print(f"🔧 DEBUG: Calling Claude API for correction...")
+
+            response = self.claude_client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=500,
+                messages=[{"role": "user", "content": correction_prompt}]
+            )
+
+            print("✅ DEBUG: Claude correction call successful")
+
+            # Parse correction response
+            correction_text = response.content[0].text.strip()
+            if correction_text.startswith('```json'):
+                correction_text = correction_text.replace('```json', '').replace('```', '').strip()
+
+            correction_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', correction_text)
+            correction = json.loads(correction_text)
+
+            print(f"🤖 Claude's correction: {correction.get('explanation', 'No explanation provided')}")
+            print(f"📋 Corrected skip_rows: {correction.get('skip_rows_before_header', [])}")
+
+            return correction
+
+        except Exception as e:
+            print(f"❌ Claude correction failed: {e}")
+            import traceback
+            print(f"🔧 DEBUG: Correction error traceback: {traceback.format_exc()}")
+            # If Claude correction fails, return empty skiprows as fallback
+            return {
+                'skip_rows_before_header': [],
+                'header_row_index': 0,
+                'explanation': f'Claude correction failed, using fallback (no skip rows): {e}'
+            }
 
     def process_with_structure_info(self, file_path: str, structure_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Process document using structure information"""
@@ -432,6 +586,70 @@ Only respond with the JSON object, no other text.
 
                 # Drop columns that are completely empty (safety check)
                 df = df.dropna(axis=1, how='all')
+
+                # ===================================================================
+                # VALIDATE CLAUDE'S SKIPROWS INSTRUCTIONS
+                # ===================================================================
+                # Check if Claude's expected columns actually exist in the DataFrame
+                # If not, Claude likely gave wrong skip_rows instructions
+                expected_columns = []
+                for col_key in ['date_column', 'description_column', 'amount_column']:
+                    col_name = structure_info.get(col_key)
+                    if col_name:
+                        expected_columns.append(col_name)
+
+                if expected_columns:
+                    missing_columns = [col for col in expected_columns if col not in df.columns]
+
+                    if missing_columns and skiprows:
+                        print(f"⚠️  VALIDATION FAILED: Expected columns {missing_columns} not found in DataFrame")
+                        print(f"⚠️  DataFrame has columns: {list(df.columns)}")
+                        print(f"⚠️  Claude's skip_rows={skiprows} appears to be incorrect")
+
+                        # ===================================================================
+                        # SCALABLE LLM-BASED CORRECTION (NOT HARDCODED!)
+                        # ===================================================================
+                        # Ask Claude to correct its mistake
+                        correction = self._correct_structure_analysis(
+                            file_path=file_path,
+                            expected_columns=expected_columns,
+                            actual_columns=list(df.columns),
+                            original_skiprows=skiprows
+                        )
+
+                        corrected_skiprows = correction.get('skip_rows_before_header', [])
+                        print(f"🔄 RETRYING: Re-reading CSV with Claude's corrected skip_rows={corrected_skiprows}")
+
+                        # Retry with corrected skiprows
+                        if needs_cleaning:
+                            # Re-read from the cleaned temp file (if it still exists, otherwise from original)
+                            try:
+                                df = pd.read_csv(temp_path, skiprows=corrected_skiprows)
+                            except:
+                                with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
+                                    temp_path = temp_file.name
+                                    with open(file_path, 'r') as f:
+                                        for line in f:
+                                            cleaned_line = line.rstrip('\n')
+                                            while cleaned_line.endswith(','):
+                                                cleaned_line = cleaned_line[:-1]
+                                            temp_file.write(cleaned_line + '\n')
+                                df = pd.read_csv(temp_path, skiprows=corrected_skiprows)
+                                os.unlink(temp_path)
+                        else:
+                            df = pd.read_csv(file_path, skiprows=corrected_skiprows)
+
+                        df = df.dropna(axis=1, how='all')
+
+                        # Validate again
+                        still_missing = [col for col in expected_columns if col not in df.columns]
+                        if still_missing:
+                            print(f"⚠️  Even after Claude's correction, columns {still_missing} not found")
+                            print(f"⚠️  Proceeding with available columns: {list(df.columns)}")
+                        else:
+                            print(f"✅ VALIDATION SUCCESS: All expected columns now found after Claude's correction!")
+                            print(f"✅ Corrected columns: {list(df.columns)}")
+
             elif file_ext in ['.xlsx', '.xls']:
                 df = pd.read_excel(file_path)
             else:
