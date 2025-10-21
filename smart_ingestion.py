@@ -32,6 +32,7 @@ USAGE:
 import os
 import pandas as pd
 import json
+import re
 from typing import Dict, Any, Optional, Tuple
 import anthropic
 from pathlib import Path
@@ -321,6 +322,10 @@ Only respond with the JSON object, no other text.
             response_text = response_text.strip()
             if response_text.startswith('```json'):
                 response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+            # Clean invalid control characters that break JSON parsing
+            # (Claude sometimes includes special chars like newlines in string values)
+            response_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', response_text)
 
             result = json.loads(response_text)
 
