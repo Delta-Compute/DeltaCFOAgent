@@ -56,9 +56,6 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Add current web_ui directory to path for local imports (needed for Cloud Run)
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 # Import invoice processing modules
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
@@ -98,10 +95,6 @@ claude_client = None
 
 # Historical Currency Converter
 currency_converter = None
-
-# Global Revenue Matcher tracking for progress and preventing double-clicks
-active_matcher = None
-matcher_lock = threading.Lock()
 
 def init_claude_client():
     """Initialize Claude API client"""
@@ -144,12 +137,6 @@ def init_currency_converter():
     global currency_converter
     try:
         from database import db_manager
-
-        # Check if database connection is available before proceeding
-        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
-            print("WARNING: PostgreSQL connection pool not available - skipping currency converter initialization")
-            return False
-
         currency_converter = HistoricalCurrencyConverter(db_manager)
         print("[OK] Historical Currency Converter initialized successfully")
         return True
@@ -161,12 +148,6 @@ def init_invoice_tables():
     """Initialize invoice tables in the database"""
     try:
         from database import db_manager
-
-        # Check if database connection is available before proceeding
-        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
-            print("WARNING: PostgreSQL connection pool not available - skipping invoice tables initialization")
-            return False
-
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
@@ -315,6 +296,7 @@ def init_invoice_tables():
                 pass  # Column already exists
 
             conn.commit()
+            cursor.close()
             print("Invoice tables initialized successfully")
             return True
     except Exception as e:
@@ -339,13 +321,8 @@ def ensure_background_jobs_tables():
     """Ensure background jobs tables exist with correct schema"""
     try:
         from database import db_manager
-
-        # Check if database connection is available before proceeding
-        if not db_manager.connection_pool and db_manager.db_type == 'postgresql':
-            print("WARNING: PostgreSQL connection pool not available - skipping background jobs tables initialization")
-            return False
-
-        with db_manager.get_connection() as conn:
+        conn = db_manager._get_postgresql_connection()
+        try:
             cursor = conn.cursor()
             is_postgresql = hasattr(cursor, 'mogrify')
 
@@ -425,6 +402,8 @@ def ensure_background_jobs_tables():
             conn.commit()
             print("[OK] Background jobs tables ensured")
             return True
+        finally:
+            conn.close()
 
     except Exception as e:
         print(f"ERROR: Failed to ensure background jobs tables: {e}")
@@ -790,70 +769,79 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         is_postgresql = db_manager.db_type == 'postgresql'
 
         # Build WHERE clause from filters
+        # IMPORTANT: Use t. prefix for all columns since we're joining with wallet_addresses
         placeholder = "%s" if is_postgresql else "?"
         where_conditions = [
-            "(archived = FALSE OR archived IS NULL)",
-            f"tenant_id = {placeholder}"
+            "(t.archived = FALSE OR t.archived IS NULL)",
+            f"t.tenant_id = {placeholder}"
         ]
         params = [tenant_id]
 
         if filters:
             if filters.get('entity'):
-                where_conditions.append("classified_entity = %s" if is_postgresql else "classified_entity = ?")
+                where_conditions.append("t.classified_entity = %s" if is_postgresql else "t.classified_entity = ?")
                 params.append(filters['entity'])
 
             if filters.get('transaction_type'):
                 # Map "Revenue" -> positive amounts, "Expense" -> negative amounts
                 if filters['transaction_type'] == 'Revenue':
-                    where_conditions.append("amount > 0")
+                    where_conditions.append("t.amount > 0")
                 elif filters['transaction_type'] == 'Expense':
-                    where_conditions.append("amount < 0")
+                    where_conditions.append("t.amount < 0")
 
             if filters.get('source_file'):
-                where_conditions.append("source_file = %s" if is_postgresql else "source_file = ?")
+                where_conditions.append("t.source_file = %s" if is_postgresql else "t.source_file = ?")
                 params.append(filters['source_file'])
 
             if filters.get('needs_review'):
                 if filters['needs_review'] == 'true':
-                    where_conditions.append("(confidence < 0.7 OR needs_review = TRUE)")
+                    where_conditions.append("(t.confidence < 0.7 OR t.needs_review = TRUE)")
 
             if filters.get('min_amount'):
-                where_conditions.append("ABS(amount) >= %s" if is_postgresql else "ABS(amount) >= ?")
+                where_conditions.append("ABS(t.amount) >= %s" if is_postgresql else "ABS(t.amount) >= ?")
                 params.append(float(filters['min_amount']))
 
             if filters.get('max_amount'):
-                where_conditions.append("ABS(amount) <= %s" if is_postgresql else "ABS(amount) <= ?")
+                where_conditions.append("ABS(t.amount) <= %s" if is_postgresql else "ABS(t.amount) <= ?")
                 params.append(float(filters['max_amount']))
 
             if filters.get('start_date'):
-                where_conditions.append("date >= %s" if is_postgresql else "date >= ?")
+                where_conditions.append("t.date >= %s" if is_postgresql else "t.date >= ?")
                 params.append(filters['start_date'])
 
             if filters.get('end_date'):
-                where_conditions.append("date <= %s" if is_postgresql else "date <= ?")
+                where_conditions.append("t.date <= %s" if is_postgresql else "t.date <= ?")
                 params.append(filters['end_date'])
 
             if filters.get('keyword'):
-                where_conditions.append("(description ILIKE %s OR classification_reason ILIKE %s)" if is_postgresql
-                                      else "(description LIKE ? OR classification_reason LIKE ?)")
+                # Search across multiple fields: description, origin, destination, entity, category, and reason
+                where_conditions.append(
+                    "(t.description ILIKE %s OR t.classification_reason ILIKE %s OR t.origin ILIKE %s OR t.destination ILIKE %s OR t.classified_entity ILIKE %s OR t.accounting_category ILIKE %s)" if is_postgresql
+                    else "(t.description LIKE ? OR t.classification_reason LIKE ? OR t.origin LIKE ? OR t.destination LIKE ? OR t.classified_entity LIKE ? OR t.accounting_category LIKE ?)"
+                )
                 keyword_pattern = f"%{filters['keyword']}%"
-                params.extend([keyword_pattern, keyword_pattern])
+                params.extend([keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern, keyword_pattern])
 
-            # Handle archived filter
-            archived_filter = filters.get('show_archived')
-            if archived_filter == 'true':
-                # Show only archived transactions
+            if filters.get('origin'):
+                where_conditions.append("t.origin ILIKE %s" if is_postgresql else "t.origin LIKE ?")
+                params.append(f"%{filters['origin']}%")
+
+            if filters.get('destination'):
+                where_conditions.append("t.destination ILIKE %s" if is_postgresql else "t.destination LIKE ?")
+                params.append(f"%{filters['destination']}%")
+
+            if filters.get('show_archived') == 'true':
+                # Remove the archived filter if showing archived
                 where_conditions = [c for c in where_conditions if 'archived' not in c]
-                where_conditions.append("archived = TRUE")
-            elif archived_filter == 'all':
-                # Show both archived and non-archived transactions
-                where_conditions = [c for c in where_conditions if 'archived' not in c]
-            # If empty string or None, keep default behavior (active only)
+
+            if filters.get('exclude_internal') == 'true':
+                # Exclude transactions with accounting_category = 'INTERNAL_TRANSFER' or classified_entity = 'Internal Transfer'
+                where_conditions.append("(t.accounting_category NOT IN ('INTERNAL_TRANSFER', 'Internal Transfer') AND t.classified_entity != 'Internal Transfer')")
 
         where_clause = " AND ".join(where_conditions)
 
         # Get total count with filters
-        count_query = f"SELECT COUNT(*) as total FROM transactions WHERE {where_clause}"
+        count_query = f"SELECT COUNT(*) as total FROM transactions t WHERE {where_clause}"
         if params:
             cursor.execute(count_query, tuple(params))
         else:
@@ -862,13 +850,28 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         total_count = count_result['total'] if is_postgresql else count_result[0]
 
         # Get transactions with filters and pagination
+        # JOIN with wallet_addresses to get entity names for known wallets
         offset = (page - 1) * per_page if page > 0 else 0
-        query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
+        query = f"""
+            SELECT t.*,
+                   wo.entity_name as origin_wallet_name,
+                   wd.entity_name as destination_wallet_name
+            FROM transactions t
+            LEFT JOIN wallet_addresses wo ON t.tenant_id = wo.tenant_id
+                                           AND t.origin = wo.wallet_address
+                                           AND wo.is_active = TRUE
+            LEFT JOIN wallet_addresses wd ON t.tenant_id = wd.tenant_id
+                                           AND t.destination = wd.wallet_address
+                                           AND wd.is_active = TRUE
+            WHERE {where_clause}
+            ORDER BY t.date DESC
+            LIMIT {per_page} OFFSET {offset}
+        """
 
         if params:
             cursor.execute(query, tuple(params))
         else:
-            cursor.execute(query)
+            cursor.execute(query, (tenant_id, tenant_id))
 
         results = cursor.fetchall()
         transactions = []
@@ -876,8 +879,21 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         for row in results:
             if is_postgresql:
                 transaction = dict(row)
+                # Replace origin/destination with wallet name if available
+                if transaction.get('origin_wallet_name'):
+                    transaction['origin_display'] = transaction['origin_wallet_name']
+                else:
+                    transaction['origin_display'] = transaction.get('origin', 'Unknown')
+
+                if transaction.get('destination_wallet_name'):
+                    transaction['destination_display'] = transaction['destination_wallet_name']
+                else:
+                    transaction['destination_display'] = transaction.get('destination', 'Unknown')
             else:
                 transaction = dict(row)
+                # For SQLite (though we're PostgreSQL-only now)
+                transaction['origin_display'] = transaction.get('origin', 'Unknown')
+                transaction['destination_display'] = transaction.get('destination', 'Unknown')
             transactions.append(transaction)
 
         return transactions, total_count
@@ -1191,18 +1207,18 @@ Return only the JSON object, no additional text.
 
         # Store patterns in database
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
 
-        cursor.execute(f"""
-            INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
+            cursor.execute(f"""
+                INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
+                VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
+            """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            cursor.close()
 
         print(f"SUCCESS: Stored entity patterns for {entity_name}: {pattern_data}")
         return pattern_data
@@ -1260,6 +1276,10 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
             except Exception as e:
                 print(f"ERROR: Failed to extract description/entity from current_tx: {e}, type={type(current_tx)}, len={len(current_tx) if hasattr(current_tx, '__len__') else 'N/A'}")
                 return []
+
+            # Initialize wallet variables for all code paths
+            has_wallet = False
+            wallet_address = None
 
             # Different logic for entity classification vs description cleanup vs accounting category
             if field_type == 'similar_entities':
@@ -2052,278 +2072,6 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
         print(f"ERROR: Error getting AI suggestions: {e}")
         return []
 
-def enrich_transaction_with_invoice_context(transaction_id: str, invoice_data: Dict) -> bool:
-    """
-    Enrich transaction with AI-powered classification based on invoice context
-    Called automatically after confirming an invoice-transaction match
-    """
-    global claude_client
-
-    if not claude_client:
-        print("WARNING: Claude client not available for transaction enrichment")
-        return False
-
-    try:
-        tenant_id = get_current_tenant_id()
-        from database import db_manager
-
-        # Get current transaction data
-        transaction = db_manager.execute_query("""
-            SELECT transaction_id, description, amount, classified_entity, accounting_category, subcategory, justification
-            FROM transactions
-            WHERE tenant_id = %s AND transaction_id = %s
-        """, (tenant_id, transaction_id), fetch_one=True)
-
-        if not transaction:
-            print(f"ERROR: Transaction {transaction_id} not found")
-            return False
-
-        # Create enrichment prompt
-        prompt = f"""
-You are a financial AI expert. A transaction has been matched with an invoice and needs enrichment.
-
-INVOICE CONTEXT:
-- Vendor: {invoice_data.get('vendor_name', 'N/A')}
-- Customer: {invoice_data.get('customer_name', 'N/A')}
-- Invoice Number: {invoice_data.get('invoice_number', 'N/A')}
-- Amount: {invoice_data.get('total_amount', 'N/A')}
-- Category: {invoice_data.get('category', 'N/A')}
-- Business Unit: {invoice_data.get('business_unit', 'N/A')}
-
-TRANSACTION DETAILS:
-- Description: {transaction['description']}
-- Amount: {transaction['amount']}
-- Current Entity: {transaction.get('classified_entity', 'N/A')}
-
-Based on this context, provide enriched classification:
-
-1. Entity: Who is the main vendor/service provider (focus on vendor_name from invoice)
-2. Primary Category: Main expense/revenue type (Technology, Professional Services, Office Supplies, etc.)
-3. Sub Category: More specific classification within the primary category
-4. Justification: Brief explanation including invoice reference
-
-Respond ONLY in valid JSON format:
-{{"entity": "", "primary_category": "", "sub_category": "", "justification": ""}}
-"""
-
-        print(f"AI: Enriching transaction {transaction_id} with invoice context...")
-
-        response = claude_client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=300,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        # Parse AI response
-        ai_response = response.content[0].text.strip()
-        print(f"AI Response: {ai_response}")
-
-        # Extract JSON from response
-        import json
-        try:
-            # Try to find JSON in the response
-            json_start = ai_response.find('{')
-            json_end = ai_response.rfind('}') + 1
-            if json_start != -1 and json_end > json_start:
-                json_str = ai_response[json_start:json_end]
-                enrichment_data = json.loads(json_str)
-            else:
-                print("ERROR: No JSON found in AI response")
-                return False
-        except json.JSONDecodeError as e:
-            print(f"ERROR: Failed to parse AI response as JSON: {e}")
-            return False
-
-        # Update transaction with enriched data
-        update_query = """
-            UPDATE transactions
-            SET
-                classified_entity = %s,
-                accounting_category = %s,
-                subcategory = %s,
-                justification = %s,
-                confidence = 0.95
-            WHERE tenant_id = %s AND transaction_id = %s
-        """
-
-        db_manager.execute_query(update_query, (
-            enrichment_data.get('entity', ''),
-            enrichment_data.get('primary_category', ''),
-            enrichment_data.get('sub_category', ''),
-            enrichment_data.get('justification', ''),
-            tenant_id,
-            transaction_id
-        ))
-
-        print(f"SUCCESS: Transaction {transaction_id} enriched with AI-powered classification")
-        return True
-
-    except Exception as e:
-        print(f"ERROR: Failed to enrich transaction {transaction_id}: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        return False
-
-@app.route('/api/revenue/re-enrich-historical-matches', methods=['POST'])
-def api_re_enrich_historical_matches():
-    """
-    Re-analyze historical matched transactions and update classifications based on justification content
-    """
-    global claude_client
-
-    if not claude_client:
-        return jsonify({
-            'success': False,
-            'error': 'Claude API client not available'
-        }), 503
-
-    try:
-        from database import db_manager
-        tenant_id = get_current_tenant_id()
-
-        # Get all matched transactions that have justifications with "invoice" or "expense" keywords
-        matched_transactions = db_manager.execute_query("""
-            SELECT transaction_id, classified_entity, accounting_category, subcategory,
-                   justification, description, amount, invoice_id
-            FROM transactions
-            WHERE tenant_id = %s
-            AND invoice_id IS NOT NULL
-            AND invoice_id != ''
-            AND justification IS NOT NULL
-            AND justification != ''
-            AND (justification ILIKE '%invoice%' OR justification ILIKE '%expense%' OR justification ILIKE '%technology%')
-        """, (tenant_id,), fetch_all=True)
-
-        if not matched_transactions:
-            return jsonify({
-                'success': True,
-                'message': 'No historical matched transactions found to re-enrich',
-                'processed': 0
-            })
-
-        print(f"Found {len(matched_transactions)} historical matched transactions to re-analyze")
-        processed_count = 0
-        updated_count = 0
-
-        for transaction in matched_transactions:
-            try:
-                # Get transaction fields safely
-                transaction_id = transaction['transaction_id'] if isinstance(transaction, dict) else transaction[0]
-                classified_entity = transaction['classified_entity'] if isinstance(transaction, dict) else transaction[1]
-                accounting_category = transaction['accounting_category'] if isinstance(transaction, dict) else transaction[2]
-                subcategory = transaction['subcategory'] if isinstance(transaction, dict) else transaction[3]
-                justification = transaction['justification'] if isinstance(transaction, dict) else transaction[4]
-                description = transaction['description'] if isinstance(transaction, dict) else transaction[5]
-                amount = transaction['amount'] if isinstance(transaction, dict) else transaction[6]
-
-                # Create re-enrichment prompt based on existing justification
-                prompt = f"""
-You are a financial AI expert. Re-analyze this transaction that was previously matched to an invoice.
-
-EXISTING JUSTIFICATION: {justification}
-
-TRANSACTION DETAILS:
-- Description: {description}
-- Amount: {amount}
-- Current Entity: {classified_entity or 'N/A'}
-- Current Category: {accounting_category or 'N/A'}
-- Current Subcategory: {subcategory or 'N/A'}
-
-Based on the existing justification and transaction details, provide corrected classification:
-
-1. Entity: Main vendor/service provider
-2. Primary Category: Main expense/revenue type (Technology Expenses, Professional Services, Revenue, etc.)
-3. Sub Category: Specific classification within the primary category
-4. Justification: Keep existing justification (don't change)
-
-Respond ONLY in valid JSON format:
-{{"entity": "", "primary_category": "", "sub_category": "", "justification": "{justification}"}}
-"""
-
-                response = claude_client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-
-                ai_response = response.content[0].text.strip()
-
-                # Parse JSON response
-                import json
-                try:
-                    json_start = ai_response.find('{')
-                    json_end = ai_response.rfind('}') + 1
-                    if json_start != -1 and json_end > json_start:
-                        json_str = ai_response[json_start:json_end]
-                        enrichment_data = json.loads(json_str)
-                    else:
-                        print(f"SKIP: No JSON found in AI response for {transaction_id}")
-                        continue
-                except json.JSONDecodeError as e:
-                    print(f"SKIP: Failed to parse AI response for {transaction_id}: {e}")
-                    continue
-
-                # Check if classifications need to be updated
-                new_entity = enrichment_data.get('entity', '').strip()
-                new_category = enrichment_data.get('primary_category', '').strip()
-                new_subcategory = enrichment_data.get('sub_category', '').strip()
-
-                # Handle both dict and tuple formats
-                current_entity = transaction['classified_entity'] if isinstance(transaction, dict) else transaction[1]
-                current_category = transaction['accounting_category'] if isinstance(transaction, dict) else transaction[2]
-                current_subcategory = transaction['subcategory'] if isinstance(transaction, dict) else transaction[3]
-
-                needs_update = (
-                    new_entity != (current_entity or '') or
-                    new_category != (current_category or '') or
-                    new_subcategory != (current_subcategory or '')
-                )
-
-                if needs_update and new_entity and new_category:
-                    # Update the transaction
-                    update_query = """
-                        UPDATE transactions
-                        SET
-                            classified_entity = %s,
-                            accounting_category = %s,
-                            subcategory = %s,
-                            confidence = 0.95
-                        WHERE tenant_id = %s AND transaction_id = %s
-                    """
-
-                    db_manager.execute_query(update_query, (
-                        new_entity,
-                        new_category,
-                        new_subcategory,
-                        tenant_id,
-                        transaction_id
-                    ))
-
-                    print(f"UPDATED: {transaction_id} -> {new_category}/{new_subcategory}")
-                    updated_count += 1
-                else:
-                    print(f"NO UPDATE NEEDED: {transaction_id}")
-
-                processed_count += 1
-
-            except Exception as e:
-                print(f"ERROR processing transaction {transaction_id}: {e}")
-                continue
-
-        return jsonify({
-            'success': True,
-            'message': f'Historical re-enrichment completed',
-            'processed': processed_count,
-            'updated': updated_count,
-            'total_found': len(matched_transactions)
-        })
-
-    except Exception as e:
-        logger.error(f"Error in historical re-enrichment: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
 def sync_csv_to_database(csv_filename=None):
     """Sync classified CSV files to SQLite database"""
     # Get current tenant_id for multi-tenant isolation
@@ -2655,38 +2403,42 @@ def homepage():
 
 @app.route('/health')
 def health_check():
-    """Health check endpoint that returns application and database status"""
+    """Health check endpoint that returns database type and status"""
     try:
         db_type = os.getenv('DB_TYPE', 'sqlite').lower()
 
-        # Basic application health
-        health_response = {
+        # Test database connection
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Detect which database we're actually using
+        try:
+            if hasattr(cursor, 'mogrify'):  # PostgreSQL cursor has mogrify
+                cursor.execute("SELECT version()")
+                db_info = "PostgreSQL"
+            else:
+                cursor.execute("SELECT sqlite_version()")
+                db_info = "SQLite"
+        except:
+            # Fallback detection
+            try:
+                cursor.execute("SELECT sqlite_version()")
+                db_info = "SQLite"
+            except:
+                cursor.execute("SELECT version()")
+                db_info = "PostgreSQL"
+
+        conn.close()
+
+        return jsonify({
             "status": "healthy",
-            "application": "running",
+            "database": db_info,
             "db_type_env": db_type,
             "postgresql_available": POSTGRESQL_AVAILABLE,
             "timestamp": datetime.now().isoformat(),
             "version": "2.0"
-        }
-
-        # Only check database if specifically requested to avoid startup delays
-        check_db = request.args.get('check_db', '').lower() == 'true'
-        if check_db:
-            try:
-                from database import db_manager
-                db_health = db_manager.health_check()
-                health_response["database"] = db_health
-            except Exception as db_error:
-                # Database unavailable but application is still healthy
-                health_response["database"] = {
-                    "status": "unavailable",
-                    "error": str(db_error),
-                    "note": "Application can run without database for basic operations"
-                }
-        else:
-            health_response["database"] = "skipped_for_fast_startup"
-
-        return jsonify(health_response), 200
+        }), 200
 
     except Exception as e:
         return jsonify({
@@ -2774,16 +2526,6 @@ def revenue():
     except Exception as e:
         return f"Error loading revenue dashboard: {str(e)}", 500
 
-@app.route('/expenses')
-def expenses():
-    """Expense Matching dashboard page"""
-    try:
-        stats = get_dashboard_stats()
-        cache_buster = str(random.randint(1000, 9999))
-        return render_template('expenses.html', stats=stats, cache_buster=cache_buster)
-    except Exception as e:
-        return f"Error loading expenses dashboard: {str(e)}", 500
-
 @app.route('/cfo-dashboard')
 def cfo_dashboard():
     """CFO Financial Dashboard with charts and analytics"""
@@ -2808,7 +2550,10 @@ def api_transactions():
             'start_date': request.args.get('start_date'),
             'end_date': request.args.get('end_date'),
             'keyword': request.args.get('keyword'),
-            'show_archived': request.args.get('show_archived')
+            'origin': request.args.get('origin'),
+            'destination': request.args.get('destination'),
+            'show_archived': request.args.get('show_archived'),
+            'exclude_internal': request.args.get('exclude_internal')
         }
 
         # Remove None values
@@ -3054,17 +2799,17 @@ def api_update_transaction():
 
                 # Get transaction description for pattern extraction
                 from database import db_manager
-                conn = db_manager._get_postgresql_connection()
-                cursor = conn.cursor()
-                is_postgresql = hasattr(cursor, 'mogrify')
-                placeholder = '%s' if is_postgresql else '?'
+                with db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    is_postgresql = hasattr(cursor, 'mogrify')
+                    placeholder = '%s' if is_postgresql else '?'
 
-                cursor.execute(
-                    f"SELECT description FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                    (tenant_id, transaction_id)
-                )
-                tx_row = cursor.fetchone()
-                conn.close()
+                    cursor.execute(
+                        f"SELECT description FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                        (tenant_id, transaction_id)
+                    )
+                    tx_row = cursor.fetchone()
+                    cursor.close()
 
                 if tx_row:
                     description = tx_row.get('description', '') if isinstance(tx_row, dict) else tx_row[0]
@@ -3108,22 +2853,22 @@ def api_update_entity_bulk():
 
         # Update each transaction
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
-        updated_count = 0
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            is_postgresql = hasattr(cursor, 'mogrify')
+            placeholder = '%s' if is_postgresql else '?'
+            updated_count = 0
 
-        for transaction_id in transaction_ids:
-            cursor.execute(
-                f"UPDATE transactions SET classified_entity = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                (new_entity, tenant_id, transaction_id)
-            )
-            if cursor.rowcount > 0:
-                updated_count += 1
+            for transaction_id in transaction_ids:
+                cursor.execute(
+                    f"UPDATE transactions SET classified_entity = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                    (new_entity, tenant_id, transaction_id)
+                )
+                if cursor.rowcount > 0:
+                    updated_count += 1
 
-        conn.commit()
-        conn.close()
+            conn.commit()
+            cursor.close()
 
         return jsonify({
             'success': True,
@@ -3514,6 +3259,140 @@ def api_delete_wallet(wallet_id):
         logger.error(f"Error deleting wallet: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/wallet/impact', methods=['GET'])
+def api_wallet_impact():
+    """Get the number of transactions that will be affected by a wallet identifier"""
+    try:
+        address = request.args.get('address')
+        field = request.args.get('field')  # 'origin' or 'destination'
+
+        if not address or not field:
+            return jsonify({'error': 'Missing address or field parameter'}), 400
+
+        if field not in ['origin', 'destination']:
+            return jsonify({'error': 'Field must be "origin" or "destination"'}), 400
+
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Count transactions with matching address
+            query = f"""
+                SELECT COUNT(*)
+                FROM transactions
+                WHERE tenant_id = %s AND {field} = %s AND archived = FALSE
+            """
+
+            cursor.execute(query, (tenant_id, address))
+            count = cursor.fetchone()[0]
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'count': count
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting wallet impact: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/wallet/identify', methods=['POST'])
+def api_wallet_identify():
+    """
+    Identify a wallet/address and apply the identifier to all matching transactions.
+    For crypto wallets, also add/update in the wallet_addresses table.
+    """
+    try:
+        data = request.get_json()
+
+        address = data.get('address')
+        identifier = data.get('identifier')
+        field = data.get('field')  # 'origin' or 'destination'
+        is_crypto_wallet = data.get('is_crypto_wallet', False)
+        wallet_type = data.get('wallet_type')
+        notes = data.get('notes', '')
+
+        if not address or not identifier or not field:
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        if field not in ['origin', 'destination']:
+            return jsonify({'error': 'Field must be "origin" or "destination"'}), 400
+
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+        updated_count = 0
+        wallet_id = None
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Step 1: If it's a crypto wallet, add/update in wallet_addresses table
+            if is_crypto_wallet and wallet_type:
+                # Check if wallet already exists
+                cursor.execute("""
+                    SELECT id FROM wallet_addresses
+                    WHERE tenant_id = %s AND wallet_address = %s
+                """, (tenant_id, address))
+
+                existing_wallet = cursor.fetchone()
+
+                if existing_wallet:
+                    # Update existing wallet
+                    cursor.execute("""
+                        UPDATE wallet_addresses
+                        SET entity_name = %s,
+                            wallet_type = %s,
+                            notes = %s,
+                            is_active = TRUE,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                        RETURNING id
+                    """, (identifier, wallet_type, notes, existing_wallet[0]))
+                    wallet_id = cursor.fetchone()[0]
+                else:
+                    # Insert new wallet
+                    cursor.execute("""
+                        INSERT INTO wallet_addresses (
+                            tenant_id, wallet_address, entity_name,
+                            wallet_type, notes, is_active, created_by
+                        ) VALUES (%s, %s, %s, %s, %s, TRUE, 'user')
+                        RETURNING id
+                    """, (tenant_id, address, identifier, wallet_type, notes))
+                    wallet_id = cursor.fetchone()[0]
+
+            # Step 2: Update all transactions with matching address
+            # Replace the address with the identifier
+            update_query = f"""
+                UPDATE transactions
+                SET {field} = %s
+                WHERE tenant_id = %s AND {field} = %s AND archived = FALSE
+            """
+
+            cursor.execute(update_query, (identifier, tenant_id, address))
+            updated_count = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"Wallet identified: {address} -> {identifier} ({updated_count} transactions updated)")
+
+        return jsonify({
+            'success': True,
+            'updated_count': updated_count,
+            'wallet_id': str(wallet_id) if wallet_id else None,
+            'message': f'Identifier applied to {updated_count} transaction(s)'
+        })
+
+    except Exception as e:
+        logger.error(f"Error identifying wallet: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/suggestions')
 def api_suggestions():
     """API endpoint to get AI-powered field suggestions"""
@@ -3532,42 +3411,42 @@ def api_suggestions():
             tenant_id = get_current_tenant_id()
 
             from database import db_manager
-            conn = db_manager._get_postgresql_connection()
-            cursor = conn.cursor()
-            is_postgresql = hasattr(cursor, 'mogrify')
-            placeholder = '%s' if is_postgresql else '?'
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                is_postgresql = hasattr(cursor, 'mogrify')
+                placeholder = '%s' if is_postgresql else '?'
 
-            cursor.execute(f"SELECT * FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}", (tenant_id, transaction_id))
-            row = cursor.fetchone()
-            if row:
-                # Convert tuple to dict for PostgreSQL - must match column order
-                context = {
-                    'transaction_id': row[0],
-                    'date': row[1],
-                    'description': row[2],
-                    'amount': row[3],
-                    'currency': row[4],
-                    'usd_equivalent': row[5],
-                    'classified_entity': row[6],
-                    'justification': row[7],
-                    'confidence': row[8],
-                    'classification_reason': row[9],
-                    'origin': row[10],
-                    'destination': row[11],
-                    'identifier': row[12],
-                    'source_file': row[13],
-                    'crypto_amount': row[14],
-                    'conversion_note': row[15],
-                    'accounting_category': row[16],
-                    'archived': row[17],
-                    'confidence_history': row[18],
-                    'ai_reassessment_count': row[19],
-                    'last_ai_review': row[20],
-                    'user_feedback_count': row[21],
-                    'ai_suggestions': row[22],
-                    'subcategory': row[23]
-                }
-            conn.close()
+                cursor.execute(f"SELECT * FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}", (tenant_id, transaction_id))
+                row = cursor.fetchone()
+                if row:
+                    # Convert tuple to dict for PostgreSQL - must match column order
+                    context = {
+                        'transaction_id': row[0],
+                        'date': row[1],
+                        'description': row[2],
+                        'amount': row[3],
+                        'currency': row[4],
+                        'usd_equivalent': row[5],
+                        'classified_entity': row[6],
+                        'justification': row[7],
+                        'confidence': row[8],
+                        'classification_reason': row[9],
+                        'origin': row[10],
+                        'destination': row[11],
+                        'identifier': row[12],
+                        'source_file': row[13],
+                        'crypto_amount': row[14],
+                        'conversion_note': row[15],
+                        'accounting_category': row[16],
+                        'archived': row[17],
+                        'confidence_history': row[18],
+                        'ai_reassessment_count': row[19],
+                        'last_ai_review': row[20],
+                        'user_feedback_count': row[21],
+                        'ai_suggestions': row[22],
+                        'subcategory': row[23]
+                    }
+                cursor.close()
 
         # Add special parameters for similar_descriptions, similar_entities, and similar_accounting
         if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting']:
@@ -4476,6 +4355,8 @@ def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""
     try:
         from database import db_manager
+        tenant_id = get_current_tenant_id()
+
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4484,13 +4365,14 @@ def api_get_accounting_categories():
         query = """
             SELECT DISTINCT accounting_category
             FROM transactions
-            WHERE accounting_category IS NOT NULL
+            WHERE tenant_id = %s
+            AND accounting_category IS NOT NULL
             AND accounting_category != 'N/A'
             AND accounting_category != ''
             ORDER BY accounting_category
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (tenant_id,))
         rows = cursor.fetchall()
         conn.close()
 
@@ -4511,6 +4393,8 @@ def api_get_subcategories():
     """API endpoint to fetch distinct subcategories from database"""
     try:
         from database import db_manager
+        tenant_id = get_current_tenant_id()
+
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         is_postgresql = hasattr(cursor, 'mogrify')
@@ -4519,13 +4403,14 @@ def api_get_subcategories():
         query = """
             SELECT DISTINCT subcategory
             FROM transactions
-            WHERE subcategory IS NOT NULL
+            WHERE tenant_id = %s
+            AND subcategory IS NOT NULL
             AND subcategory != 'N/A'
             AND subcategory != ''
             ORDER BY subcategory
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (tenant_id,))
         rows = cursor.fetchall()
         conn.close()
 
@@ -5365,11 +5250,52 @@ else:
                     print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
                     # Don't fail the upload if matching fails
 
+                # Auto-trigger AI anomaly detection on newly uploaded transactions
+                anomalies_found = 0
+                try:
+                    print(f"🔧 AUTO-TRIGGER: Starting AI anomaly detection...")
+                    from anomaly_detector import detector
+
+                    # Get transaction IDs from the sync result
+                    # We'll detect anomalies on the recently uploaded transactions
+                    tenant_id = get_current_tenant_id()
+
+                    # Get IDs of recently added transactions (last 100 to cover the upload)
+                    with db_manager.get_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            SELECT transaction_id
+                            FROM transactions
+                            WHERE tenant_id = %s AND archived = FALSE
+                            ORDER BY created_at DESC
+                            LIMIT 100
+                        """, (tenant_id,))
+
+                        recent_tx_ids = [row[0] for row in cursor.fetchall()]
+                        cursor.close()
+
+                    if recent_tx_ids:
+                        anomaly_result = detector.analyze_transactions(recent_tx_ids, tenant_id)
+
+                        if anomaly_result.get('success'):
+                            anomalies_found = anomaly_result.get('anomalies_found', 0)
+                            if anomalies_found > 0:
+                                print(f"🚨 AUTO-TRIGGER: Found {anomalies_found} anomalies requiring review!")
+                            else:
+                                print("✅ AUTO-TRIGGER: No anomalies detected - all transactions look good")
+                        else:
+                            print(f"⚠️ AUTO-TRIGGER: Anomaly detection failed: {anomaly_result.get('error')}")
+
+                except Exception as e:
+                    print(f"⚠️ AUTO-TRIGGER: Error during anomaly detection: {e}")
+                    # Don't fail the upload if anomaly detection fails
+
                 return jsonify({
                     'success': True,
                     'message': f'Successfully processed {filename}',
                     'transactions_processed': transactions_processed,
-                    'sync_result': sync_result
+                    'sync_result': sync_result,
+                    'anomalies_detected': anomalies_found
                 })
             else:
                 return jsonify({
@@ -6721,110 +6647,6 @@ def api_convert_single_invoice(invoice_id):
         logger.error(f"Error converting single invoice: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/invoices/<invoice_id>/related-transaction')
-def api_get_invoice_related_transaction(invoice_id):
-    """Get transaction linked to an invoice for bidirectional navigation"""
-    try:
-        from database import db_manager
-        tenant_id = get_current_tenant_id()
-
-        # Get invoice with linked transaction info
-        query = """
-            SELECT
-                i.id as invoice_id,
-                i.invoice_number,
-                i.linked_transaction_id,
-                t.description as transaction_description,
-                t.amount as transaction_amount,
-                t.date as transaction_date,
-                t.classified_entity,
-                t.accounting_category
-            FROM invoices i
-            LEFT JOIN transactions t ON i.linked_transaction_id = t.transaction_id
-            WHERE i.tenant_id = %s AND i.id = %s
-        """
-
-        result = db_manager.execute_query(query, (tenant_id, invoice_id), fetch_one=True)
-
-        if not result:
-            return jsonify({'error': 'Invoice not found'}), 404
-
-        if not result['linked_transaction_id']:
-            return jsonify({
-                'success': True,
-                'linked': False,
-                'message': 'Invoice not linked to any transaction'
-            })
-
-        return jsonify({
-            'success': True,
-            'linked': True,
-            'transaction': {
-                'id': result['linked_transaction_id'],
-                'description': result['transaction_description'],
-                'amount': result['transaction_amount'],
-                'date': result['transaction_date'],
-                'classified_entity': result['classified_entity'],
-                'accounting_category': result['accounting_category']
-            }
-        })
-
-    except Exception as e:
-        logger.error(f"Error getting related transaction for invoice {invoice_id}: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/transactions/<transaction_id>/related-invoice')
-def api_get_transaction_related_invoice(transaction_id):
-    """Get invoice linked to a transaction for bidirectional navigation"""
-    try:
-        from database import db_manager
-        tenant_id = get_current_tenant_id()
-
-        # Get transaction with linked invoice info
-        query = """
-            SELECT
-                t.transaction_id,
-                t.description as transaction_description,
-                t.invoice_id,
-                i.invoice_number,
-                i.vendor_name,
-                i.customer_name,
-                i.total_amount as invoice_amount,
-                i.date as invoice_date
-            FROM transactions t
-            LEFT JOIN invoices i ON t.invoice_id = i.id
-            WHERE t.tenant_id = %s AND t.transaction_id = %s
-        """
-
-        result = db_manager.execute_query(query, (tenant_id, transaction_id), fetch_one=True)
-
-        if not result:
-            return jsonify({'error': 'Transaction not found'}), 404
-
-        if not result['invoice_id']:
-            return jsonify({
-                'success': True,
-                'linked': False,
-                'message': 'Transaction not linked to any invoice'
-            })
-
-        return jsonify({
-            'success': True,
-            'linked': True,
-            'invoice': {
-                'id': result['invoice_id'],
-                'invoice_number': result['invoice_number'],
-                'vendor_name': result['vendor_name'],
-                'customer_name': result['customer_name'],
-                'amount': result['invoice_amount'],
-                'date': result['invoice_date']
-            }
-        })
-
-    except Exception as e:
-        logger.error(f"Error getting related invoice for transaction {transaction_id}: {e}")
-        return jsonify({'error': str(e)}), 500
-
 # ============================================================================
 # BACKGROUND JOBS API ENDPOINTS
 # ============================================================================
@@ -7830,260 +7652,32 @@ def debug_sync(filename):
 @app.route('/api/revenue/run-matching', methods=['POST'])
 def api_run_revenue_matching():
     """
-    🚀 OTIMIZADO: Executa matching com prevenção de cliques duplos e tracking de progresso
+    Executa matching automático de invoices com transações (versão básica)
     Body: {
         "invoice_ids": ["id1", "id2", ...] (opcional - se não fornecido, processa todos),
         "auto_apply": true/false (se deve aplicar matches automáticos)
     }
     """
-    global active_matcher
-
     try:
-        # 1. PREVENÇÃO DE CLIQUES DUPLOS
-        with matcher_lock:
-            if active_matcher is not None:
-                return jsonify({
-                    'success': False,
-                    'error': 'Matching process already running',
-                    'message': '🚫 Processo já em execução. Aguarde a conclusão.',
-                    'progress': active_matcher.get_progress_info() if hasattr(active_matcher, 'get_progress_info') else None
-                }), 409  # Conflict
-
-        # 2. INICIALIZAR NOVO PROCESSO
-        from revenue_matcher import RevenueInvoiceMatcher
+        from revenue_matcher import run_invoice_matching
 
         data = request.get_json() or {}
         invoice_ids = data.get('invoice_ids')
         auto_apply = data.get('auto_apply', False)
 
-        logger.info(f"🚀 Starting OPTIMIZED revenue matching - Invoice IDs: {invoice_ids}, Auto-apply: {auto_apply}")
+        logger.info(f"Starting revenue matching - Invoice IDs: {invoice_ids}, Auto-apply: {auto_apply}")
 
-        # 3. CRIAR MATCHER E ARMAZENAR GLOBALMENTE PARA TRACKING
-        with matcher_lock:
-            active_matcher = RevenueInvoiceMatcher()
+        # Run the matching process
+        result = run_invoice_matching(invoice_ids=invoice_ids, auto_apply=auto_apply)
 
-        def run_matching_async():
-            global active_matcher
-            try:
-                # Find matches with optimized processing
-                matches = active_matcher.find_matches_for_invoices(invoice_ids)
-
-                # Apply semantic matching (now optimized with batch processing)
-                if matches:
-                    invoices = active_matcher._get_unmatched_invoices(invoice_ids)
-                    transactions = active_matcher._get_candidate_transactions()
-                    matches = active_matcher.apply_semantic_matching(matches, invoices, transactions)
-
-                # Save results
-                stats = active_matcher.save_match_results(matches, auto_apply)
-
-                logger.info(f"🚀 OPTIMIZATION SUCCESS: Processed {len(matches)} matches")
-
-                return {
-                    'success': True,
-                    'total_matches': len(matches),
-                    'high_confidence': len([m for m in matches if m.confidence_level == 'HIGH']),
-                    'medium_confidence': len([m for m in matches if m.confidence_level == 'MEDIUM']),
-                    'auto_applied': stats['auto_applied'],
-                    'pending_review': stats['pending_review'],
-                    'optimizations_used': ['🧠 Smart Filtering', '📦 Batch Processing', '⚡ Parallelization', '🧹 Data Sanitization'],
-                    'matches': [
-                        {
-                            'invoice_id': m.invoice_id,
-                            'transaction_id': m.transaction_id,
-                            'score': m.score,
-                            'match_type': m.match_type,
-                            'confidence_level': m.confidence_level,
-                            'explanation': m.explanation,
-                            'auto_match': m.auto_match
-                        }
-                        for m in matches
-                    ]
-                }
-            except Exception as e:
-                logger.error(f"Error in async matching: {e}")
-                raise
-            finally:
-                # 4. LIMPAR MATCHER ATIVO
-                with matcher_lock:
-                    active_matcher = None
-
-        # Execute in background thread for real-time progress
-        import threading
-        result_container = {}
-        error_container = {}
-
-        def thread_worker():
-            try:
-                result_container['result'] = run_matching_async()
-            except Exception as e:
-                error_container['error'] = e
-
-        thread = threading.Thread(target=thread_worker)
-        thread.start()
-        thread.join()  # Wait for completion
-
-        if 'error' in error_container:
-            raise error_container['error']
-
-        return jsonify(result_container['result'])
+        return jsonify(result)
 
     except Exception as e:
-        # Cleanup on error
-        with matcher_lock:
-            active_matcher = None
-
         logger.error(f"Error in revenue matching: {e}")
         return jsonify({
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
-        }), 500
-
-@app.route('/api/revenue/run-ultra-fast-matching', methods=['POST'])
-def api_run_ultra_fast_revenue_matching():
-    """
-    ULTRA FAST MATCHING: Enterprise-grade performance optimized matcher
-    Target: <100ms per invoice (73.3ms achieved)
-    Body: {
-        "auto_apply": true/false (se deve aplicar matches automáticos)
-    }
-    """
-    global active_matcher
-
-    try:
-        # 1. PREVENÇÃO DE CLIQUES DUPLOS
-        with matcher_lock:
-            if active_matcher is not None:
-                return jsonify({
-                    'success': False,
-                    'error': 'Matching process already running',
-                    'message': 'Processo já em execução. Aguarde a conclusão.',
-                    'progress': active_matcher.get_progress_info() if hasattr(active_matcher, 'get_progress_info') else None
-                }), 409  # Conflict
-
-        # 2. INICIALIZAR NOVO PROCESSO ULTRA-FAST
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from ultra_fast_matcher_fixed import UltraFastMatcher
-
-        data = request.get_json() or {}
-        auto_apply = data.get('auto_apply', False)
-
-        logger.info(f"ULTRA FAST MATCHING: Starting enterprise-grade matcher (target: <100ms per invoice)")
-
-        # 3. CRIAR ULTRA-FAST MATCHER
-        with matcher_lock:
-            active_matcher = UltraFastMatcher()
-
-        def run_ultra_matching_async():
-            global active_matcher
-            try:
-                # Run ultra-fast matching with auto_apply parameter
-                result = active_matcher.run_ultra_fast_matching(auto_apply=auto_apply)
-
-                auto_applied = result.get('auto_applied', 0)
-                pending_review = result.get('pending_review', 0)
-
-                logger.info(f"ULTRA FAST SUCCESS: {result['total_matches']} matches in {result['processing_time']:.2f}s")
-                if auto_apply:
-                    logger.info(f"AUTO-APPLY RESULTS: {auto_applied} applied automatically, {pending_review} pending review")
-                logger.info(f"PERFORMANCE: {result['ms_per_invoice']:.1f}ms per invoice (Target: <1000ms)")
-
-                message = f'Processed invoices in {result["processing_time"]:.1f}s - Performance: {result["ms_per_invoice"]:.1f}ms per invoice'
-                if auto_apply:
-                    message += f' | Auto-applied: {auto_applied}, Pending: {pending_review}'
-
-                return {
-                    'success': True,
-                    'total_matches': result['total_matches'],
-                    'auto_applied': auto_applied,
-                    'pending_review': pending_review,
-                    'processing_time': result['processing_time'],
-                    'invoices_per_second': result['invoices_per_second'],
-                    'ms_per_invoice': result['ms_per_invoice'],
-                    'performance_status': 'PASSED' if result['ms_per_invoice'] < 1000 else 'FAILED',
-                    'enterprise_ready': result['ms_per_invoice'] < 1000,
-                    'optimization_level': 'ULTRA_FAST',
-                    'auto_apply_enabled': auto_apply,
-                    'message': message
-                }
-            except Exception as e:
-                logger.error(f"Error in ultra-fast matching: {e}")
-                raise
-            finally:
-                # 4. LIMPAR MATCHER ATIVO
-                with matcher_lock:
-                    active_matcher = None
-
-        # Execute in background thread
-        import threading
-        result_container = {}
-        error_container = {}
-
-        def thread_worker():
-            try:
-                result_container['result'] = run_ultra_matching_async()
-            except Exception as e:
-                error_container['error'] = e
-
-        thread = threading.Thread(target=thread_worker)
-        thread.start()
-        thread.join()  # Wait for completion
-
-        if 'error' in error_container:
-            raise error_container['error']
-
-        return jsonify(result_container['result'])
-
-    except Exception as e:
-        # Cleanup on error
-        with matcher_lock:
-            active_matcher = None
-
-        logger.error(f"Error in ultra-fast revenue matching: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
-
-@app.route('/api/revenue/matching-progress', methods=['GET'])
-def api_get_matching_progress():
-    """
-    🚀 NOVO: Retorna progresso em tempo real do matching process
-    """
-    global active_matcher
-
-    try:
-        with matcher_lock:
-            if active_matcher is None:
-                return jsonify({
-                    'running': False,
-                    'message': 'Nenhum processo de matching ativo',
-                    'progress': 0,
-                    'eta': 'N/A',
-                    'matches_processed': 0,
-                    'total': 0
-                })
-
-            progress_info = active_matcher.get_progress_info()
-            return jsonify({
-                'running': True,
-                'message': f"Processando matches {progress_info['matches_processed']}/{progress_info['total']}",
-                'progress': progress_info['progress'],
-                'eta': progress_info['eta'],
-                'matches_processed': progress_info['matches_processed'],
-                'total': progress_info['total'],
-                'optimizations': ['🧠 Smart Filtering', '📦 Batch Processing', '⚡ Parallelization']
-            })
-
-    except Exception as e:
-        logger.error(f"Error getting matching progress: {e}")
-        return jsonify({
-            'running': False,
-            'error': str(e)
         }), 500
 
 @app.route('/api/revenue/pending-matches')
@@ -8095,7 +7689,7 @@ def api_get_pending_matches():
         per_page = min(int(request.args.get('per_page', 20)), 100)
         offset = (page - 1) * per_page
 
-        # Query including explanation and confidence_level fields + CUSTOMER INFO
+        # Query including explanation and confidence_level fields
         query = """
             SELECT
                 pm.id,
@@ -8108,9 +7702,6 @@ def api_get_pending_matches():
                 pm.created_at,
                 i.invoice_number,
                 i.vendor_name,
-                i.customer_name,
-                i.customer_address,
-                i.customer_tax_id,
                 i.total_amount as invoice_amount,
                 i.currency as invoice_currency,
                 i.date as invoice_date,
@@ -8153,9 +7744,6 @@ def api_get_pending_matches():
                 'invoice': {
                     'number': match['invoice_number'],
                     'vendor_name': match['vendor_name'],
-                    'customer_name': match['customer_name'],
-                    'customer_address': match['customer_address'],
-                    'customer_tax_id': match['customer_tax_id'],
                     'amount': float(match['invoice_amount']) if match['invoice_amount'] else 0.0,
                     'currency': match['invoice_currency'],
                     'date': match['invoice_date'],
@@ -8198,40 +7786,18 @@ def api_confirm_match():
         "invoice_number": str (opcional),
         "user_id": "string" (opcional)
     }
-    OR: {
-        "match_id": str,
-        "user_id": "string" (opcional)
-    }
     """
     try:
         from database import db_manager
         data = request.get_json()
-
-        # Support both formats: (invoice_id, transaction_id) OR match_id
         invoice_id = data.get('invoice_id')
         transaction_id = data.get('transaction_id')
-        match_id = data.get('match_id')
         customer_name = data.get('customer_name', '')
         invoice_number = data.get('invoice_number', '')
         user_id = data.get('user_id', 'Unknown')
 
-        # If match_id is provided, look up invoice_id and transaction_id
-        if match_id and (not invoice_id or not transaction_id):
-            match_query = """
-                SELECT invoice_id, transaction_id
-                FROM pending_invoice_matches
-                WHERE id = %s AND status = 'pending'
-            """
-            match_data = db_manager.execute_query(match_query, (match_id,), fetch_one=True)
-
-            if not match_data:
-                return jsonify({'success': False, 'error': 'Match not found or already processed'}), 404
-
-            invoice_id = match_data['invoice_id']
-            transaction_id = match_data['transaction_id']
-
         if not invoice_id or not transaction_id:
-            return jsonify({'success': False, 'error': 'invoice_id and transaction_id are required (provide either both directly or match_id)'}), 400
+            return jsonify({'success': False, 'error': 'invoice_id and transaction_id are required'}), 400
 
         # Build the justification field
         justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
@@ -8246,13 +7812,11 @@ def api_confirm_match():
                 UPDATE transactions
                 SET accounting_category = 'REVENUE',
                     justification = {placeholder}
-                WHERE transaction_id = {placeholder}
+                WHERE id = {placeholder}
             """
             cursor.execute(update_transaction_query, (justification, transaction_id))
 
-            # 🔗 BIDIRECTIONAL LINKING: Update BOTH tables
-
-            # 1. Update the invoice to link it to the transaction
+            # Update the invoice to link it to the transaction
             update_invoice_query = f"""
                 UPDATE invoices
                 SET linked_transaction_id = {placeholder},
@@ -8261,58 +7825,13 @@ def api_confirm_match():
             """
             cursor.execute(update_invoice_query, (transaction_id, invoice_id))
 
-            # 2. Update the transaction to link it to the invoice (NEW!)
-            update_transaction_link_query = f"""
-                UPDATE transactions
-                SET invoice_id = {placeholder}
-                WHERE transaction_id = {placeholder}
-            """
-            cursor.execute(update_transaction_link_query, (invoice_id, transaction_id))
-
             # Commit the changes
             conn.commit()
             cursor.close()
 
-        # If match was confirmed via match_id, mark it as confirmed
-        if match_id:
-            try:
-                confirm_match_query = """
-                    UPDATE pending_invoice_matches
-                    SET status = 'confirmed',
-                        reviewed_by = %s,
-                        reviewed_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """
-                db_manager.execute_query(confirm_match_query, (user_id, match_id))
-                print(f"Match {match_id} marked as confirmed by {user_id}")
-            except Exception as e:
-                print(f"WARNING: Could not update match status: {e}")
-
-        # 🤖 AUTOMATIC AI ENRICHMENT: Enrich transaction with invoice context
-        try:
-            # Get invoice data for enrichment
-            invoice_data = db_manager.execute_query("""
-                SELECT vendor_name, customer_name, invoice_number, total_amount, category, business_unit
-                FROM invoices
-                WHERE id = %s
-            """, (invoice_id,), fetch_one=True)
-
-            if invoice_data:
-                print(f"AI: Starting automatic transaction enrichment for {transaction_id}")
-                enrichment_success = enrich_transaction_with_invoice_context(transaction_id, invoice_data)
-                if enrichment_success:
-                    print(f"AI: Successfully enriched transaction {transaction_id} with invoice context")
-                else:
-                    print(f"AI: Failed to enrich transaction {transaction_id}")
-            else:
-                print(f"WARNING: Could not retrieve invoice data for enrichment: {invoice_id}")
-        except Exception as e:
-            print(f"WARNING: Automatic enrichment failed (non-critical): {e}")
-            # Don't fail the match confirmation due to enrichment errors
-
         return jsonify({
             'success': True,
-            'message': 'Match confirmed successfully with AI enrichment'
+            'message': 'Match confirmed successfully'
         })
 
     except Exception as e:
@@ -8402,7 +7921,6 @@ def api_manual_match():
     }
     """
     try:
-        from database import db_manager  # Import necessário
         data = request.get_json()
         invoice_id = data.get('invoice_id')
         transaction_id = data.get('transaction_id')
@@ -8427,24 +7945,14 @@ def api_manual_match():
         if not transaction:
             return jsonify({'success': False, 'error': 'Transaction not found'}), 404
 
-        # 🔗 BIDIRECTIONAL MANUAL MATCH: Update BOTH tables
-
-        # 1. Update the invoice to link it to the transaction
-        update_invoice_query = """
+        # Apply the manual match
+        update_query = """
             UPDATE invoices
             SET linked_transaction_id = %s,
                 status = 'paid'
             WHERE tenant_id = %s AND id = %s
         """
-        db_manager.execute_query(update_invoice_query, (transaction_id, tenant_id, invoice_id))
-
-        # 2. Update the transaction to link it to the invoice (NEW!)
-        update_transaction_query = """
-            UPDATE transactions
-            SET invoice_id = %s
-            WHERE tenant_id = %s AND transaction_id = %s
-        """
-        db_manager.execute_query(update_transaction_query, (invoice_id, tenant_id, transaction_id))
+        db_manager.execute_query(update_query, (transaction_id, tenant_id, invoice_id))
 
         # Log the manual match
         log_query = """
@@ -9199,223 +8707,6 @@ def api_dismiss_sync_notification():
 
 
 # ============================================
-# EXPENSE MATCHING API ENDPOINTS
-# ============================================
-
-@app.route('/api/expense/run-expense-matching', methods=['POST'])
-def api_run_expense_matching():
-    """
-    EXPENSE MATCHING: Matches expense transactions to invoices/bills
-    Similar to revenue matching but for expenses (negative amounts)
-    Body: {
-        "auto_apply": true/false (se deve aplicar matches automáticos)
-    }
-    """
-    global active_matcher
-
-    try:
-        from database import db_manager
-        data = request.get_json() or {}
-        auto_apply = data.get('auto_apply', False)
-
-        # 1. PREVENÇÃO DE CLIQUES DUPLOS
-        with matcher_lock:
-            if active_matcher is not None:
-                return jsonify({
-                    'success': False,
-                    'error': 'Expense matching process already running',
-                    'message': 'Processo já em execução. Aguarde a conclusão.'
-                }), 409  # Conflict
-
-            # 2. INICIALIZAR ULTRA-FAST MATCHER PARA EXPENSES
-            from ultra_fast_matcher_fixed import UltraFastMatcher
-            active_matcher = UltraFastMatcher()
-
-        logger.info(f"EXPENSE MATCHING: Starting ultra-fast expense matcher")
-
-        def run_expense_matching_async():
-            global active_matcher
-            try:
-                # Get expense transactions (negative amounts) that need matching
-                expense_transactions = db_manager.execute_query("""
-                    SELECT transaction_id, amount, date, description, classified_entity
-                    FROM transactions
-                    WHERE amount < 0
-                    AND (invoice_id IS NULL OR invoice_id = '')
-                    AND (archived = FALSE OR archived IS NULL)
-                    ORDER BY ABS(amount) DESC, date DESC
-                    LIMIT 500
-                """, fetch_all=True)
-
-                if not expense_transactions:
-                    return {
-                        'success': True,
-                        'total_matches': 0,
-                        'message': 'No unmatched expense transactions found',
-                        'processing_time': 0.0
-                    }
-
-                # Get available invoices to match against
-                available_invoices = db_manager.execute_query("""
-                    SELECT id as invoice_id, vendor_name, total_amount, date, invoice_number, customer_name
-                    FROM invoices
-                    WHERE (linked_transaction_id IS NULL OR linked_transaction_id = '')
-                    ORDER BY date DESC
-                """, fetch_all=True)
-
-                if not available_invoices:
-                    return {
-                        'success': True,
-                        'total_matches': 0,
-                        'message': 'No available invoices to match against',
-                        'processing_time': 0.0
-                    }
-
-                # Run matching algorithm adapted for expenses
-                start_time = time.time()
-                matches = []
-
-                for transaction in expense_transactions[:100]:  # Limit for performance
-                    tx_amount = abs(float(transaction['amount']))  # Make positive for comparison
-                    tx_date = transaction['date']
-
-                    # Find best matching invoice
-                    best_match = None
-                    best_score = 0.0
-
-                    for invoice in available_invoices:
-                        inv_amount = float(invoice['total_amount'])
-                        inv_date = invoice['date']
-
-                        # Amount similarity (within 5% tolerance)
-                        amount_diff = abs(tx_amount - inv_amount) / max(tx_amount, inv_amount)
-                        if amount_diff > 0.05:  # More than 5% difference
-                            continue
-
-                        amount_score = 1.0 - amount_diff
-
-                        # Date proximity (within 90 days)
-                        try:
-                            if isinstance(tx_date, str):
-                                tx_date_obj = datetime.strptime(tx_date, '%Y-%m-%d').date()
-                            else:
-                                tx_date_obj = tx_date
-
-                            if isinstance(inv_date, str):
-                                inv_date_obj = datetime.strptime(inv_date, '%Y-%m-%d').date()
-                            else:
-                                inv_date_obj = inv_date
-
-                            date_diff = abs((tx_date_obj - inv_date_obj).days)
-                            if date_diff > 90:  # More than 90 days difference
-                                continue
-
-                            date_score = max(0, 1.0 - (date_diff / 90))
-                        except:
-                            date_score = 0.1  # Small score if date parsing fails
-
-                        # Entity/vendor similarity
-                        tx_entity = transaction.get('classified_entity', '').lower()
-                        vendor_name = invoice.get('vendor_name', '').lower()
-                        entity_score = 0.3 if tx_entity and vendor_name and (tx_entity in vendor_name or vendor_name in tx_entity) else 0.1
-
-                        # Combined score
-                        total_score = (amount_score * 0.5) + (date_score * 0.3) + (entity_score * 0.2)
-
-                        if total_score > best_score and total_score > 0.6:  # Minimum threshold
-                            best_score = total_score
-                            best_match = invoice
-
-                    # If we found a good match, add it
-                    if best_match and best_score > 0.6:
-                        confidence = 'HIGH' if best_score > 0.8 else 'MEDIUM'
-                        matches.append({
-                            'transaction_id': transaction['transaction_id'],
-                            'invoice_id': best_match['invoice_id'],
-                            'score': best_score,
-                            'confidence_level': confidence,
-                            'match_type': 'EXPENSE_MATCH',
-                            'explanation': f'Expense match: {best_score:.3f} score (amount: ${tx_amount:.2f})'
-                        })
-
-                processing_time = time.time() - start_time
-
-                # Save matches to pending table (reuse existing table structure)
-                for match in matches:
-                    db_manager.execute_query("""
-                        INSERT INTO pending_invoice_matches
-                        (invoice_id, transaction_id, score, match_type, confidence_level, explanation, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, 'pending')
-                        ON CONFLICT (invoice_id, transaction_id) DO NOTHING
-                    """, (
-                        match['invoice_id'],
-                        match['transaction_id'],
-                        match['score'],
-                        match['match_type'],
-                        match['confidence_level'],
-                        match['explanation']
-                    ))
-
-                return {
-                    'success': True,
-                    'total_matches': len(matches),
-                    'processing_time': processing_time,
-                    'expense_transactions_processed': len(expense_transactions),
-                    'available_invoices': len(available_invoices),
-                    'message': f'Successfully found {len(matches)} expense matches'
-                }
-
-            except Exception as e:
-                logger.error(f"Error in expense matching: {e}")
-                raise
-            finally:
-                # Clean up
-                with matcher_lock:
-                    active_matcher = None
-
-        # Execute matching
-        import threading
-        result_container = {}
-        error_container = {}
-
-        def thread_worker():
-            try:
-                result_container['result'] = run_expense_matching_async()
-            except Exception as e:
-                error_container['error'] = e
-
-        thread = threading.Thread(target=thread_worker)
-        thread.start()
-        thread.join(timeout=30)  # 30 second timeout
-
-        if thread.is_alive():
-            return jsonify({
-                'success': False,
-                'error': 'Expense matching timeout',
-                'message': 'O processo demorou mais que 30 segundos'
-            }), 408
-
-        if 'error' in error_container:
-            raise error_container['error']
-
-        if 'result' not in result_container:
-            return jsonify({
-                'success': False,
-                'error': 'No result from expense matching'
-            }), 500
-
-        return jsonify(result_container['result'])
-
-    except Exception as e:
-        logger.error(f"Critical error in expense matching: {e}")
-        return jsonify({
-            'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
-
-
-# ============================================
 # TRANSACTION CHAIN API ENDPOINTS
 # ============================================
 
@@ -9688,6 +8979,431 @@ def api_enrich_all_pending():
         }), 500
 
 
+@app.route('/api/transactions/detect-internal-transfers', methods=['POST'])
+def api_detect_internal_transfers():
+    """
+    Detect potential internal transfers between exchanges (Ledger ↔ MEXC ↔ Coinbase)
+    Matches transactions with:
+    - Same day
+    - Same amount (within 0.5 percent tolerance)
+    - Different origin/destination (one outgoing, one incoming)
+
+    Returns matches that can be classified as "Internal Transfer"
+    """
+    try:
+        from database import db_manager
+        from tenant_context import get_current_tenant_id
+        import psycopg2.extras
+
+        tenant_id = get_current_tenant_id()
+        is_postgresql = db_manager.db_type == 'postgresql'
+        placeholder = "%s" if is_postgresql else "?"
+
+        # Known exchange keywords for matching
+        exchange_keywords = ['MEXC', 'Coinbase', 'Ledger', 'Binance', 'Kraken']
+
+        # Get all transactions that might be internal transfers
+        # Looking for same date, similar amount, different origins/destinations
+        query = f"""
+            SELECT
+                t1.transaction_id as tx1_id,
+                t1.date as tx1_date,
+                t1.description as tx1_description,
+                t1.amount as tx1_amount,
+                t1.currency as tx1_currency,
+                t1.crypto_amount as tx1_crypto_amount,
+                t1.origin as tx1_origin,
+                t1.destination as tx1_destination,
+                t1.classified_entity as tx1_entity,
+                t1.accounting_category as tx1_category,
+                t2.transaction_id as tx2_id,
+                t2.date as tx2_date,
+                t2.description as tx2_description,
+                t2.amount as tx2_amount,
+                t2.currency as tx2_currency,
+                t2.crypto_amount as tx2_crypto_amount,
+                t2.origin as tx2_origin,
+                t2.destination as tx2_destination,
+                t2.classified_entity as tx2_entity,
+                t2.accounting_category as tx2_category,
+                ABS(t1.amount) as abs_amt1,
+                ABS(t2.amount) as abs_amt2,
+                -- For crypto, extract numeric value from crypto_amount string
+                CASE
+                    WHEN t1.crypto_amount IS NOT NULL AND t1.crypto_amount != ''
+                    THEN CAST(REGEXP_REPLACE(t1.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC)
+                    ELSE NULL
+                END as tx1_crypto_numeric,
+                CASE
+                    WHEN t2.crypto_amount IS NOT NULL AND t2.crypto_amount != ''
+                    THEN CAST(REGEXP_REPLACE(t2.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC)
+                    ELSE NULL
+                END as tx2_crypto_numeric
+            FROM transactions t1
+            JOIN transactions t2 ON t1.date = t2.date
+            WHERE t1.tenant_id = {placeholder}
+              AND t2.tenant_id = {placeholder}
+              AND t1.transaction_id < t2.transaction_id
+              AND t1.currency = t2.currency
+              AND (t1.archived IS NULL OR t1.archived = FALSE)
+              AND (t2.archived IS NULL OR t2.archived = FALSE)
+              AND (
+                -- For crypto currencies (BTC, ETH, etc.), compare crypto amounts
+                -- For fiat currencies, compare USD amounts
+                CASE
+                    WHEN t1.currency IN ('BTC', 'ETH', 'USDT', 'USDC', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'MATIC', 'DOT', 'AVAX', 'LINK', 'UNI', 'LTC')
+                        AND t1.crypto_amount IS NOT NULL AND t1.crypto_amount != ''
+                        AND t2.crypto_amount IS NOT NULL AND t2.crypto_amount != ''
+                    THEN
+                        -- Compare crypto amounts with 0.5 percent tolerance
+                        ABS(
+                            CAST(REGEXP_REPLACE(t1.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC) -
+                            CAST(REGEXP_REPLACE(t2.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC)
+                        ) / NULLIF(GREATEST(
+                            CAST(REGEXP_REPLACE(t1.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC),
+                            CAST(REGEXP_REPLACE(t2.crypto_amount, '[^0-9.]', '', 'g') AS NUMERIC)
+                        ), 0) < 0.005
+                    ELSE
+                        -- Compare USD amounts for fiat or when crypto_amount is missing
+                        ABS(ABS(t1.amount) - ABS(t2.amount)) / NULLIF(GREATEST(ABS(t1.amount), ABS(t2.amount)), 0) < 0.005
+                END
+              )
+              AND (
+                -- One or both have exchange keywords in origin/destination
+                (t1.origin IS NOT NULL AND t1.origin != '' AND t1.origin != 'nan')
+                OR (t1.destination IS NOT NULL AND t1.destination != '' AND t1.destination != 'nan')
+                OR (t2.origin IS NOT NULL AND t2.origin != '' AND t2.origin != 'nan')
+                OR (t2.destination IS NOT NULL AND t2.destination != '' AND t2.destination != 'nan')
+              )
+              AND (
+                -- Opposite signs (one positive, one negative) OR both could be withdrawals/deposits
+                (t1.amount * t2.amount < 0)
+                OR (t1.amount > 0 AND t2.amount > 0)
+                OR (t1.amount < 0 AND t2.amount < 0)
+              )
+            ORDER BY t1.date DESC, ABS(t1.amount) DESC
+            LIMIT 500
+        """
+
+        # Use database manager's execute_query method which handles cursors properly
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) if is_postgresql else conn.cursor()
+            cursor.execute(query, (tenant_id, tenant_id))
+
+            if is_postgresql:
+                matches = cursor.fetchall()  # RealDictCursor returns list of dicts
+            else:
+                matches = [dict(row) for row in cursor.fetchall()]
+
+            cursor.close()
+
+        # Filter and score matches based on exchange keywords
+        scored_matches = []
+        for match in matches:
+            score = 0
+            reasons = []
+
+            # Check for exchange keywords in origins/destinations
+            tx1_origin = (match['tx1_origin'] or '').upper()
+            tx1_dest = (match['tx1_destination'] or '').upper()
+            tx2_origin = (match['tx2_origin'] or '').upper()
+            tx2_dest = (match['tx2_destination'] or '').upper()
+
+            # Score based on exchange presence
+            for keyword in exchange_keywords:
+                keyword_upper = keyword.upper()
+                if keyword_upper in tx1_origin or keyword_upper in tx1_dest:
+                    score += 0.2
+                    if keyword not in [r.split(':')[0] for r in reasons]:
+                        reasons.append(f"{keyword} in TX1")
+                if keyword_upper in tx2_origin or keyword_upper in tx2_dest:
+                    score += 0.2
+                    if keyword not in [r.split(':')[0] for r in reasons]:
+                        reasons.append(f"{keyword} in TX2")
+
+            # Same currency bonus
+            if match['tx1_currency'] == match['tx2_currency']:
+                score += 0.1
+                reasons.append("Same currency")
+
+            # Amount similarity score
+            amt1 = abs(match['tx1_amount'])
+            amt2 = abs(match['tx2_amount'])
+            diff_pct = abs(amt1 - amt2) / max(amt1, amt2) * 100
+            if diff_pct < 0.1:
+                score += 0.3
+                reasons.append(f"Amount exact match")
+            elif diff_pct < 0.5:
+                score += 0.2
+                reasons.append(f"Amount within 0.5% ({diff_pct:.2f}%)")
+
+            # Origin/Destination cross-match (transfer pattern)
+            if tx1_dest and tx2_origin and tx1_dest in tx2_origin:
+                score += 0.3
+                reasons.append("Destination → Origin match")
+            elif tx1_origin and tx2_dest and tx1_origin in tx2_dest:
+                score += 0.3
+                reasons.append("Origin → Destination match")
+
+            # Only include matches with score > 0.3 (likely internal transfers)
+            if score >= 0.3:
+                scored_matches.append({
+                    'tx1': {
+                        'transaction_id': match['tx1_id'],
+                        'date': match['tx1_date'],
+                        'description': match['tx1_description'],
+                        'amount': match['tx1_amount'],
+                        'currency': match['tx1_currency'],
+                        'origin': match['tx1_origin'],
+                        'destination': match['tx1_destination'],
+                        'classified_entity': match['tx1_entity'],
+                        'accounting_category': match['tx1_category']
+                    },
+                    'tx2': {
+                        'transaction_id': match['tx2_id'],
+                        'date': match['tx2_date'],
+                        'description': match['tx2_description'],
+                        'amount': match['tx2_amount'],
+                        'currency': match['tx2_currency'],
+                        'origin': match['tx2_origin'],
+                        'destination': match['tx2_destination'],
+                        'classified_entity': match['tx2_entity'],
+                        'accounting_category': match['tx2_category']
+                    },
+                    'match_score': round(min(score, 1.0), 2),
+                    'match_reasons': reasons,
+                    'amount_difference_pct': round(diff_pct, 2)
+                })
+
+        # Sort by score descending
+        scored_matches.sort(key=lambda x: x['match_score'], reverse=True)
+
+        return jsonify({
+            'success': True,
+            'total_matches': len(scored_matches),
+            'matches': scored_matches
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error detecting internal transfers: {e}")
+        import traceback
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/transactions/apply-internal-transfer', methods=['POST'])
+def api_apply_internal_transfer():
+    """
+    Apply "Internal Transfer" classification to selected transaction pairs
+    """
+    try:
+        from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        data = request.get_json()
+        transaction_pairs = data.get('transaction_pairs', [])
+
+        if not transaction_pairs:
+            return jsonify({'error': 'No transaction pairs provided'}), 400
+
+        tenant_id = get_current_tenant_id()
+        updated_count = 0
+        failed_count = 0
+
+        # Use a single database connection for all updates to avoid exhausting the pool
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            for pair in transaction_pairs:
+                tx1_id = pair.get('tx1_id')
+                tx2_id = pair.get('tx2_id')
+
+                if not tx1_id or not tx2_id:
+                    failed_count += 1
+                    continue
+
+                try:
+                    # Update both transactions in a single transaction
+                    update_query = """
+                        UPDATE transactions
+                        SET classified_entity = %s,
+                            accounting_category = %s,
+                            subcategory = %s,
+                            justification = %s,
+                            confidence = 0.95
+                        WHERE tenant_id = %s AND transaction_id = %s
+                    """
+
+                    updates = ('Internal Transfer', 'INTERNAL_TRANSFER', 'Exchange Transfer',
+                              'Detected as internal transfer between exchanges - same day, matching amounts')
+
+                    cursor.execute(update_query, updates + (tenant_id, tx1_id))
+                    cursor.execute(update_query, updates + (tenant_id, tx2_id))
+
+                    updated_count += 2
+
+                except Exception as e:
+                    logger.error(f"Error updating pair {tx1_id}/{tx2_id}: {e}")
+                    failed_count += 1
+                    continue
+
+            # Commit all changes
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'updated_count': updated_count,
+            'failed_count': failed_count,
+            'message': f'Updated {updated_count} transactions ({updated_count // 2} pairs)'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error applying internal transfer classification: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/transactions/detect-duplicates', methods=['POST'])
+def api_detect_duplicates():
+    """
+    Detect duplicate transactions based on date, amount, currency, and description
+    """
+    try:
+        from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            if db_manager.db_type == 'postgresql':
+                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            else:
+                cursor = conn.cursor()
+
+            is_postgresql = db_manager.db_type == 'postgresql'
+            placeholder = "%s" if is_postgresql else "?"
+
+            # Find duplicates based on date, amount, currency, and similar description
+            # Group by these fields and find groups with more than 1 transaction
+            query = f"""
+                WITH duplicate_groups AS (
+                    SELECT
+                        t1.transaction_id,
+                        t1.date,
+                        t1.description,
+                        t1.amount,
+                        t1.currency,
+                        t1.classified_entity,
+                        t1.accounting_category,
+                        t1.source_file,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY t1.date, t1.amount, t1.currency,
+                                        SUBSTRING(t1.description, 1, 50)
+                            ORDER BY t1.transaction_id
+                        ) as group_row_num,
+                        DENSE_RANK() OVER (
+                            ORDER BY t1.date DESC, t1.amount DESC,
+                                    SUBSTRING(t1.description, 1, 50)
+                        ) as duplicate_group
+                    FROM transactions t1
+                    WHERE t1.tenant_id = {placeholder}
+                      AND (t1.archived IS NULL OR t1.archived = FALSE)
+                )
+                SELECT *
+                FROM duplicate_groups dg
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM duplicate_groups dg2
+                    WHERE dg2.duplicate_group = dg.duplicate_group
+                      AND dg2.transaction_id != dg.transaction_id
+                )
+                ORDER BY duplicate_group, group_row_num
+                LIMIT 500
+            """
+
+            cursor.execute(query, (tenant_id,))
+            results = cursor.fetchall()
+
+            duplicates = []
+            for row in results:
+                if is_postgresql:
+                    dup = dict(row)
+                else:
+                    dup = dict(row)
+                duplicates.append(dup)
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'duplicates': duplicates,
+            'count': len(duplicates)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error detecting duplicates: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/transactions/archive-bulk', methods=['POST'])
+def api_archive_bulk():
+    """
+    Archive multiple transactions at once
+    """
+    try:
+        from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+
+        if not transaction_ids:
+            return jsonify({'error': 'No transaction IDs provided'}), 400
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            is_postgresql = db_manager.db_type == 'postgresql'
+            placeholder = "%s" if is_postgresql else "?"
+
+            # Build placeholders for IN clause
+            placeholders = ','.join([placeholder] * len(transaction_ids))
+
+            # Update query
+            query = f"""
+                UPDATE transactions
+                SET archived = TRUE
+                WHERE tenant_id = {placeholder}
+                  AND transaction_id IN ({placeholders})
+            """
+
+            # Execute with tenant_id first, then all transaction_ids
+            cursor.execute(query, (tenant_id,) + tuple(transaction_ids))
+
+            archived_count = cursor.rowcount
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'archived_count': archived_count,
+            'message': f'Archived {archived_count} transactions'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error archiving transactions: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/blockchain/test/<txid>', methods=['GET'])
 def api_test_blockchain_lookup(txid):
     """
@@ -9712,6 +9428,242 @@ def api_test_blockchain_lookup(txid):
 
     except Exception as e:
         logger.error(f"Error testing blockchain lookup: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ================================
+# AI ANOMALY DETECTION ENDPOINTS
+# ================================
+
+@app.route('/api/anomalies/detect', methods=['POST'])
+def api_detect_anomalies():
+    """
+    Detect anomalies in a batch of transactions using Claude AI
+    Expects JSON: {"transaction_ids": ["id1", "id2", ...]}
+    """
+    try:
+        from anomaly_detector import detector
+
+        data = request.json
+        transaction_ids = data.get('transaction_ids', [])
+        tenant_id = get_current_tenant_id()
+
+        if not transaction_ids:
+            return jsonify({
+                "success": False,
+                "error": "No transaction IDs provided"
+            }), 400
+
+        logger.info(f"🔍 Detecting anomalies in {len(transaction_ids)} transactions...")
+
+        result = detector.analyze_transactions(transaction_ids, tenant_id)
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        logger.error(f"Error in anomaly detection: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/anomalies/list', methods=['GET'])
+def api_list_anomalies():
+    """
+    List all pending anomalies for review
+    Optional query params: status, severity, limit
+    """
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        status = request.args.get('status', 'pending')
+        severity = request.args.get('severity')
+        limit = int(request.args.get('limit', 50))
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            where_conditions = ["tenant_id = %s"]
+            params = [tenant_id]
+
+            if status:
+                where_conditions.append("status = %s")
+                params.append(status)
+
+            if severity:
+                where_conditions.append("severity = %s")
+                params.append(severity)
+
+            where_clause = " AND ".join(where_conditions)
+
+            query = f"""
+                SELECT
+                    anomaly_id,
+                    transaction_id,
+                    anomaly_type,
+                    severity,
+                    confidence,
+                    ai_reasoning,
+                    suggested_action,
+                    suggested_category,
+                    suggested_entity,
+                    transaction_amount,
+                    transaction_description,
+                    transaction_date,
+                    current_category,
+                    current_entity,
+                    status,
+                    detected_at
+                FROM transaction_anomalies
+                WHERE {where_clause}
+                ORDER BY
+                    CASE severity
+                        WHEN 'critical' THEN 1
+                        WHEN 'high' THEN 2
+                        WHEN 'medium' THEN 3
+                        WHEN 'low' THEN 4
+                    END,
+                    detected_at DESC
+                LIMIT %s
+            """
+
+            params.append(limit)
+            cursor.execute(query, params)
+
+            anomalies = []
+            for row in cursor.fetchall():
+                anomalies.append({
+                    'anomaly_id': row[0],
+                    'transaction_id': row[1],
+                    'anomaly_type': row[2],
+                    'severity': row[3],
+                    'confidence': float(row[4]) if row[4] else 0,
+                    'ai_reasoning': row[5],
+                    'suggested_action': row[6],
+                    'suggested_category': row[7],
+                    'suggested_entity': row[8],
+                    'transaction_amount': float(row[9]) if row[9] else 0,
+                    'transaction_description': row[10],
+                    'transaction_date': str(row[11]) if row[11] else None,
+                    'current_category': row[12],
+                    'current_entity': row[13],
+                    'status': row[14],
+                    'detected_at': row[15].isoformat() if row[15] else None
+                })
+
+            cursor.close()
+
+        return jsonify({
+            "success": True,
+            "anomalies": anomalies,
+            "count": len(anomalies)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error listing anomalies: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/anomalies/<anomaly_id>/resolve', methods=['POST'])
+def api_resolve_anomaly(anomaly_id):
+    """
+    Resolve an anomaly (accept, reject, dismiss)
+    Expects JSON: {"action": "accepted|rejected|dismissed", "notes": "optional"}
+    """
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.json
+        action = data.get('action')  # accepted, rejected, dismissed
+        notes = data.get('notes', '')
+
+        if action not in ['accepted', 'rejected', 'dismissed']:
+            return jsonify({
+                "success": False,
+                "error": "Invalid action. Must be: accepted, rejected, or dismissed"
+            }), 400
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update anomaly status
+            cursor.execute("""
+                UPDATE transaction_anomalies
+                SET
+                    status = 'reviewed',
+                    user_action = %s,
+                    user_notes = %s,
+                    reviewed_by = %s,
+                    reviewed_at = CURRENT_TIMESTAMP
+                WHERE anomaly_id = %s AND tenant_id = %s
+            """, (action, notes, 'current_user', anomaly_id, tenant_id))
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"✅ Anomaly {anomaly_id} resolved as {action}")
+
+        return jsonify({
+            "success": True,
+            "message": f"Anomaly {action}"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error resolving anomaly: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+@app.route('/api/transactions/filter-options', methods=['GET'])
+def api_get_filter_options():
+    """Get unique origin and destination values for filter dropdowns"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get unique origins
+            cursor.execute("""
+                SELECT DISTINCT origin
+                FROM transactions
+                WHERE tenant_id = %s AND origin IS NOT NULL AND origin != ''
+                ORDER BY origin
+            """, (tenant_id,))
+            origins = [row[0] for row in cursor.fetchall()]
+
+            # Get unique destinations
+            cursor.execute("""
+                SELECT DISTINCT destination
+                FROM transactions
+                WHERE tenant_id = %s AND destination IS NOT NULL AND destination != ''
+                ORDER BY destination
+            """, (tenant_id,))
+            destinations = [row[0] for row in cursor.fetchall()]
+
+            cursor.close()
+
+        return jsonify({
+            "success": True,
+            "origins": origins,
+            "destinations": destinations
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error fetching filter options: {e}")
         return jsonify({
             "success": False,
             "error": str(e)
@@ -9744,12 +9696,14 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
 
 # Initialize Claude client and database on module import (for production deployments like Cloud Run)
-# Optimized for Cloud Run startup - lazy initialization to avoid timeouts
 try:
     if not claude_client:
         init_claude_client()
-    # Defer heavy database operations to first request to avoid startup timeout
-    print("[OK] Basic production initialization completed - database ops deferred")
+    init_invoice_tables()
+    if not currency_converter:
+        init_currency_converter()
+    ensure_background_jobs_tables()
+    print("[OK] Production initialization completed")
 except Exception as e:
     print(f"WARNING: Production initialization warning: {e}")
 
