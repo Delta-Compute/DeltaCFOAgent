@@ -21,6 +21,9 @@ let dragFillState = {
     affectedRows: []
 };
 
+// Bulk edit state - track selected transactions
+let selectedTransactionIds = new Set();
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
 
@@ -160,6 +163,32 @@ function setupEventListeners() {
         loadTransactions();
     });
 
+    // Origin filter - real-time filtering as you type
+    let originTimeout;
+    const originInput = document.getElementById('originFilter');
+    if (originInput) {
+        originInput.addEventListener('input', () => {
+            clearTimeout(originTimeout);
+            originTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadTransactions();
+            }, 500);
+        });
+    }
+
+    // Destination filter - real-time filtering as you type
+    let destinationTimeout;
+    const destinationInput = document.getElementById('destinationFilter');
+    if (destinationInput) {
+        destinationInput.addEventListener('input', () => {
+            clearTimeout(destinationTimeout);
+            destinationTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadTransactions();
+            }, 500);
+        });
+    }
+
     // Clear filters button
     document.getElementById('clearFilters').addEventListener('click', clearFilters);
 
@@ -217,6 +246,16 @@ function setupEventListeners() {
         loadTransactions();
     });
 
+    // Filter out Internal Transactions button
+    document.getElementById('filterExcludeInternal').addEventListener('click', () => {
+        excludeInternalTransfers = true;
+        currentPage = 1;
+        loadTransactions();
+    });
+
+    // Duplicates detection button
+    document.getElementById('filterDuplicates').addEventListener('click', detectDuplicates);
+
     // Pagination buttons
     document.getElementById('prevPage').addEventListener('click', () => {
         if (currentPage > 1) {
@@ -269,8 +308,15 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             closeModal();
+            closeBulkEditModal();
         }
     });
+
+    // Bulk Edit Selected button
+    const bulkEditBtn = document.getElementById('bulkEditSelected');
+    if (bulkEditBtn) {
+        bulkEditBtn.addEventListener('click', openBulkEditModal);
+    }
 }
 
 function clearFilters() {
@@ -283,7 +329,12 @@ function clearFilters() {
     document.getElementById('maxAmount').value = '';
     document.getElementById('startDate').value = '';
     document.getElementById('endDate').value = '';
-    document.getElementById('keywordFilter').value = '';
+
+    const originFilter = document.getElementById('originFilter');
+    if (originFilter) originFilter.value = '';
+
+    const destinationFilter = document.getElementById('destinationFilter');
+    if (destinationFilter) destinationFilter.value = '';
 
     // Reset to first page and reload
     currentPage = 1;
@@ -317,12 +368,20 @@ function buildFilterQuery() {
     const endDate = document.getElementById('endDate').value;
     if (endDate) params.append('end_date', endDate);
 
-    const keyword = document.getElementById('keywordFilter').value;
-    if (keyword) params.append('keyword', keyword);
+    const origin = document.getElementById('originFilter')?.value;
+    if (origin) params.append('origin', origin);
+
+    const destination = document.getElementById('destinationFilter')?.value;
+    if (destination) params.append('destination', destination);
 
     // Add archived filter
     if (showingArchived) {
         params.append('show_archived', 'true');
+    }
+
+    // Add exclude internal transfers filter
+    if (excludeInternalTransfers) {
+        params.append('exclude_internal', 'true');
     }
 
     // Add pagination
@@ -366,7 +425,11 @@ async function loadTransactions() {
 
         renderTransactionTable(currentTransactions);
         updateTableInfo(data.pagination);
-        loadDashboardStats();
+
+        // Load stats in background - don't block on this
+        loadDashboardStats().catch(err => {
+            console.error('Background stats load failed:', err);
+        });
 
         // Update URL parameters to reflect current state
         updateURLParameters();
@@ -535,11 +598,11 @@ function renderTransactionTable(transactions) {
             <tr data-transaction-id="${transaction.transaction_id || ''}">
                 <td><input type="checkbox" class="transaction-select-cb" data-transaction-id="${transaction.transaction_id || ''}"></td>
                 <td>${formatDate(transaction.date) || 'N/A'}</td>
-                <td class="editable-field" data-field="origin" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.origin || 'Unknown'}
+                <td class="editable-field wallet-field" data-field="origin" data-transaction-id="${transaction.transaction_id}" data-full-address="${transaction.origin || ''}">
+                    ${transaction.origin_display || transaction.origin || 'Unknown'}
                 </td>
-                <td class="editable-field" data-field="destination" data-transaction-id="${transaction.transaction_id}">
-                    ${transaction.destination || 'Unknown'}
+                <td class="editable-field wallet-field" data-field="destination" data-transaction-id="${transaction.transaction_id}" data-full-address="${transaction.destination || ''}">
+                    ${transaction.destination_display || transaction.destination || 'Unknown'}
                 </td>
                 <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
                     ${truncateText(transaction.description, 40) || 'N/A'}
@@ -580,9 +643,21 @@ function renderTransactionTable(transactions) {
     // Set up inline editing
     setupInlineEditing();
 
-    // Set up checkbox change listeners for archive button visibility
+    // Set up clickable Origin/Destination cells
+    setupOriginDestinationClickHandlers();
+
+    // Set up checkbox change listeners for archive button visibility and bulk edit
     document.querySelectorAll('.transaction-select-cb').forEach(cb => {
-        cb.addEventListener('change', updateArchiveButtonVisibility);
+        cb.addEventListener('change', function() {
+            const txId = this.dataset.transactionId;
+            if (this.checked) {
+                selectedTransactionIds.add(txId);
+            } else {
+                selectedTransactionIds.delete(txId);
+            }
+            updateArchiveButtonVisibility();
+            updateBulkEditButtonVisibility();
+        });
     });
 
     // Set up Select All checkbox listener (must be done after table is rendered)
@@ -596,11 +671,19 @@ function renderTransactionTable(transactions) {
             console.log('🔵 Select All checkbox changed! Checked:', this.checked);
             const checkboxes = document.querySelectorAll('.transaction-select-cb');
             console.log('🔵 Found transaction checkboxes:', checkboxes.length);
+
+            // Clear the selected IDs set
+            selectedTransactionIds.clear();
+
             checkboxes.forEach((cb, index) => {
                 cb.checked = this.checked;
+                if (this.checked) {
+                    selectedTransactionIds.add(cb.dataset.transactionId);
+                }
                 console.log(`🔵 Set checkbox ${index} to:`, cb.checked);
             });
             updateArchiveButtonVisibility();
+            updateBulkEditButtonVisibility();
         });
         console.log('✅ Select All checkbox event listener attached (from renderTransactionTable)');
     }
@@ -635,6 +718,13 @@ function setupInlineEditing() {
         // Find the closest editable field
         const field = e.target.closest('.editable-field');
         if (!field) return;
+
+        // CRITICAL: Don't start inline editing on wallet-field cells (they have their own handler)
+        // But allow drag handle and sort dot to work on wallet fields
+        if (field.classList.contains('wallet-field')) {
+            console.log('🚫 Click on wallet-field - letting wallet handler take over');
+            return;
+        }
 
         console.log('🔷 Table body click detected');
         console.log('🔷 Clicked element:', e.target.tagName, e.target.className);
@@ -937,6 +1027,70 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
 async function updateTransactionField(transactionId, field, value, fieldElement) {
     try {
+        // Check if multiple transactions are selected
+        const selectedCount = selectedTransactionIds.size;
+
+        if (selectedCount >= 2) {
+            // User has multiple transactions selected - apply to all
+            const confirmed = confirm(`Apply this change to all ${selectedCount} selected transactions?`);
+
+            if (!confirmed) {
+                // User cancelled - just update the single transaction
+                fieldElement.classList.remove('editing');
+                fieldElement.innerHTML = fieldElement.dataset.originalValue || value || 'N/A';
+                setupInlineEditing();
+                return;
+            }
+
+            // Build updates array for bulk API
+            const updates = [];
+            selectedTransactionIds.forEach(txId => {
+                updates.push({
+                    transaction_id: txId,
+                    field: field,
+                    value: value
+                });
+            });
+
+            // Call bulk update API
+            const bulkResponse = await fetch('/api/bulk_update_transactions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ updates })
+            });
+
+            const bulkResult = await bulkResponse.json();
+
+            if (bulkResult.success) {
+                showToast(`✅ Successfully updated ${selectedCount} transactions!`, 'success');
+
+                // Clear selections
+                selectedTransactionIds.clear();
+                document.querySelectorAll('.transaction-select-cb').forEach(cb => {
+                    cb.checked = false;
+                });
+                const selectAll = document.getElementById('selectAll');
+                if (selectAll) selectAll.checked = false;
+
+                // Update button visibility
+                updateBulkEditButtonVisibility();
+                updateArchiveButtonVisibility();
+
+                // Reload table to show all updates
+                loadTransactions();
+            } else {
+                showToast(`❌ Error: ${bulkResult.error || 'Failed to update transactions'}`, 'error');
+                fieldElement.classList.remove('editing');
+                fieldElement.innerHTML = fieldElement.dataset.originalValue || value || 'N/A';
+                setupInlineEditing();
+            }
+
+            return;
+        }
+
+        // Single transaction update (original logic)
         const response = await fetch('/api/update_transaction', {
             method: 'POST',
             headers: {
@@ -1197,6 +1351,12 @@ async function checkForSimilarEntities(transactionId, newEntity) {
             // Format transaction date helper
             const formatDate = (dateStr) => {
                 if (!dateStr) return '';
+                // Parse as local date to avoid timezone issues
+                const parts = dateStr.split(/[-T]/);
+                if (parts.length >= 3) {
+                    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
                 const date = new Date(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             };
@@ -1416,6 +1576,12 @@ async function checkForSimilarAccountingCategories(transactionId, newCategory) {
             // Format transaction date helper
             const formatDate = (dateStr) => {
                 if (!dateStr) return '';
+                // Parse as local date to avoid timezone issues
+                const parts = dateStr.split(/[-T]/);
+                if (parts.length >= 3) {
+                    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
                 const date = new Date(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
             };
@@ -2186,6 +2352,17 @@ function sortTransactions(field) {
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
     try {
+        // Parse date as local date to avoid timezone conversion issues
+        // If date is "2025-09-22", treat it as local date, not UTC
+        const parts = dateString.split(/[-T]/);
+        if (parts.length >= 3) {
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]) - 1; // JS months are 0-indexed
+            const day = parseInt(parts[2]);
+            const date = new Date(year, month, day);
+            return date.toLocaleDateString('en-US');
+        }
+        // Fallback for other formats
         const date = new Date(dateString);
         return date.toLocaleDateString('en-US');
     } catch {
@@ -2195,6 +2372,7 @@ function formatDate(dateString) {
 
 // Archive functionality
 let showingArchived = false;
+let excludeInternalTransfers = false;
 
 function updateArchiveButtonVisibility() {
     const selectedCount = document.querySelectorAll('.transaction-select-cb:checked').length;
@@ -2867,6 +3045,12 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
         // Format transaction date helper
         const formatTxDate = (dateStr) => {
             if (!dateStr) return '';
+            // Parse as local date to avoid timezone issues
+            const parts = dateStr.split(/[-T]/);
+            if (parts.length >= 3) {
+                const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
             const date = new Date(dateStr);
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         };
@@ -3488,6 +3672,17 @@ async function renderMatchesTableWithDetails(matches) {
     const tbody = document.getElementById('matchesTableBody');
     tbody.innerHTML = '';
 
+    // Helper to format dates without timezone issues
+    const formatDateLocal = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        const parts = dateStr.split(/[-T]/);
+        if (parts.length >= 3) {
+            const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            return date.toLocaleDateString();
+        }
+        return new Date(dateStr).toLocaleDateString();
+    };
+
     // The backend now provides invoice and transaction details inline
     matches.forEach((match, index) => {
         const invoice = match.invoice || {};
@@ -3510,7 +3705,7 @@ async function renderMatchesTableWithDetails(matches) {
                     Amount: $${parseFloat(invoice.total_amount || 0).toFixed(2)} ${invoice.currency || 'USD'}
                 </div>
                 <div style="font-size: 0.85em; color: #666;">
-                    Date: ${invoice.date ? new Date(invoice.date).toLocaleDateString() : 'N/A'}
+                    Date: ${formatDateLocal(invoice.date)}
                 </div>
             </td>
             <td style="padding: 12px; border: 1px solid #ddd;">
@@ -3519,7 +3714,7 @@ async function renderMatchesTableWithDetails(matches) {
                     Amount: $${Math.abs(parseFloat(transaction.amount || 0)).toFixed(2)} ${transaction.currency || 'USD'}
                 </div>
                 <div style="font-size: 0.85em; color: #666;">
-                    Date: ${transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'}
+                    Date: ${formatDateLocal(transaction.date)}
                 </div>
                 <div style="font-size: 0.85em; color: #666;">
                     Entity: ${transaction.classified_entity || 'N/A'}
@@ -3816,8 +4011,10 @@ function startDragFill(cell) {
     const fieldName = cell.dataset.field;
     let value;
 
-    // Get current value from cell
-    if (cell.classList.contains('smart-dropdown')) {
+    // Get current value from cell - use full address for wallet fields
+    if (cell.classList.contains('wallet-field') && cell.dataset.fullAddress) {
+        value = cell.dataset.fullAddress;
+    } else if (cell.classList.contains('smart-dropdown')) {
         // For dropdown fields, get the text content
         const span = cell.querySelector('span');
         value = span ? span.textContent.trim() : cell.textContent.trim();
@@ -3935,12 +4132,24 @@ async function handleDragFillEnd(e) {
                 dragFillState.affectedRows.forEach(row => {
                     const cell = row.querySelector(`[data-field="${dragFillState.fieldName}"]`);
                     if (cell) {
+                        // IMPORTANT: Clear any inline editing elements (select dropdowns, inputs)
+                        // before updating the cell value to prevent concatenation bugs
+                        const inlineSelect = cell.querySelector('.smart-select');
+                        const inlineInput = cell.querySelector('.inline-input');
+                        if (inlineSelect || inlineInput) {
+                            // Cell is in editing mode - clear it completely
+                            cell.innerHTML = '';
+                            cell.classList.remove('editing');
+                        }
+
                         // Update the cell's displayed value
                         if (cell.classList.contains('smart-dropdown')) {
                             const span = cell.querySelector('span');
                             if (span) {
                                 span.textContent = dragFillState.value;
                             } else {
+                                // For fields without span (accounting_category, subcategory)
+                                // Clear and set as plain text
                                 cell.textContent = dragFillState.value;
                             }
                         } else {
@@ -3989,8 +4198,10 @@ function sortByCell(cell) {
     const fieldName = cell.dataset.field;
     let value;
 
-    // Get current value from cell
-    if (cell.classList.contains('smart-dropdown')) {
+    // Get current value from cell - use full address for wallet fields
+    if (cell.classList.contains('wallet-field') && cell.dataset.fullAddress) {
+        value = cell.dataset.fullAddress;
+    } else if (cell.classList.contains('smart-dropdown')) {
         const span = cell.querySelector('span');
         value = span ? span.textContent.trim() : cell.textContent.trim();
     } else {
@@ -4018,7 +4229,10 @@ function sortByCell(cell) {
         const rowCell = row.querySelector(`[data-field="${fieldName}"]`);
         if (rowCell) {
             let rowValue;
-            if (rowCell.classList.contains('smart-dropdown')) {
+            // Use full address for wallet fields
+            if (rowCell.classList.contains('wallet-field') && rowCell.dataset.fullAddress) {
+                rowValue = rowCell.dataset.fullAddress;
+            } else if (rowCell.classList.contains('smart-dropdown')) {
                 const span = rowCell.querySelector('span');
                 rowValue = span ? span.textContent.trim() : rowCell.textContent.trim();
             } else {
@@ -4057,4 +4271,794 @@ function sortByCell(cell) {
     }, 2000);
 
     showToast(`✅ Sorted ${matchingRows.length} transactions by ${fieldName} = "${value}"`, 'success');
+}
+// ============================================================================
+// INTERNAL TRANSFER DETECTION
+// ============================================================================
+
+let internalTransfersData = [];
+
+async function detectInternalTransfers() {
+    const modal = document.getElementById('internalTransfersModal');
+    const loading = document.getElementById('transfersLoading');
+    const summary = document.getElementById('transfersSummary');
+    const container = document.getElementById('transfersContainer');
+    const actions = document.getElementById('transfersActions');
+    const empty = document.getElementById('transfersEmpty');
+    const error = document.getElementById('transfersError');
+
+    // Show modal with loading state
+    modal.style.display = 'block';
+    loading.style.display = 'block';
+    summary.style.display = 'none';
+    container.style.display = 'none';
+    actions.style.display = 'none';
+    empty.style.display = 'none';
+    error.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/transactions/detect-internal-transfers', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        const data = await response.json();
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.style.display = 'block';
+            document.getElementById('transfersErrorMessage').textContent = data.error || 'Unknown error';
+            return;
+        }
+
+        internalTransfersData = data.matches || [];
+
+        if (internalTransfersData.length === 0) {
+            empty.style.display = 'block';
+            return;
+        }
+
+        // Show results
+        document.getElementById('totalTransfersCount').textContent = internalTransfersData.length;
+        summary.style.display = 'block';
+        container.style.display = 'block';
+        actions.style.display = 'block';
+
+        renderInternalTransfers();
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.style.display = 'block';
+        document.getElementById('transfersErrorMessage').textContent = err.message;
+    }
+}
+
+function renderInternalTransfers() {
+    const tbody = document.getElementById('transfersTableBody');
+    tbody.innerHTML = '';
+
+    internalTransfersData.forEach((match, index) => {
+        const tx1 = match.tx1;
+        const tx2 = match.tx2;
+        const score = match.match_score;
+        const reasons = match.match_reasons.join(', ');
+
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #ddd';
+
+        const scoreColor = score >= 0.7 ? '#28a745' : score >= 0.5 ? '#ffc107' : '#dc3545';
+
+        const tx1Desc = (tx1.description || '').substring(0, 60);
+        const tx2Desc = (tx2.description || '').substring(0, 60);
+
+        row.innerHTML = '<td style="padding: 8px; border: 1px solid #ddd; text-align: center;">' +
+            '<input type="checkbox" class="transfer-checkbox" data-index="' + index + '" onchange="updateSelectedCount()">' +
+            '</td>' +
+            '<td style="padding: 8px; border: 1px solid #ddd;">' +
+            '<div style="font-size: 0.85em;">' +
+            '<strong>' + tx1.date + '</strong><br>' +
+            tx1Desc + '...<br>' +
+            '<strong>Amount:</strong> ' + (tx1.amount >= 0 ? '+' : '') + '$' + Math.abs(tx1.amount).toFixed(2) + ' ' + tx1.currency + '<br>' +
+            '<strong>Origin:</strong> ' + (tx1.origin || 'N/A') + '<br>' +
+            '<strong>Destination:</strong> ' + (tx1.destination || 'N/A') + '<br>' +
+            '<span style="color: #666;">Entity: ' + tx1.classified_entity + '</span>' +
+            '</div>' +
+            '</td>' +
+            '<td style="padding: 8px; border: 1px solid #ddd;">' +
+            '<div style="font-size: 0.85em;">' +
+            '<strong>' + tx2.date + '</strong><br>' +
+            tx2Desc + '...<br>' +
+            '<strong>Amount:</strong> ' + (tx2.amount >= 0 ? '+' : '') + '$' + Math.abs(tx2.amount).toFixed(2) + ' ' + tx2.currency + '<br>' +
+            '<strong>Origin:</strong> ' + (tx2.origin || 'N/A') + '<br>' +
+            '<strong>Destination:</strong> ' + (tx2.destination || 'N/A') + '<br>' +
+            '<span style="color: #666;">Entity: ' + tx2.classified_entity + '</span>' +
+            '</div>' +
+            '</td>' +
+            '<td style="padding: 8px; border: 1px solid #ddd; text-align: center;">' +
+            '<div style="background: ' + scoreColor + '; color: white; padding: 6px 12px; border-radius: 20px; display: inline-block; font-weight: bold;">' +
+            (score * 100).toFixed(0) + '%' +
+            '</div>' +
+            '</td>' +
+            '<td style="padding: 8px; border: 1px solid #ddd; font-size: 0.85em;">' +
+            reasons +
+            '</td>';
+
+        tbody.appendChild(row);
+    });
+
+    updateSelectedCount();
+}
+
+function toggleAllTransfers() {
+    const selectAll = document.getElementById('selectAllTransfers');
+    const checkboxes = document.querySelectorAll('.transfer-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.transfer-checkbox:checked').length;
+    document.getElementById('selectedTransfersCount').textContent = checked;
+}
+
+async function applyInternalTransferClassification() {
+    const checkboxes = document.querySelectorAll('.transfer-checkbox:checked');
+
+    if (checkboxes.length === 0) {
+        showToast('⚠️ Please select at least one transfer pair', 'warning');
+        return;
+    }
+
+    const selectedPairs = Array.from(checkboxes).map(cb => {
+        const index = parseInt(cb.dataset.index);
+        const match = internalTransfersData[index];
+        return {
+            tx1_id: match.tx1.transaction_id,
+            tx2_id: match.tx2.transaction_id
+        };
+    });
+
+    try {
+        const response = await fetch('/api/transactions/apply-internal-transfer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_pairs: selectedPairs})
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✅ ' + data.message, 'success');
+            closeInternalTransfersModal();
+            // Reload transactions to show updated data
+            if (typeof loadTransactions === 'function') {
+                loadTransactions();
+            }
+        } else {
+            showToast('❌ Error: ' + data.error, 'error');
+        }
+
+    } catch (err) {
+        showToast('❌ Error: ' + err.message, 'error');
+    }
+}
+
+function closeInternalTransfersModal() {
+    document.getElementById('internalTransfersModal').style.display = 'none';
+    internalTransfersData = [];
+}
+
+// ============================================================================
+// DUPLICATE DETECTION
+// ============================================================================
+
+let duplicatesData = [];
+
+async function detectDuplicates() {
+    const modal = document.getElementById('duplicatesDetectionModal');
+    const loading = document.getElementById('duplicatesLoading');
+    const summary = document.getElementById('duplicatesSummary');
+    const container = document.getElementById('duplicatesContainer');
+    const actions = document.getElementById('duplicatesActions');
+    const empty = document.getElementById('duplicatesEmpty');
+    const error = document.getElementById('duplicatesError');
+
+    // Show modal with loading state
+    modal.style.display = 'block';
+    loading.style.display = 'block';
+    summary.style.display = 'none';
+    container.style.display = 'none';
+    actions.style.display = 'none';
+    empty.style.display = 'none';
+    error.style.display = 'none';
+
+    try {
+        const response = await fetch('/api/transactions/detect-duplicates', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        const data = await response.json();
+        loading.style.display = 'none';
+
+        if (!data.success) {
+            error.style.display = 'block';
+            document.getElementById('duplicatesErrorMessage').textContent = data.error || 'Unknown error';
+            return;
+        }
+
+        duplicatesData = data.duplicates || [];
+
+        if (duplicatesData.length === 0) {
+            empty.style.display = 'block';
+            return;
+        }
+
+        // Show results
+        document.getElementById('totalDuplicatesCount').textContent = duplicatesData.length;
+        summary.style.display = 'block';
+        container.style.display = 'block';
+        actions.style.display = 'block';
+
+        renderDuplicates();
+
+    } catch (err) {
+        loading.style.display = 'none';
+        error.style.display = 'block';
+        document.getElementById('duplicatesErrorMessage').textContent = err.message;
+    }
+}
+
+function renderDuplicates() {
+    const tbody = document.getElementById('duplicatesTableBody');
+    tbody.innerHTML = '';
+
+    let currentGroup = null;
+
+    duplicatesData.forEach((tx, index) => {
+        // Add group separator when changing groups
+        if (tx.duplicate_group !== currentGroup) {
+            currentGroup = tx.duplicate_group;
+            const separatorRow = document.createElement('tr');
+            separatorRow.style.background = '#f0f0f0';
+            separatorRow.style.borderTop = '2px solid #333';
+            separatorRow.innerHTML = `<td colspan="8" style="padding: 8px; font-weight: bold;">Duplicate Group ${currentGroup}</td>`;
+            tbody.appendChild(separatorRow);
+        }
+
+        const row = document.createElement('tr');
+        row.style.borderBottom = '1px solid #ddd';
+
+        const desc = (tx.description || '').substring(0, 50);
+        const sourceFile = (tx.source_file || '').substring(0, 30);
+
+        row.innerHTML = `
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                <input type="checkbox" class="duplicate-checkbox" data-index="${index}" data-tx-id="${tx.transaction_id}" onchange="updateSelectedDuplicatesCount()">
+            </td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${tx.date || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${desc}...</td>
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${tx.amount >= 0 ? '+' : ''}$${Math.abs(tx.amount).toFixed(2)}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${tx.currency || 'USD'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${tx.classified_entity || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${tx.accounting_category || 'N/A'}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; font-size: 0.8em;">${sourceFile}...</td>
+        `;
+
+        tbody.appendChild(row);
+    });
+
+    updateSelectedDuplicatesCount();
+}
+
+function toggleAllDuplicates() {
+    const selectAll = document.getElementById('selectAllDuplicates');
+    const checkboxes = document.querySelectorAll('.duplicate-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateSelectedDuplicatesCount();
+}
+
+function updateSelectedDuplicatesCount() {
+    const checked = document.querySelectorAll('.duplicate-checkbox:checked').length;
+    document.getElementById('selectedDuplicatesCount').textContent = checked;
+}
+
+async function archiveSelectedDuplicates() {
+    const checkboxes = document.querySelectorAll('.duplicate-checkbox:checked');
+
+    if (checkboxes.length === 0) {
+        showToast('⚠️ Please select at least one transaction to archive', 'warning');
+        return;
+    }
+
+    const transactionIds = Array.from(checkboxes).map(cb => cb.dataset.txId);
+
+    try {
+        const response = await fetch('/api/transactions/archive-bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_ids: transactionIds})
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ Archived ${transactionIds.length} transactions`, 'success');
+            closeDuplicatesDetectionModal();
+            // Reload transactions to show updated data
+            if (typeof loadTransactions === 'function') {
+                loadTransactions();
+            }
+        } else {
+            showToast('❌ Error: ' + data.error, 'error');
+        }
+
+    } catch (err) {
+        showToast('❌ Error: ' + err.message, 'error');
+    }
+}
+
+function closeDuplicatesDetectionModal() {
+    document.getElementById('duplicatesDetectionModal').style.display = 'none';
+    duplicatesData = [];
+}
+
+// ============================================================
+// WALLET/ADDRESS IDENTIFICATION FUNCTIONALITY
+// ============================================================
+
+let currentWalletData = {
+    address: '',
+    field: '', // 'origin' or 'destination'
+    transactionId: '',
+    isCryptoWallet: false
+};
+
+/**
+ * Opens the wallet identification modal when user clicks on Origin/Destination cell
+ */
+function openWalletIdentificationModal(address, field, transactionId, rowData = null) {
+    console.log('Opening wallet identification modal:', { address, field, transactionId, rowData });
+
+    // Store current wallet data
+    currentWalletData = {
+        address: address,
+        field: field,
+        transactionId: transactionId,
+        isCryptoWallet: detectCryptoWallet(address),
+        rowData: rowData
+    };
+
+    // Display the address in the modal with additional context
+    const addressDisplay = document.getElementById('walletAddressDisplay');
+
+    // Check if there's a blockchain address in the description
+    let displayText = address;
+    let additionalInfo = '';
+
+    if (rowData && rowData.description) {
+        // Try to extract blockchain addresses from description
+        const cryptoAddressPattern = /0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59}/g;
+        const foundAddresses = rowData.description.match(cryptoAddressPattern);
+
+        if (foundAddresses && foundAddresses.length > 0) {
+            additionalInfo = `\n\n📍 Detected Address in Transaction:\n${foundAddresses[0]}`;
+        }
+    }
+
+    addressDisplay.textContent = displayText + additionalInfo;
+
+    // Also show transaction context
+    if (rowData) {
+        const contextHtml = `
+            <div style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; font-size: 0.9em;">
+                <strong>Transaction Context:</strong><br>
+                <span style="color: #666;">Origin:</span> ${rowData.origin || 'N/A'}<br>
+                <span style="color: #666;">Destination:</span> ${rowData.destination || 'N/A'}<br>
+                <span style="color: #666;">Description:</span> ${rowData.description ? rowData.description.substring(0, 100) + '...' : 'N/A'}
+            </div>
+        `;
+        addressDisplay.insertAdjacentHTML('afterend', contextHtml);
+    }
+
+    // Show wallet type section only for crypto wallets
+    const walletTypeSection = document.getElementById('walletTypeSection');
+    if (currentWalletData.isCryptoWallet) {
+        walletTypeSection.style.display = 'block';
+    } else {
+        walletTypeSection.style.display = 'none';
+    }
+
+    // Clear previous inputs
+    document.getElementById('walletIdentifier').value = '';
+    document.getElementById('walletNotes').value = '';
+    document.getElementById('walletType').value = 'internal';
+
+    // Fetch and display impact information
+    fetchWalletImpact(address, field);
+
+    // Show the modal
+    document.getElementById('walletIdentificationModal').style.display = 'block';
+}
+
+/**
+ * Detects if an address is a cryptocurrency wallet
+ */
+function detectCryptoWallet(address) {
+    if (!address) return false;
+
+    // Check for common crypto wallet patterns
+    const cryptoPatterns = [
+        /^0x[a-fA-F0-9]{40}$/,  // Ethereum
+        /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/,  // Bitcoin
+        /^bc1[a-z0-9]{39,59}$/,  // Bitcoin Bech32
+        /^[LM][a-km-zA-HJ-NP-Z1-9]{26,33}$/,  // Litecoin
+        /^[rX][a-km-zA-HJ-NP-Z1-9]{24,34}$/,  // Ripple
+        /^[T][a-zA-Z0-9]{33}$/,  // Tron
+        /^bnb1[a-z0-9]{38}$/,  // Binance Chain
+    ];
+
+    return cryptoPatterns.some(pattern => pattern.test(address));
+}
+
+/**
+ * Fetches the number of transactions that will be affected
+ */
+async function fetchWalletImpact(address, field) {
+    try {
+        const response = await fetch(`/api/wallet/impact?address=${encodeURIComponent(address)}&field=${field}`);
+        const data = await response.json();
+
+        if (data.success) {
+            const count = data.count || 0;
+            const impactText = `This identifier will be applied to ${count} transaction${count !== 1 ? 's' : ''} with this ${field}.`;
+            document.getElementById('walletImpactInfo').textContent = impactText;
+        }
+    } catch (error) {
+        console.error('Error fetching wallet impact:', error);
+        document.getElementById('walletImpactInfo').textContent = 'Unable to determine impact.';
+    }
+}
+
+/**
+ * Copies the wallet address to clipboard
+ */
+function copyAddressToClipboard() {
+    const address = currentWalletData.address;
+
+    // Use modern Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(address)
+            .then(() => {
+                showToast('✅ Address copied to clipboard', 'success');
+            })
+            .catch(err => {
+                console.error('Failed to copy:', err);
+                // Fallback method
+                fallbackCopyToClipboard(address);
+            });
+    } else {
+        // Fallback for older browsers
+        fallbackCopyToClipboard(address);
+    }
+}
+
+/**
+ * Fallback method to copy text to clipboard
+ */
+function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast('✅ Address copied to clipboard', 'success');
+        } else {
+            showToast('❌ Failed to copy address', 'error');
+        }
+    } catch (err) {
+        console.error('Fallback copy failed:', err);
+        showToast('❌ Failed to copy address', 'error');
+    }
+
+    document.body.removeChild(textArea);
+}
+
+/**
+ * Saves the wallet identification and applies it to all matching transactions
+ */
+async function saveWalletIdentification() {
+    const identifier = document.getElementById('walletIdentifier').value.trim();
+
+    if (!identifier) {
+        showToast('⚠️ Please enter an identifier', 'warning');
+        return;
+    }
+
+    const walletType = currentWalletData.isCryptoWallet ?
+        document.getElementById('walletType').value : null;
+    const notes = document.getElementById('walletNotes').value.trim();
+
+    // Prepare request data
+    const requestData = {
+        address: currentWalletData.address,
+        identifier: identifier,
+        field: currentWalletData.field,
+        is_crypto_wallet: currentWalletData.isCryptoWallet,
+        wallet_type: walletType,
+        notes: notes
+    };
+
+    try {
+        const response = await fetch('/api/wallet/identify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ Identifier saved and applied to ${data.updated_count} transaction${data.updated_count !== 1 ? 's' : ''}`, 'success');
+
+            // Close the modal
+            closeWalletIdentificationModal();
+
+            // Reload transactions to show updated identifiers
+            if (typeof loadTransactions === 'function') {
+                loadTransactions();
+            }
+        } else {
+            showToast('❌ Error: ' + (data.error || 'Failed to save identifier'), 'error');
+        }
+    } catch (error) {
+        console.error('Error saving wallet identification:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Closes the wallet identification modal
+ */
+function closeWalletIdentificationModal() {
+    document.getElementById('walletIdentificationModal').style.display = 'none';
+
+    // Clear any dynamically added context
+    const addressDisplay = document.getElementById('walletAddressDisplay');
+    const contextDiv = addressDisplay.nextElementSibling;
+    if (contextDiv && contextDiv.innerHTML.includes('Transaction Context:')) {
+        contextDiv.remove();
+    }
+
+    currentWalletData = {
+        address: '',
+        field: '',
+        transactionId: '',
+        isCryptoWallet: false
+    };
+}
+
+// Track if wallet click handlers are set up
+let walletClickHandlersSetup = false;
+
+/**
+ * Enhances Origin/Destination cells to be clickable using event delegation
+ * Called after table is rendered
+ */
+function setupOriginDestinationClickHandlers() {
+    if (walletClickHandlersSetup) {
+        return; // Already set up, don't duplicate
+    }
+
+    const tbody = document.getElementById('transactionTableBody');
+    if (!tbody) return;
+
+    // Use event delegation - single listener on tbody
+    tbody.addEventListener('click', function(e) {
+        // CRITICAL: Don't interfere with drag handle or sort dot
+        if (e.target.classList.contains('drag-handle') ||
+            e.target.classList.contains('sort-dot')) {
+            return; // Let those handlers work
+        }
+
+        // Check if click is on a wallet-field cell
+        const walletCell = e.target.closest('td.wallet-field[data-field="origin"], td.wallet-field[data-field="destination"]');
+
+        if (!walletCell) return; // Not a wallet cell, ignore
+
+        // Stop event from bubbling to prevent inline editing
+        e.stopPropagation();
+        e.preventDefault();
+
+        // Don't trigger if clicking on an input field
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+            return;
+        }
+
+        const field = walletCell.dataset.field;
+        const transactionId = walletCell.dataset.transactionId;
+        const address = walletCell.dataset.fullAddress || walletCell.textContent.trim();
+
+        // Don't open modal for 'Unknown' or empty values
+        if (!address || address === 'Unknown' || address === 'N/A') {
+            showToast('⚠️ No address to identify', 'warning');
+            return;
+        }
+
+        // Get the full transaction data from the current row
+        const row = walletCell.closest('tr');
+        const rowData = {
+            transactionId: transactionId,
+            origin: row.querySelector('[data-field="origin"]')?.dataset.fullAddress || row.querySelector('[data-field="origin"]')?.textContent.trim(),
+            destination: row.querySelector('[data-field="destination"]')?.dataset.fullAddress || row.querySelector('[data-field="destination"]')?.textContent.trim(),
+            description: row.querySelector('[data-field="description"]')?.textContent.trim()
+        };
+
+        openWalletIdentificationModal(address, field, transactionId, rowData);
+    });
+
+    walletClickHandlersSetup = true;
+    console.log('✅ Wallet click handlers set up using event delegation');
+}
+
+// ============================================================
+// BULK EDIT FUNCTIONALITY
+// ============================================================
+
+/**
+ * Update the visibility of the "Bulk Edit Selected" button
+ * Shows button when 2+ transactions are selected
+ */
+function updateBulkEditButtonVisibility() {
+    const bulkEditBtn = document.getElementById('bulkEditSelected');
+    if (!bulkEditBtn) return;
+
+    const selectedCount = selectedTransactionIds.size;
+
+    if (selectedCount >= 2) {
+        bulkEditBtn.style.display = 'inline-block';
+        bulkEditBtn.textContent = `✏️ Bulk Edit Selected (${selectedCount})`;
+    } else {
+        bulkEditBtn.style.display = 'none';
+    }
+}
+
+/**
+ * Open the bulk edit modal
+ */
+function openBulkEditModal() {
+    const modal = document.getElementById('bulkEditModal');
+    if (!modal) {
+        console.error('❌ Bulk edit modal not found!');
+        return;
+    }
+
+    const selectedCount = selectedTransactionIds.size;
+    if (selectedCount === 0) {
+        alert('Please select at least one transaction to edit.');
+        return;
+    }
+
+    // Update the count display
+    const countDisplay = document.getElementById('bulkEditCount');
+    if (countDisplay) {
+        countDisplay.textContent = `${selectedCount} transaction${selectedCount > 1 ? 's' : ''} selected`;
+    }
+
+    // Reset form fields
+    document.getElementById('bulkEntity').value = '';
+    document.getElementById('bulkCategory').value = '';
+    document.getElementById('bulkSubcategory').value = '';
+    document.getElementById('bulkJustification').value = '';
+
+    modal.style.display = 'block';
+}
+
+/**
+ * Close the bulk edit modal
+ */
+function closeBulkEditModal() {
+    const modal = document.getElementById('bulkEditModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+/**
+ * Apply bulk edits to all selected transactions
+ */
+async function applyBulkEdit() {
+    const entity = document.getElementById('bulkEntity').value;
+    const category = document.getElementById('bulkCategory').value;
+    const subcategory = document.getElementById('bulkSubcategory').value;
+    const justification = document.getElementById('bulkJustification').value;
+
+    // Check if at least one field is set
+    if (!entity && !category && !subcategory && !justification) {
+        alert('Please select or enter at least one field to update.');
+        return;
+    }
+
+    // Build the updates array for the API
+    const updates = [];
+    selectedTransactionIds.forEach(txId => {
+        if (entity) {
+            updates.push({
+                transaction_id: txId,
+                field: 'classified_entity',
+                value: entity
+            });
+        }
+        if (category) {
+            updates.push({
+                transaction_id: txId,
+                field: 'accounting_category',
+                value: category
+            });
+        }
+        if (subcategory) {
+            updates.push({
+                transaction_id: txId,
+                field: 'subcategory',
+                value: subcategory
+            });
+        }
+        if (justification) {
+            updates.push({
+                transaction_id: txId,
+                field: 'justification',
+                value: justification
+            });
+        }
+    });
+
+    console.log('🔷 Applying bulk edit:', updates);
+
+    try {
+        const response = await fetch('/api/bulk_update_transactions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ updates })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Show success message
+            alert(`✅ Successfully updated ${selectedTransactionIds.size} transaction(s)!`);
+
+            // Close modal
+            closeBulkEditModal();
+
+            // Clear selections
+            selectedTransactionIds.clear();
+            document.querySelectorAll('.transaction-select-cb').forEach(cb => {
+                cb.checked = false;
+            });
+            const selectAll = document.getElementById('selectAll');
+            if (selectAll) selectAll.checked = false;
+
+            // Update button visibility
+            updateBulkEditButtonVisibility();
+            updateArchiveButtonVisibility();
+
+            // Reload transactions to show updated data
+            loadTransactions();
+        } else {
+            alert(`❌ Error: ${data.error || 'Failed to update transactions'}`);
+        }
+    } catch (error) {
+        console.error('❌ Bulk edit error:', error);
+        alert('❌ Failed to apply bulk edit. Please try again.');
+    }
 }

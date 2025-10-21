@@ -40,6 +40,21 @@
             </div>
         </div>
 
+        <!-- AI Anomaly Detection Notification Banner -->
+        <div id="anomalyNotification" class="anomaly-notification" style="display: none;">
+            <div class="anomaly-notification-content">
+                <span class="anomaly-icon">🚨</span>
+                <div class="anomaly-message">
+                    <strong>AI Anomaly Alert:</strong>
+                    <span id="anomalyMessage"></span>
+                </div>
+                <div class="anomaly-actions">
+                    <button class="btn-link" onclick="viewAnomalies()">Review Anomalies</button>
+                    <button class="btn-link" onclick="dismissAnomalyNotification()">Dismiss</button>
+                </div>
+            </div>
+        </div>
+
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
@@ -129,8 +144,19 @@
                 </div>
 
                 <div class="filter-group">
-                    <label for="keywordFilter">Keyword Search:</label>
-                    <input type="text" id="keywordFilter" placeholder="Search transaction descriptions...">
+                    <label for="originFilter">Origin:</label>
+                    <input type="text" id="originFilter" placeholder="Search origin..." list="originOptions">
+                    <datalist id="originOptions">
+                        <!-- Populated by JavaScript -->
+                    </datalist>
+                </div>
+
+                <div class="filter-group">
+                    <label for="destinationFilter">Destination:</label>
+                    <input type="text" id="destinationFilter" placeholder="Search destination..." list="destinationOptions">
+                    <datalist id="destinationOptions">
+                        <!-- Populated by JavaScript -->
+                    </datalist>
                 </div>
             </div>
 
@@ -140,6 +166,8 @@
                 <button id="filter2025" class="btn-quick">2025 Full Year</button>
                 <button id="filter2024" class="btn-quick">2024 Full Year</button>
                 <button id="filterYTD" class="btn-quick">2025 YTD</button>
+                <button id="filterExcludeInternal" class="btn-quick">🔄 Filter out Internal Transactions</button>
+                <button id="filterDuplicates" class="btn-quick">🔍 Duplicates</button>
             </div>
 
             <button id="applyFilters" class="btn-primary">Apply Filters</button>
@@ -155,7 +183,9 @@
                     <button id="refreshData" class="btn-secondary">🔄 Refresh</button>
                     <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()">💰 Run Invoice Matching</button>
                     <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()">🔗 Enrich Blockchain Transactions</button>
+                    <button id="detectInternalTransfers" class="btn-primary" onclick="detectInternalTransfers()">🔄 Detect Internal Transfers</button>
                     <button id="exportCSV" class="btn-secondary">📥 Export CSV</button>
+                    <button id="bulkEditSelected" class="btn-primary" style="display: none;">✏️ Bulk Edit Selected</button>
                     <button id="archiveSelected" class="btn-secondary" style="display: none;">🗄️ Archive Selected</button>
                     <button id="showArchived" class="btn-secondary">📦 Show Archived</button>
                 </div>
@@ -359,6 +389,352 @@
         </div>
     </div>
 
+    <!-- Internal Transfers Detection Modal -->
+    <div id="internalTransfersModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1400px;">
+            <div class="modal-header">
+                <h3>🔄 Internal Transfer Detection Results</h3>
+                <span class="close" onclick="closeInternalTransfersModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="transfersLoading" style="display: none; text-align: center; padding: 40px;">
+                    <div class="loading">Analyzing transactions for internal transfers...</div>
+                    <p style="margin-top: 20px; color: #666;">Matching transactions with same date and amount (±0.5%) between exchanges...</p>
+                </div>
+
+                <!-- Results Summary -->
+                <div id="transfersSummary" style="display: none; background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4>📊 Detection Summary</h4>
+                    <p><strong>Total Transfer Pairs Found:</strong> <span id="totalTransfersCount">0</span></p>
+                    <p style="font-size: 0.9em; color: #666;">Select pairs to classify as "Internal Transfer"</p>
+                </div>
+
+                <!-- Transfers Table -->
+                <div id="transfersContainer" style="display: none; max-height: 600px; overflow-y: auto;">
+                    <table id="transfersTable" style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                        <thead style="position: sticky; top: 0; background: white; z-index: 10;">
+                            <tr style="background: #f0f0f0;">
+                                <th style="padding: 8px; border: 1px solid #ddd; width: 40px;"><input type="checkbox" id="selectAllTransfers" onchange="toggleAllTransfers()"></th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Transaction 1</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Transaction 2</th>
+                                <th style="padding: 8px; text-align: center; border: 1px solid #ddd;">Match Score</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Match Reasons</th>
+                            </tr>
+                        </thead>
+                        <tbody id="transfersTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Action Buttons -->
+                <div id="transfersActions" style="display: none; margin-top: 20px; text-align: center;">
+                    <button class="btn-primary" onclick="applyInternalTransferClassification()" style="padding: 12px 24px; font-size: 14px;">
+                        ✅ Apply "Internal Transfer" to Selected (<span id="selectedTransfersCount">0</span> pairs)
+                    </button>
+                    <button class="btn-secondary" onclick="closeInternalTransfersModal()" style="padding: 12px 24px; font-size: 14px; margin-left: 10px;">
+                        Cancel
+                    </button>
+                </div>
+
+                <!-- Empty State -->
+                <div id="transfersEmpty" style="display: none; text-align: center; padding: 40px; background: #f9f9f9; border-radius: 8px;">
+                    <p style="font-size: 1.2em; color: #666;">✅ No internal transfers detected</p>
+                    <p style="color: #999;">No matching transaction pairs found between exchanges on the same day.</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="transfersError" style="display: none; padding: 20px; background: #fee; border-radius: 8px; color: #c33;">
+                    <p><strong>⚠️ Error detecting internal transfers:</strong></p>
+                    <p id="transfersErrorMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Duplicates Detection Modal -->
+    <div id="duplicatesDetectionModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1400px;">
+            <div class="modal-header">
+                <h3>🔍 Duplicate Transactions Detection</h3>
+                <span class="close" onclick="closeDuplicatesDetectionModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="duplicatesLoading" style="display: none; text-align: center; padding: 40px;">
+                    <div class="loading">Analyzing transactions for duplicates...</div>
+                    <p style="margin-top: 20px; color: #666;">Finding transactions with matching date, amount, and description...</p>
+                </div>
+
+                <!-- Results Summary -->
+                <div id="duplicatesSummary" style="display: none; background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4>📊 Detection Summary</h4>
+                    <p><strong>Total Duplicate Groups Found:</strong> <span id="totalDuplicatesCount">0</span></p>
+                    <p style="font-size: 0.9em; color: #666;">Review each group and select duplicates to archive</p>
+                </div>
+
+                <!-- Duplicates Table -->
+                <div id="duplicatesContainer" style="display: none; max-height: 600px; overflow-y: auto;">
+                    <table id="duplicatesTable" style="width: 100%; border-collapse: collapse; font-size: 0.85em;">
+                        <thead style="position: sticky; top: 0; background: white; z-index: 10;">
+                            <tr style="background: #f0f0f0;">
+                                <th style="padding: 8px; border: 1px solid #ddd; width: 40px;"><input type="checkbox" id="selectAllDuplicates" onchange="toggleAllDuplicates()"></th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Date</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Description</th>
+                                <th style="padding: 8px; text-align: right; border: 1px solid #ddd;">Amount</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Currency</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Entity</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Category</th>
+                                <th style="padding: 8px; text-align: left; border: 1px solid #ddd;">Source File</th>
+                            </tr>
+                        </thead>
+                        <tbody id="duplicatesTableBody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Action Buttons -->
+                <div id="duplicatesActions" style="display: none; margin-top: 20px; text-align: center;">
+                    <button class="btn-primary" onclick="archiveSelectedDuplicates()" style="padding: 12px 24px; font-size: 14px;">
+                        🗄️ Archive Selected (<span id="selectedDuplicatesCount">0</span> transactions)
+                    </button>
+                    <button class="btn-secondary" onclick="closeDuplicatesDetectionModal()" style="padding: 12px 24px; font-size: 14px; margin-left: 10px;">
+                        Cancel
+                    </button>
+                </div>
+
+                <!-- Empty State -->
+                <div id="duplicatesEmpty" style="display: none; text-align: center; padding: 40px; background: #f9f9f9; border-radius: 8px;">
+                    <p style="font-size: 1.2em; color: #666;">✅ No duplicate transactions detected</p>
+                    <p style="color: #999;">All transactions appear to be unique.</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="duplicatesError" style="display: none; padding: 20px; background: #fee; border-radius: 8px; color: #c33;">
+                    <p><strong>⚠️ Error detecting duplicates:</strong></p>
+                    <p id="duplicatesErrorMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wallet/Address Identification Modal -->
+    <div id="walletIdentificationModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>🏷️ Identify Wallet/Address</h3>
+                <span class="close" onclick="closeWalletIdentificationModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Address Display with Copy -->
+                <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="color: #666;">Address:</strong>
+                        <button class="btn-secondary btn-sm" onclick="copyAddressToClipboard()" style="padding: 5px 12px;">
+                            📋 Copy
+                        </button>
+                    </div>
+                    <div id="walletAddressDisplay" style="font-family: monospace; font-size: 13px; word-break: break-all; background: white; padding: 10px; border-radius: 4px; border: 1px solid #ddd;">
+                        <!-- Wallet address will be displayed here -->
+                    </div>
+                </div>
+
+                <!-- Identifier Input -->
+                <div style="margin-bottom: 20px;">
+                    <label for="walletIdentifier" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Identifier/Label:
+                    </label>
+                    <input
+                        type="text"
+                        id="walletIdentifier"
+                        placeholder="e.g., 'My Binance Wallet', 'Customer John Doe', 'MEXC Exchange'"
+                        style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;"
+                    />
+                    <p style="font-size: 0.85em; color: #666; margin-top: 5px;">
+                        This identifier will be displayed instead of the full address in all transactions.
+                    </p>
+                </div>
+
+                <!-- Wallet Type Selection (for crypto wallets) -->
+                <div id="walletTypeSection" style="margin-bottom: 20px; display: none;">
+                    <label for="walletType" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Wallet Type:
+                    </label>
+                    <select id="walletType" style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="internal">Internal - My Wallet</option>
+                        <option value="exchange">Exchange</option>
+                        <option value="customer">Customer</option>
+                        <option value="vendor">Vendor</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <!-- Additional Notes -->
+                <div style="margin-bottom: 20px;">
+                    <label for="walletNotes" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Notes (Optional):
+                    </label>
+                    <textarea
+                        id="walletNotes"
+                        rows="3"
+                        placeholder="Add any additional notes about this wallet/address..."
+                        style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"
+                    ></textarea>
+                </div>
+
+                <!-- Impact Information -->
+                <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>📊 Impact:</strong>
+                    <p id="walletImpactInfo" style="margin: 10px 0 0 0; font-size: 0.9em;">
+                        This identifier will be applied to all transactions with this address.
+                    </p>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn-secondary" onclick="closeWalletIdentificationModal()" style="padding: 12px 24px;">
+                        Cancel
+                    </button>
+                    <button class="btn-primary" onclick="saveWalletIdentification()" style="padding: 12px 24px;">
+                        💾 Save & Apply to All Transactions
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Anomaly Review Modal -->
+    <div id="anomalyReviewModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1200px;">
+            <div class="modal-header">
+                <h3>🚨 AI Anomaly Detection - Review Required</h3>
+                <span class="close" onclick="closeAnomalyReviewModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="anomaliesLoading" style="display: none; text-align: center; padding: 40px;">
+                    <div class="loading">Loading detected anomalies...</div>
+                </div>
+
+                <!-- Summary -->
+                <div id="anomaliesSummary" style="display: none; background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                    <h4>📊 Detection Summary</h4>
+                    <p><strong>Total Anomalies Found:</strong> <span id="totalAnomaliesCount">0</span></p>
+                    <div style="display: flex; gap: 15px; margin-top: 10px;">
+                        <span class="severity-badge critical">Critical: <span id="criticalCount">0</span></span>
+                        <span class="severity-badge high">High: <span id="highCount">0</span></span>
+                        <span class="severity-badge medium">Medium: <span id="mediumCount">0</span></span>
+                        <span class="severity-badge low">Low: <span id="lowCount">0</span></span>
+                    </div>
+                </div>
+
+                <!-- Anomalies List -->
+                <div id="anomaliesContainer" style="display: none;">
+                    <div id="anomaliesList">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="anomaliesEmpty" style="display: none; text-align: center; padding: 40px; background: #d4edda; border-radius: 8px;">
+                    <p style="font-size: 1.2em; color: #155724;">✅ No anomalies detected</p>
+                    <p style="color: #155724;">All transactions passed AI validation checks.</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="anomaliesError" style="display: none; padding: 20px; background: #f8d7da; border-radius: 8px; color: #721c24;">
+                    <p><strong>⚠️ Error loading anomalies:</strong></p>
+                    <p id="anomaliesErrorMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Edit Modal -->
+    <div id="bulkEditModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3>✏️ Bulk Edit Transactions</h3>
+                <span class="close" onclick="closeBulkEditModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>📊 Selected Transactions:</strong>
+                    <p id="bulkEditCount" style="margin: 10px 0 0 0; font-size: 1.1em;">
+                        0 transactions selected
+                    </p>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="bulkEntity" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Entity:
+                    </label>
+                    <select id="bulkEntity" style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="">-- Keep Current --</option>
+                        {% for entity, count in stats.entities %}
+                        <option value="{{ entity }}">{{ entity }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="bulkCategory" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Primary Category:
+                    </label>
+                    <select id="bulkCategory" style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="">-- Keep Current --</option>
+                        <option value="REVENUE">Revenue</option>
+                        <option value="OPERATING_EXPENSE">Operating Expense</option>
+                        <option value="COST_OF_GOODS_SOLD">Cost of Goods Sold</option>
+                        <option value="Internal Transfer">Internal Transfer</option>
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="bulkSubcategory" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Subcategory:
+                    </label>
+                    <input
+                        type="text"
+                        id="bulkSubcategory"
+                        placeholder="Leave blank to keep current"
+                        style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px;"
+                    />
+                </div>
+
+                <div style="margin-bottom: 20px;">
+                    <label for="bulkJustification" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Justification:
+                    </label>
+                    <textarea
+                        id="bulkJustification"
+                        rows="3"
+                        placeholder="Leave blank to keep current"
+                        style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"
+                    ></textarea>
+                </div>
+
+                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                    <strong>⚠️ Note:</strong>
+                    <p style="margin: 10px 0 0 0; font-size: 0.9em;">
+                        Only fields with values will be updated. Blank fields will keep their current values.
+                    </p>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn-secondary" onclick="closeBulkEditModal()" style="padding: 12px 24px;">
+                        Cancel
+                    </button>
+                    <button class="btn-primary" onclick="applyBulkEdit()" style="padding: 12px 24px;">
+                        💾 Update All Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Revenue Sync Notification Script -->
     <script>
         // Revenue Sync Notification System
@@ -520,8 +896,145 @@
             background: rgba(255, 255, 255, 0.3);
             border-color: rgba(255, 255, 255, 0.5);
         }
+
+        /* Anomaly Notification Styles */
+        .anomaly-notification {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 1rem;
+            margin: 0 0 1rem 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        .anomaly-notification-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .anomaly-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .anomaly-message {
+            flex-grow: 1;
+        }
+
+        .anomaly-message strong {
+            display: block;
+            margin-bottom: 0.25rem;
+        }
+
+        .anomaly-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+
+        /* Anomaly Card Styles */
+        .anomaly-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-left: 4px solid #ccc;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .anomaly-card.critical {
+            border-left-color: #dc3545;
+            background: #fff5f5;
+        }
+
+        .anomaly-card.high {
+            border-left-color: #fd7e14;
+            background: #fff8f5;
+        }
+
+        .anomaly-card.medium {
+            border-left-color: #ffc107;
+            background: #fffbf0;
+        }
+
+        .anomaly-card.low {
+            border-left-color: #17a2b8;
+            background: #f0f9ff;
+        }
+
+        .anomaly-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 15px;
+        }
+
+        .anomaly-type {
+            font-size: 0.9em;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: #f0f0f0;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+
+        .anomaly-transaction-info {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 12px 0;
+            font-size: 0.9em;
+        }
+
+        .anomaly-reasoning {
+            background: #e8f4f8;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 12px 0;
+            border-left: 3px solid #007bff;
+        }
+
+        .anomaly-actions-row {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #dee2e6;
+        }
+
+        .severity-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .severity-badge.critical {
+            background: #dc3545;
+            color: white;
+        }
+
+        .severity-badge.high {
+            background: #fd7e14;
+            color: white;
+        }
+
+        .severity-badge.medium {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .severity-badge.low {
+            background: #17a2b8;
+            color: white;
+        }
     </style>
 
     <script src="{{ url_for('static', filename='script_advanced.js') }}?v={{ cache_buster }}"></script>
+    <script src="{{ url_for('static', filename='anomaly_detection.js') }}?v={{ cache_buster }}"></script>
 </body>
 </html>

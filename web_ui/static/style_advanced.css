@@ -1406,3 +1406,13 @@ th:nth-child(14), td:nth-child(14) { /* Actions */
     transition: background-color 0.3s;
 }
 
+
+/* Wallet/Address identification fields - distinct from editable fields */
+td.wallet-field {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+td.wallet-field:hover {
+    background-color: #f0f8ff;
+}
