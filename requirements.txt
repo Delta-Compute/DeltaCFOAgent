@@ -43,6 +43,7 @@ reportlab>=3.6.0         # PDF generation for testing
 # ============================================
 Pillow>=10.0.0           # Image manipulation and format support
 opencv-python>=4.8.0     # Advanced image processing
+pillow-heif>=0.13.0      # HEIC/HEIF image format support (iPhone photos)
 
 # ============================================
 # Invoice Processing - OCR
