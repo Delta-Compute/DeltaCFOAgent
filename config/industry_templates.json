@@ -1,0 +1,484 @@
+{
+  "crypto_trading": {
+    "name": "Cryptocurrency Trading & Mining",
+    "description": "For businesses involved in crypto trading, mining, staking, and DeFi operations",
+    "entities": [
+      {
+        "name": "Main Trading Entity",
+        "description": "Primary company for trading operations, exchanges, brokers",
+        "entity_type": "subsidiary",
+        "business_context": "Main trading and exchange operations"
+      },
+      {
+        "name": "Prop Trading Division",
+        "description": "Proprietary trading, DeFi protocols, yield farming",
+        "entity_type": "subsidiary",
+        "business_context": "DeFi and advanced trading strategies"
+      },
+      {
+        "name": "Validator Operations",
+        "description": "Blockchain validation, staking rewards, node operations",
+        "entity_type": "subsidiary",
+        "business_context": "Validator and staking services"
+      },
+      {
+        "name": "Mining Operations",
+        "description": "Cryptocurrency mining equipment and operations",
+        "entity_type": "subsidiary",
+        "business_context": "Mining infrastructure"
+      },
+      {
+        "name": "Personal",
+        "description": "Personal expenses and transactions",
+        "entity_type": "personal",
+        "business_context": "Non-business transactions"
+      },
+      {
+        "name": "Internal Transfer",
+        "description": "Transfers between entities and wallets",
+        "entity_type": "internal",
+        "business_context": "Inter-entity movements"
+      }
+    ],
+    "entity_families": {
+      "Trading": ["Main Trading Entity", "Prop Trading Division"],
+      "Infrastructure": ["Validator Operations", "Mining Operations"]
+    },
+    "business_context": {
+      "industry": "crypto_trading",
+      "primary_activities": ["cryptocurrency trading", "mining", "staking", "DeFi protocols"],
+      "transaction_patterns": ["crypto exchanges", "wire transfers", "mining rewards", "staking rewards"],
+      "specialized_features": {
+        "crypto_enabled": true,
+        "multi_currency": true,
+        "wallet_tracking": true
+      }
+    },
+    "accounting_categories": {
+      "revenue_categories": [
+        "Revenue - Trading",
+        "Revenue - Mining",
+        "Revenue - Staking",
+        "Revenue - Yield Farming",
+        "Interest Income",
+        "Capital Gains"
+      ],
+      "expense_categories": [
+        "Trading Fees",
+        "Gas Fees",
+        "Mining Equipment",
+        "Infrastructure Costs",
+        "Technology Expenses",
+        "Bank Fees",
+        "Professional Services",
+        "General and Administrative"
+      ],
+      "asset_categories": [
+        "Cryptocurrency Holdings",
+        "Mining Equipment",
+        "Cash and Equivalents",
+        "Staked Assets"
+      ],
+      "liability_categories": [
+        "Accounts Payable",
+        "Deferred Revenue"
+      ]
+    },
+    "pattern_matching_rules": {
+      "entity_matching": {
+        "use_wallet_matching": true,
+        "use_vendor_name_matching": true,
+        "use_bank_identifier_matching": true,
+        "similarity_threshold": 0.75,
+        "min_pattern_matches": 2
+      },
+      "description_matching": {
+        "min_transactions_to_suggest": 3,
+        "max_suggestions": 10,
+        "use_semantic_matching": true,
+        "similarity_threshold": 0.70
+      }
+    }
+  },
+  "e_commerce": {
+    "name": "E-Commerce & Online Retail",
+    "description": "For online retail businesses, marketplaces, and e-commerce platforms",
+    "entities": [
+      {
+        "name": "Main Company",
+        "description": "Primary e-commerce business entity",
+        "entity_type": "main",
+        "business_context": "Main operating company"
+      },
+      {
+        "name": "Amazon Seller Account",
+        "description": "Amazon marketplace seller operations",
+        "entity_type": "marketplace",
+        "business_context": "Amazon sales channel"
+      },
+      {
+        "name": "Shopify Store",
+        "description": "Direct-to-consumer Shopify store",
+        "entity_type": "marketplace",
+        "business_context": "Shopify sales channel"
+      },
+      {
+        "name": "eBay Seller Account",
+        "description": "eBay marketplace operations",
+        "entity_type": "marketplace",
+        "business_context": "eBay sales channel"
+      },
+      {
+        "name": "Fulfillment Center",
+        "description": "Warehouse and fulfillment operations",
+        "entity_type": "operations",
+        "business_context": "Logistics and fulfillment"
+      },
+      {
+        "name": "Personal",
+        "description": "Personal expenses",
+        "entity_type": "personal",
+        "business_context": "Non-business transactions"
+      }
+    ],
+    "entity_families": {
+      "Marketplaces": ["Amazon Seller Account", "Shopify Store", "eBay Seller Account"],
+      "Operations": ["Fulfillment Center", "Main Company"]
+    },
+    "business_context": {
+      "industry": "e_commerce",
+      "primary_activities": ["online sales", "marketplace selling", "fulfillment", "customer service"],
+      "transaction_patterns": ["payment processors", "marketplace fees", "shipping", "inventory purchases"],
+      "specialized_features": {
+        "crypto_enabled": false,
+        "multi_currency": true,
+        "marketplace_tracking": true
+      }
+    },
+    "accounting_categories": {
+      "revenue_categories": [
+        "Product Sales - Amazon",
+        "Product Sales - Shopify",
+        "Product Sales - eBay",
+        "Product Sales - Other",
+        "Shipping Revenue",
+        "Other Income"
+      ],
+      "expense_categories": [
+        "Cost of Goods Sold",
+        "Marketplace Fees - Amazon",
+        "Marketplace Fees - Shopify",
+        "Marketplace Fees - eBay",
+        "Payment Processing Fees",
+        "Shipping Costs",
+        "Fulfillment Fees",
+        "Advertising & Marketing",
+        "Inventory Purchases",
+        "Returns & Refunds",
+        "Technology Expenses",
+        "General and Administrative"
+      ],
+      "asset_categories": [
+        "Inventory",
+        "Cash and Equivalents",
+        "Accounts Receivable"
+      ],
+      "liability_categories": [
+        "Accounts Payable",
+        "Customer Deposits",
+        "Returns Liability"
+      ]
+    },
+    "pattern_matching_rules": {
+      "entity_matching": {
+        "use_wallet_matching": false,
+        "use_vendor_name_matching": true,
+        "use_bank_identifier_matching": true,
+        "similarity_threshold": 0.80,
+        "min_pattern_matches": 2
+      },
+      "description_matching": {
+        "min_transactions_to_suggest": 2,
+        "max_suggestions": 10,
+        "use_semantic_matching": true,
+        "similarity_threshold": 0.75
+      }
+    }
+  },
+  "saas": {
+    "name": "SaaS & Software Company",
+    "description": "For software-as-a-service and software development companies",
+    "entities": [
+      {
+        "name": "Main Operating Company",
+        "description": "Primary SaaS business entity",
+        "entity_type": "main",
+        "business_context": "Main operations"
+      },
+      {
+        "name": "Development Team",
+        "description": "Software development and engineering",
+        "entity_type": "department",
+        "business_context": "Product development"
+      },
+      {
+        "name": "Sales & Marketing",
+        "description": "Customer acquisition and marketing",
+        "entity_type": "department",
+        "business_context": "Revenue generation"
+      },
+      {
+        "name": "Infrastructure",
+        "description": "Cloud infrastructure and operations",
+        "entity_type": "department",
+        "business_context": "Technical infrastructure"
+      },
+      {
+        "name": "Personal",
+        "description": "Personal expenses",
+        "entity_type": "personal",
+        "business_context": "Non-business transactions"
+      }
+    ],
+    "entity_families": {
+      "Operations": ["Main Operating Company", "Development Team", "Infrastructure"],
+      "Revenue": ["Sales & Marketing", "Main Operating Company"]
+    },
+    "business_context": {
+      "industry": "saas",
+      "primary_activities": ["software development", "SaaS delivery", "customer support", "infrastructure management"],
+      "transaction_patterns": ["subscription revenue", "cloud infrastructure", "SaaS tools", "payment processing"],
+      "specialized_features": {
+        "crypto_enabled": false,
+        "multi_currency": true,
+        "subscription_tracking": true
+      }
+    },
+    "accounting_categories": {
+      "revenue_categories": [
+        "Subscription Revenue - Monthly",
+        "Subscription Revenue - Annual",
+        "Setup Fees",
+        "Professional Services",
+        "Other Income"
+      ],
+      "expense_categories": [
+        "Cloud Infrastructure - AWS",
+        "Cloud Infrastructure - Google Cloud",
+        "Cloud Infrastructure - Azure",
+        "SaaS Tools & Software",
+        "Payment Processing Fees",
+        "Salaries & Wages",
+        "Contractor Fees",
+        "Marketing & Advertising",
+        "Professional Services",
+        "Customer Support",
+        "Research & Development",
+        "General and Administrative",
+        "Bank Fees"
+      ],
+      "asset_categories": [
+        "Cash and Equivalents",
+        "Accounts Receivable",
+        "Prepaid Expenses",
+        "Computer Equipment"
+      ],
+      "liability_categories": [
+        "Accounts Payable",
+        "Deferred Revenue",
+        "Accrued Expenses"
+      ]
+    },
+    "pattern_matching_rules": {
+      "entity_matching": {
+        "use_wallet_matching": false,
+        "use_vendor_name_matching": true,
+        "use_bank_identifier_matching": true,
+        "similarity_threshold": 0.75,
+        "min_pattern_matches": 2
+      },
+      "description_matching": {
+        "min_transactions_to_suggest": 3,
+        "max_suggestions": 10,
+        "use_semantic_matching": true,
+        "similarity_threshold": 0.70
+      }
+    }
+  },
+  "professional_services": {
+    "name": "Professional Services",
+    "description": "For consulting, legal, accounting, and other professional service firms",
+    "entities": [
+      {
+        "name": "Main Firm",
+        "description": "Primary professional services entity",
+        "entity_type": "main",
+        "business_context": "Main operations"
+      },
+      {
+        "name": "Client Services",
+        "description": "Client-facing operations and billing",
+        "entity_type": "department",
+        "business_context": "Client work"
+      },
+      {
+        "name": "Business Development",
+        "description": "Marketing and new client acquisition",
+        "entity_type": "department",
+        "business_context": "Growth and marketing"
+      },
+      {
+        "name": "Personal",
+        "description": "Personal expenses",
+        "entity_type": "personal",
+        "business_context": "Non-business transactions"
+      }
+    ],
+    "entity_families": {
+      "Firm": ["Main Firm", "Client Services", "Business Development"]
+    },
+    "business_context": {
+      "industry": "professional_services",
+      "primary_activities": ["consulting", "client services", "professional expertise", "project delivery"],
+      "transaction_patterns": ["client billing", "professional fees", "office expenses", "contractor payments"],
+      "specialized_features": {
+        "crypto_enabled": false,
+        "multi_currency": false,
+        "time_tracking": true
+      }
+    },
+    "accounting_categories": {
+      "revenue_categories": [
+        "Professional Fees",
+        "Consulting Revenue",
+        "Retainer Fees",
+        "Project Revenue",
+        "Other Income"
+      ],
+      "expense_categories": [
+        "Contractor Fees",
+        "Subcontractor Costs",
+        "Salaries & Wages",
+        "Office Rent",
+        "Office Supplies",
+        "Professional Insurance",
+        "Professional Development",
+        "Marketing & Business Development",
+        "Technology & Software",
+        "Travel & Entertainment",
+        "Professional Services",
+        "General and Administrative",
+        "Bank Fees"
+      ],
+      "asset_categories": [
+        "Cash and Equivalents",
+        "Accounts Receivable",
+        "Unbilled Receivables",
+        "Office Equipment"
+      ],
+      "liability_categories": [
+        "Accounts Payable",
+        "Deferred Revenue",
+        "Accrued Expenses"
+      ]
+    },
+    "pattern_matching_rules": {
+      "entity_matching": {
+        "use_wallet_matching": false,
+        "use_vendor_name_matching": true,
+        "use_bank_identifier_matching": true,
+        "similarity_threshold": 0.75,
+        "min_pattern_matches": 2
+      },
+      "description_matching": {
+        "min_transactions_to_suggest": 2,
+        "max_suggestions": 8,
+        "use_semantic_matching": true,
+        "similarity_threshold": 0.70
+      }
+    }
+  },
+  "general": {
+    "name": "General Business",
+    "description": "Generic template for businesses that don't fit other categories",
+    "entities": [
+      {
+        "name": "Main Company",
+        "description": "Primary business entity",
+        "entity_type": "main",
+        "business_context": "Main operations"
+      },
+      {
+        "name": "Operations",
+        "description": "Operational expenses and activities",
+        "entity_type": "department",
+        "business_context": "Day-to-day operations"
+      },
+      {
+        "name": "Personal",
+        "description": "Personal expenses",
+        "entity_type": "personal",
+        "business_context": "Non-business transactions"
+      }
+    ],
+    "entity_families": {
+      "Company": ["Main Company", "Operations"]
+    },
+    "business_context": {
+      "industry": "general",
+      "primary_activities": ["business operations"],
+      "transaction_patterns": ["vendor payments", "customer receipts", "operational expenses"],
+      "specialized_features": {
+        "crypto_enabled": false,
+        "multi_currency": false
+      }
+    },
+    "accounting_categories": {
+      "revenue_categories": [
+        "Revenue",
+        "Service Revenue",
+        "Product Revenue",
+        "Other Income"
+      ],
+      "expense_categories": [
+        "Cost of Goods Sold",
+        "Operating Expenses",
+        "Salaries & Wages",
+        "Rent",
+        "Utilities",
+        "Office Supplies",
+        "Marketing",
+        "Technology",
+        "Professional Services",
+        "Insurance",
+        "General and Administrative",
+        "Bank Fees"
+      ],
+      "asset_categories": [
+        "Cash and Equivalents",
+        "Accounts Receivable",
+        "Inventory",
+        "Equipment"
+      ],
+      "liability_categories": [
+        "Accounts Payable",
+        "Accrued Expenses"
+      ]
+    },
+    "pattern_matching_rules": {
+      "entity_matching": {
+        "use_wallet_matching": false,
+        "use_vendor_name_matching": true,
+        "use_bank_identifier_matching": true,
+        "similarity_threshold": 0.75,
+        "min_pattern_matches": 2
+      },
+      "description_matching": {
+        "min_transactions_to_suggest": 3,
+        "max_suggestions": 10,
+        "use_semantic_matching": true,
+        "similarity_threshold": 0.70
+      }
+    }
+  }
+}

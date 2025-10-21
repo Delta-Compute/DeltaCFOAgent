@@ -36,6 +36,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import tenant configuration management
+from tenant_config import (
+    get_current_tenant_id,
+    get_tenant_entities,
+    get_tenant_business_context,
+    get_tenant_accounting_categories,
+    format_entities_for_prompt
+)
+
 # Archive handling imports - optional
 try:
     import py7zr
@@ -1902,6 +1911,97 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
         print(f"ERROR: Error finding similar descriptions: {e}")
         return []
 
+def build_entity_classification_prompt(context: Dict, tenant_id: str = None) -> str:
+    """
+    Build dynamic entity classification prompt based on tenant configuration.
+
+    Args:
+        context: Transaction context dictionary
+        tenant_id: Tenant identifier (defaults to current tenant)
+
+    Returns:
+        Formatted prompt string for Claude AI
+    """
+    if tenant_id is None:
+        tenant_id = get_current_tenant_id()
+
+    # Load tenant-specific entities and business context
+    entities = get_tenant_entities(tenant_id)
+    business_context = get_tenant_business_context(tenant_id)
+
+    # Format entities for prompt
+    entity_rules = format_entities_for_prompt(entities)
+
+    # Build industry-specific context hints
+    industry = business_context.get('industry', 'general')
+    industry_hints = {
+        'crypto_trading': [
+            "Crypto exchange patterns (Coinbase, Binance, Kraken, etc.)",
+            "Wallet addresses and blockchain transactions",
+            "Mining operations and validator rewards",
+            "DeFi protocols and staking",
+            "Gas fees and transaction costs"
+        ],
+        'e_commerce': [
+            "Payment processor patterns (Stripe, PayPal, Square)",
+            "Marketplace fees (Amazon, eBay, Shopify)",
+            "Shipping and fulfillment costs",
+            "Inventory and supplier payments",
+            "Customer refunds and chargebacks"
+        ],
+        'saas': [
+            "Cloud infrastructure (AWS, Google Cloud, Azure)",
+            "SaaS tools and subscriptions",
+            "API and service integrations",
+            "Customer billing and subscriptions",
+            "Development tools and platforms"
+        ],
+        'professional_services': [
+            "Client billing and invoices",
+            "Professional fees and consultants",
+            "Office expenses and rent",
+            "Insurance and licenses",
+            "Marketing and client acquisition"
+        ],
+        'general': [
+            "Bank descriptions often contain merchant/institution names",
+            "ACH/WIRE patterns indicate specific business relationships",
+            "Amount patterns may suggest recurring services vs one-time purchases"
+        ]
+    }
+
+    context_clues = industry_hints.get(industry, industry_hints['general'])
+    context_clues_str = '\n            - '.join(context_clues)
+
+    # Build the prompt
+    prompt = f"""
+            You are a financial analyst specializing in entity classification for {industry.replace('_', ' ')} businesses.
+
+            TRANSACTION DETAILS:
+            - Description: {context.get('description', '')}
+            - Amount: ${context.get('amount', '')}
+            - Source File: {context.get('source_file', '')}
+            - Date: {context.get('date', '')}
+
+            ENTITY CLASSIFICATION RULES:
+            {entity_rules}
+
+            CONTEXT CLUES:
+            - {context_clues_str}
+
+            Based on the transaction description and amount, suggest 3-5 most likely entities.
+            Prioritize based on:
+            1. Specific merchant/institution mentioned
+            2. Transaction type (ACH, WIRE, etc.)
+            3. Industry-specific patterns
+            4. Amount patterns
+
+            Return only the entity names, one per line, ranked by confidence.
+            """
+
+    return prompt
+
+
 def get_ai_powered_suggestions(field_type: str, current_value: str = "", context: Dict = None) -> List[str]:
     """Get AI-powered suggestions for field values"""
     global claude_client
@@ -1911,6 +2011,9 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
 
     try:
         print(f"DEBUG - get_ai_powered_suggestions called with field_type={field_type}")
+
+        # Get current tenant ID for dynamic configuration
+        tenant_id = get_current_tenant_id()
 
         # Define prompts for different field types
         prompts = {
@@ -1925,39 +2028,7 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             Return only the category names, one per line.
             """,
 
-            'classified_entity': f"""
-            You are a financial analyst specializing in entity classification for crypto/trading businesses.
-
-            TRANSACTION DETAILS:
-            - Description: {context.get('description', '')}
-            - Amount: ${context.get('amount', '')}
-            - Source File: {context.get('source_file', '')}
-            - Date: {context.get('date', '')}
-
-            ENTITY CLASSIFICATION RULES:
-            • Delta LLC: US-based trading operations, exchanges, brokers, US banking
-            • Delta Prop Shop LLC: Proprietary trading, DeFi protocols, yield farming, liquid staking
-            • Infinity Validator: Blockchain validation, staking rewards, node operations
-            • Delta Mining Paraguay S.A.: Mining operations, equipment, Paraguay-based transactions
-            • Delta Brazil Operations: Brazil-based activities, regulatory compliance, local operations
-            • Personal: Individual expenses, personal transfers, non-business transactions
-            • Internal Transfer: Movements between company entities/wallets
-
-            CONTEXT CLUES:
-            - Bank descriptions often contain merchant/institution names
-            - ACH/WIRE patterns indicate specific business relationships
-            - Amount patterns may suggest recurring services vs one-time purchases
-            - Geographic indicators (Paraguay, Brazil references)
-
-            Based on the transaction description and amount, suggest 3-5 most likely entities.
-            Prioritize based on:
-            1. Specific merchant/institution mentioned
-            2. Transaction type (ACH, WIRE, etc.)
-            3. Geographic/regulatory context
-            4. Amount patterns
-
-            Return only the entity names, one per line, ranked by confidence.
-            """,
+            'classified_entity': build_entity_classification_prompt(context, tenant_id),
 
             'justification': f"""
             Based on this transaction:
@@ -9715,6 +9786,327 @@ def api_test_blockchain_lookup(txid):
         return jsonify({
             "success": False,
             "error": str(e)
+        }), 500
+
+
+# ============================================================================
+# TENANT CONFIGURATION API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/tenant/config/<config_type>', methods=['GET'])
+def api_get_tenant_config(config_type):
+    """
+    Get tenant configuration by type.
+
+    Args:
+        config_type: Type of configuration ('entities', 'business_context', 'accounting_categories', 'pattern_matching_rules')
+
+    Returns:
+        JSON with configuration data
+    """
+    try:
+        from tenant_config import get_current_tenant_id, get_tenant_configuration
+
+        tenant_id = get_current_tenant_id()
+        config = get_tenant_configuration(tenant_id, config_type)
+
+        if config:
+            return jsonify({
+                'success': True,
+                'tenant_id': tenant_id,
+                'config_type': config_type,
+                'config_data': config
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Configuration not found for {config_type}'
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error getting tenant config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/config/<config_type>', methods=['PUT'])
+def api_update_tenant_config(config_type):
+    """
+    Update tenant configuration by type.
+
+    Request body should contain:
+    - config_data: The configuration data object
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        from tenant_config import get_current_tenant_id, update_tenant_configuration, validate_tenant_configuration
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        if not data or 'config_data' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing config_data in request body'
+            }), 400
+
+        config_data = data['config_data']
+
+        # Validate configuration
+        is_valid, error_msg = validate_tenant_configuration(config_type, config_data)
+        if not is_valid:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid configuration: {error_msg}'
+            }), 400
+
+        # Update configuration
+        success = update_tenant_configuration(
+            tenant_id,
+            config_type,
+            config_data,
+            updated_by=session.get('user_id', 'api_user')
+        )
+
+        if success:
+            return jsonify({
+                'success': True,
+                'tenant_id': tenant_id,
+                'config_type': config_type,
+                'message': 'Configuration updated successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to update configuration'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error updating tenant config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/industries', methods=['GET'])
+def api_list_industries():
+    """
+    Get list of available industry templates.
+
+    Returns:
+        JSON with list of industries and their metadata
+    """
+    try:
+        from industry_templates import list_available_industries
+
+        industries = list_available_industries()
+
+        return jsonify({
+            'success': True,
+            'industries': industries,
+            'count': len(industries)
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing industries: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/industries/<industry_key>/preview', methods=['GET'])
+def api_preview_industry_template(industry_key):
+    """
+    Preview what an industry template will configure.
+
+    Args:
+        industry_key: Industry template key
+
+    Returns:
+        JSON with preview information
+    """
+    try:
+        from industry_templates import get_template_preview
+
+        preview = get_template_preview(industry_key)
+
+        if preview:
+            return jsonify({
+                'success': True,
+                'industry_key': industry_key,
+                'preview': preview
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Industry template not found: {industry_key}'
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error previewing industry template: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/industries/<industry_key>/apply', methods=['POST'])
+def api_apply_industry_template(industry_key):
+    """
+    Apply an industry template to the current tenant.
+
+    Request body (optional):
+    - company_name: Company name to customize entity names
+
+    Returns:
+        JSON with success status
+    """
+    try:
+        from industry_templates import apply_industry_template
+        from tenant_config import get_current_tenant_id, clear_tenant_config_cache
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json() or {}
+        company_name = data.get('company_name')
+
+        success = apply_industry_template(tenant_id, industry_key, company_name)
+
+        if success:
+            # Clear cache so new config is loaded
+            clear_tenant_config_cache(tenant_id)
+
+            return jsonify({
+                'success': True,
+                'tenant_id': tenant_id,
+                'industry_key': industry_key,
+                'message': f'Successfully applied {industry_key} template'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to apply industry template'
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error applying industry template: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/config/export', methods=['GET'])
+def api_export_tenant_config():
+    """
+    Export all tenant configurations as JSON for backup/sharing.
+
+    Returns:
+        JSON with all tenant configurations
+    """
+    try:
+        from tenant_config import (
+            get_current_tenant_id,
+            get_tenant_configuration
+        )
+
+        tenant_id = get_current_tenant_id()
+
+        # Export all configuration types
+        config_types = ['entities', 'business_context', 'accounting_categories', 'pattern_matching_rules']
+        export_data = {
+            'tenant_id': tenant_id,
+            'export_date': datetime.now().isoformat(),
+            'configurations': {}
+        }
+
+        for config_type in config_types:
+            config = get_tenant_configuration(tenant_id, config_type)
+            if config:
+                export_data['configurations'][config_type] = config
+
+        return jsonify({
+            'success': True,
+            'export_data': export_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error exporting tenant config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/tenant/config/import', methods=['POST'])
+def api_import_tenant_config():
+    """
+    Import tenant configurations from JSON export.
+
+    Request body should contain:
+    - import_data: The exported configuration data
+
+    Returns:
+        JSON with success status and import details
+    """
+    try:
+        from tenant_config import (
+            get_current_tenant_id,
+            update_tenant_configuration,
+            clear_tenant_config_cache
+        )
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        if not data or 'import_data' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing import_data in request body'
+            }), 400
+
+        import_data = data['import_data']
+        configurations = import_data.get('configurations', {})
+
+        if not configurations:
+            return jsonify({
+                'success': False,
+                'error': 'No configurations found in import data'
+            }), 400
+
+        # Import each configuration type
+        imported_count = 0
+        for config_type, config_data in configurations.items():
+            success = update_tenant_configuration(
+                tenant_id,
+                config_type,
+                config_data,
+                updated_by=session.get('user_id', 'import')
+            )
+            if success:
+                imported_count += 1
+
+        # Clear cache
+        clear_tenant_config_cache(tenant_id)
+
+        return jsonify({
+            'success': True,
+            'tenant_id': tenant_id,
+            'imported_count': imported_count,
+            'total_configurations': len(configurations),
+            'message': f'Successfully imported {imported_count} configurations'
+        })
+
+    except Exception as e:
+        logger.error(f"Error importing tenant config: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 
