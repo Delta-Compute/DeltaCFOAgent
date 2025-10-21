@@ -16,7 +16,7 @@ Architecture:
 import logging
 from typing import Dict, List, Any
 from datetime import datetime
-from .database import db_manager
+from database import db_manager
 
 logger = logging.getLogger(__name__)
 
