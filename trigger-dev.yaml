@@ -1,0 +1,15 @@
+name: deltacfoagent-dev-trigger
+description: "Build and deploy to Cloud Run development service deltacfoagent-dev on push to Dev branch"
+github:
+  owner: Delta-Compute
+  name: DeltaCFOAgent
+  push:
+    branch: ^Dev$
+filename: cloudbuild-dev.yaml
+substitutions:
+  _SERVICE_NAME: deltacfoagent-dev
+  _DEPLOY_REGION: southamerica-east1
+tags:
+  - gcp-cloud-build-deploy-cloud-run
+  - gcp-cloud-build-deploy-cloud-run-managed
+  - deltacfoagent-dev
