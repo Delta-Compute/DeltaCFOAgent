@@ -1198,7 +1198,8 @@ Return only the JSON object, no additional text.
         # Parse JSON response
         pattern_data = json.loads(response_text)
 
-        # Store patterns in database
+        # Store patterns in database with tenant isolation
+        tenant_id = get_current_tenant_id()
         from database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
@@ -1206,9 +1207,9 @@ Return only the JSON object, no additional text.
         placeholder = '%s' if is_postgresql else '?'
 
         cursor.execute(f"""
-            INSERT INTO entity_patterns (entity_name, pattern_data, transaction_id, confidence_score)
-            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder})
-        """, (entity_name, json.dumps(pattern_data), transaction_id, 1.0))
+            INSERT INTO entity_patterns (tenant_id, entity_name, pattern_data, transaction_id, confidence_score)
+            VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+        """, (tenant_id, entity_name, json.dumps(pattern_data), transaction_id, 1.0))
 
         conn.commit()
         conn.close()
@@ -1296,10 +1297,11 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                     wallet_address = str(current_dest)
                     logging.info(f"[WALLET_MATCH] Found wallet in DESTINATION: {wallet_address[:40]}...")
 
-                # First, fetch learned patterns for this entity to build SQL filters
+                # First, fetch learned patterns for this entity to build SQL filters (tenant-isolated)
                 pattern_conditions = []
                 params = []  # Initialize params list for SQL query
                 try:
+                    tenant_id = get_current_tenant_id()
                     from database import db_manager
                     pattern_conn = db_manager._get_postgresql_connection()
                     pattern_cursor = pattern_conn.cursor()
@@ -1308,10 +1310,11 @@ def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> Li
                     pattern_cursor.execute(f"""
                         SELECT pattern_data
                         FROM entity_patterns
-                        WHERE entity_name = {pattern_placeholder_temp}
+                        WHERE tenant_id = {pattern_placeholder_temp}
+                        AND entity_name = {pattern_placeholder_temp}
                         ORDER BY created_at DESC
                         LIMIT 5
-                    """, (new_value,))
+                    """, (tenant_id, new_value))
 
                     learned_patterns_rows = pattern_cursor.fetchall()
                     pattern_conn.close()
@@ -7802,23 +7805,147 @@ def get_learned_suggestions(field_type: str, transaction_context: dict) -> list:
         print(f"ERROR: Error getting learned suggestions: {e}")
         return []
 
-def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: dict) -> str:
-    """Enhance AI prompts with learned patterns"""
+def get_entity_pattern_suggestions(entity_name: str) -> Dict:
+    """Get LLM-extracted entity patterns for enhancing AI suggestions"""
     try:
+        if not entity_name:
+            return {}
+
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        # Fetch the most recent entity patterns for this entity (tenant-isolated)
+        cursor.execute(f"""
+            SELECT pattern_data
+            FROM entity_patterns
+            WHERE tenant_id = {placeholder}
+            AND entity_name = {placeholder}
+            ORDER BY created_at DESC
+            LIMIT 3
+        """, (tenant_id, entity_name))
+
+        pattern_rows = cursor.fetchall()
+        conn.close()
+
+        if not pattern_rows:
+            return {}
+
+        # Aggregate patterns from multiple transactions
+        aggregated_patterns = {
+            'company_names': set(),
+            'transaction_keywords': set(),
+            'bank_identifiers': set(),
+            'originator_patterns': set(),
+            'payment_method_types': set()
+        }
+
+        for row in pattern_rows:
+            pattern_data = row.get('pattern_data', '{}') if isinstance(row, dict) else row[0]
+            if isinstance(pattern_data, str):
+                pattern_data = json.loads(pattern_data)
+
+            aggregated_patterns['company_names'].update(pattern_data.get('company_names', []))
+            aggregated_patterns['transaction_keywords'].update(pattern_data.get('transaction_keywords', []))
+            aggregated_patterns['bank_identifiers'].update(pattern_data.get('bank_identifiers', []))
+            aggregated_patterns['originator_patterns'].update(pattern_data.get('originator_patterns', []))
+            if pattern_data.get('payment_method_type'):
+                aggregated_patterns['payment_method_types'].add(pattern_data['payment_method_type'])
+
+        # Convert sets to lists for JSON serialization
+        return {k: list(v) for k, v in aggregated_patterns.items() if v}
+
+    except Exception as e:
+        print(f"ERROR: Error getting entity patterns: {e}")
+        return {}
+
+def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: dict) -> str:
+    """Enhance AI prompts with learned patterns from both learned_patterns and entity_patterns tables"""
+    try:
+        enhanced_context = ""
+
+        # 1. Get simple learned suggestions (from learned_patterns table)
         learned_suggestions = get_learned_suggestions(field_type, context)
 
         if learned_suggestions:
-            learning_context = "\n\nBased on previous user preferences for similar transactions:"
+            enhanced_context += "\n\nBased on previous user preferences for similar transactions:"
             for suggestion in learned_suggestions:
                 confidence_pct = int(suggestion['confidence'] * 100)
-                learning_context += f"\n- '{suggestion['value']}' (user chose this {confidence_pct}% of the time)"
+                enhanced_context += f"\n- '{suggestion['value']}' (user chose this {confidence_pct}% of the time)"
 
-            learning_context += "\n\nConsider these learned preferences in your suggestions."
-            return base_prompt + learning_context
+        # 2. Get LLM-extracted entity patterns (from entity_patterns table) - ONLY for entity classification
+        if field_type == 'classified_entity' and context.get('description'):
+            current_description = context.get('description', '').upper()
+
+            # Try to extract potential entity names from description and get their patterns
+            # This helps AI understand what patterns are associated with different entities
+            from database import db_manager
+            conn = db_manager._get_postgresql_connection()
+            cursor = conn.cursor()
+            tenant_id = get_current_tenant_id()
+            placeholder = '%s' if hasattr(cursor, 'mogrify') else '?'
+
+            # Get all entity names that have learned patterns (for this tenant)
+            cursor.execute(f"""
+                SELECT DISTINCT entity_name
+                FROM entity_patterns
+                WHERE tenant_id = {placeholder}
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, (tenant_id,))
+
+            entities_with_patterns = [row[0] if isinstance(row, tuple) else row['entity_name'] for row in cursor.fetchall()]
+            conn.close()
+
+            # For each entity, check if description matches any of its patterns
+            matching_entities_info = []
+            for entity in entities_with_patterns:
+                entity_patterns = get_entity_pattern_suggestions(entity)
+
+                if entity_patterns:
+                    # Check if current description matches any pattern elements
+                    matches = []
+                    for company in entity_patterns.get('company_names', []):
+                        if company.upper() in current_description:
+                            matches.append(f"company: {company}")
+                    for keyword in entity_patterns.get('transaction_keywords', []):
+                        if keyword.upper() in current_description:
+                            matches.append(f"keyword: {keyword}")
+                    for bank in entity_patterns.get('bank_identifiers', []):
+                        if bank.upper() in current_description:
+                            matches.append(f"bank: {bank}")
+
+                    if matches:
+                        matching_entities_info.append({
+                            'entity': entity,
+                            'matches': matches,
+                            'pattern_count': len(matches)
+                        })
+
+            # Add pattern matching context to prompt
+            if matching_entities_info:
+                # Sort by number of matches (highest confidence first)
+                matching_entities_info.sort(key=lambda x: x['pattern_count'], reverse=True)
+
+                enhanced_context += "\n\nLearned entity patterns matching this transaction:"
+                for match_info in matching_entities_info[:3]:  # Top 3 matches
+                    entity = match_info['entity']
+                    matches_str = ", ".join(match_info['matches'])
+                    enhanced_context += f"\n- '{entity}' (matched: {matches_str})"
+
+                enhanced_context += "\n\nStrongly consider these entities with matching patterns in your suggestions."
+
+        if enhanced_context:
+            return base_prompt + enhanced_context
 
         return base_prompt
     except Exception as e:
         print(f"ERROR: Error enhancing prompt: {e}")
+        import traceback
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
         return base_prompt
 
 @app.route('/api/test-sync/<filename>')
