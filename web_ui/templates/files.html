@@ -27,12 +27,12 @@
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
-                    <h1>📁 File Management</h1>
+                    <h1>File Management</h1>
                 </header>
 
                 <!-- Upload Section -->
                 <div class="filter-section">
-                    <h2>📤 Upload New CSV Files</h2>
+                    <h2>Upload New CSV Files</h2>
                     <div class="upload-area" id="uploadArea">
                         <div class="upload-content">
                             <div class="upload-icon">📁</div>
@@ -52,96 +52,186 @@
                     </div>
                 </div>
 
-                <!-- Files Section -->
+                <!-- Account Groups Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>📋 CSV Files</h2>
+                        <h2>Uploaded Files by Account</h2>
                         <div class="table-info">
-                            <span>{{ files|length }} files found</span>
+                            <span>{{ account_groups|length }} account(s) with uploaded files</span>
                         </div>
                     </div>
 
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Account/Card</th>
-                                    <th>File Name</th>
-                                    <th>Statement Period</th>
-                                    <th>Transactions</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for file in files %}
-                                <tr>
-                                    <td>
-                                        <div style="display: flex; flex-direction: column;">
-                                            <span style="font-weight: 600; color: #2d3748;">
-                                                {% if file.account_number %}
-                                                    ...{{ file.account_number }}
-                                                {% else %}
-                                                    —
-                                                {% endif %}
+                    {% if account_groups|length == 0 %}
+                    <div style="padding: 3rem; text-align: center; color: #718096;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
+                        <h3 style="margin: 0 0 0.5rem 0; color: #4a5568;">No files uploaded yet</h3>
+                        <p>Upload CSV files above to get started with transaction tracking.</p>
+                    </div>
+                    {% else %}
+                    <!-- Account Groups Display -->
+                    <div class="accounts-container">
+                        {% for group in account_groups %}
+                        <div class="account-group" data-account-id="{{ group.id }}">
+                            <!-- Account Header (Collapsible) -->
+                            <div class="account-header" onclick="toggleAccount('{{ group.id }}')">
+                                <div class="account-header-left">
+                                    <span class="account-category-icon">
+                                        {% if group.category == 'Checking' %}🏦
+                                        {% elif group.category == 'Credit Card' %}💳
+                                        {% elif group.category == 'Crypto Wallet' %}🪙
+                                        {% else %}📄{% endif %}
+                                    </span>
+                                    <div class="account-info">
+                                        <h3>{{ group.name }}</h3>
+                                        <div class="account-meta">
+                                            <span class="category-badge category-{{ group.category|replace(' ', '-')|lower }}">
+                                                {{ group.category }}
                                             </span>
-                                            <span style="font-size: 0.75rem; color: #718096;">
-                                                {{ file.account_type }}
+                                            <span style="color: #718096; margin-left: 0.5rem;">
+                                                {{ group.total_files }} file(s) • {{ group.overall_start }} to {{ group.overall_end }}
                                             </span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div style="font-size: 0.875rem; color: #4a5568;">
-                                            {{ file.name }}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
-                                            {% if file.file_date_range %}
-                                                <span style="color: #667eea; font-weight: 500;">{{ file.file_date_range }}</span>
-                                            {% else %}
-                                                <span style="color: #718096;">{{ file.earliest_date }} to {{ file.latest_date }}</span>
+                                            {% if group.has_gaps %}
+                                            <span class="gap-warning-badge">⚠️ Gaps Detected</span>
                                             {% endif %}
                                         </div>
-                                    </td>
-                                    <td>
-                                        <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
-                                            <span style="font-weight: 600; color: #2d3748;">
-                                                {{ file.total_transactions }} total
-                                            </span>
-                                            <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
-                                                <span style="color: #38a169;">{{ file.active_transactions }} active</span>
-                                                {% if file.archived_transactions > 0 %}
-                                                <span style="color: #e53e3e;">{{ file.archived_transactions }} archived</span>
-                                                {% endif %}
-                                            </div>
+                                    </div>
+                                </div>
+                                <div class="account-header-right">
+                                    <div class="account-stats">
+                                        <div class="stat-item">
+                                            <span class="stat-value">{{ group.total_transactions }}</span>
+                                            <span class="stat-label">Total Txns</span>
                                         </div>
-                                    </td>
-                                    <td>
-                                        {% if file.archived_transactions == file.total_transactions %}
-                                            <span class="status-badge status-archived">All Archived</span>
-                                        {% elif file.archived_transactions > 0 %}
-                                            <span class="status-badge status-partial">Partially Archived</span>
-                                        {% else %}
-                                            <span class="status-badge status-active">Active</span>
+                                        <div class="stat-item">
+                                            <span class="stat-value">{{ group.active_transactions }}</span>
+                                            <span class="stat-label">Active</span>
+                                        </div>
+                                        {% if group.coverage_pct %}
+                                        <div class="stat-item">
+                                            <span class="stat-value" style="color: {% if group.coverage_pct >= 90 %}#38a169{% elif group.coverage_pct >= 70 %}#f59e0b{% else %}#e53e3e{% endif %};">
+                                                {{ group.coverage_pct }}%
+                                            </span>
+                                            <span class="stat-label">Coverage</span>
+                                        </div>
                                         {% endif %}
-                                    </td>
-                                    <td>
-                                        <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')">
-                                            View
-                                        </button>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                    </div>
+                                    <span class="expand-icon">▼</span>
+                                </div>
+                            </div>
+
+                            <!-- Account Files (Initially Hidden) -->
+                            <div class="account-files">
+                                <table class="files-table">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 40%;">File Name</th>
+                                            <th style="width: 20%;">Statement Period</th>
+                                            <th style="width: 15%;">Transactions</th>
+                                            <th style="width: 15%;">Status</th>
+                                            <th style="width: 10%;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for file in group.files %}
+                                        <!-- Gap Warning Row -->
+                                        {% if file.gap_before %}
+                                        <tr class="gap-warning-row">
+                                            <td colspan="5">
+                                                <div class="gap-warning">
+                                                    <span class="gap-icon">⚠️</span>
+                                                    <span class="gap-text">
+                                                        <strong>Gap Detected:</strong>
+                                                        Missing {{ file.gap_before.days }} days
+                                                        {% if file.gap_before.months > 0 %}
+                                                        (≈{{ file.gap_before.months }} month{{ 's' if file.gap_before.months > 1 else '' }})
+                                                        {% endif %}
+                                                        between {{ file.gap_before.from }} and {{ file.gap_before.to }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endif %}
+
+                                        <!-- File Row -->
+                                        <tr class="file-row">
+                                            <td>
+                                                <div style="font-size: 0.875rem; color: #4a5568; font-family: 'Courier New', monospace;">
+                                                    {{ file.name }}
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
+                                                    <span style="color: #667eea; font-weight: 500;">
+                                                        {{ file.start_date_str }} to {{ file.end_date_str }}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div style="display: flex; flex-direction: column; font-size: 0.875rem;">
+                                                    <span style="font-weight: 600; color: #2d3748;">
+                                                        {{ file.total_transactions }} total
+                                                    </span>
+                                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.25rem;">
+                                                        <span style="color: #38a169; font-size: 0.75rem;">{{ file.active_transactions }} active</span>
+                                                        {% if file.archived_transactions > 0 %}
+                                                        <span style="color: #e53e3e; font-size: 0.75rem;">{{ file.archived_transactions }} archived</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                {% if file.archived_transactions == file.total_transactions %}
+                                                    <span class="status-badge status-archived">All Archived</span>
+                                                {% elif file.archived_transactions > 0 %}
+                                                    <span class="status-badge status-partial">Partially Archived</span>
+                                                {% else %}
+                                                    <span class="status-badge status-active">Active</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')">
+                                                    View
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 
     <script>
+        // Toggle account group expansion
+        function toggleAccount(accountId) {
+            const accountGroup = document.querySelector(`[data-account-id="${accountId}"]`);
+            const filesSection = accountGroup.querySelector('.account-files');
+            const expandIcon = accountGroup.querySelector('.expand-icon');
+
+            if (filesSection.style.display === 'none' || !filesSection.style.display) {
+                filesSection.style.display = 'block';
+                expandIcon.textContent = '▲';
+                accountGroup.classList.add('expanded');
+            } else {
+                filesSection.style.display = 'none';
+                expandIcon.textContent = '▼';
+                accountGroup.classList.remove('expanded');
+            }
+        }
+
+        // Initialize - collapse all accounts by default
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.account-files').forEach(section => {
+                section.style.display = 'none';
+            });
+        });
+
         // Drag and drop functionality
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
@@ -419,7 +509,6 @@
             document.body.appendChild(modal);
 
             // Programmatically set all checkboxes to checked after modal is rendered
-            // (innerHTML doesn't automatically set .checked property from attribute)
             setTimeout(() => {
                 const allCheckboxes = document.querySelectorAll('.dup-checkbox');
                 allCheckboxes.forEach(cb => cb.checked = true);
@@ -472,7 +561,7 @@
                     }
                 });
 
-                // If no transactions selected, just upload the NEW transactions (skip all duplicates)
+                // If no transactions selected, just upload the NEW transactions
                 if (selectedIndices.length === 0) {
                     if (!confirm('No duplicates selected. This will upload only the NEW transactions and skip all duplicates. Continue?')) {
                         return;
@@ -579,6 +668,217 @@
     </script>
 
     <style>
+        /* Account Groups Container */
+        .accounts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        /* Account Group */
+        .account-group {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+
+        .account-group:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .account-group.expanded {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
+        /* Account Header */
+        .account-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 1.5rem;
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .account-header:hover {
+            background: linear-gradient(135deg, #edf2f7 0%, #e2e8f0 100%);
+        }
+
+        .account-header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex: 1;
+        }
+
+        .account-category-icon {
+            font-size: 2rem;
+            line-height: 1;
+        }
+
+        .account-info h3 {
+            margin: 0 0 0.5rem 0;
+            color: #2d3748;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .account-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        /* Category Badges */
+        .category-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .category-checking {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .category-credit-card {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .category-crypto-wallet {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .category-other {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        /* Gap Warning Badge */
+        .gap-warning-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        /* Account Stats */
+        .account-header-right {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .account-stats {
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            color: #718096;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .expand-icon {
+            font-size: 1rem;
+            color: #4a5568;
+            transition: transform 0.2s;
+        }
+
+        .account-group.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Account Files Section */
+        .account-files {
+            border-top: 1px solid #e2e8f0;
+            background: white;
+        }
+
+        .files-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .files-table thead {
+            background: #f7fafc;
+        }
+
+        .files-table th {
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: #4a5568;
+            padding: 0.75rem 1rem;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .files-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #f7fafc;
+        }
+
+        .file-row:hover {
+            background: #f7fafc;
+        }
+
+        /* Gap Warning Row */
+        .gap-warning-row {
+            background: #fff5f5;
+        }
+
+        .gap-warning {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+        }
+
+        .gap-icon {
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+
+        .gap-text {
+            color: #742a2a;
+            font-size: 0.875rem;
+        }
+
+        .gap-text strong {
+            color: #c53030;
+        }
+
+        /* Upload Area */
         .upload-area {
             border: 2px dashed #cbd5e0;
             border-radius: 8px;
@@ -629,12 +929,39 @@
             font-weight: 500;
         }
 
+        /* Status Badges */
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }
+
+        .status-active {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-partial {
+            background: #fefcbf;
+            color: #744210;
+        }
+
+        .status-archived {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        /* Buttons */
         .btn-sm {
             padding: 0.375rem 0.75rem;
             font-size: 0.875rem;
         }
 
-
+        /* Duplicate Dialog */
         .duplicate-dialog-overlay {
             position: fixed;
             top: 0;
@@ -646,20 +973,6 @@
             align-items: center;
             justify-content: center;
             z-index: 9999;
-        }
-
-        .duplicate-dialog {
-            background: white;
-            border-radius: 12px;
-            padding: 2rem;
-            max-width: 600px;
-            width: 90%;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        }
-
-        .duplicate-dialog h3 {
-            margin: 0 0 1rem 0;
-            color: #2d3748;
         }
 
         .duplicate-dialog-improved {
@@ -702,103 +1015,6 @@
 
         .duplicate-dialog-improved::-webkit-scrollbar-thumb:hover {
             background: #5568d3;
-        }
-
-        .duplicate-preview {
-            margin: 1.5rem 0;
-            padding: 1rem;
-            background: #f7fafc;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-        }
-
-        .duplicate-preview h4 {
-            margin: 0 0 1rem 0;
-            color: #4a5568;
-            font-size: 0.95rem;
-        }
-
-        .duplicate-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        .duplicate-item {
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 1rem;
-            padding: 0.5rem;
-            background: white;
-            border-radius: 6px;
-            font-size: 0.85rem;
-        }
-
-        .duplicate-date {
-            color: #667eea;
-            font-weight: 500;
-        }
-
-        .duplicate-desc {
-            color: #4a5568;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .duplicate-amount {
-            color: #38a169;
-            font-weight: 500;
-        }
-
-        .dialog-buttons {
-            display: flex;
-            gap: 1rem;
-            justify-content: flex-end;
-            margin-top: 2rem;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.025em;
-        }
-
-        .status-active {
-            background: #c6f6d5;
-            color: #22543d;
-        }
-
-        .status-partial {
-            background: #fefcbf;
-            color: #744210;
-        }
-
-        .status-archived {
-            background: #fed7d7;
-            color: #742a2a;
-        }
-
-        table th {
-            text-align: left;
-            font-weight: 600;
-            font-size: 0.875rem;
-            color: #4a5568;
-            padding: 0.75rem 1rem;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        table td {
-            padding: 1rem;
-            border-bottom: 1px solid #e2e8f0;
-        }
-
-        table tr:hover {
-            background: #f7fafc;
         }
     </style>
 </body>
