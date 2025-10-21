@@ -56,6 +56,9 @@ except ImportError:
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Add current web_ui directory to path for local imports (needed for Cloud Run)
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 # Import invoice processing modules
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
