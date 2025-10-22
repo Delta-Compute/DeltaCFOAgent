@@ -1,7 +1,5 @@
-# Cloud Build configuration for Delta CFO Agent
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: 'E2_HIGHCPU_8'
 
 steps:
   # Build the container image using Dockerfile
@@ -35,12 +33,14 @@ steps:
       - '--timeout'
       - '900'
       - '--cpu-boost'
+      - '--startup-cpu-boost'
+      - '--cpu-throttling'
       - '--execution-environment'
       - 'gen2'
       - '--max-instances'
       - '100'
       - '--set-env-vars'
-      - 'DB_TYPE=postgresql,DB_SOCKET_PATH=/cloudsql/$PROJECT_ID:southamerica-east1:delta-cfo-db,DB_NAME=delta_cfo,DB_USER=delta_user,FLASK_ENV=production,PYTHONUNBUFFERED=1,PYTHONPATH=/app,FLASK_APP=web_ui.app_db:app'
+      - 'DB_TYPE=postgresql,DB_SOCKET_PATH=/cloudsql/$PROJECT_ID:southamerica-east1:delta-cfo-db,DB_NAME=delta_cfo,DB_USER=delta_user,FLASK_ENV=production,PORT=8080,PYTHONUNBUFFERED=1'
       - '--set-cloudsql-instances'
       - '$PROJECT_ID:southamerica-east1:delta-cfo-db'
       - '--set-secrets'
