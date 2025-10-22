@@ -224,6 +224,41 @@ class CryptoInvoiceDatabaseManager:
                     );
                     """,
 
+                    # CFO sync mapping table
+                    """
+                    CREATE TABLE IF NOT EXISTS crypto_invoice_cfo_sync (
+                        id SERIAL PRIMARY KEY,
+                        invoice_id INTEGER NOT NULL REFERENCES crypto_invoices(id) ON DELETE CASCADE,
+                        cfo_transaction_id INTEGER,
+                        sync_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                        sync_timestamp TIMESTAMP,
+                        cfo_database_table VARCHAR(100) DEFAULT 'transactions',
+                        entity_mapped VARCHAR(255),
+                        category_mapped VARCHAR(100),
+                        confidence_score DECIMAL(3,2) DEFAULT 1.00,
+                        sync_error TEXT,
+                        retry_count INTEGER DEFAULT 0,
+                        last_retry_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(invoice_id)
+                    );
+                    """,
+
+                    # CFO sync log table
+                    """
+                    CREATE TABLE IF NOT EXISTS crypto_cfo_sync_log (
+                        id SERIAL PRIMARY KEY,
+                        invoice_id INTEGER NOT NULL REFERENCES crypto_invoices(id) ON DELETE CASCADE,
+                        sync_attempt_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        sync_status VARCHAR(20) NOT NULL,
+                        cfo_transaction_id INTEGER,
+                        error_message TEXT,
+                        request_payload JSONB,
+                        response_data JSONB
+                    );
+                    """,
+
                     # Create indexes for performance
                     """
                     -- Invoice table indexes
@@ -259,6 +294,14 @@ class CryptoInvoiceDatabaseManager:
                     CREATE INDEX IF NOT EXISTS idx_crypto_chains_enabled ON crypto_blockchain_chains(enabled);
                     CREATE INDEX IF NOT EXISTS idx_crypto_tokens_chain ON crypto_blockchain_tokens(chain_id);
                     CREATE INDEX IF NOT EXISTS idx_crypto_tokens_enabled ON crypto_blockchain_tokens(chain_id, enabled);
+
+                    -- CFO sync mapping indexes
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_invoice ON crypto_invoice_cfo_sync(invoice_id);
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_status ON crypto_invoice_cfo_sync(sync_status);
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_timestamp ON crypto_invoice_cfo_sync(sync_timestamp DESC);
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_cfo_txid ON crypto_invoice_cfo_sync(cfo_transaction_id);
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_log_invoice ON crypto_cfo_sync_log(invoice_id);
+                    CREATE INDEX IF NOT EXISTS idx_cfo_sync_log_timestamp ON crypto_cfo_sync_log(sync_attempt_timestamp DESC);
                     """,
                 ]
             else:
