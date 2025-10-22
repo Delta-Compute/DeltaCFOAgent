@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - Dev
     paths:
       - 'services/analytics_service/**'
       - '.github/workflows/deploy-analytics-service.yml'
@@ -13,8 +14,8 @@ on:
 
 env:
   PROJECT_ID: aicfo
-  SERVICE_NAME: delta-analytics-service
-  REGION: us-central1
+  SERVICE_NAME: ${{ github.ref == 'refs/heads/main' && 'delta-analytics-service' || 'delta-analytics-service-dev' }}
+  REGION: southamerica-east1
 
 jobs:
   deploy:
