@@ -33,8 +33,6 @@ steps:
       - '--timeout'
       - '900'
       - '--cpu-boost'
-      - '--startup-cpu-boost'
-      - '--cpu-throttling'
       - '--execution-environment'
       - 'gen2'
       - '--max-instances'
