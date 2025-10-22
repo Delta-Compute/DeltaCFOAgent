@@ -76,11 +76,11 @@ ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
 # Health check using Python instead of curl with longer start period
-HEALTHCHECK --interval=30s --timeout=30s --start-period=120s --retries=3 \
+HEALTHCHECK --interval=60s --timeout=30s --start-period=300s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:$PORT/health').getcode()" || exit 1
 
 # Expose port
 EXPOSE 8080
 
-# Start command optimized for Cloud Run with faster startup
-CMD exec gunicorn --bind :$PORT --workers 1 --threads 4 --timeout 900 --max-requests 1000 --max-requests-jitter 100 --worker-class sync --worker-connections 1000 web_ui.app_db:app
+# Start command with detailed logging for debugging
+CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 900 --max-requests 1000 --max-requests-jitter 100 --worker-class sync --worker-connections 1000 --log-level debug --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance web_ui.app_db:app

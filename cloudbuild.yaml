@@ -31,7 +31,7 @@ steps:
       - '--port'
       - '8080'
       - '--timeout'
-      - '900'
+      - '1800'
       - '--cpu-boost'
       - '--execution-environment'
       - 'gen2'
