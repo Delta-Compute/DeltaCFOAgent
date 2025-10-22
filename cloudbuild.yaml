@@ -1,3 +1,8 @@
+# Cloud Build configuration for Delta CFO Agent
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
 steps:
   # Build the container image using Dockerfile
   - name: 'gcr.io/cloud-builders/docker'
