@@ -24,10 +24,14 @@ class InvoiceStatus(Enum):
     """Invoice status enumeration"""
     DRAFT = "draft"
     SENT = "sent"
-    PARTIALLY_PAID = "partially_paid"
-    PAID = "paid"
-    OVERDUE = "overdue"
-    CANCELLED = "cancelled"
+    PARTIALLY_PAID = "partially_paid"  # Payment detected, awaiting confirmations
+    PAID = "paid"  # Payment confirmed on blockchain
+    COMPLETE = "complete"  # Payment confirmed AND synced to AI CFO
+    EXPIRED = "expired"  # Invoice past expiration time without payment
+    PARTIAL = "partial"  # Underpayment detected (< 99.5% of expected amount)
+    OVERPAID = "overpaid"  # Overpayment detected (> 100.5% of expected amount)
+    OVERDUE = "overdue"  # Past due date without payment
+    CANCELLED = "cancelled"  # Manually cancelled by issuer
 
 
 class PaymentStatus(Enum):
