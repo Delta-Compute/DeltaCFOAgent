@@ -1261,8 +1261,145 @@ Return only the JSON object, no additional text.
         print(f"ERROR TRACEBACK: {traceback.format_exc()}")
         return {}
 
+def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant_id: str,  max_results: int = 50) -> List[Dict]:
+    """
+    🔥 NEW: TF-IDF-based similar transactions finder (REPLACES old pattern matching)
+
+    Uses the sophisticated TF-IDF pattern system with:
+    - Pre-filtering optimization (5x faster)
+    - Z-score normalized amount matching
+    - Confidence scoring with reinforcement learning
+    - Transaction context awareness
+
+    Args:
+        transaction_id: The reference transaction ID
+        entity_name: The entity to find similar transactions for
+        tenant_id: Tenant ID for multi-tenant isolation
+        max_results: Maximum number of similar transactions to return (default 50)
+
+    Returns:
+        List of dicts with transaction details sorted by match score
+    """
+    try:
+        from database import db_manager
+
+        # Step 1: Get reference transaction details
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT transaction_id, description, amount, account, date, classified_entity
+            FROM transactions
+            WHERE tenant_id = %s AND transaction_id = %s
+        """, (tenant_id, transaction_id))
+
+        ref_tx = cursor.fetchone()
+        if not ref_tx:
+            logging.warning(f"[TFIDF_SIMILAR] Reference transaction {transaction_id} not found")
+            return []
+
+        # Extract reference transaction details
+        if isinstance(ref_tx, dict):
+            ref_desc = ref_tx.get('description', '')
+            ref_amount = ref_tx.get('amount', 0)
+            ref_account = ref_tx.get('account', '')
+        else:
+            ref_desc = ref_tx[1] if len(ref_tx) > 1 else ''
+            ref_amount = ref_tx[2] if len(ref_tx) > 2 else 0
+            ref_account = ref_tx[3] if len(ref_tx) > 3 else ''
+
+        logging.info(f"[TFIDF_SIMILAR] Finding similar transactions for entity='{entity_name}', desc='{ref_desc[:50]}...', amount=${ref_amount}")
+
+        # Step 2: Use TF-IDF system to score ALL unclassified/different entity transactions
+        cursor.execute("""
+            SELECT transaction_id, description, amount, account, date, classified_entity, suggested_entity
+            FROM transactions
+            WHERE tenant_id = %s
+            AND transaction_id != %s
+            AND (classified_entity IS NULL OR classified_entity = '' OR classified_entity != %s)
+            ORDER BY date DESC
+            LIMIT 500
+        """, (tenant_id, transaction_id, entity_name))
+
+        candidate_txs = cursor.fetchall()
+        conn.close()
+
+        if not candidate_txs:
+            logging.info(f"[TFIDF_SIMILAR] No candidate transactions found")
+            return []
+
+        logging.info(f"[TFIDF_SIMILAR] Scoring {len(candidate_txs)} candidate transactions using TF-IDF")
+
+        # Step 3: Score each candidate using the TF-IDF matching system
+        scored_transactions = []
+
+        for tx in candidate_txs:
+            if isinstance(tx, dict):
+                tx_id = tx.get('transaction_id')
+                tx_desc = tx.get('description', '')
+                tx_amount = tx.get('amount', 0)
+                tx_account = tx.get('account', '')
+                tx_date = tx.get('date')
+                tx_entity = tx.get('classified_entity', '')
+                tx_suggested = tx.get('suggested_entity', '')
+            else:
+                tx_id = tx[0]
+                tx_desc = tx[1] if len(tx) > 1 else ''
+                tx_amount = tx[2] if len(tx) > 2 else 0
+                tx_account = tx[3] if len(tx) > 3 else ''
+                tx_date = tx[4] if len(tx) > 4 else None
+                tx_entity = tx[5] if len(tx) > 5 else ''
+                tx_suggested = tx[6] if len(tx) > 6 else ''
+
+            # 🔥 Use the sophisticated TF-IDF scoring system
+            match_result = calculate_entity_match_score(
+                description=tx_desc,
+                entity_name=entity_name,
+                tenant_id=tenant_id,
+                amount=tx_amount,
+                account=tx_account
+            )
+
+            score = match_result.get('score', 0)
+            confidence = match_result.get('confidence', 0)
+            amount_match = match_result.get('amount_match')
+            reasoning = match_result.get('reasoning', '')
+
+            # Only include transactions with meaningful match scores (>= 0.3)
+            if score >= 0.3:
+                scored_transactions.append({
+                    'transaction_id': tx_id,
+                    'description': tx_desc,
+                    'amount': float(tx_amount) if tx_amount else 0,
+                    'account': tx_account,
+                    'date': str(tx_date) if tx_date else '',
+                    'classified_entity': tx_entity,
+                    'suggested_entity': tx_suggested,
+                    'match_score': round(score, 3),
+                    'confidence': round(confidence, 3),
+                    'amount_match': round(amount_match, 3) if amount_match is not None else None,
+                    'reasoning': reasoning
+                })
+
+        # Step 4: Sort by match score (highest first) and limit results
+        scored_transactions.sort(key=lambda x: x['match_score'], reverse=True)
+        top_matches = scored_transactions[:max_results]
+
+        logging.info(f"[TFIDF_SIMILAR] Found {len(top_matches)} similar transactions (scores >= 0.3)")
+
+        return top_matches
+
+    except Exception as e:
+        logging.error(f"[TFIDF_SIMILAR] Error finding similar transactions: {e}")
+        logging.error(traceback.format_exc())
+        return []
+
 def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> List[str]:
-    """Use Claude to intelligently analyze which transactions should have similar descriptions/entities"""
+    """
+    ⚠️  DEPRECATED: Use get_similar_transactions_tfidf() instead
+
+    Use Claude to intelligently analyze which transactions should have similar descriptions/entities
+    """
     try:
         if not claude_client or not context:
             return []
@@ -2096,8 +2233,30 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
             """
         }
 
-        # Special handling for similar_descriptions, similar_entities, similar_accounting, and similar_subcategory - use Claude to analyze similar transactions
+        # Special handling for similar_descriptions, similar_entities, similar_accounting, and similar_subcategory
         if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting', 'similar_subcategory']:
+            # 🔥 NEW: Use TF-IDF system for similar_entities (more accurate and faster)
+            if field_type == 'similar_entities':
+                transaction_id = context.get('transaction_id')
+                entity_name = context.get('value', '')  # The entity user is assigning
+                tenant_id = get_current_tenant_id()
+
+                if transaction_id and entity_name:
+                    logging.info(f"[SIMILAR_ENTITIES] Using TF-IDF system for transaction {transaction_id}, entity '{entity_name}'")
+                    similar_txs = get_similar_transactions_tfidf(
+                        transaction_id=transaction_id,
+                        entity_name=entity_name,
+                        tenant_id=tenant_id,
+                        max_results=50
+                    )
+
+                    # Convert to list of transaction IDs (for backward compatibility with UI)
+                    return [tx['transaction_id'] for tx in similar_txs]
+                else:
+                    logging.warning(f"[SIMILAR_ENTITIES] Missing transaction_id or entity_name in context")
+                    return []
+
+            # For other types, fall back to old Claude-based system
             return get_claude_analyzed_similar_descriptions(context, claude_client)
 
         prompt = prompts.get(field_type, "")
