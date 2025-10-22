@@ -430,6 +430,12 @@
 
                 <!-- Action Buttons -->
                 <div id="transfersActions" style="display: none; margin-top: 20px; text-align: center;">
+                    <button class="btn-success" onclick="applyInternalTransferByConfidence(0.9)" style="padding: 12px 24px; font-size: 14px; background: #28a745; margin-right: 10px;">
+                        ⚡ Accept All >90% (<span id="highConfidenceCount">0</span>)
+                    </button>
+                    <button class="btn-success" onclick="applyInternalTransferByConfidence(0.7)" style="padding: 12px 24px; font-size: 14px; background: #20c997; margin-right: 10px;">
+                        ✨ Accept All >70% (<span id="mediumConfidenceCount">0</span>)
+                    </button>
                     <button class="btn-primary" onclick="applyInternalTransferClassification()" style="padding: 12px 24px; font-size: 14px;">
                         ✅ Apply "Internal Transfer" to Selected (<span id="selectedTransfersCount">0</span> pairs)
                     </button>

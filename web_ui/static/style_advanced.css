@@ -190,6 +190,13 @@ header h1 {
     border-color: #cbd5e0;
 }
 
+.btn-quick.active {
+    background: #667eea;
+    color: white;
+    border-color: #667eea;
+    font-weight: 500;
+}
+
 .btn-primary {
     background: #667eea;
     color: white;

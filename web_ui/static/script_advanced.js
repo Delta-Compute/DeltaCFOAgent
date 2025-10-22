@@ -217,31 +217,90 @@ function setupEventListeners() {
     // Show Archived toggle button
     document.getElementById('showArchived').addEventListener('click', toggleArchivedView);
 
-    // Quick filter buttons
-    document.getElementById('filterTodos').addEventListener('click', () => {
-        document.getElementById('needsReview').value = 'true';
+    // Quick filter buttons with toggle functionality
+    document.getElementById('filterTodos').addEventListener('click', function() {
+        const isActive = this.classList.contains('active');
+
+        if (isActive) {
+            // Deactivate filter
+            this.classList.remove('active');
+            document.getElementById('needsReview').value = '';
+        } else {
+            // Activate filter
+            this.classList.add('active');
+            document.getElementById('needsReview').value = 'true';
+        }
+
         currentPage = 1;
         loadTransactions();
     });
 
-    document.getElementById('filter2025').addEventListener('click', () => {
-        document.getElementById('startDate').value = '2025-01-01';
-        document.getElementById('endDate').value = '2025-12-31';
+    document.getElementById('filter2025').addEventListener('click', function() {
+        const isActive = this.classList.contains('active');
+
+        // Remove active state from all date filters
+        document.getElementById('filter2024').classList.remove('active');
+        document.getElementById('filterYTD').classList.remove('active');
+
+        if (isActive) {
+            // Deactivate filter
+            this.classList.remove('active');
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+        } else {
+            // Activate filter
+            this.classList.add('active');
+            document.getElementById('startDate').value = '2025-01-01';
+            document.getElementById('endDate').value = '2025-12-31';
+        }
+
         currentPage = 1;
         loadTransactions();
     });
 
-    document.getElementById('filter2024').addEventListener('click', () => {
-        document.getElementById('startDate').value = '2024-01-01';
-        document.getElementById('endDate').value = '2024-12-31';
+    document.getElementById('filter2024').addEventListener('click', function() {
+        const isActive = this.classList.contains('active');
+
+        // Remove active state from all date filters
+        document.getElementById('filter2025').classList.remove('active');
+        document.getElementById('filterYTD').classList.remove('active');
+
+        if (isActive) {
+            // Deactivate filter
+            this.classList.remove('active');
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+        } else {
+            // Activate filter
+            this.classList.add('active');
+            document.getElementById('startDate').value = '2024-01-01';
+            document.getElementById('endDate').value = '2024-12-31';
+        }
+
         currentPage = 1;
         loadTransactions();
     });
 
-    document.getElementById('filterYTD').addEventListener('click', () => {
-        const now = new Date();
-        document.getElementById('startDate').value = '2025-01-01';
-        document.getElementById('endDate').value = now.toISOString().split('T')[0];
+    document.getElementById('filterYTD').addEventListener('click', function() {
+        const isActive = this.classList.contains('active');
+
+        // Remove active state from all date filters
+        document.getElementById('filter2025').classList.remove('active');
+        document.getElementById('filter2024').classList.remove('active');
+
+        if (isActive) {
+            // Deactivate filter
+            this.classList.remove('active');
+            document.getElementById('startDate').value = '';
+            document.getElementById('endDate').value = '';
+        } else {
+            // Activate filter
+            this.classList.add('active');
+            const now = new Date();
+            document.getElementById('startDate').value = '2025-01-01';
+            document.getElementById('endDate').value = now.toISOString().split('T')[0];
+        }
+
         currentPage = 1;
         loadTransactions();
     });
@@ -607,7 +666,10 @@ function renderTransactionTable(transactions) {
                 <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
                     ${truncateText(transaction.description, 40) || 'N/A'}
                 </td>
-                <td class="${amountClass}">${formattedAmount}</td>
+                <td class="${amountClass} amount-cell" data-amount="${Math.abs(amount)}" onclick="filterByMinAmount(${Math.abs(amount)})" style="cursor: pointer; position: relative;" title="Click to filter transactions >= this amount">
+                    ${formattedAmount}
+                    <span class="amount-filter-dot" style="display: none; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; background: #28a745; border-radius: 50%;"></span>
+                </td>
                 <td class="crypto-cell">${formatCryptoAmount(transaction.crypto_amount, transaction.currency)}</td>
                 <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}">
                     <span class="entity-category ${getCategoryClass(transaction.amount)}">${transaction.classified_entity?.replace(' N/A', '') || 'Unclassified'}</span>
@@ -692,6 +754,11 @@ function renderTransactionTable(transactions) {
     setTimeout(() => {
         setupDragDownHandles();
     }, 100);
+
+    // Update amount filter indicators if active
+    if (activeMinAmountFilter !== null) {
+        updateAmountFilterIndicators();
+    }
 }
 
 // Track if we've already set up the delegated event listener
@@ -1508,15 +1575,11 @@ function applyEntityToSelected(newEntity) {
     });
 
     if (transactionIds.length === 0) {
-        alert('Please select at least one transaction to update.');
+        showToast('Please select at least one transaction to update.', 'warning');
         return;
     }
 
-    // Show confirmation dialog
-    const confirmMsg = `Are you sure you want to update ${transactionIds.length} transaction(s) to entity "${newEntity}"?`;
-    if (!confirm(confirmMsg)) return;
-
-    // Make API call to update selected transactions
+    // Make API call to update selected transactions (no confirmation needed)
     fetch('/api/update_entity_bulk', {
         method: 'POST',
         headers: {
@@ -1734,15 +1797,11 @@ function applyCategoryToSelected(newCategory) {
     });
 
     if (transactionIds.length === 0) {
-        alert('Please select at least one transaction to update.');
+        showToast('Please select at least one transaction to update.', 'warning');
         return;
     }
 
-    // Show confirmation dialog
-    const confirmMsg = `Are you sure you want to update ${transactionIds.length} transaction(s) to accounting category "${newCategory}"?`;
-    if (!confirm(confirmMsg)) return;
-
-    // Make API call to update selected transactions
+    // Make API call to update selected transactions (no confirmation needed)
     fetch('/api/update_category_bulk', {
         method: 'POST',
         headers: {
@@ -2159,16 +2218,6 @@ function closeModal() {
     }
 }
 
-function showNotification(message, type = 'success') {
-    // Simple notification using alert for now
-    // Can be upgraded to a more sophisticated notification system later
-    if (type === 'error') {
-        alert(`Error: ${message}`);
-    } else {
-        alert(message);
-    }
-}
-
 async function logUserInteraction(transactionId, fieldType, originalValue, userChoice, actionType) {
     try {
         // Get transaction context
@@ -2238,7 +2287,9 @@ function viewTransactionDetails(id) {
             .map(([key, value]) => `${key}: ${value}`)
             .join('\n');
 
-        alert(`Transaction Details:\n\n${details}`);
+        // Show transaction details in console for debugging
+        console.log(`Transaction Details:\n\n${details}`);
+        showToast('Transaction details logged to console (F12)', 'info');
     }
 }
 
@@ -2337,6 +2388,14 @@ function sortTransactions(field) {
         if (aVal === null || aVal === undefined) return 1;
         if (bVal === null || bVal === undefined) return -1;
 
+        // Special handling for amount field - convert to absolute numeric value for sorting
+        if (field === 'amount') {
+            // Parse as float and use absolute value for sorting
+            const aNum = Math.abs(parseFloat(aVal) || 0);
+            const bNum = Math.abs(parseFloat(bVal) || 0);
+            return currentSortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+
         // Compare
         if (typeof aVal === 'number') {
             return currentSortDirection === 'asc' ? aVal - bVal : bVal - aVal;
@@ -2346,7 +2405,88 @@ function sortTransactions(field) {
         }
     });
 
+    updateSortIndicators();
     renderTransactionTable(currentTransactions);
+}
+
+function updateSortIndicators() {
+    // Update all sortable headers to show current sort state
+    const headers = document.querySelectorAll('.sortable');
+    headers.forEach(header => {
+        const field = header.dataset.sort;
+        const arrow = currentSortField === field
+            ? (currentSortDirection === 'asc' ? ' ↑' : ' ↓')
+            : ' ↕';
+
+        // Remove existing arrows and add new one
+        let text = header.textContent.replace(/\s[↑↓↕]/g, '');
+        header.textContent = text + arrow;
+
+        // Add active styling
+        if (currentSortField === field) {
+            header.style.backgroundColor = '#e8f4f8';
+            header.style.fontWeight = 'bold';
+        } else {
+            header.style.backgroundColor = '';
+            header.style.fontWeight = '';
+        }
+    });
+}
+
+// Amount filtering
+let activeMinAmountFilter = null;
+
+function filterByMinAmount(minAmount) {
+    // If clicking the same amount, toggle off the filter
+    if (activeMinAmountFilter === minAmount) {
+        activeMinAmountFilter = null;
+        // Reload all transactions
+        loadTransactions();
+    } else {
+        // Set new filter
+        activeMinAmountFilter = minAmount;
+
+        // Filter current transactions
+        const filtered = currentTransactions.filter(t => {
+            const txAmount = Math.abs(parseFloat(t.amount) || 0);
+            return txAmount >= minAmount;
+        });
+
+        // Sort by amount descending (highest to lowest)
+        filtered.sort((a, b) => {
+            const aAmt = Math.abs(parseFloat(a.amount) || 0);
+            const bAmt = Math.abs(parseFloat(b.amount) || 0);
+            return bAmt - aAmt; // Descending
+        });
+
+        // Update current sort state
+        currentSortField = 'amount';
+        currentSortDirection = 'desc';
+
+        // Render filtered transactions
+        renderTransactionTable(filtered);
+
+        // Show toast notification
+        showToast(`📊 Filtering ${filtered.length} transactions >= $${minAmount.toFixed(2)}`, 'info');
+    }
+
+    // Update visual indicators
+    updateAmountFilterIndicators();
+}
+
+function updateAmountFilterIndicators() {
+    // Show/hide green dots on amount cells
+    const amountCells = document.querySelectorAll('.amount-cell');
+    amountCells.forEach(cell => {
+        const cellAmount = parseFloat(cell.dataset.amount);
+        const dot = cell.querySelector('.amount-filter-dot');
+
+        if (dot && activeMinAmountFilter !== null && cellAmount >= activeMinAmountFilter) {
+            dot.style.display = 'block';
+        } else if (dot) {
+            dot.style.display = 'none';
+        }
+    });
 }
 
 function formatDate(dateString) {
@@ -2396,11 +2536,7 @@ async function archiveSelectedTransactions() {
         return;
     }
 
-    console.log('🔵 About to show confirmation dialog');
-    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) {
-        console.log('🔴 User cancelled confirmation dialog');
-        return;
-    }
+    console.log('🔵 Proceeding with archiving (no confirmation needed)');
 
     console.log('🔵 User confirmed, making API call');
 
@@ -2433,8 +2569,6 @@ async function archiveSelectedTransactions() {
 }
 
 async function archiveTransaction(transactionId) {
-    if (!confirm('Archive this transaction?')) return;
-
     try {
         const response = await fetch('/api/archive_transactions', {
             method: 'POST',
@@ -2490,18 +2624,22 @@ async function getAISmartSuggestions(transactionId, transaction) {
             suggestionsList.innerHTML = '<div class="loading">🤖 AI is analyzing this transaction...</div>';
         }
 
+        // Call the AI suggestions API
+        const response = await fetch(`/api/ai/get-suggestions?transaction_id=${transactionId}`);
+        const data = await response.json();
+
+        // 🔥 FIX: Use transaction details from API response instead of HTML parameter
+        // This avoids fragile JSON.stringify() in onclick attributes
+        const transactionData = data.transaction || transaction || {};
+
         // Populate transaction info - with null checks
         const descEl = document.getElementById('suggestionDescription');
         const amountEl = document.getElementById('suggestionAmount');
         const confEl = document.getElementById('suggestionCurrentConfidence');
 
-        if (descEl) descEl.textContent = transaction.description || 'N/A';
-        if (amountEl) amountEl.textContent = formatCurrency(transaction.amount);
-        if (confEl) confEl.textContent = transaction.confidence ? (transaction.confidence * 100).toFixed(0) + '%' : 'N/A';
-
-        // Call the AI suggestions API
-        const response = await fetch(`/api/ai/get-suggestions?transaction_id=${transactionId}`);
-        const data = await response.json();
+        if (descEl) descEl.textContent = transactionData.description || 'N/A';
+        if (amountEl) amountEl.textContent = formatCurrency(transactionData.amount);
+        if (confEl) confEl.textContent = transactionData.confidence ? (transactionData.confidence * 100).toFixed(0) + '%' : 'N/A';
 
         if (data.error) {
             // Show error state
@@ -2516,7 +2654,7 @@ async function getAISmartSuggestions(transactionId, transaction) {
         if (data.message && (!data.suggestions || data.suggestions.length === 0)) {
             // CRITICAL FIX: Only show "No improvements needed" if confidence is actually high
             // For low confidence transactions without suggestions, show a different message
-            const currentConfidence = transaction.confidence || 0;
+            const currentConfidence = transactionData.confidence || 0;
 
             if (currentConfidence >= 0.8) {
                 // High confidence - truly no improvements needed
@@ -2869,20 +3007,8 @@ async function applySelectedAISuggestions(transactionId) {
             return;
         }
 
-        // Show confirmation
-        const fieldsList = selectedSuggestions.map(s => {
-            const fieldLabel = {
-                'classified_entity': 'Business Entity',
-                'accounting_category': 'Accounting Category',
-                'justification': 'Justification'
-            }[s.field] || s.field;
-            return `• ${fieldLabel}: "${s.suggested_value}"`;
-        }).join('\n');
-
-        const confirmMsg = `Apply ${selectedSuggestions.length} AI suggestion(s)?\n\n${fieldsList}`;
-        if (!confirm(confirmMsg)) {
-            return;
-        }
+        // No confirmation needed - apply directly
+        // (User already selected checkboxes and clicked "Apply Selected Suggestions")
 
         // Disable the apply button
         const applyBtn = document.getElementById('applySelectedSuggestionsBtn');
@@ -3202,7 +3328,7 @@ async function applyAISuggestionToSelected(field, newValue) {
     });
 
     if (transactionIds.length === 0) {
-        alert('Please select at least one transaction to update.');
+        showToast('Please select at least one transaction to update.', 'warning');
         return;
     }
 
@@ -3285,7 +3411,7 @@ async function applyMultipleFieldsToSelected() {
     });
 
     if (transactionIds.length === 0) {
-        alert('Please select at least one transaction to update.');
+        showToast('Please select at least one transaction to update.', 'warning');
         return;
     }
 
@@ -3294,7 +3420,7 @@ async function applyMultipleFieldsToSelected() {
     const fieldKeys = Object.keys(appliedFields);
 
     if (fieldKeys.length === 0) {
-        alert('No fields to apply. Please try again.');
+        showToast('No fields to apply. Please try again.', 'warning');
         return;
     }
 
@@ -4387,6 +4513,16 @@ function renderInternalTransfers() {
     });
 
     updateSelectedCount();
+    updateConfidenceCounts();
+}
+
+function updateConfidenceCounts() {
+    // Count matches above 90% and 70%
+    const highConfidence = internalTransfersData.filter(match => match.match_score >= 0.9).length;
+    const mediumConfidence = internalTransfersData.filter(match => match.match_score >= 0.7).length;
+
+    document.getElementById('highConfidenceCount').textContent = highConfidence;
+    document.getElementById('mediumConfidenceCount').textContent = mediumConfidence;
 }
 
 function toggleAllTransfers() {
@@ -4429,6 +4565,58 @@ async function applyInternalTransferClassification() {
 
         if (data.success) {
             showToast('✅ ' + data.message, 'success');
+            closeInternalTransfersModal();
+            // Reload transactions to show updated data
+            if (typeof loadTransactions === 'function') {
+                loadTransactions();
+            }
+        } else {
+            showToast('❌ Error: ' + data.error, 'error');
+        }
+
+    } catch (err) {
+        showToast('❌ Error: ' + err.message, 'error');
+    }
+}
+
+async function applyInternalTransferByConfidence(minScore) {
+    // Filter matches by confidence threshold
+    const matchingIndices = internalTransfersData
+        .map((match, index) => ({match, index}))
+        .filter(({match}) => match.match_score >= minScore)
+        .map(({index}) => index);
+
+    if (matchingIndices.length === 0) {
+        const threshold = (minScore * 100).toFixed(0);
+        showToast(`⚠️ No transfer pairs found with confidence ≥${threshold}%`, 'warning');
+        return;
+    }
+
+    // Confirm with user
+    const threshold = (minScore * 100).toFixed(0);
+    if (!confirm(`Apply "Internal Transfer" to ${matchingIndices.length} pairs with confidence ≥${threshold}%?`)) {
+        return;
+    }
+
+    const selectedPairs = matchingIndices.map(index => {
+        const match = internalTransfersData[index];
+        return {
+            tx1_id: match.tx1.transaction_id,
+            tx2_id: match.tx2.transaction_id
+        };
+    });
+
+    try {
+        const response = await fetch('/api/transactions/apply-internal-transfer', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_pairs: selectedPairs})
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ ${data.message}`, 'success');
             closeInternalTransfersModal();
             // Reload transactions to show updated data
             if (typeof loadTransactions === 'function') {
@@ -4943,7 +5131,7 @@ function openBulkEditModal() {
 
     const selectedCount = selectedTransactionIds.size;
     if (selectedCount === 0) {
-        alert('Please select at least one transaction to edit.');
+        showToast('Please select at least one transaction to edit.', 'warning');
         return;
     }
 
@@ -4983,7 +5171,7 @@ async function applyBulkEdit() {
 
     // Check if at least one field is set
     if (!entity && !category && !subcategory && !justification) {
-        alert('Please select or enter at least one field to update.');
+        showToast('Please select or enter at least one field to update.', 'warning');
         return;
     }
 
@@ -5035,7 +5223,7 @@ async function applyBulkEdit() {
 
         if (data.success) {
             // Show success message
-            alert(`✅ Successfully updated ${selectedTransactionIds.size} transaction(s)!`);
+            showToast(`✅ Successfully updated ${selectedTransactionIds.size} transaction(s)!`, 'success');
 
             // Close modal
             closeBulkEditModal();
@@ -5055,10 +5243,10 @@ async function applyBulkEdit() {
             // Reload transactions to show updated data
             loadTransactions();
         } else {
-            alert(`❌ Error: ${data.error || 'Failed to update transactions'}`);
+            showToast(`❌ Error: ${data.error || 'Failed to update transactions'}`, 'error');
         }
     } catch (error) {
         console.error('❌ Bulk edit error:', error);
-        alert('❌ Failed to apply bulk edit. Please try again.');
+        showToast('❌ Failed to apply bulk edit. Please try again.', 'error');
     }
 }
