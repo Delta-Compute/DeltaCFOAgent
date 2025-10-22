@@ -9718,6 +9718,76 @@ def api_test_blockchain_lookup(txid):
         }), 500
 
 
+@app.route('/api/chatbot', methods=['POST'])
+def api_chatbot():
+    """API endpoint for AI CFO Assistant chatbot"""
+    try:
+        from chatbot_context import get_chatbot_context
+        from database import db_manager
+
+        # Get request data
+        data = request.json
+        message = data.get('message', '').strip()
+        history = data.get('history', [])
+
+        if not message:
+            return jsonify({'error': 'Message parameter required'}), 400
+
+        # Check if Claude client is initialized
+        if not claude_client:
+            return jsonify({
+                'error': 'AI service unavailable',
+                'response': 'I apologize, but the AI service is currently unavailable. Please try again later.'
+            }), 503
+
+        # Get current tenant ID
+        tenant_id = get_current_tenant_id()
+
+        # Build context for this tenant
+        context_builder = get_chatbot_context(db_manager, tenant_id)
+
+        # Build system prompt with full context
+        system_prompt = context_builder.build_system_prompt()
+
+        # Format conversation history
+        formatted_history = context_builder.format_conversation_history(history)
+
+        # Add current message to history
+        messages = formatted_history + [
+            {
+                'role': 'user',
+                'content': message
+            }
+        ]
+
+        # Call Claude API
+        logger.info(f"Chatbot request for tenant {tenant_id}: {message[:50]}...")
+
+        response = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=1024,
+            system=system_prompt,
+            messages=messages
+        )
+
+        # Extract response text
+        assistant_message = response.content[0].text
+
+        logger.info(f"Chatbot response length: {len(assistant_message)} chars")
+
+        return jsonify({
+            'response': assistant_message,
+            'tenant_id': tenant_id
+        })
+
+    except Exception as e:
+        logger.error(f"Chatbot API error: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Internal server error',
+            'response': 'I apologize, but I encountered an error processing your request. Please try again.'
+        }), 500
+
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
