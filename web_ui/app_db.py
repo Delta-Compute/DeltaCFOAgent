@@ -3758,26 +3758,65 @@ def api_ai_get_suggestions():
                 'suggestions': []
             }), 503
 
-        # Get learned patterns from database for this entity
+        # Get learned patterns from database for this entity (tenant-isolated)
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT pattern_data, confidence_score
             FROM entity_patterns
-            WHERE entity_name = {placeholder}
+            WHERE tenant_id = {placeholder}
+            AND entity_name = {placeholder}
             ORDER BY confidence_score DESC
             LIMIT 5
-        """, (current_entity,))
+        """, (tenant_id, current_entity))
         learned_patterns = cursor.fetchall()
         conn.close()
 
+        # Match patterns to current transaction for intelligent suggestions
+        pattern_matches = match_patterns_to_transaction(
+            transaction['description'],
+            learned_patterns,
+            origin=transaction.get('origin', ''),
+            destination=transaction.get('destination', '')
+        )
+
+        # Find similar transactions for bulk update suggestions
+        similar_transaction_ids = find_similar_transactions_for_bulk_update(
+            transaction_id,
+            pattern_matches,
+            tenant_id
+        )
+
+        # Build pattern context for Claude prompt
         patterns_context = ""
-        if learned_patterns:
-            patterns_context = "\n\nLearned patterns for this entity:\n"
-            for pattern_data, conf in learned_patterns:
+        if pattern_matches['total_match_score'] > 0:
+            patterns_context = f"\n\n🔍 PATTERN ANALYSIS ({pattern_matches['total_match_score']:.1f} match points found):\n"
+
+            if pattern_matches['company_name_matches']:
+                patterns_context += "✓ Company Names: " + ", ".join([f"'{m['pattern']}'" for m in pattern_matches['company_name_matches']]) + "\n"
+
+            if pattern_matches['keyword_matches']:
+                patterns_context += "✓ Keywords: " + ", ".join([f"'{m['pattern']}'" for m in pattern_matches['keyword_matches']]) + "\n"
+
+            if pattern_matches['bank_matches']:
+                patterns_context += "✓ Bank Identifiers: " + ", ".join([f"'{m['pattern']}'" for m in pattern_matches['bank_matches']]) + "\n"
+
+            if pattern_matches['originator_matches']:
+                patterns_context += "✓ Originator Patterns: " + ", ".join([f"'{m['pattern']}'" for m in pattern_matches['originator_matches']]) + "\n"
+
+            patterns_context += f"\nConfidence boost from patterns: +{pattern_matches['confidence_boost']:.0%}"
+            patterns_context += f"\nThese patterns strongly suggest the entity '{current_entity}' is correct."
+
+        elif learned_patterns:
+            # Fallback: show patterns even if no matches (might help Claude make suggestions)
+            patterns_context = "\n\nLearned patterns exist for this entity (but no direct matches in current transaction):\n"
+            for pattern_data, conf in learned_patterns[:2]:  # Show only first 2 patterns
                 try:
                     pattern_json = json.loads(pattern_data) if isinstance(pattern_data, str) else pattern_data
-                    patterns_context += f"- {json.dumps(pattern_json, indent=2)}\n"
+                    if pattern_json.get('company_names'):
+                        patterns_context += f"- Company names: {', '.join(pattern_json['company_names'][:3])}\n"
+                    if pattern_json.get('transaction_keywords'):
+                        patterns_context += f"- Keywords: {', '.join(pattern_json['transaction_keywords'][:3])}\n"
                 except:
                     pass
 
@@ -3948,7 +3987,13 @@ CRITICAL RULES:
                 'patterns_count': 0
             }), 500
 
-        # Add metadata
+        # Add metadata - pattern matches and similar transactions for bulk updates
+        ai_response['pattern_matches'] = pattern_matches
+        ai_response['similar_transactions_found'] = len(similar_transaction_ids)
+        ai_response['similar_transaction_ids'] = similar_transaction_ids[:10]  # Limit to 10 for display
+        ai_response['bulk_update_available'] = len(similar_transaction_ids) > 0
+
+        # Legacy fields for backward compatibility
         ai_response['similar_count'] = len(learned_patterns)
         ai_response['patterns_count'] = len(learned_patterns)
 
@@ -7861,6 +7906,188 @@ def get_entity_pattern_suggestions(entity_name: str) -> Dict:
     except Exception as e:
         print(f"ERROR: Error getting entity patterns: {e}")
         return {}
+
+def match_patterns_to_transaction(transaction_description: str, learned_patterns: List[tuple], origin: str = "", destination: str = "") -> Dict:
+    """
+    Match transaction description (and origin/destination) against learned patterns and return match details.
+
+    Args:
+        transaction_description: The transaction description text
+        learned_patterns: List of (pattern_data, confidence_score) tuples from entity_patterns table
+        origin: Raw origin data from transaction (optional)
+        destination: Raw destination data from transaction (optional)
+
+    Returns:
+        {
+            'company_name_matches': [{'pattern': 'EVERMINER LLC', 'count': 3}],
+            'keyword_matches': [{'pattern': 'hosting', 'count': 2}],
+            'bank_matches': [{'pattern': 'CHOICE FINANCIAL', 'count': 1}],
+            'originator_matches': [{'pattern': 'B/O: EVERMINER LLC', 'count': 1}],
+            'total_match_score': 7,
+            'confidence_boost': 0.35
+        }
+    """
+    try:
+        # Combine all searchable text
+        search_text = (transaction_description + " " + (origin or "") + " " + (destination or "")).upper()
+
+        matches = {
+            'company_name_matches': [],
+            'keyword_matches': [],
+            'bank_matches': [],
+            'originator_matches': [],
+            'total_match_score': 0
+        }
+
+        for pattern_row in learned_patterns:
+            pattern_data = pattern_row[0] if isinstance(pattern_row[0], dict) else (json.loads(pattern_row[0]) if isinstance(pattern_row[0], str) else {})
+            confidence_score = float(pattern_row[1]) if len(pattern_row) > 1 else 1.0
+
+            # Check company names (worth 2 points each - strong indicator)
+            for company in pattern_data.get('company_names', []):
+                if company and company.upper() in search_text:
+                    matches['company_name_matches'].append({
+                        'pattern': company,
+                        'count': int(confidence_score)
+                    })
+                    matches['total_match_score'] += 2  # Company match = 2 points
+
+            # Check transaction keywords (worth 1 point each)
+            for keyword in pattern_data.get('transaction_keywords', []):
+                if keyword and len(keyword) > 3 and keyword.upper() in search_text:
+                    matches['keyword_matches'].append({
+                        'pattern': keyword,
+                        'count': 1
+                    })
+                    matches['total_match_score'] += 1  # Keyword match = 1 point
+
+            # Check bank identifiers (worth 1.5 points - medium confidence)
+            for bank in pattern_data.get('bank_identifiers', []):
+                if bank and bank.upper() in search_text:
+                    matches['bank_matches'].append({
+                        'pattern': bank,
+                        'count': 1
+                    })
+                    matches['total_match_score'] += 1.5  # Bank match = 1.5 points
+
+            # Check originator patterns (worth 1.5 points)
+            for orig_pattern in pattern_data.get('originator_patterns', []):
+                if orig_pattern and orig_pattern.upper() in search_text:
+                    matches['originator_matches'].append({
+                        'pattern': orig_pattern,
+                        'count': 1
+                    })
+                    matches['total_match_score'] += 1.5
+
+        # Remove duplicates (keep first occurrence)
+        for key in ['company_name_matches', 'keyword_matches', 'bank_matches', 'originator_matches']:
+            seen = set()
+            unique_matches = []
+            for match in matches[key]:
+                if match['pattern'] not in seen:
+                    seen.add(match['pattern'])
+                    unique_matches.append(match)
+            matches[key] = unique_matches
+
+        # Calculate confidence boost based on match score
+        # 1-2 matches: +5-10%, 3-4 matches: +15-20%, 5+ matches: +25-40%
+        matches['confidence_boost'] = min(0.40, matches['total_match_score'] * 0.05)
+
+        return matches
+
+    except Exception as e:
+        print(f"ERROR: Error matching patterns: {e}")
+        import traceback
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
+        return {
+            'company_name_matches': [],
+            'keyword_matches': [],
+            'bank_matches': [],
+            'originator_matches': [],
+            'total_match_score': 0,
+            'confidence_boost': 0
+        }
+
+def find_similar_transactions_for_bulk_update(transaction_id: str, pattern_matches: Dict, tenant_id: str) -> List[str]:
+    """
+    Find similar transactions that would benefit from the same classification.
+    Uses pattern matching to identify candidates for bulk updates.
+
+    Args:
+        transaction_id: Current transaction ID (to exclude from results)
+        pattern_matches: Dict from match_patterns_to_transaction() with matched patterns
+        tenant_id: Current tenant ID for isolation
+
+    Returns:
+        List of transaction IDs that match the patterns and need classification
+    """
+    try:
+        if pattern_matches['total_match_score'] < 2:
+            return []  # Not enough pattern confidence for bulk suggestions
+
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        placeholder = '%s' if hasattr(cursor, 'mogrify') else '?'
+
+        # Build SQL filters from pattern matches
+        pattern_conditions = []
+        params = [tenant_id, transaction_id]
+
+        # Add company name filters (highest priority)
+        for match in pattern_matches['company_name_matches']:
+            pattern_conditions.append(f"(UPPER(description) LIKE {placeholder} OR UPPER(origin) LIKE {placeholder} OR UPPER(destination) LIKE {placeholder})")
+            pattern = f"%{match['pattern'].upper()}%"
+            params.extend([pattern, pattern, pattern])
+
+        # Add keyword filters
+        for match in pattern_matches['keyword_matches']:
+            pattern_conditions.append(f"(UPPER(description) LIKE {placeholder} OR UPPER(origin) LIKE {placeholder} OR UPPER(destination) LIKE {placeholder})")
+            pattern = f"%{match['pattern'].upper()}%"
+            params.extend([pattern, pattern, pattern])
+
+        # Add bank identifier filters
+        for match in pattern_matches['bank_matches']:
+            pattern_conditions.append(f"(UPPER(description) LIKE {placeholder} OR UPPER(origin) LIKE {placeholder} OR UPPER(destination) LIKE {placeholder})")
+            pattern = f"%{match['pattern'].upper()}%"
+            params.extend([pattern, pattern, pattern])
+
+        if not pattern_conditions:
+            conn.close()
+            return []
+
+        pattern_filter = " OR ".join(pattern_conditions)
+
+        # Find transactions that need classification and match our patterns
+        query = f"""
+            SELECT transaction_id
+            FROM transactions
+            WHERE tenant_id = {placeholder}
+            AND transaction_id != {placeholder}
+            AND (
+                classified_entity = 'NEEDS REVIEW'
+                OR classified_entity = 'Unclassified Expense'
+                OR classified_entity = 'Unclassified Revenue'
+                OR classified_entity IS NULL
+                OR confidence < 0.7
+            )
+            AND ({pattern_filter})
+            ORDER BY date DESC
+            LIMIT 50
+        """
+
+        cursor.execute(query, params)
+        similar_ids = [row[0] if isinstance(row, tuple) else row['transaction_id'] for row in cursor.fetchall()]
+        conn.close()
+
+        print(f"DEBUG: Found {len(similar_ids)} similar transactions for bulk update")
+        return similar_ids
+
+    except Exception as e:
+        print(f"ERROR: Error finding similar transactions: {e}")
+        import traceback
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}")
+        return []
 
 def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: dict) -> str:
     """Enhance AI prompts with learned patterns from both learned_patterns and entity_patterns tables"""
