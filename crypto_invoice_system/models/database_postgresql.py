@@ -455,21 +455,23 @@ class CryptoInvoiceDatabaseManager:
             if self.db.db_type == 'postgresql':
                 query = """
                     INSERT INTO crypto_invoices (
-                        invoice_number, client_id, status, amount_usd, crypto_currency,
-                        crypto_amount, crypto_network, exchange_rate, deposit_address,
-                        memo_tag, billing_period, description, line_items, due_date,
-                        issue_date, payment_tolerance
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        invoice_number, client_id, status, amount_usd, transaction_fee_percent,
+                        tax_percent, crypto_currency, crypto_amount, crypto_network, exchange_rate,
+                        rate_locked_until, deposit_address, memo_tag, billing_period, description,
+                        line_items, due_date, issue_date, expiration_hours, payment_tolerance,
+                        allow_client_choice, client_wallet_address, qr_code_path, notes
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """
             else:
                 query = """
                     INSERT INTO crypto_invoices (
-                        invoice_number, client_id, status, amount_usd, crypto_currency,
-                        crypto_amount, crypto_network, exchange_rate, deposit_address,
-                        memo_tag, billing_period, description, line_items, due_date,
-                        issue_date, payment_tolerance
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        invoice_number, client_id, status, amount_usd, transaction_fee_percent,
+                        tax_percent, crypto_currency, crypto_amount, crypto_network, exchange_rate,
+                        rate_locked_until, deposit_address, memo_tag, billing_period, description,
+                        line_items, due_date, issue_date, expiration_hours, payment_tolerance,
+                        allow_client_choice, client_wallet_address, qr_code_path, notes
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
 
             params = (
@@ -477,10 +479,13 @@ class CryptoInvoiceDatabaseManager:
                 invoice_data["client_id"],
                 invoice_data.get("status", "sent"),
                 invoice_data["amount_usd"],
+                invoice_data.get("transaction_fee_percent", 0),
+                invoice_data.get("tax_percent", 0),
                 invoice_data["crypto_currency"],
                 invoice_data["crypto_amount"],
                 invoice_data["crypto_network"],
                 invoice_data["exchange_rate"],
+                invoice_data.get("rate_locked_until"),
                 invoice_data["deposit_address"],
                 invoice_data.get("memo_tag"),
                 invoice_data.get("billing_period"),
@@ -488,7 +493,12 @@ class CryptoInvoiceDatabaseManager:
                 json.dumps(invoice_data.get("line_items", [])),
                 invoice_data["due_date"],
                 invoice_data["issue_date"],
-                invoice_data.get("payment_tolerance", 0.005)
+                invoice_data.get("expiration_hours", 24),
+                invoice_data.get("payment_tolerance", 0.005),
+                invoice_data.get("allow_client_choice", False),
+                invoice_data.get("client_wallet_address"),
+                invoice_data.get("qr_code_path"),
+                invoice_data.get("notes")
             )
 
             if self.db.db_type == 'postgresql':

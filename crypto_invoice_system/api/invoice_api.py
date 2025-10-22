@@ -158,15 +158,37 @@ def create_invoice():
             memo_tag = None
             logger.info(f"DEMO: Generated mock address: {deposit_address}")
 
-        # Get crypto price and calculate amount
+        # Extract fee and tax percentages
+        transaction_fee_percent = float(data.get('transaction_fee_percent', 0))
+        tax_percent = float(data.get('tax_percent', 0))
+        base_amount_usd = float(data['amount_usd'])
+
+        # Validate percentages
+        if transaction_fee_percent < 0 or transaction_fee_percent > 10:
+            return jsonify({"success": False, "error": "Transaction fee must be between 0% and 10%"}), 400
+        if tax_percent < 0 or tax_percent > 30:
+            return jsonify({"success": False, "error": "Tax must be between 0% and 30%"}), 400
+
+        # Calculate fees and taxes
+        fee_amount = base_amount_usd * (transaction_fee_percent / 100)
+        tax_amount = base_amount_usd * (tax_percent / 100)
+        total_amount_usd = base_amount_usd + fee_amount + tax_amount
+
+        logger.info(f"Invoice calculation: Base=${base_amount_usd:.2f}, Fee={transaction_fee_percent}% (${fee_amount:.2f}), Tax={tax_percent}% (${tax_amount:.2f}), Total=${total_amount_usd:.2f}")
+
+        # Get crypto price and calculate amount based on TOTAL
         crypto_price = invoice_generator.get_crypto_price(
             data['crypto_currency'],
             data['crypto_network']
         )
         base_crypto_amount = invoice_generator.calculate_crypto_amount(
-            float(data['amount_usd']),
+            total_amount_usd,  # Use total, not base
             crypto_price
         )
+
+        # Calculate rate lock expiration (15 minutes from now)
+        rate_lock_duration = timedelta(minutes=15)
+        rate_locked_until = datetime.now() + rate_lock_duration
 
         # Generate invoice number first
         invoice_number = invoice_generator.generate_invoice_number()
@@ -193,11 +215,17 @@ def create_invoice():
             "client_name": client['name'],
             "client_contact": client.get('contact_email', ''),
             "status": "sent",
-            "amount_usd": float(data['amount_usd']),
+            "amount_usd": base_amount_usd,  # Store base amount (before fees/taxes)
+            "transaction_fee_percent": transaction_fee_percent,
+            "tax_percent": tax_percent,
             "crypto_currency": data['crypto_currency'],
             "crypto_amount": crypto_amount,
             "crypto_network": data['crypto_network'],
             "exchange_rate": crypto_price,
+            "rate_locked_until": rate_locked_until.isoformat(),
+            "expiration_hours": int(data.get('expiration_hours', 24)),
+            "allow_client_choice": bool(data.get('allow_client_choice', False)),
+            "client_wallet_address": data.get('client_wallet_address'),
             "deposit_address": deposit_address,
             "memo_tag": memo_tag,
             "billing_period": data['billing_period'],
