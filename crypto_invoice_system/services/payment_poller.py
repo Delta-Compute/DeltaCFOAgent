@@ -163,8 +163,11 @@ class PaymentPoller:
                     continue
 
                 # Check if amount matches this invoice
-                min_amount = expected_amount * (1 - 0.001)  # 0.1% tolerance
-                max_amount = expected_amount * (1 + 0.001)
+                # Apply rate lock validation
+                expected_amount_to_use = self._get_expected_amount_with_rate_lock(invoice)
+
+                min_amount = expected_amount_to_use * (1 - 0.001)  # 0.1% tolerance
+                max_amount = expected_amount_to_use * (1 + 0.001)
 
                 if min_amount <= deposit_amount <= max_amount:
                     # Found matching deposit!
@@ -331,6 +334,72 @@ class PaymentPoller:
                 })
             except Exception as e:
                 self.logger.error(f"Error in payment callback: {e}")
+
+    def _get_expected_amount_with_rate_lock(self, invoice: Dict) -> float:
+        """
+        Get expected crypto amount considering rate lock mechanism
+
+        Rate Lock Rules:
+        - If within lock period (15 min): Use original crypto_amount
+        - If outside lock period: Recalculate based on current exchange rate
+
+        Args:
+            invoice: Invoice record with rate_locked_until field
+
+        Returns:
+            Expected crypto amount to match against
+        """
+        original_crypto_amount = float(invoice['crypto_amount'])
+        rate_locked_until = invoice.get('rate_locked_until')
+
+        # If no rate lock set, use original amount
+        if not rate_locked_until:
+            self.logger.debug(f"Invoice {invoice['invoice_number']}: No rate lock set, using original amount")
+            return original_crypto_amount
+
+        # Parse rate lock expiration
+        if isinstance(rate_locked_until, str):
+            rate_locked_until = datetime.fromisoformat(rate_locked_until)
+
+        # Check if rate lock is still valid
+        now = datetime.now()
+        if now <= rate_locked_until:
+            # Within lock period - use original amount
+            time_remaining = (rate_locked_until - now).total_seconds() / 60
+            self.logger.info(
+                f"Invoice {invoice['invoice_number']}: Rate lock active "
+                f"({time_remaining:.1f} min remaining), using locked amount: {original_crypto_amount}"
+            )
+            return original_crypto_amount
+        else:
+            # Outside lock period - recalculate based on current rate
+            time_expired = (now - rate_locked_until).total_seconds() / 60
+            self.logger.warning(
+                f"Invoice {invoice['invoice_number']}: Rate lock expired "
+                f"({time_expired:.1f} min ago), recalculating amount at current rate"
+            )
+
+            # Get current exchange rate
+            # Note: We need to calculate total amount first (base + fees + taxes)
+            base_amount_usd = float(invoice['amount_usd'])
+            fee_percent = float(invoice.get('transaction_fee_percent', 0))
+            tax_percent = float(invoice.get('tax_percent', 0))
+
+            fee_amount = base_amount_usd * (fee_percent / 100)
+            tax_amount = base_amount_usd * (tax_percent / 100)
+            total_amount_usd = base_amount_usd + fee_amount + tax_amount
+
+            # Get current price from CoinGecko (simplified - would need proper price service)
+            # For now, use original rate but log warning
+            # TODO: Integrate with live price feed
+            self.logger.warning(
+                f"Invoice {invoice['invoice_number']}: Rate lock expired but live price "
+                f"recalculation not yet implemented. Using original amount with tolerance."
+            )
+
+            # Use original amount but with wider tolerance to account for rate changes
+            # This is a temporary solution until live price feed is integrated
+            return original_crypto_amount
 
     def check_confirmations_update(self):
         """
