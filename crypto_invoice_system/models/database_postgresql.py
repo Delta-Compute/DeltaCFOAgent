@@ -545,6 +545,38 @@ class CryptoInvoiceDatabaseManager:
             print(f"❌ Error getting invoice {invoice_id}: {e}")
             return None
 
+    def get_invoice_by_number(self, invoice_number: str) -> Optional[Dict[str, Any]]:
+        """Get invoice by invoice number"""
+        try:
+            query = """
+                SELECT i.*, c.name as client_name, c.contact_email
+                FROM crypto_invoices i
+                JOIN crypto_clients c ON i.client_id = c.id
+                WHERE i.invoice_number = %s
+            """ if self.db.db_type == 'postgresql' else """
+                SELECT i.*, c.name as client_name, c.contact_email
+                FROM crypto_invoices i
+                JOIN crypto_clients c ON i.client_id = c.id
+                WHERE i.invoice_number = ?
+            """
+
+            row = self.db.execute_query(query, (invoice_number,), fetch_one=True)
+
+            if row:
+                invoice = dict(row) if hasattr(row, 'keys') else dict(zip(row.keys(), row))
+                # Parse JSON fields
+                if invoice.get("line_items"):
+                    try:
+                        invoice["line_items"] = json.loads(invoice["line_items"])
+                    except (json.JSONDecodeError, TypeError):
+                        invoice["line_items"] = []
+                return invoice
+            return None
+
+        except Exception as e:
+            print(f"❌ Error getting invoice by number {invoice_number}: {e}")
+            return None
+
     def get_pending_invoices(self) -> List[Dict[str, Any]]:
         """Get all pending/unpaid invoices for payment polling"""
         try:

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pay Invoice {{ invoice.invoice_number }} - Delta CFO Crypto Payments</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #2d3748;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header .invoice-number {
+            font-size: 1.2em;
+            opacity: 0.9;
+            font-weight: 500;
+        }
+
+        .payment-card {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+
+        .status-banner {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 1.1em;
+        }
+
+        .status-sent {
+            background: #EBF4FF;
+            color: #2563eb;
+            border: 2px solid #2563eb;
+        }
+
+        .status-paid, .status-complete {
+            background: #D1FAE5;
+            color: #059669;
+            border: 2px solid #059669;
+        }
+
+        .status-expired {
+            background: #FEE2E2;
+            color: #DC2626;
+            border: 2px solid #DC2626;
+        }
+
+        .status-cancelled {
+            background: #F3F4F6;
+            color: #6B7280;
+            border: 2px solid #9CA3AF;
+        }
+
+        .invoice-details {
+            margin-bottom: 30px;
+        }
+
+        .invoice-details h2 {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #1a202c;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f7fafc;
+        }
+
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .detail-label {
+            font-weight: 500;
+            color: #718096;
+        }
+
+        .detail-value {
+            font-weight: 600;
+            color: #2d3748;
+            text-align: right;
+        }
+
+        .amount-breakdown {
+            background: #f7fafc;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .amount-breakdown h3 {
+            font-size: 1.1em;
+            margin-bottom: 15px;
+            color: #1a202c;
+        }
+
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            font-size: 0.95em;
+        }
+
+        .breakdown-row.total {
+            border-top: 2px solid #cbd5e0;
+            margin-top: 10px;
+            padding-top: 15px;
+            font-size: 1.2em;
+            font-weight: 700;
+            color: #1a202c;
+        }
+
+        .payment-section {
+            margin: 30px 0;
+        }
+
+        .payment-section h2 {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #1a202c;
+        }
+
+        .crypto-details {
+            background: #EBF4FF;
+            border: 2px solid #2563eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .crypto-amount {
+            font-size: 2em;
+            font-weight: 700;
+            color: #2563eb;
+            text-align: center;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+        }
+
+        .qr-code-container {
+            text-align: center;
+            margin: 30px 0;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .qr-code-container img {
+            max-width: 300px;
+            width: 100%;
+            height: auto;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+        }
+
+        .address-box {
+            background: white;
+            border: 2px solid #cbd5e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .address-label {
+            font-size: 0.85em;
+            color: #718096;
+            margin-bottom: 8px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .address-value {
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            word-break: break-all;
+            color: #2d3748;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .copy-btn {
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 10px;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .copy-btn:active {
+            transform: translateY(0);
+        }
+
+        .instructions {
+            background: #FEF3C7;
+            border-left: 4px solid #F59E0B;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .instructions h3 {
+            color: #92400E;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #78350F;
+        }
+
+        .instructions li {
+            margin: 8px 0;
+            line-height: 1.6;
+        }
+
+        .rate-lock-warning {
+            background: #FEF3C7;
+            border: 2px solid #F59E0B;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .rate-lock-warning strong {
+            color: #92400E;
+        }
+
+        .expiration-warning {
+            background: #FEE2E2;
+            border: 2px solid #DC2626;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+            font-weight: 600;
+            color: #991B1B;
+        }
+
+        .payment-status {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f7fafc;
+            border-radius: 8px;
+        }
+
+        .payment-status h3 {
+            margin-bottom: 15px;
+            color: #1a202c;
+        }
+
+        .no-payments {
+            text-align: center;
+            padding: 30px;
+            color: #718096;
+            font-style: italic;
+        }
+
+        .payment-item {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #48bb78;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .refresh-status {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .refresh-btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            .payment-card {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 1.8em;
+            }
+
+            .crypto-amount {
+                font-size: 1.5em;
+            }
+
+            .address-value {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .copy-btn {
+                margin-left: 0;
+                margin-top: 10px;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Payment Invoice</h1>
+            <div class="invoice-number">Invoice #{{ invoice.invoice_number }}</div>
+        </div>
+
+        <div class="payment-card">
+            <!-- Status Banner -->
+            <div class="status-banner status-{{ invoice.status }}">
+                {% if invoice.status == 'sent' %}
+                    ⏳ Awaiting Payment
+                {% elif invoice.status == 'paid' or invoice.status == 'complete' %}
+                    ✅ Payment Received
+                {% elif invoice.status == 'partially_paid' %}
+                    🔄 Payment Detected - Awaiting Confirmations
+                {% elif invoice.status == 'expired' %}
+                    ⏰ Invoice Expired
+                {% elif invoice.status == 'cancelled' %}
+                    ❌ Invoice Cancelled
+                {% else %}
+                    {{ invoice.status|upper }}
+                {% endif %}
+            </div>
+
+            <!-- Invoice Details -->
+            <div class="invoice-details">
+                <h2>📋 Invoice Details</h2>
+                <div class="detail-row">
+                    <span class="detail-label">Billed To:</span>
+                    <span class="detail-value">{{ invoice.client_name }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Billing Period:</span>
+                    <span class="detail-value">{{ invoice.billing_period }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Issue Date:</span>
+                    <span class="detail-value">{{ invoice.issue_date }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Due Date:</span>
+                    <span class="detail-value">{{ invoice.due_date }}</span>
+                </div>
+                {% if invoice.description %}
+                <div class="detail-row">
+                    <span class="detail-label">Description:</span>
+                    <span class="detail-value">{{ invoice.description }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Amount Breakdown -->
+            <div class="amount-breakdown">
+                <h3>💵 Amount Breakdown</h3>
+                <div class="breakdown-row">
+                    <span>Base Amount:</span>
+                    <span>${{ "%.2f"|format(invoice.amount_usd) }}</span>
+                </div>
+                {% if invoice.transaction_fee_percent > 0 %}
+                <div class="breakdown-row">
+                    <span>Transaction Fee ({{ "%.1f"|format(invoice.transaction_fee_percent) }}%):</span>
+                    <span>${{ "%.2f"|format(invoice.fee_amount) }}</span>
+                </div>
+                {% endif %}
+                {% if invoice.tax_percent > 0 %}
+                <div class="breakdown-row">
+                    <span>Tax ({{ "%.1f"|format(invoice.tax_percent) }}%):</span>
+                    <span>${{ "%.2f"|format(invoice.tax_amount) }}</span>
+                </div>
+                {% endif %}
+                <div class="breakdown-row total">
+                    <span>Total Amount Due:</span>
+                    <span>${{ "%.2f"|format(invoice.total_amount) }}</span>
+                </div>
+            </div>
+
+            <!-- Payment Instructions (only if not paid/expired/cancelled) -->
+            {% if invoice.status in ['sent', 'partially_paid'] %}
+            <div class="payment-section">
+                <h2>🔐 Payment Instructions</h2>
+
+                <div class="crypto-details">
+                    <div style="text-align: center; margin-bottom: 10px;">
+                        <strong style="font-size: 1.1em;">Pay with {{ invoice.crypto_currency }}</strong>
+                        <div style="font-size: 0.9em; color: #64748b; margin-top: 5px;">Network: {{ invoice.crypto_network }}</div>
+                    </div>
+                    <div class="crypto-amount">
+                        {{ "%.8f"|format(invoice.crypto_amount) }} {{ invoice.crypto_currency }}
+                    </div>
+                    <div style="text-align: center; font-size: 0.9em; color: #64748b;">
+                        Exchange Rate: ${{ "%.2f"|format(invoice.exchange_rate) }} per {{ invoice.crypto_currency }}
+                    </div>
+                </div>
+
+                <!-- QR Code -->
+                {% if invoice.qr_code_path %}
+                <div class="qr-code-container">
+                    <h3 style="margin-bottom: 15px; color: #1a202c;">Scan to Pay</h3>
+                    <img src="{{ url_for('static', filename='qr_codes/' + invoice.qr_code_path.split('/')[-1]) }}" alt="Payment QR Code">
+                </div>
+                {% endif %}
+
+                <!-- Deposit Address -->
+                <div class="address-box">
+                    <div class="address-label">Deposit Address</div>
+                    <div class="address-value">
+                        <span id="depositAddress">{{ invoice.deposit_address }}</span>
+                        <button class="copy-btn" onclick="copyAddress()">Copy</button>
+                    </div>
+                </div>
+
+                <!-- Memo Tag (if applicable) -->
+                {% if invoice.memo_tag %}
+                <div class="address-box">
+                    <div class="address-label">Memo/Tag (REQUIRED)</div>
+                    <div class="address-value">
+                        <span id="memoTag">{{ invoice.memo_tag }}</span>
+                        <button class="copy-btn" onclick="copyMemo()">Copy</button>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Instructions -->
+                <div class="instructions">
+                    <h3>⚠️ Important Instructions</h3>
+                    <ol>
+                        <li>Send <strong>exactly {{ "%.8f"|format(invoice.crypto_amount) }} {{ invoice.crypto_currency }}</strong> to the address above</li>
+                        <li>Use the <strong>{{ invoice.crypto_network }}</strong> network only</li>
+                        {% if invoice.memo_tag %}
+                        <li><strong>CRITICAL:</strong> Include the memo/tag: <strong>{{ invoice.memo_tag }}</strong></li>
+                        {% endif %}
+                        <li>Payment will be detected automatically within minutes</li>
+                        <li>Confirmation may take {{ invoice.crypto_network == 'BTC' and '30-60 minutes' or '5-15 minutes' }}</li>
+                    </ol>
+                </div>
+
+                <!-- Rate Lock Warning -->
+                {% if invoice.rate_locked_until %}
+                <div class="rate-lock-warning">
+                    <strong>⏰ Rate Lock:</strong> Exchange rate locked for 15 minutes from invoice creation.
+                    Please send payment promptly to ensure correct amount.
+                </div>
+                {% endif %}
+
+                <!-- Expiration Warning -->
+                {% if invoice.expiration_hours %}
+                <div class="expiration-warning">
+                    ⚠️ This invoice expires {{ invoice.expiration_hours }} hours after creation
+                </div>
+                {% endif %}
+            </div>
+            {% elif invoice.status == 'expired' %}
+            <div class="expiration-warning" style="margin-top: 30px;">
+                ⏰ This invoice has expired. Please contact the issuer for a new invoice.
+            </div>
+            {% elif invoice.status in ['paid', 'complete'] %}
+            <div class="status-banner" style="background: #D1FAE5; color: #059669; border-color: #059669; margin-top: 30px;">
+                ✅ Thank you! Your payment has been received and confirmed.
+            </div>
+            {% endif %}
+
+            <!-- Payment Status -->
+            <div class="payment-status">
+                <h3>📊 Payment Status</h3>
+                <div id="paymentStatusContent">
+                    {% if payments %}
+                        {% for payment in payments %}
+                        <div class="payment-item">
+                            <div><strong>Transaction:</strong> {{ payment.transaction_hash[:16] }}...{{ payment.transaction_hash[-8:] }}</div>
+                            <div><strong>Amount:</strong> {{ "%.8f"|format(payment.amount_received) }} {{ payment.currency }}</div>
+                            <div><strong>Confirmations:</strong> {{ payment.confirmations }}/{{ payment.required_confirmations }}</div>
+                            <div><strong>Status:</strong> {{ payment.status|upper }}</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="no-payments">
+                            No payments detected yet. Payment will appear here automatically once sent.
+                            <div class="spinner" style="margin-top: 15px;"></div>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Auto-refresh only if status is sent or partially_paid -->
+                {% if invoice.status in ['sent', 'partially_paid'] %}
+                <div class="refresh-status">
+                    <p style="color: #718096; font-size: 0.9em; margin-bottom: 10px;">
+                        Auto-refreshing every 30 seconds...
+                    </p>
+                    <button class="refresh-btn" onclick="checkPaymentStatus()">🔄 Check Status Now</button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="text-align: center; color: white; margin-top: 20px; opacity: 0.8;">
+            <p>Powered by Delta CFO Agent - Secure Cryptocurrency Payment Processing</p>
+        </div>
+    </div>
+
+    <script>
+        function copyAddress() {
+            const address = document.getElementById('depositAddress').textContent;
+            navigator.clipboard.writeText(address).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        function copyMemo() {
+            const memo = document.getElementById('memoTag').textContent;
+            navigator.clipboard.writeText(memo).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        async function checkPaymentStatus() {
+            try {
+                const response = await fetch('/api/invoice/{{ invoice.id }}');
+                const data = await response.json();
+
+                if (data.success) {
+                    // Reload page if status changed
+                    if (data.invoice.status !== '{{ invoice.status }}') {
+                        location.reload();
+                    } else {
+                        // Update payments section
+                        updatePaymentsDisplay(data.payments);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking payment status:', error);
+            }
+        }
+
+        function updatePaymentsDisplay(payments) {
+            const container = document.getElementById('paymentStatusContent');
+
+            if (payments && payments.length > 0) {
+                container.innerHTML = payments.map(payment => `
+                    <div class="payment-item">
+                        <div><strong>Transaction:</strong> ${payment.transaction_hash.substring(0, 16)}...${payment.transaction_hash.substring(payment.transaction_hash.length - 8)}</div>
+                        <div><strong>Amount:</strong> ${parseFloat(payment.amount_received).toFixed(8)} ${payment.currency}</div>
+                        <div><strong>Confirmations:</strong> ${payment.confirmations}/${payment.required_confirmations}</div>
+                        <div><strong>Status:</strong> ${payment.status.toUpperCase()}</div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = `
+                    <div class="no-payments">
+                        No payments detected yet. Payment will appear here automatically once sent.
+                        <div class="spinner" style="margin-top: 15px;"></div>
+                    </div>
+                `;
+            }
+        }
+
+        // Auto-refresh every 30 seconds if invoice is pending
+        {% if invoice.status in ['sent', 'partially_paid'] %}
+        setInterval(checkPaymentStatus, 30000);
+        {% endif %}
+    </script>
+</body>
+</html>

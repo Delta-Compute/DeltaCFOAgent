@@ -84,6 +84,40 @@ def create_invoice_page():
     return render_template('create_invoice.html', clients=clients)
 
 
+@app.route('/pay/<invoice_number>')
+def payment_page(invoice_number):
+    """Public payment page - no authentication required"""
+    try:
+        # Get invoice by invoice number
+        invoice = db_manager.get_invoice_by_number(invoice_number)
+
+        if not invoice:
+            return render_template('payment_not_found.html', invoice_number=invoice_number), 404
+
+        # Get payment transactions for this invoice
+        payments = db_manager.get_payments_for_invoice(invoice['id'])
+
+        # Calculate total with fees and taxes
+        base_amount = float(invoice.get('amount_usd', 0))
+        fee_percent = float(invoice.get('transaction_fee_percent', 0))
+        tax_percent = float(invoice.get('tax_percent', 0))
+
+        fee_amount = base_amount * (fee_percent / 100)
+        tax_amount = base_amount * (tax_percent / 100)
+        total_amount = base_amount + fee_amount + tax_amount
+
+        # Add calculated amounts to invoice data
+        invoice['fee_amount'] = fee_amount
+        invoice['tax_amount'] = tax_amount
+        invoice['total_amount'] = total_amount
+
+        return render_template('payment.html', invoice=invoice, payments=payments)
+
+    except Exception as e:
+        logger.error(f"Error loading payment page for {invoice_number}: {e}")
+        return render_template('payment_error.html', error=str(e)), 500
+
+
 @app.route('/api/clients', methods=['GET'])
 def get_clients():
     """Get all clients"""
