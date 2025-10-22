@@ -180,6 +180,40 @@ class CryptoInvoiceDatabaseManager:
                     );
                     """,
 
+                    # Blockchain chains configuration table
+                    """
+                    CREATE TABLE IF NOT EXISTS crypto_blockchain_chains (
+                        id SERIAL PRIMARY KEY,
+                        chain_id VARCHAR(20) NOT NULL UNIQUE,
+                        name VARCHAR(100) NOT NULL,
+                        display_name VARCHAR(150) NOT NULL,
+                        native_token VARCHAR(10) NOT NULL,
+                        required_confirmations INTEGER NOT NULL DEFAULT 6,
+                        block_explorer_url VARCHAR(255) NOT NULL,
+                        block_explorer_tx_path VARCHAR(100) NOT NULL,
+                        enabled BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """,
+
+                    # Blockchain tokens configuration table
+                    """
+                    CREATE TABLE IF NOT EXISTS crypto_blockchain_tokens (
+                        id SERIAL PRIMARY KEY,
+                        chain_id VARCHAR(20) NOT NULL REFERENCES crypto_blockchain_chains(chain_id) ON DELETE CASCADE,
+                        symbol VARCHAR(10) NOT NULL,
+                        name VARCHAR(100) NOT NULL,
+                        decimals INTEGER NOT NULL DEFAULT 18,
+                        is_stablecoin BOOLEAN DEFAULT FALSE,
+                        payment_tolerance DECIMAL(6,5) DEFAULT 0.005,
+                        enabled BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(chain_id, symbol)
+                    );
+                    """,
+
                     # System configuration table
                     """
                     CREATE TABLE IF NOT EXISTS crypto_system_config (
@@ -220,6 +254,11 @@ class CryptoInvoiceDatabaseManager:
                     CREATE INDEX IF NOT EXISTS idx_crypto_polling_timestamp ON crypto_polling_log(poll_timestamp DESC);
                     CREATE INDEX IF NOT EXISTS idx_crypto_notifications_invoice ON crypto_notifications(invoice_id);
                     CREATE INDEX IF NOT EXISTS idx_crypto_notifications_status ON crypto_notifications(status);
+
+                    -- Blockchain configuration indexes
+                    CREATE INDEX IF NOT EXISTS idx_crypto_chains_enabled ON crypto_blockchain_chains(enabled);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_tokens_chain ON crypto_blockchain_tokens(chain_id);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_tokens_enabled ON crypto_blockchain_tokens(chain_id, enabled);
                     """,
                 ]
             else:
