@@ -209,14 +209,43 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="amount_usd">Amount (USD) *</label>
-                    <input type="number" id="amount_usd" name="amount_usd" step="0.01" required onchange="calculateCryptoAmount()">
-                    <div class="crypto-info" id="cryptoInfo" style="display:none;">
-                        <div>Cryptocurrency Amount:</div>
-                        <div class="crypto-amount" id="cryptoAmount">-</div>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
-                            Exchange Rate: <span id="exchangeRate">-</span>
-                        </div>
+                    <label for="amount_usd">Base Amount (USD) *</label>
+                    <input type="number" id="amount_usd" name="amount_usd" step="0.01" required onchange="calculateTotals()">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="transaction_fee_percent">Transaction Fee (%) <span style="font-weight:normal; color:#666;">Max 10%</span></label>
+                        <input type="number" id="transaction_fee_percent" name="transaction_fee_percent" step="0.1" min="0" max="10" value="0" onchange="calculateTotals()">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tax_percent">Tax (%) <span style="font-weight:normal; color:#666;">Max 30%</span></label>
+                        <input type="number" id="tax_percent" name="tax_percent" step="0.1" min="0" max="30" value="0" onchange="calculateTotals()">
+                    </div>
+                </div>
+
+                <div class="crypto-info" id="amountBreakdown" style="display:none; margin-bottom: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px;">
+                        <div>Base Amount:</div>
+                        <div style="text-align: right;"><strong>$<span id="baseAmountDisplay">0.00</span></strong></div>
+
+                        <div>Transaction Fee (<span id="feePercentDisplay">0</span>%):</div>
+                        <div style="text-align: right;">$<span id="feeAmountDisplay">0.00</span></div>
+
+                        <div>Tax (<span id="taxPercentDisplay">0</span>%):</div>
+                        <div style="text-align: right;">$<span id="taxAmountDisplay">0.00</span></div>
+
+                        <div style="border-top: 2px solid #667eea; padding-top: 10px; margin-top: 5px; font-size: 1.1em;"><strong>Total Amount:</strong></div>
+                        <div style="border-top: 2px solid #667eea; padding-top: 10px; margin-top: 5px; text-align: right;"><strong style="color: #667eea;">$<span id="totalAmountDisplay">0.00</span></strong></div>
+                    </div>
+                </div>
+
+                <div class="crypto-info" id="cryptoInfo" style="display:none;">
+                    <div>Cryptocurrency Amount (Total):</div>
+                    <div class="crypto-amount" id="cryptoAmount">-</div>
+                    <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                        Exchange Rate: <span id="exchangeRate">-</span> | Rate locked for 15 minutes
                     </div>
                 </div>
 
@@ -254,6 +283,30 @@
                     <textarea id="notes" name="notes" rows="3" placeholder="Additional notes or payment instructions"></textarea>
                 </div>
 
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="expiration_hours">Invoice Expiration (hours) <span style="font-weight:normal; color:#666;">Default 24h</span></label>
+                        <input type="number" id="expiration_hours" name="expiration_hours" min="1" max="168" value="24">
+                        <div style="font-size: 0.85em; color: #666; margin-top: 5px;">Invoice will expire if unpaid after this time</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="client_wallet_address">Client Wallet Address <span style="font-weight:normal; color:#666;">Optional</span></label>
+                        <input type="text" id="client_wallet_address" name="client_wallet_address" placeholder="For refunds or verification">
+                        <div style="font-size: 0.85em; color: #666; margin-top: 5px;">Used for refunds if needed</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox" id="allow_client_choice" name="allow_client_choice" value="true" style="width: auto; margin-right: 10px;">
+                        <span>Allow client to choose payment chain/token</span>
+                    </label>
+                    <div style="font-size: 0.85em; color: #666; margin-top: 5px; margin-left: 30px;">
+                        If enabled, client can select different blockchain or token on payment page
+                    </div>
+                </div>
+
                 <button type="submit" class="btn" style="width: 100%;">Generate Invoice & Get Payment Address</button>
             </form>
 
@@ -285,15 +338,39 @@
                 });
             }
 
-            calculateCryptoAmount();
+            calculateTotals();
         }
 
-        async function calculateCryptoAmount() {
+        async function calculateTotals() {
+            const baseAmount = parseFloat(document.getElementById('amount_usd').value) || 0;
+            const feePercent = parseFloat(document.getElementById('transaction_fee_percent').value) || 0;
+            const taxPercent = parseFloat(document.getElementById('tax_percent').value) || 0;
+
+            if (baseAmount <= 0) {
+                document.getElementById('amountBreakdown').style.display = 'none';
+                document.getElementById('cryptoInfo').style.display = 'none';
+                return;
+            }
+
+            // Calculate fees and taxes
+            const feeAmount = baseAmount * (feePercent / 100);
+            const taxAmount = baseAmount * (taxPercent / 100);
+            const totalAmount = baseAmount + feeAmount + taxAmount;
+
+            // Update breakdown display
+            document.getElementById('baseAmountDisplay').textContent = baseAmount.toFixed(2);
+            document.getElementById('feePercentDisplay').textContent = feePercent.toFixed(1);
+            document.getElementById('feeAmountDisplay').textContent = feeAmount.toFixed(2);
+            document.getElementById('taxPercentDisplay').textContent = taxPercent.toFixed(1);
+            document.getElementById('taxAmountDisplay').textContent = taxAmount.toFixed(2);
+            document.getElementById('totalAmountDisplay').textContent = totalAmount.toFixed(2);
+            document.getElementById('amountBreakdown').style.display = 'block';
+
+            // Calculate crypto amount
             const currency = document.getElementById('crypto_currency').value;
             const network = document.getElementById('crypto_network').value;
-            const usdAmount = parseFloat(document.getElementById('amount_usd').value);
 
-            if (!currency || !usdAmount) {
+            if (!currency) {
                 document.getElementById('cryptoInfo').style.display = 'none';
                 return;
             }
@@ -303,7 +380,7 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    const cryptoAmount = (usdAmount / data.price).toFixed(8);
+                    const cryptoAmount = (totalAmount / data.price).toFixed(8);
                     document.getElementById('cryptoAmount').textContent = `${cryptoAmount} ${currency}`;
                     document.getElementById('exchangeRate').textContent = `1 ${currency} = $${data.price.toFixed(2)}`;
                     document.getElementById('cryptoInfo').style.display = 'block';
@@ -353,10 +430,15 @@
             const invoiceData = {
                 client_id: formData.get('client_id'),
                 amount_usd: formData.get('amount_usd'),
+                transaction_fee_percent: formData.get('transaction_fee_percent') || 0,
+                tax_percent: formData.get('tax_percent') || 0,
                 crypto_currency: formData.get('crypto_currency'),
                 crypto_network: formData.get('crypto_network'),
                 billing_period: formData.get('billing_period'),
                 due_date: formData.get('due_date'),
+                expiration_hours: formData.get('expiration_hours') || 24,
+                allow_client_choice: document.getElementById('allow_client_choice').checked,
+                client_wallet_address: formData.get('client_wallet_address') || null,
                 description: formData.get('description'),
                 notes: formData.get('notes'),
                 line_items: lineItems
