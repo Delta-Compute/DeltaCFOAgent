@@ -3678,6 +3678,48 @@ def api_update_category_bulk():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/update_subcategory_bulk', methods=['POST'])
+def api_update_subcategory_bulk():
+    """API endpoint to update subcategory for multiple transactions"""
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+        new_subcategory = data.get('new_subcategory')
+
+        if not transaction_ids or not new_subcategory:
+            return jsonify({'error': 'Missing required parameters'}), 400
+
+        # Get current tenant_id for multi-tenant isolation
+        tenant_id = get_current_tenant_id()
+
+        # Update each transaction
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+        updated_count = 0
+
+        for transaction_id in transaction_ids:
+            cursor.execute(
+                f"UPDATE transactions SET subcategory = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                (new_subcategory, tenant_id, transaction_id)
+            )
+            if cursor.rowcount > 0:
+                updated_count += 1
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Updated {updated_count} transactions',
+            'updated_count': updated_count
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/archive_transactions', methods=['POST'])
 def api_archive_transactions():
     """API endpoint to archive multiple transactions"""
@@ -4071,8 +4113,8 @@ def api_suggestions():
                 }
             conn.close()
 
-        # Add special parameters for similar_descriptions, similar_entities, and similar_accounting
-        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting']:
+        # Add special parameters for similar_descriptions, similar_entities, similar_accounting, and similar_subcategory
+        if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting', 'similar_subcategory']:
             context['transaction_id'] = transaction_id
             context['value'] = request.args.get('value', current_value)
             context['field_type'] = field_type
@@ -5443,6 +5485,44 @@ def check_file_duplicates(filepath):
     return check_processed_file_duplicates(filepath, filepath)
 
 
+def convert_currency_to_usd(amount: float, from_currency: str) -> tuple:
+    """
+    Convert amount from given currency to USD
+
+    Returns:
+        tuple: (usd_amount, original_currency, conversion_note)
+    """
+    # If already USD, return as-is
+    if from_currency == 'USD':
+        return (amount, 'USD', None)
+
+    # Simple conversion rates (you can replace with live API later)
+    # These are approximate rates as of 2025
+    EXCHANGE_RATES = {
+        'BRL': 0.20,   # Brazilian Real to USD
+        'EUR': 1.10,   # Euro to USD
+        'GBP': 1.27,   # British Pound to USD
+        'CAD': 0.73,   # Canadian Dollar to USD
+        'MXN': 0.055,  # Mexican Peso to USD
+        'JPY': 0.0071, # Japanese Yen to USD
+        'CNY': 0.14,   # Chinese Yuan to USD
+        'INR': 0.012,  # Indian Rupee to USD
+        'AUD': 0.65,   # Australian Dollar to USD
+    }
+
+    rate = EXCHANGE_RATES.get(from_currency.upper())
+    if rate is None:
+        # Unknown currency - log warning and return original
+        print(f"⚠️  Unknown currency '{from_currency}' - storing in original currency")
+        return (amount, from_currency, f"Unknown currency - no conversion applied")
+
+    usd_amount = amount * rate
+    conversion_note = f"Converted from {from_currency} at rate {rate}"
+    print(f"💱 Currency conversion: {amount} {from_currency} = ${usd_amount:.2f} USD (rate: {rate})")
+
+    return (usd_amount, from_currency, conversion_note)
+
+
 def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, Any]:
     """
     Process PDF using Claude Vision to extract transaction data
@@ -5495,20 +5575,30 @@ This could be:
 - Financial report with transaction history
 - Credit card statement
 
+CRITICAL - Currency Detection:
+- Carefully identify the currency used in the document
+- Look for currency symbols (R$, $, €, £, etc.), currency codes (BRL, USD, EUR, GBP, etc.), or written currency names
+- Common currencies: BRL (Brazilian Real), USD (US Dollar), EUR (Euro), GBP (British Pound)
+- If the document mentions "Real", "Reais", or shows "R$", the currency is BRL
+- The currency MUST be specified for EVERY transaction
+
 For EACH transaction, extract:
 - date (in YYYY-MM-DD format, required)
 - description (transaction description, required)
 - amount (numeric value - use negative for expenses/debits, positive for income/credits, required)
+- currency (ISO currency code like BRL, USD, EUR - required)
 - category (expense category if mentioned, optional)
 - entity (business unit or entity name if mentioned, optional)
 
 Return ONLY valid JSON in this exact format:
 {
+    "currency": "BRL",
     "transactions": [
         {
             "date": "2024-01-15",
             "description": "Office supplies purchase",
             "amount": -150.50,
+            "currency": "BRL",
             "category": "Technology",
             "entity": "Delta LLC"
         }
@@ -5519,10 +5609,12 @@ Return ONLY valid JSON in this exact format:
 
 Important:
 - Extract ALL transactions from the document
+- ALWAYS specify the currency for each transaction
 - Use negative amounts for expenses/debits
 - Use positive amounts for income/credits
 - If date format is unclear, use best estimate in YYYY-MM-DD
 - Return empty array if no transactions found
+- The top-level "currency" field should be the default currency for all transactions in the document
 """
 
         print(f"🤖 Calling Claude Vision API...")
@@ -5563,6 +5655,13 @@ Important:
 
         # Parse JSON
         result = json.loads(response_text)
+
+        # Debug: Show what currency Claude detected
+        detected_currency = result.get('currency', 'NOT FOUND')
+        print(f"🔍 DEBUG: Claude detected document currency: '{detected_currency}'")
+        if result.get('transactions'):
+            first_txn_currency = result['transactions'][0].get('currency', 'NOT FOUND')
+            print(f"🔍 DEBUG: First transaction currency: '{first_txn_currency}'")
 
         print(f"✅ Successfully extracted {result.get('total_found', 0)} transactions from PDF")
 
@@ -5618,6 +5717,8 @@ def upload_file():
         # Save the uploaded file
         file.save(filepath)
 
+        # Debug: Show file extension detection
+        print(f"🔧 DEBUG: File extension detected: '{file_ext}' for file: {filename}")
 
         # Check if PDF and process differently
         if file_ext == '.pdf':
@@ -5648,15 +5749,98 @@ def upload_file():
                     'error': 'No transactions found in PDF'
                 }), 400
 
-            # Success! Clean up the PDF file (data already extracted)
+            # Insert transactions into database
+            print(f"💾 Inserting {len(transactions)} transactions into database...")
+            from database import db_manager
+            tenant_id = get_current_tenant_id()
+            inserted_count = 0
+
+            try:
+                # Get document-level currency (fallback if individual transaction doesn't have one)
+                document_currency = pdf_result.get('currency', 'USD')
+                print(f"🔍 DEBUG: Document-level currency from pdf_result: '{document_currency}'")
+
+                skipped_duplicates = 0
+                for txn in transactions:
+                    # Get transaction data
+                    txn_currency = txn.get('currency', document_currency)
+                    original_amount = txn.get('amount')
+                    txn_date = txn.get('date')
+                    txn_description = txn.get('description')
+
+                    print(f"🔍 DEBUG: About to convert: amount={original_amount}, from_currency={txn_currency}")
+
+                    # Convert currency to USD
+                    usd_amount, original_currency, conversion_note = convert_currency_to_usd(
+                        original_amount,
+                        txn_currency
+                    )
+
+                    # Check for duplicates: same date, description, and amount
+                    existing = db_manager.fetch_one("""
+                        SELECT transaction_id FROM transactions
+                        WHERE tenant_id = %s
+                          AND date = %s
+                          AND description = %s
+                          AND ABS(amount - %s) < 0.01
+                        LIMIT 1
+                    """, (tenant_id, txn_date, txn_description, usd_amount))
+
+                    if existing:
+                        print(f"⚠️  DUPLICATE SKIPPED: {txn_date} | {txn_description} | ${usd_amount}")
+                        skipped_duplicates += 1
+                        continue
+
+                    # Generate transaction ID
+                    transaction_id = str(uuid.uuid4())
+
+                    # Insert into database
+                    db_manager.execute_query("""
+                        INSERT INTO transactions (
+                            transaction_id, tenant_id, date, description, amount,
+                            currency, usd_equivalent, conversion_note,
+                            classified_entity, accounting_category, subcategory,
+                            confidence, source_file
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        transaction_id,
+                        tenant_id,
+                        txn_date,
+                        txn_description,
+                        usd_amount,  # Amount in USD
+                        original_currency,  # Original currency
+                        usd_amount if original_currency != 'USD' else None,  # USD equivalent (only if converted)
+                        conversion_note,  # Conversion details
+                        txn.get('entity', 'Unknown'),
+                        txn.get('category', 'Uncategorized'),
+                        None,  # subcategory
+                        0.8,  # High confidence from Claude Vision
+                        f'PDF Upload: {filename}'
+                    ))
+                    inserted_count += 1
+
+                print(f"✅ Successfully inserted {inserted_count} transactions")
+
+            except Exception as e:
+                print(f"❌ Database insertion error: {e}")
+                logger.error(f"Failed to insert PDF transactions: {e}", exc_info=True)
+                # Clean up uploaded file
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                return jsonify({
+                    'success': False,
+                    'error': f'Database insertion failed: {str(e)}'
+                }), 500
+
+            # Success! Clean up the PDF file (data already extracted and saved)
             if os.path.exists(filepath):
                 os.remove(filepath)
 
-            print(f"✅ Successfully processed PDF: {len(transactions)} transactions extracted")
+            print(f"✅ Successfully processed PDF: {inserted_count} transactions saved to database")
             return jsonify({
                 'success': True,
-                'message': f'Successfully extracted {len(transactions)} transaction(s) from PDF',
-                'transactions_processed': len(transactions),
+                'message': f'Successfully extracted and saved {inserted_count} transaction(s) from PDF',
+                'transactions_processed': inserted_count,
                 'document_type': pdf_result.get('document_type', 'PDF Document'),
                 'transactions': transactions
             })
@@ -11073,6 +11257,137 @@ def api_enrich_all_pending():
     except Exception as e:
         logger.error(f"Error in bulk enrichment: {e}")
         import traceback
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/transactions/find-duplicates', methods=['POST'])
+def api_find_duplicates():
+    """
+    Find duplicate transactions in the database
+    Groups transactions that have the same date, description, and amount (±$0.01)
+    """
+    from database import db_manager
+
+    try:
+        tenant_id = session.get('tenant_id', 'delta')
+
+        logger.info(f"🔍 Finding duplicate transactions for tenant: {tenant_id}")
+
+        # Use a single PostgreSQL connection for all queries
+        conn = db_manager._get_postgresql_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Find groups of duplicates (same date, description, and amount within $0.01)
+            cursor.execute("""
+                WITH duplicate_groups AS (
+                    SELECT
+                        date,
+                        description,
+                        ROUND(amount::numeric, 2) as amount_rounded,
+                        COUNT(*) as duplicate_count,
+                        ARRAY_AGG(transaction_id ORDER BY transaction_id) as transaction_ids
+                    FROM transactions
+                    WHERE tenant_id = %s
+                      AND archived = false
+                    GROUP BY date, description, ROUND(amount::numeric, 2)
+                    HAVING COUNT(*) > 1
+                )
+                SELECT
+                    date,
+                    description,
+                    amount_rounded,
+                    duplicate_count,
+                    transaction_ids
+                FROM duplicate_groups
+                ORDER BY date DESC, duplicate_count DESC
+            """, (tenant_id,))
+
+            duplicate_groups_raw = cursor.fetchall()
+
+            logger.info(f"Found {len(duplicate_groups_raw)} duplicate groups")
+
+            # Now fetch full transaction details for each group
+            duplicate_groups = []
+
+            for group in duplicate_groups_raw:
+                date, description, amount, count, transaction_ids = group
+
+                # Fetch full transaction details
+                placeholders = ','.join(['%s'] * len(transaction_ids))
+                cursor.execute(f"""
+                    SELECT
+                        transaction_id,
+                        date,
+                        description,
+                        amount,
+                        classified_entity,
+                        accounting_category,
+                        subcategory,
+                        confidence,
+                        source_file
+                    FROM transactions
+                    WHERE transaction_id IN ({placeholders})
+                    ORDER BY transaction_id
+                """, transaction_ids)
+
+                transactions = []
+                for row in cursor.fetchall():
+                    txn_date = row[1]
+                    # Handle both date objects and strings
+                    if txn_date:
+                        date_str = txn_date.strftime('%Y-%m-%d') if hasattr(txn_date, 'strftime') else str(txn_date)
+                    else:
+                        date_str = None
+
+                    transactions.append({
+                        'transaction_id': row[0],
+                        'date': date_str,
+                        'description': row[2],
+                        'amount': float(row[3]) if row[3] else 0,
+                        'classified_entity': row[4],
+                        'accounting_category': row[5],
+                        'subcategory': row[6],
+                        'confidence': float(row[7]) if row[7] else 0,
+                        'source_file': row[8]
+                    })
+
+                # Handle both date objects and strings for group date
+                if date:
+                    group_date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
+                else:
+                    group_date_str = None
+
+                duplicate_groups.append({
+                    'date': group_date_str,
+                    'description': description,
+                    'amount': float(amount),
+                    'count': count,
+                    'transactions': transactions
+                })
+
+            total_duplicate_transactions = sum(group['count'] for group in duplicate_groups)
+
+            logger.info(f"✅ Found {len(duplicate_groups)} groups with {total_duplicate_transactions} duplicate transactions")
+
+            return jsonify({
+                "success": True,
+                "duplicate_groups": duplicate_groups,
+                "total_groups": len(duplicate_groups),
+                "total_duplicates": total_duplicate_transactions
+            }), 200
+
+        finally:
+            conn.close()
+
+    except Exception as e:
+        logger.error(f"Error finding duplicates: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             "success": False,
             "error": str(e),

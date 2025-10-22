@@ -355,9 +355,13 @@ function setupEventListeners() {
         });
     });
 
-    // Modal close handlers
-    document.querySelector('.close').addEventListener('click', closeModal);
+    // Modal close handlers - use event delegation for dynamic content
     document.getElementById('suggestionsModal').addEventListener('click', (e) => {
+        // Close button click - check both the element and its parent
+        if (e.target.classList.contains('close') || e.target.parentElement?.classList.contains('close')) {
+            closeModal();
+        }
+        // Click outside modal content
         if (e.target.id === 'suggestionsModal') {
             closeModal();
         }
@@ -462,6 +466,9 @@ async function loadTransactions() {
     try {
         isLoading = true;
         showLoadingState();
+
+        // Clear previous selections when loading new transactions
+        selectedTransactionIds.clear();
 
         const query = buildFilterQuery();
         const url = `/api/transactions?${query}`;
@@ -1094,10 +1101,11 @@ async function createSmartDropdown(field, currentValue, fieldName) {
 
 async function updateTransactionField(transactionId, field, value, fieldElement) {
     try {
-        // Check if multiple transactions are selected
+        // Check if multiple transactions are selected AND the current transaction is one of them
         const selectedCount = selectedTransactionIds.size;
+        const isCurrentTransactionSelected = selectedTransactionIds.has(transactionId);
 
-        if (selectedCount >= 2) {
+        if (selectedCount >= 2 && isCurrentTransactionSelected) {
             // User has multiple transactions selected - apply to all
             const confirmed = confirm(`Apply this change to all ${selectedCount} selected transactions?`);
 
@@ -1236,6 +1244,13 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
                 console.log('💚 Accounting category updated, checking for similar transactions...');
                 console.log('💚 Transaction ID:', transactionId, 'New Category:', value);
                 checkForSimilarAccountingCategories(transactionId, value);
+            }
+
+            // For subcategory changes, check if we should update similar transactions
+            if (field === 'subcategory') {
+                console.log('💜 Subcategory updated, checking for similar transactions...');
+                console.log('💜 Transaction ID:', transactionId, 'New Subcategory:', value);
+                checkForSimilarSubcategories(transactionId, value);
             }
         } else {
             throw new Error(result.error || 'Failed to update');
@@ -1817,6 +1832,234 @@ function applyCategoryToSelected(newCategory) {
         if (data.success) {
             // Show success message
             showToast(`Successfully updated ${transactionIds.length} transaction(s) to "${newCategory}".`, 'success');
+
+            // Close modal and refresh the page to show updates
+            closeModal();
+            loadTransactions();
+        } else {
+            showToast('Error updating transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error updating transactions. Please try again.', 'error');
+    });
+}
+
+// =====================================================
+// SUBCATEGORY SIMILAR TRANSACTION FUNCTIONS
+// =====================================================
+
+async function checkForSimilarSubcategories(transactionId, newSubcategory) {
+    try {
+        // Find current transaction to get context
+        const currentTx = currentTransactions.find(t => t.transaction_id === transactionId);
+        if (!currentTx) return;
+
+        // Use Claude AI to find similar transactions for subcategory classification
+        const response = await fetch(`/api/suggestions?transaction_id=${transactionId}&field_type=similar_subcategory&value=${encodeURIComponent(newSubcategory)}`);
+
+        if (!response.ok) {
+            console.error('Failed to get AI suggestions for similar subcategories');
+            return;
+        }
+
+        const data = await response.json();
+        const similarTxs = data.suggestions || [];
+
+        if (similarTxs.length > 0) {
+            const modal = document.getElementById('suggestionsModal');
+            const content = document.getElementById('suggestionsContent');
+
+            // Clear any previous loading states
+            document.getElementById('suggestionsList').innerHTML = '';
+
+            // Add similar-transactions-modal class to modal-content
+            modal.querySelector('.modal-content').classList.add('similar-transactions-modal');
+
+            // Format transaction date helper
+            const formatDate = (dateStr) => {
+                if (!dateStr) return '';
+                // Parse as local date to avoid timezone issues
+                const parts = dateStr.split(/[-T]/);
+                if (parts.length >= 3) {
+                    const date = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                }
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            };
+
+            // Format amount helper
+            const formatAmount = (amount) => {
+                const val = parseFloat(amount || 0);
+                return `<span class="transaction-amount ${val >= 0 ? 'positive' : 'negative'}">
+                    ${val >= 0 ? '+' : ''}$${Math.abs(val).toFixed(2)}
+                </span>`;
+            };
+
+            content.innerHTML = `
+                <div class="modal-header">
+                    <h3>🔄 Update Similar Subcategories</h3>
+                    <span class="close" onclick="closeModal()">&times;</span>
+                </div>
+
+                <div class="similar-selection-header">
+                    <div class="selection-controls">
+                        <button onclick="selectAllSimilarSubcategories(true)">☑ Select All</button>
+                        <button onclick="selectAllSimilarSubcategories(false)">☐ Deselect All</button>
+                    </div>
+                    <div class="selection-counter">
+                        <span id="selectedSubcategoryCount">0</span> of ${similarTxs.length} selected
+                    </div>
+                </div>
+
+                <div class="modal-body">
+                    <div class="update-preview">
+                        <h4>📋 Subcategory Update Preview</h4>
+                        <p><strong>Change:</strong> Subcategory → "${newSubcategory}"</p>
+                        <p><strong>Matching Criteria:</strong> 🤖 Claude AI analyzed transaction types and purposes</p>
+                        <p><strong>Impact:</strong> <span id="subcategoryImpactSummary">Select transactions below</span></p>
+                        <div class="matching-info">
+                            <small>✨ AI-powered: Claude analyzed descriptions to find similar transaction types</small>
+                        </div>
+                    </div>
+
+                    <div class="transactions-list">
+                        ${similarTxs.map((t, index) => `
+                            <div class="transaction-item" data-tx-id="${t.transaction_id}">
+                                <input type="checkbox"
+                                       class="transaction-checkbox subcategory-tx-cb"
+                                       id="subcategory-cb-${index}"
+                                       data-amount="${t.amount || 0}"
+                                       onchange="updateSubcategorySelectionSummary()">
+                                <div class="transaction-details">
+                                    <div class="transaction-info">
+                                        <div class="transaction-date">${formatDate(t.date)}</div>
+                                        <div class="transaction-description" title="${t.description}">
+                                            ${t.description}
+                                        </div>
+                                        <div class="transaction-meta">
+                                            <span>Entity: ${t.classified_entity || 'Unknown'}</span>
+                                            <span>•</span>
+                                            <span>Category: ${t.accounting_category || 'N/A'}</span>
+                                            <span>•</span>
+                                            <span>Current: ${t.subcategory || 'N/A'}</span>
+                                            <span>•</span>
+                                            <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                        </div>
+                                    </div>
+                                    ${formatAmount(t.amount)}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn-secondary" onclick="closeModal()">Skip These</button>
+                    <button class="btn-primary" id="updateSubcategoryBtn" onclick="applySubcategoryToSelected('${newSubcategory}')" disabled>
+                        Update Selected Subcategories
+                    </button>
+                </div>
+            `;
+
+            // Initialize selection
+            updateSubcategorySelectionSummary();
+            showModal();
+        }
+    } catch (error) {
+        console.error('Error checking similar subcategories:', error);
+    }
+}
+
+// Helper function to handle select all/deselect all for subcategory modal
+function selectAllSimilarSubcategories(selectAll) {
+    const checkboxes = document.querySelectorAll('.similar-transactions-modal .subcategory-tx-cb');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll;
+    });
+    updateSubcategorySelectionSummary();
+}
+
+// Helper function to update selection summary for subcategory modal
+function updateSubcategorySelectionSummary() {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkboxes = modal.querySelectorAll('.subcategory-tx-cb');
+    const checkedBoxes = modal.querySelectorAll('.subcategory-tx-cb:checked');
+    const updateBtn = modal.querySelector('#updateSubcategoryBtn');
+    const selectionCounter = modal.querySelector('#selectedSubcategoryCount');
+    const impactSummary = modal.querySelector('#subcategoryImpactSummary');
+
+    // Update selection counter
+    if (selectionCounter) {
+        selectionCounter.textContent = checkedBoxes.length;
+    }
+
+    // Update impact summary
+    if (impactSummary) {
+        if (checkedBoxes.length === 0) {
+            impactSummary.textContent = 'Select transactions below';
+        } else {
+            let totalAmount = 0;
+            checkedBoxes.forEach(cb => {
+                const amount = parseFloat(cb.getAttribute('data-amount') || 0);
+                totalAmount += amount;
+            });
+            impactSummary.innerHTML = `${checkedBoxes.length} transaction(s), Total: <strong>$${Math.abs(totalAmount).toFixed(2)}</strong>`;
+        }
+    }
+
+    // Enable/disable update button
+    if (updateBtn) {
+        updateBtn.disabled = checkedBoxes.length === 0;
+        updateBtn.style.opacity = checkedBoxes.length === 0 ? '0.6' : '1';
+        updateBtn.style.cursor = checkedBoxes.length === 0 ? 'not-allowed' : 'pointer';
+    }
+}
+
+// Helper function to apply subcategory to selected transactions
+function applySubcategoryToSelected(newSubcategory) {
+    const modal = document.querySelector('.similar-transactions-modal');
+    if (!modal) return;
+
+    const checkedBoxes = modal.querySelectorAll('.subcategory-tx-cb:checked');
+    const transactionIds = [];
+
+    checkedBoxes.forEach(checkbox => {
+        const transactionItem = checkbox.closest('.transaction-item');
+        if (transactionItem) {
+            const transactionId = transactionItem.getAttribute('data-tx-id');
+            if (transactionId) {
+                transactionIds.push(transactionId);
+            }
+        }
+    });
+
+    if (transactionIds.length === 0) {
+        showToast('Please select at least one transaction to update.', 'warning');
+        return;
+    }
+
+    // Make API call to update selected transactions
+    fetch('/api/update_subcategory_bulk', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            transaction_ids: transactionIds,
+            new_subcategory: newSubcategory
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showToast(`Successfully updated ${transactionIds.length} transaction(s) to subcategory "${newSubcategory}".`, 'success');
 
             // Close modal and refresh the page to show updates
             closeModal();
@@ -4089,6 +4332,429 @@ Transactions have been enriched with:
         button.disabled = false;
         button.textContent = originalText;
         button.style.opacity = '1';
+    }
+}
+
+// ============================================================================
+// FIND DUPLICATES FUNCTIONALITY
+// ============================================================================
+
+async function findDuplicates() {
+    const modal = document.getElementById('findDuplicatesModal');
+    const loadingDiv = document.getElementById('duplicatesLoading');
+    const summaryDiv = document.getElementById('duplicatesSummary');
+    const containerDiv = document.getElementById('duplicatesContainer');
+    const emptyDiv = document.getElementById('duplicatesEmpty');
+    const errorDiv = document.getElementById('duplicatesError');
+    const groupsContainer = document.getElementById('duplicateGroupsContainer');
+
+    // Show modal and loading state
+    modal.style.display = 'flex';
+    loadingDiv.style.display = 'block';
+    summaryDiv.style.display = 'none';
+    containerDiv.style.display = 'none';
+    emptyDiv.style.display = 'none';
+    errorDiv.style.display = 'none';
+
+    try {
+        showToast('🔍 Scanning for duplicate transactions...', 'info');
+
+        // Call the find duplicates endpoint
+        const response = await fetch('/api/transactions/find-duplicates', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        // Hide loading
+        loadingDiv.style.display = 'none';
+
+        if (data.success) {
+            const groups = data.duplicate_groups || [];
+            const totalGroups = groups.length;
+            const totalDuplicates = groups.reduce((sum, group) => sum + group.transactions.length, 0);
+
+            if (totalGroups === 0) {
+                // No duplicates found
+                emptyDiv.style.display = 'block';
+                showToast('✅ No duplicate transactions found!', 'success');
+            } else {
+                // Show summary
+                document.getElementById('totalDuplicateGroups').textContent = totalGroups;
+                document.getElementById('totalDuplicateTransactions').textContent = totalDuplicates;
+                summaryDiv.style.display = 'block';
+                containerDiv.style.display = 'block';
+
+                // Populate duplicate groups
+                groupsContainer.innerHTML = '';
+                groups.forEach((group, index) => {
+                    const groupDiv = createDuplicateGroupElement(group, index + 1);
+                    groupsContainer.appendChild(groupDiv);
+                });
+
+                showToast(`⚠️ Found ${totalGroups} duplicate group(s) with ${totalDuplicates} transactions`, 'warning');
+            }
+        } else {
+            throw new Error(data.error || 'Failed to find duplicates');
+        }
+
+    } catch (error) {
+        console.error('Error finding duplicates:', error);
+        loadingDiv.style.display = 'none';
+        errorDiv.style.display = 'block';
+        document.getElementById('duplicatesErrorMessage').textContent = error.message;
+        showToast('❌ Error finding duplicates: ' + error.message, 'error');
+    }
+}
+
+function createDuplicateGroupElement(group, groupNumber) {
+    const groupDiv = document.createElement('div');
+    groupDiv.style.cssText = 'margin-bottom: 30px; padding: 20px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ddd;';
+
+    const headerHtml = `
+        <h4 style="margin-top: 0; color: #c33;">
+            🔄 Duplicate Group ${groupNumber}
+            <span style="font-size: 0.9em; color: #666; font-weight: normal;">
+                (${group.transactions.length} transactions)
+            </span>
+        </h4>
+        <div style="background: #e8f4f8; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+            <p style="margin: 5px 0;"><strong>Date:</strong> ${group.date}</p>
+            <p style="margin: 5px 0;"><strong>Description:</strong> ${group.description}</p>
+            <p style="margin: 5px 0;"><strong>Amount:</strong> $${parseFloat(group.amount).toFixed(2)}</p>
+        </div>
+    `;
+
+    const tableHtml = `
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.9em; background: white;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd; width: 50px;">
+                        <input type="checkbox" class="select-all-group" data-group-number="${groupNumber}" onchange="toggleGroupSelection(${groupNumber})" title="Select/Deselect all in this group">
+                    </th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Transaction ID</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Entity</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Category</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Subcategory</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Source</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Confidence</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${group.transactions.map(txn => `
+                    <tr>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">
+                            <input type="checkbox" class="duplicate-checkbox group-${groupNumber}" data-transaction-id="${txn.transaction_id}" onchange="updateGroupCheckboxState(${groupNumber})">
+                        </td>
+                        <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace; font-size: 0.85em;">${txn.transaction_id.substring(0, 8)}...</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${txn.classified_entity || 'Unknown'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${txn.accounting_category || 'Uncategorized'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${txn.subcategory || '-'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${txn.source_file || 'Unknown'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${(txn.confidence * 100).toFixed(0)}%</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">
+                            <button
+                                class="btn-secondary"
+                                style="font-size: 0.85em; padding: 5px 10px;"
+                                onclick="archiveDuplicateTransaction('${txn.transaction_id}')"
+                            >
+                                🗄️ Archive
+                            </button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    const actionsHtml = `
+        <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button
+                class="btn-primary"
+                onclick="archiveAllButOne('${JSON.stringify(group.transactions.map(t => t.transaction_id)).replace(/"/g, '&quot;')}')"
+            >
+                🗄️ Archive All But First
+            </button>
+            <button
+                class="btn-secondary"
+                onclick="markGroupAsReviewed('${JSON.stringify(group.transactions.map(t => t.transaction_id)).replace(/"/g, '&quot;')}')"
+            >
+                ✅ Mark All as Reviewed
+            </button>
+        </div>
+    `;
+
+    groupDiv.innerHTML = headerHtml + tableHtml + actionsHtml;
+    return groupDiv;
+}
+
+async function archiveDuplicateTransaction(transactionId) {
+    if (!confirm('Archive this transaction? It will be marked as archived and hidden from normal views.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/archive_transactions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ transaction_ids: [transactionId] })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast('✅ Transaction archived successfully', 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            throw new Error(data.error || 'Failed to archive transaction');
+        }
+    } catch (error) {
+        console.error('Error archiving transaction:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
+}
+
+async function archiveAllButOne(transactionIdsJson) {
+    const transactionIds = JSON.parse(transactionIdsJson.replace(/&quot;/g, '"'));
+
+    if (transactionIds.length <= 1) {
+        showToast('⚠️ Need at least 2 transactions to archive duplicates', 'warning');
+        return;
+    }
+
+    const toArchive = transactionIds.slice(1); // Keep first, archive rest
+
+    if (!confirm(`Archive ${toArchive.length} duplicate transaction(s)? The first transaction will be kept.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/archive_transactions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ transaction_ids: toArchive })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ Archived ${toArchive.length} duplicate transaction(s)`, 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            throw new Error(data.error || 'Failed to archive transactions');
+        }
+    } catch (error) {
+        console.error('Error archiving transactions:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
+}
+
+async function markGroupAsReviewed(transactionIdsJson) {
+    const transactionIds = JSON.parse(transactionIdsJson.replace(/&quot;/g, '"'));
+
+    try {
+        // Update each transaction to set needs_review = false
+        const promises = transactionIds.map(txnId =>
+            fetch(`/api/transactions/${txnId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ needs_review: false })
+            })
+        );
+
+        const responses = await Promise.all(promises);
+        const allSuccess = responses.every(r => r.ok);
+
+        if (allSuccess) {
+            showToast(`✅ Marked ${transactionIds.length} transaction(s) as reviewed`, 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            throw new Error('Some transactions failed to update');
+        }
+    } catch (error) {
+        console.error('Error marking transactions as reviewed:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
+}
+
+function closeFindDuplicatesModal() {
+    const modal = document.getElementById('findDuplicatesModal');
+    modal.style.display = 'none';
+}
+
+// ============================================================================
+// CHECKBOX MANAGEMENT FOR DUPLICATES
+// ============================================================================
+
+function toggleGroupSelection(groupNumber) {
+    const selectAllCheckbox = document.querySelector(`.select-all-group[data-group-number="${groupNumber}"]`);
+    const groupCheckboxes = document.querySelectorAll(`.duplicate-checkbox.group-${groupNumber}`);
+
+    groupCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+}
+
+function updateGroupCheckboxState(groupNumber) {
+    const groupCheckboxes = document.querySelectorAll(`.duplicate-checkbox.group-${groupNumber}`);
+    const selectAllCheckbox = document.querySelector(`.select-all-group[data-group-number="${groupNumber}"]`);
+
+    const allChecked = Array.from(groupCheckboxes).every(cb => cb.checked);
+    const someChecked = Array.from(groupCheckboxes).some(cb => cb.checked);
+
+    selectAllCheckbox.checked = allChecked;
+    selectAllCheckbox.indeterminate = someChecked && !allChecked;
+}
+
+function selectAllDuplicates() {
+    document.querySelectorAll('.duplicate-checkbox').forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    document.querySelectorAll('.select-all-group').forEach(checkbox => {
+        checkbox.checked = true;
+        checkbox.indeterminate = false;
+    });
+    showToast('✅ All transactions selected', 'info');
+}
+
+function deselectAllDuplicates() {
+    document.querySelectorAll('.duplicate-checkbox').forEach(checkbox => {
+        checkbox.checked = false;
+    });
+    document.querySelectorAll('.select-all-group').forEach(checkbox => {
+        checkbox.checked = false;
+        checkbox.indeterminate = false;
+    });
+    showToast('⬜ All transactions deselected', 'info');
+}
+
+// ============================================================================
+// BULK ARCHIVE OPERATIONS
+// ============================================================================
+
+async function archiveAllButFirstGlobally() {
+    // Collect all transaction IDs from all groups, but skip the first in each group
+    const allGroups = document.querySelectorAll('#duplicateGroupsContainer > div');
+
+    if (allGroups.length === 0) {
+        showToast('⚠️ No duplicate groups found', 'warning');
+        return;
+    }
+
+    let transactionIdsToArchive = [];
+
+    allGroups.forEach(groupDiv => {
+        // Get all checkboxes in this group
+        const groupCheckboxes = Array.from(groupDiv.querySelectorAll('.duplicate-checkbox'));
+
+        // Skip the first transaction, archive the rest
+        for (let i = 1; i < groupCheckboxes.length; i++) {
+            transactionIdsToArchive.push(groupCheckboxes[i].dataset.transactionId);
+        }
+    });
+
+    if (transactionIdsToArchive.length === 0) {
+        showToast('⚠️ No transactions to archive', 'warning');
+        return;
+    }
+
+    if (!confirm(`Archive ${transactionIdsToArchive.length} duplicate transaction(s) across all groups? The first transaction in each group will be kept.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/archive_transactions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ transaction_ids: transactionIdsToArchive })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ Archived ${transactionIdsToArchive.length} duplicate transaction(s) across all groups`, 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            throw new Error(data.error || 'Failed to archive transactions');
+        }
+    } catch (error) {
+        console.error('Error archiving all duplicates:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
+}
+
+async function archiveSelectedTransactions() {
+    // Get all checked checkboxes
+    const selectedCheckboxes = document.querySelectorAll('.duplicate-checkbox:checked');
+
+    if (selectedCheckboxes.length === 0) {
+        showToast('⚠️ No transactions selected. Use the checkboxes to select transactions to archive.', 'warning');
+        return;
+    }
+
+    const transactionIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.transactionId);
+
+    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/archive_transactions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ transaction_ids: transactionIds })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showToast(`✅ Archived ${transactionIds.length} selected transaction(s)`, 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            throw new Error(data.error || 'Failed to archive transactions');
+        }
+    } catch (error) {
+        console.error('Error archiving selected transactions:', error);
+        showToast('❌ Error: ' + error.message, 'error');
     }
 }
 
