@@ -88,14 +88,58 @@
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+            background: #fafafa;
+        }
+
+        .line-items-header {
+            display: grid;
+            grid-template-columns: 40px 2fr 80px 100px 100px 100px 60px;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #ddd;
+            font-weight: 600;
+            font-size: 0.85em;
+            color: #555;
         }
 
         .line-item {
             display: grid;
-            grid-template-columns: 2fr 1fr auto;
-            gap: 15px;
-            margin-bottom: 15px;
-            align-items: end;
+            grid-template-columns: 40px 2fr 80px 100px 100px 100px 60px;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+            transition: all 0.2s ease;
+        }
+
+        .line-item:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-color: #667eea;
+        }
+
+        .line-item-number {
+            font-weight: 600;
+            color: #667eea;
+            text-align: center;
+        }
+
+        .line-item input[type="text"],
+        .line-item input[type="number"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .line-item-subtotal {
+            font-weight: 600;
+            color: #2d3748;
+            text-align: right;
+            padding-right: 10px;
         }
 
         .btn {
@@ -267,15 +311,30 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Line Items</label>
+                    <label>Line Items <span style="font-weight:normal; color:#666;">Optional - detailed breakdown</span></label>
                     <div class="line-items" id="lineItems">
-                        <div class="line-item">
+                        <div class="line-items-header">
+                            <div>#</div>
+                            <div>Description</div>
+                            <div>Qty</div>
+                            <div>Unit Price</div>
+                            <div>Subtotal</div>
+                            <div></div>
+                            <div></div>
+                        </div>
+                        <div class="line-item" data-line-number="1">
+                            <div class="line-item-number">1</div>
                             <input type="text" placeholder="Item description" class="line-desc">
-                            <input type="number" step="0.01" placeholder="Amount" class="line-amount">
-                            <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                            <input type="number" step="1" min="1" value="1" class="line-qty" oninput="updateLineItemSubtotal(this)">
+                            <input type="number" step="0.01" min="0" placeholder="0.00" class="line-price" oninput="updateLineItemSubtotal(this)">
+                            <div class="line-item-subtotal">$0.00</div>
+                            <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)" title="Remove item">×</button>
                         </div>
                     </div>
                     <button type="button" class="btn btn-secondary btn-small" onclick="addLineItem()">+ Add Line Item</button>
+                    <div id="lineItemsTotal" style="margin-top: 15px; text-align: right; font-weight: 600; font-size: 1.1em; color: #2d3748;">
+                        Line Items Total: <span id="lineItemsTotalAmount">$0.00</span>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -392,18 +451,59 @@
 
         function addLineItem() {
             const container = document.getElementById('lineItems');
+            const lineItems = container.querySelectorAll('.line-item');
+            const lineNumber = lineItems.length + 1;
+
             const newItem = document.createElement('div');
             newItem.className = 'line-item';
+            newItem.setAttribute('data-line-number', lineNumber);
             newItem.innerHTML = `
+                <div class="line-item-number">${lineNumber}</div>
                 <input type="text" placeholder="Item description" class="line-desc">
-                <input type="number" step="0.01" placeholder="Amount" class="line-amount">
-                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                <input type="number" step="1" min="1" value="1" class="line-qty" oninput="updateLineItemSubtotal(this)">
+                <input type="number" step="0.01" min="0" placeholder="0.00" class="line-price" oninput="updateLineItemSubtotal(this)">
+                <div class="line-item-subtotal">$0.00</div>
+                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)" title="Remove item">×</button>
             `;
             container.appendChild(newItem);
+            renumberLineItems();
         }
 
         function removeLineItem(button) {
-            button.parentElement.remove();
+            const lineItem = button.closest('.line-item');
+            lineItem.remove();
+            renumberLineItems();
+            updateLineItemsTotal();
+        }
+
+        function renumberLineItems() {
+            const lineItems = document.querySelectorAll('.line-item');
+            lineItems.forEach((item, index) => {
+                const number = index + 1;
+                item.setAttribute('data-line-number', number);
+                item.querySelector('.line-item-number').textContent = number;
+            });
+        }
+
+        function updateLineItemSubtotal(input) {
+            const lineItem = input.closest('.line-item');
+            const qty = parseFloat(lineItem.querySelector('.line-qty').value) || 0;
+            const price = parseFloat(lineItem.querySelector('.line-price').value) || 0;
+            const subtotal = qty * price;
+
+            lineItem.querySelector('.line-item-subtotal').textContent = `$${subtotal.toFixed(2)}`;
+            updateLineItemsTotal();
+        }
+
+        function updateLineItemsTotal() {
+            let total = 0;
+            document.querySelectorAll('.line-item').forEach(item => {
+                const qty = parseFloat(item.querySelector('.line-qty').value) || 0;
+                const price = parseFloat(item.querySelector('.line-price').value) || 0;
+                total += qty * price;
+            });
+
+            document.getElementById('lineItemsTotalAmount').textContent = `$${total.toFixed(2)}`;
         }
 
         // Set default due date to 7 days from now
@@ -421,9 +521,15 @@
             const lineItems = [];
             document.querySelectorAll('.line-item').forEach(item => {
                 const desc = item.querySelector('.line-desc').value;
-                const amount = item.querySelector('.line-amount').value;
-                if (desc && amount) {
-                    lineItems.push({ description: desc, amount: parseFloat(amount) });
+                const qty = item.querySelector('.line-qty').value;
+                const price = item.querySelector('.line-price').value;
+                if (desc && qty && price) {
+                    lineItems.push({
+                        description: desc,
+                        quantity: parseInt(qty),
+                        unit_price: parseFloat(price),
+                        subtotal: parseInt(qty) * parseFloat(price)
+                    });
                 }
             });
 
