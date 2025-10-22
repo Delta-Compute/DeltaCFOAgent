@@ -108,6 +108,11 @@ class PaymentPoller:
 
         for invoice in pending_invoices:
             try:
+                # Check if invoice has expired first
+                if self._check_invoice_expiration(invoice):
+                    continue  # Skip payment check for expired invoices
+
+                # Check for payment
                 self._check_invoice_payment(invoice)
             except Exception as e:
                 self.logger.error(f"Error checking invoice {invoice['invoice_number']}: {e}")
@@ -116,6 +121,77 @@ class PaymentPoller:
                     status='error',
                     error_message=str(e)
                 )
+
+    def _check_invoice_expiration(self, invoice: Dict) -> bool:
+        """
+        Check if invoice has expired and mark as EXPIRED if needed
+
+        Expiration Logic:
+        - created_at + expiration_hours > now → invoice expired
+        - Only mark EXPIRED if status is 'sent' (not already paid/cancelled)
+
+        Args:
+            invoice: Invoice record with expiration_hours field
+
+        Returns:
+            True if invoice was marked as expired, False otherwise
+        """
+        invoice_id = invoice['id']
+        invoice_number = invoice['invoice_number']
+        status = invoice['status']
+
+        # Only check expiration for sent invoices
+        if status not in ['sent', InvoiceStatus.SENT.value]:
+            return False
+
+        # Get expiration settings
+        expiration_hours = int(invoice.get('expiration_hours', 24))
+        created_at = invoice.get('created_at')
+
+        if not created_at:
+            self.logger.warning(f"Invoice {invoice_number}: No created_at timestamp, skipping expiration check")
+            return False
+
+        # Parse created_at if string
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+
+        # Calculate expiration time
+        expiration_time = created_at + timedelta(hours=expiration_hours)
+        now = datetime.now()
+
+        # Check if expired
+        if now >= expiration_time:
+            # Mark as expired
+            time_expired = (now - expiration_time).total_seconds() / 3600  # hours
+            self.logger.warning(
+                f"⏰ Invoice {invoice_number} EXPIRED ({time_expired:.1f} hours past expiration). "
+                f"Created: {created_at}, Expiration: {expiration_hours}h"
+            )
+
+            # Update status to EXPIRED
+            self.db.update_invoice_status(
+                invoice_id=invoice_id,
+                status=InvoiceStatus.EXPIRED.value
+            )
+
+            # Log expiration event
+            self.db.log_polling_event(
+                invoice_id=invoice_id,
+                status='expired',
+                error_message=f"Invoice expired {time_expired:.1f} hours ago"
+            )
+
+            return True
+        else:
+            # Not expired yet - log remaining time
+            time_remaining = (expiration_time - now).total_seconds() / 3600  # hours
+            if time_remaining < 1:  # Less than 1 hour remaining
+                self.logger.info(
+                    f"Invoice {invoice_number} expires in {time_remaining * 60:.0f} minutes"
+                )
+
+            return False
 
     def _check_invoice_payment(self, invoice: Dict):
         """
