@@ -192,14 +192,34 @@ class CryptoInvoiceDatabaseManager:
 
                     # Create indexes for performance
                     """
+                    -- Invoice table indexes
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_invoice_number ON crypto_invoices(invoice_number);
                     CREATE INDEX IF NOT EXISTS idx_crypto_invoices_status ON crypto_invoices(status);
-                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_due_date ON crypto_invoices(due_date);
                     CREATE INDEX IF NOT EXISTS idx_crypto_invoices_client ON crypto_invoices(client_id);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_created_at ON crypto_invoices(created_at DESC);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_issue_date ON crypto_invoices(issue_date DESC);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_due_date ON crypto_invoices(due_date);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_paid_at ON crypto_invoices(paid_at DESC);
+
+                    -- Composite indexes for common query patterns
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_status_created ON crypto_invoices(status, created_at DESC);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_client_status ON crypto_invoices(client_id, status);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_invoices_status_due ON crypto_invoices(status, due_date);
+
+                    -- Client table indexes
+                    CREATE INDEX IF NOT EXISTS idx_crypto_clients_name ON crypto_clients(name);
+
+                    -- Payment transaction indexes
                     CREATE INDEX IF NOT EXISTS idx_crypto_payments_invoice ON crypto_payment_transactions(invoice_id);
                     CREATE INDEX IF NOT EXISTS idx_crypto_payments_status ON crypto_payment_transactions(status);
                     CREATE INDEX IF NOT EXISTS idx_crypto_payments_txhash ON crypto_payment_transactions(transaction_hash);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_payments_detected_at ON crypto_payment_transactions(detected_at DESC);
+
+                    -- Other table indexes
                     CREATE INDEX IF NOT EXISTS idx_crypto_polling_invoice ON crypto_polling_log(invoice_id);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_polling_timestamp ON crypto_polling_log(poll_timestamp DESC);
                     CREATE INDEX IF NOT EXISTS idx_crypto_notifications_invoice ON crypto_notifications(invoice_id);
+                    CREATE INDEX IF NOT EXISTS idx_crypto_notifications_status ON crypto_notifications(status);
                     """,
                 ]
             else:
