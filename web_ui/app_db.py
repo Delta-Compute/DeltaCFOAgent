@@ -5442,6 +5442,148 @@ def check_file_duplicates(filepath):
     """Legacy function - kept for backwards compatibility"""
     return check_processed_file_duplicates(filepath, filepath)
 
+
+def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, Any]:
+    """
+    Process PDF using Claude Vision to extract transaction data
+    Reuses existing invoice processing framework from invoice_processing module
+
+    Args:
+        filepath: Full path to the PDF file
+        filename: Original filename
+
+    Returns:
+        Dict containing extracted transactions or error information
+    """
+    try:
+        # Import PDF processing libraries
+        from pdf2image import convert_from_path
+        from io import BytesIO
+
+        print(f"📄 Processing PDF with Claude Vision: {filename}")
+
+        # Convert PDF first page to image at 300 DPI (same as invoice system)
+        pages = convert_from_path(filepath, first_page=1, last_page=1, dpi=300)
+        if not pages:
+            raise ValueError("Could not convert PDF to image")
+
+        # Convert to base64 PNG
+        img = pages[0]
+        buffer = BytesIO()
+        img.save(buffer, format='PNG')
+        image_bytes = buffer.getvalue()
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        print(f"✅ PDF converted to image successfully ({len(image_base64)} bytes)")
+
+        # Get Anthropic API key
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not configured")
+
+        # Initialize Claude client
+        client = anthropic.Anthropic(api_key=api_key)
+
+        # Extraction prompt for financial transactions
+        prompt = """
+Analyze this document and extract ALL transaction data you can find.
+
+This could be:
+- Bank statement with multiple transactions
+- Invoice with line items
+- Receipt with transaction details
+- Financial report with transaction history
+- Credit card statement
+
+For EACH transaction, extract:
+- date (in YYYY-MM-DD format, required)
+- description (transaction description, required)
+- amount (numeric value - use negative for expenses/debits, positive for income/credits, required)
+- category (expense category if mentioned, optional)
+- entity (business unit or entity name if mentioned, optional)
+
+Return ONLY valid JSON in this exact format:
+{
+    "transactions": [
+        {
+            "date": "2024-01-15",
+            "description": "Office supplies purchase",
+            "amount": -150.50,
+            "category": "Technology",
+            "entity": "Delta LLC"
+        }
+    ],
+    "total_found": 1,
+    "document_type": "Bank Statement"
+}
+
+Important:
+- Extract ALL transactions from the document
+- Use negative amounts for expenses/debits
+- Use positive amounts for income/credits
+- If date format is unclear, use best estimate in YYYY-MM-DD
+- Return empty array if no transactions found
+"""
+
+        print(f"🤖 Calling Claude Vision API...")
+
+        # Call Claude Vision API
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",  # Fast model for vision tasks
+            max_tokens=4000,
+            temperature=0.1,  # Low temperature for structured data
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": image_base64
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }]
+        )
+
+        # Parse response
+        response_text = response.content[0].text.strip()
+        print(f"📥 Received response from Claude ({len(response_text)} chars)")
+
+        # Remove markdown code blocks if present
+        if response_text.startswith('```json'):
+            response_text = response_text.replace('```json', '').replace('```', '').strip()
+        elif response_text.startswith('```'):
+            response_text = response_text.replace('```', '').strip()
+
+        # Parse JSON
+        result = json.loads(response_text)
+
+        print(f"✅ Successfully extracted {result.get('total_found', 0)} transactions from PDF")
+
+        return result
+
+    except ImportError as e:
+        error_msg = f"PDF processing libraries not available: {e}. Install with: pip install pdf2image Pillow"
+        print(f"❌ {error_msg}")
+        return {"error": error_msg, "transactions": [], "total_found": 0}
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON response from Claude Vision: {e}"
+        print(f"❌ {error_msg}")
+        print(f"Raw response: {response_text[:500]}...")
+        return {"error": error_msg, "transactions": [], "total_found": 0}
+    except Exception as e:
+        error_msg = f"PDF processing failed: {str(e)}"
+        print(f"❌ {error_msg}")
+        print(f"Traceback: {traceback.format_exc()}")
+        return {"error": error_msg, "transactions": [], "total_found": 0}
+
+
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """Handle file upload and processing"""
@@ -5460,8 +5602,11 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        if not file.filename.lower().endswith('.csv'):
-            return jsonify({'error': 'Only CSV files are allowed'}), 400
+        # Check file extension - accept CSV and PDF
+        allowed_extensions = ['.csv', '.pdf']
+        file_ext = os.path.splitext(file.filename.lower())[1]
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': 'Only CSV and PDF files are allowed'}), 400
 
         # Secure the filename
         filename = secure_filename(file.filename)
@@ -5472,6 +5617,49 @@ def upload_file():
 
         # Save the uploaded file
         file.save(filepath)
+
+
+        # Check if PDF and process differently
+        if file_ext == '.pdf':
+            print(f"📄 PDF file detected: {filename}")
+            print(f"🔧 DEBUG: Processing PDF with Claude Vision...")
+
+            # Process PDF with Claude Vision
+            pdf_result = process_pdf_with_claude_vision(filepath, filename)
+
+            # Check for errors
+            if pdf_result.get('error'):
+                # Clean up uploaded file
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                return jsonify({
+                    'success': False,
+                    'error': f"PDF processing failed: {pdf_result['error']}"
+                }), 500
+
+            # Check if transactions were found
+            transactions = pdf_result.get('transactions', [])
+            if not transactions:
+                # Clean up uploaded file
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                return jsonify({
+                    'success': False,
+                    'error': 'No transactions found in PDF'
+                }), 400
+
+            # Success! Clean up the PDF file (data already extracted)
+            if os.path.exists(filepath):
+                os.remove(filepath)
+
+            print(f"✅ Successfully processed PDF: {len(transactions)} transactions extracted")
+            return jsonify({
+                'success': True,
+                'message': f'Successfully extracted {len(transactions)} transaction(s) from PDF',
+                'transactions_processed': len(transactions),
+                'document_type': pdf_result.get('document_type', 'PDF Document'),
+                'transactions': transactions
+            })
 
         # Create backup first
         backup_path = f"{filepath}.backup"
