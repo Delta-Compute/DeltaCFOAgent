@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipt Upload - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <style>
+        /* Receipt Upload Specific Styles */
+        .upload-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .upload-area {
+            border: 3px dashed #4CAF50;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin: 2rem 0;
+        }
+
+        .upload-area.drag-over {
+            background: linear-gradient(135deg, #e0f7fa 0%, #b2ebf2 100%);
+            border-color: #00bcd4;
+            transform: scale(1.02);
+        }
+
+        .upload-area.uploading {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-color: #ff9800;
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .upload-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-hint {
+            font-size: 0.95rem;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+
+        .supported-formats {
+            font-size: 0.85rem;
+            color: #999;
+        }
+
+        .file-input-hidden {
+            display: none;
+        }
+
+        .upload-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 1rem;
+        }
+
+        .upload-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        /* Processing Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .modal-close {
+            font-size: 2rem;
+            cursor: pointer;
+            color: #999;
+            line-height: 1;
+            background: none;
+            border: none;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .processing-spinner {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .section-box {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #333;
+            display: flex;
+            align-items: center;
+        }
+
+        .section-title-icon {
+            font-size: 1.5rem;
+            margin-right: 0.5rem;
+        }
+
+        .extracted-data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .data-item {
+            background: white;
+            padding: 1rem;
+            border-radius: 6px;
+            border-left: 3px solid #4CAF50;
+        }
+
+        .data-label {
+            font-size: 0.85rem;
+            color: #666;
+            margin-bottom: 0.3rem;
+        }
+
+        .data-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .confidence-badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .confidence-high {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .confidence-medium {
+            background: #fff9c4;
+            color: #f57f17;
+        }
+
+        .confidence-low {
+            background: #ffccbc;
+            color: #d84315;
+        }
+
+        .match-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.8rem 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .match-card:hover {
+            border-color: #4CAF50;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+        }
+
+        .match-card.selected {
+            border-color: #4CAF50;
+            background: #f1f8e9;
+        }
+
+        .match-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.8rem;
+        }
+
+        .match-confidence {
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .match-recommendation {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .rec-auto {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .rec-suggested {
+            background: #b3e5fc;
+            color: #01579b;
+        }
+
+        .rec-possible {
+            background: #fff9c4;
+            color: #f57f17;
+        }
+
+        .rec-uncertain {
+            background: #ffccbc;
+            color: #d84315;
+        }
+
+        .match-details {
+            font-size: 0.95rem;
+            color: #666;
+        }
+
+        .match-detail-row {
+            margin: 0.3rem 0;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #666;
+            border: 2px solid #e0e0e0;
+            padding: 0.8rem 2rem;
+            font-size: 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary:hover {
+            border-color: #999;
+            color: #333;
+        }
+
+        .no-matches-message {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .create-transaction-suggestion {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .recent-receipts {
+            margin-top: 3rem;
+        }
+
+        .receipt-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .receipt-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .receipt-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .receipt-filename {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .receipt-meta {
+            font-size: 0.85rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <h2>Delta CFO Agent</h2>
+                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Receipt Upload & Transaction Matching</p>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/dashboard" class="nav-link">Expenses</a>
+                <a href="/revenue" class="nav-link">Revenue Recognition</a>
+                <a href="/receipts" class="nav-link active">Receipts</a>
+            </div>
+        </nav>
+
+        <div class="upload-container">
+            <h1>📎 Upload Receipt</h1>
+            <p style="font-size: 1.1rem; color: #666; margin-bottom: 2rem;">
+                Upload receipts, invoices, or supporting documents. Our AI will automatically extract data and match to existing transactions.
+            </p>
+
+            <!-- Upload Area -->
+            <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+                <div class="upload-icon" id="uploadIcon">📄</div>
+                <div class="upload-text" id="uploadText">Drag & Drop Receipt Here</div>
+                <div class="upload-hint" id="uploadHint">or click to browse files</div>
+                <div class="supported-formats">
+                    Supported: PDF, PNG, JPG, JPEG, HEIC, WebP, TIFF (Max: 25MB)
+                </div>
+                <input type="file" id="fileInput" class="file-input-hidden"
+                       accept=".pdf,.png,.jpg,.jpeg,.heic,.webp,.tiff,.tif">
+            </div>
+
+            <!-- Progress Info -->
+            <div id="progressInfo" style="display: none; text-align: center; margin: 1rem 0;">
+                <div class="spinner"></div>
+                <p id="progressText" style="font-size: 1.1rem; color: #666;"></p>
+            </div>
+
+            <!-- Recent Receipts -->
+            <div class="recent-receipts" id="recentReceipts" style="display: none;">
+                <h2>Recent Receipts</h2>
+                <div class="receipt-grid" id="receiptGrid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processing Modal -->
+    <div class="modal-overlay" id="processingModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Processing Receipt...</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+
+            <!-- Loading State -->
+            <div id="modalLoading" class="processing-spinner">
+                <div class="spinner"></div>
+                <p>Analyzing receipt with AI...</p>
+                <p style="color: #999; font-size: 0.9rem;">This usually takes 3-6 seconds</p>
+            </div>
+
+            <!-- Results Content -->
+            <div id="modalResults" style="display: none;">
+                <!-- Section 1: What We Understood -->
+                <div class="section-box">
+                    <div class="section-title">
+                        <span class="section-title-icon">📋</span>
+                        What We Understood
+                    </div>
+                    <div class="extracted-data-grid" id="extractedDataGrid"></div>
+                    <div style="margin-top: 1rem;">
+                        <span class="data-label">Confidence:</span>
+                        <span id="overallConfidence"></span>
+                    </div>
+                </div>
+
+                <!-- Section 2: Suggested Matches -->
+                <div class="section-box">
+                    <div class="section-title">
+                        <span class="section-title-icon">🎯</span>
+                        Suggested Transaction Matches
+                    </div>
+                    <div id="matchesList"></div>
+                </div>
+
+                <!-- Section 3: Categorization -->
+                <div class="section-box" id="categorizationSection" style="display: none;">
+                    <div class="section-title">
+                        <span class="section-title-icon">🏷️</span>
+                        How We'll Categorize
+                    </div>
+                    <div id="categorizationInfo"></div>
+                    <label style="display: block; margin-top: 1rem;">
+                        <input type="checkbox" id="applyCategorizationCheckbox" checked>
+                        Apply suggested categorization to matched transaction
+                    </label>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+                    <button class="btn-primary" id="confirmButton" onclick="confirmMatch()" disabled>
+                        Link Receipt to Transaction
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='receipt_upload.js') }}?v={{ cache_buster }}"></script>
+</body>
+</html>

@@ -59,9 +59,11 @@ class ReceiptProcessor:
         """
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY must be set for receipt processing")
+            logger.warning("ANTHROPIC_API_KEY not set - processor will error when attempting to process receipts")
+            self.client = None
+        else:
+            self.client = anthropic.Anthropic(api_key=self.api_key)
 
-        self.client = anthropic.Anthropic(api_key=self.api_key)
         self.config = ReceiptProcessingConfig()
 
         logger.info("ReceiptProcessor initialized successfully")
@@ -286,6 +288,12 @@ class ReceiptProcessor:
             Extracted receipt data as dictionary
         """
         try:
+            if not self.client:
+                raise ValueError(
+                    "ANTHROPIC_API_KEY not set. Please set the ANTHROPIC_API_KEY environment variable "
+                    "or provide it when initializing ReceiptProcessor."
+                )
+
             prompt = self._build_receipt_prompt(filename)
 
             logger.info(f"Calling Claude Vision API for receipt analysis...")

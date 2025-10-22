@@ -2799,6 +2799,15 @@ def cfo_dashboard():
     except Exception as e:
         return f"Error loading CFO dashboard: {str(e)}", 500
 
+@app.route('/receipts')
+def receipts():
+    """Receipt Upload and Management page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('receipts.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading receipts page: {str(e)}", 500
+
 @app.route('/api/transactions')
 def api_transactions():
     """API endpoint to get filtered transactions with pagination"""
