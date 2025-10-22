@@ -23,6 +23,7 @@ from models.database_postgresql import CryptoInvoiceDatabaseManager, InvoiceStat
 from services.mexc_service import MEXCService, MEXCAPIError
 from services.invoice_generator import InvoiceGenerator
 from services.payment_poller import PaymentPoller
+from config.blockchain_config import BlockchainRegistry
 
 
 # Initialize Flask app
@@ -67,6 +68,9 @@ else:
     mexc_service = None
     payment_poller = None
     logger.warning("MEXC API credentials not found - payment polling disabled")
+
+# Initialize blockchain registry
+blockchain_registry = BlockchainRegistry()
 
 
 # Routes
@@ -138,6 +142,34 @@ def get_crypto_price(currency):
         return jsonify({"success": True, "price": price, "currency": currency})
     except Exception as e:
         logger.error(f"Error fetching crypto price: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/payment-options', methods=['GET'])
+def get_payment_options():
+    """Get available blockchain chains and tokens for payment"""
+    try:
+        chains = blockchain_registry.get_all_chains(enabled_only=True)
+
+        # Format for frontend
+        options = []
+        for chain in chains:
+            tokens = blockchain_registry.get_chain_tokens(chain.chain_id, enabled_only=True)
+            for token in tokens:
+                options.append({
+                    "chain_id": chain.chain_id,
+                    "chain_name": chain.display_name,
+                    "token_symbol": token.symbol,
+                    "token_name": token.name,
+                    "is_stablecoin": token.stablecoin,
+                    "display": f"{token.symbol} ({chain.display_name})",
+                    "network": f"{token.symbol}-{chain.chain_id}"  # Format for invoice_generator
+                })
+
+        return jsonify({"success": True, "options": options})
+
+    except Exception as e:
+        logger.error(f"Error fetching payment options: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

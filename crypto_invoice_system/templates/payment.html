@@ -454,12 +454,30 @@
                 </div>
             </div>
 
+            <!-- Payment Method Selector (if client choice allowed) -->
+            {% if invoice.allow_client_choice and invoice.status in ['sent', 'partially_paid'] %}
+            <div class="payment-section">
+                <h2>💳 Choose Payment Method</h2>
+                <div style="background: #EBF4FF; border: 2px solid #2563eb; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                    <label for="paymentMethodSelector" style="display: block; margin-bottom: 10px; font-weight: 600; color: #1a202c;">
+                        Select your preferred cryptocurrency and network:
+                    </label>
+                    <select id="paymentMethodSelector" onchange="updatePaymentMethod()" style="width: 100%; padding: 12px; font-size: 1em; border-radius: 6px; border: 2px solid #2563eb;">
+                        <option value="">Loading payment options...</option>
+                    </select>
+                    <div style="margin-top: 10px; font-size: 0.9em; color: #64748b;">
+                        Choose the blockchain and token you prefer to pay with. The amount will be recalculated automatically.
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
             <!-- Payment Instructions (only if not paid/expired/cancelled) -->
             {% if invoice.status in ['sent', 'partially_paid'] %}
             <div class="payment-section">
                 <h2>🔐 Payment Instructions</h2>
 
-                <div class="crypto-details">
+                <div class="crypto-details" id="cryptoDetails">
                     <div style="text-align: center; margin-bottom: 10px;">
                         <strong style="font-size: 1.1em;">Pay with {{ invoice.crypto_currency }}</strong>
                         <div style="font-size: 0.9em; color: #64748b; margin-top: 5px;">Network: {{ invoice.crypto_network }}</div>
@@ -579,6 +597,103 @@
     </div>
 
     <script>
+        // Payment method selection (if allow_client_choice is true)
+        {% if invoice.allow_client_choice %}
+        let paymentOptions = [];
+        let currentMethod = {
+            currency: '{{ invoice.crypto_currency }}',
+            network: '{{ invoice.crypto_network }}'
+        };
+
+        // Load available payment options
+        async function loadPaymentOptions() {
+            try {
+                const response = await fetch('/api/payment-options');
+                const data = await response.json();
+
+                if (data.success) {
+                    paymentOptions = data.options;
+                    const selector = document.getElementById('paymentMethodSelector');
+
+                    // Populate selector
+                    selector.innerHTML = paymentOptions.map(option => `
+                        <option value="${option.network}"
+                                data-currency="${option.token_symbol}"
+                                data-chain="${option.chain_id}"
+                                ${option.token_symbol === currentMethod.currency && option.chain_id === currentMethod.network ? 'selected' : ''}>
+                            ${option.display}
+                        </option>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading payment options:', error);
+                document.getElementById('paymentMethodSelector').innerHTML =
+                    '<option value="">Error loading options</option>';
+            }
+        }
+
+        // Update payment method when selection changes
+        async function updatePaymentMethod() {
+            const selector = document.getElementById('paymentMethodSelector');
+            const selectedOption = selector.options[selector.selectedIndex];
+
+            if (!selectedOption) return;
+
+            const currency = selectedOption.dataset.currency;
+            const network = selectedOption.dataset.chain;
+
+            if (!currency || !network) return;
+
+            try {
+                // Get new crypto price
+                const priceResponse = await fetch(`/api/crypto-price/${currency}?network=${network}`);
+                const priceData = await priceResponse.json();
+
+                if (!priceData.success) {
+                    alert('Error fetching price for selected currency');
+                    return;
+                }
+
+                const price = priceData.price;
+                const totalUSD = {{ invoice.total_amount }};
+                const cryptoAmount = totalUSD / price;
+
+                // Update display
+                updateCryptoDetails(currency, network, cryptoAmount, price);
+
+                // Store current selection
+                currentMethod = { currency, network };
+
+            } catch (error) {
+                console.error('Error updating payment method:', error);
+                alert('Error updating payment method. Please try again.');
+            }
+        }
+
+        function updateCryptoDetails(currency, network, amount, rate) {
+            const detailsDiv = document.getElementById('cryptoDetails');
+            detailsDiv.innerHTML = `
+                <div style="text-align: center; margin-bottom: 10px;">
+                    <strong style="font-size: 1.1em;">Pay with ${currency}</strong>
+                    <div style="font-size: 0.9em; color: #64748b; margin-top: 5px;">Network: ${network}</div>
+                </div>
+                <div class="crypto-amount">
+                    ${amount.toFixed(8)} ${currency}
+                </div>
+                <div style="text-align: center; font-size: 0.9em; color: #64748b;">
+                    Exchange Rate: $${rate.toFixed(2)} per ${currency}
+                </div>
+                <div style="background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin-top: 15px; border-radius: 4px;">
+                    <strong style="color: #92400E;">⚠️ Note:</strong> Deposit address and QR code will be updated based on your selection.
+                    <em style="color: #78350F;">Please refresh the page or contact support to generate a new payment address for this method.</em>
+                </div>
+            `;
+        }
+
+        // Load payment options on page load
+        window.addEventListener('DOMContentLoaded', loadPaymentOptions);
+        {% endif %}
+
         function copyAddress() {
             const address = document.getElementById('depositAddress').textContent;
             navigator.clipboard.writeText(address).then(() => {
