@@ -72,6 +72,9 @@ from tenant_context import init_tenant_context, get_current_tenant_id, set_tenan
 # Import reporting API
 from reporting_api import register_reporting_routes
 
+# Import receipt API
+from receipt_api import register_receipt_routes
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
 
@@ -89,6 +92,9 @@ init_tenant_context(app)
 
 # Register CFO reporting routes
 register_reporting_routes(app)
+
+# Register receipt upload routes
+register_receipt_routes(app)
 
 # Database connection - DEPRECATED: Now using database manager (database.py)
 # DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
