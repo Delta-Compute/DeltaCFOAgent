@@ -1,0 +1,9 @@
+My Crypto Exchange - Transaction Report
+Generated on: 2025-10-20
+Account: Premium User
+
+TxID,Date,Amount,Type,Fee
+tx001,2025-01-01,"$1,234.56",Buy,$5.00
+tx002,2025-01-02,($500.00),Sell,$2.50
+tx003,2025-01-03,"€2,000.00",Buy,€10.00
+tx004,2025-01-04,(£750.50),Sell,£3.75

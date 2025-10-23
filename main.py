@@ -992,6 +992,123 @@ class DeltaCFOAgent:
         print(f"✅ Enhanced {len([r for r in df.iterrows() if '|' in str(r[1].get('Description', ''))])} descriptions with context")
         return df
 
+    def enrich_with_blockchain_data(self, df):
+        """
+        Extract blockchain transaction IDs from descriptions and enrich with wallet addresses.
+        Matches wallet addresses against known wallets and applies entity names.
+        """
+        print("🔗 Enriching transactions with blockchain data...")
+
+        try:
+            # Import blockchain tools
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'web_ui'))
+            from blockchain_explorer import explorer
+            from database import db_manager
+        except ImportError as e:
+            print(f"⚠️ Blockchain enrichment skipped - dependencies not available: {e}")
+            return df
+
+        # Regex patterns to extract transaction IDs
+        eth_pattern = r'(0x[a-fA-F0-9]{64})'  # Ethereum/EVM
+        btc_pattern = r'\b([a-fA-F0-9]{64})\b'  # Bitcoin
+
+        # Load known wallets from database
+        known_wallets = {}
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT wallet_address, entity_name, wallet_type
+                    FROM wallet_addresses
+                    WHERE tenant_id = %s AND is_active = TRUE
+                """, ('delta',))
+
+                for wallet_address, entity_name, wallet_type in cursor.fetchall():
+                    known_wallets[wallet_address.lower()] = {
+                        'entity_name': entity_name,
+                        'wallet_type': wallet_type
+                    }
+                cursor.close()
+        except Exception as e:
+            print(f"⚠️ Could not load known wallets: {e}")
+
+        enriched_count = 0
+        matched_count = 0
+
+        for idx, row in df.iterrows():
+            description = str(row.get('Description', ''))
+            identifier = str(row.get('Identifier', ''))
+
+            # Try to extract TXID from description or identifier
+            txid = None
+            eth_match = re.search(eth_pattern, description) or re.search(eth_pattern, identifier)
+            if eth_match:
+                txid = eth_match.group(1)
+            else:
+                btc_match = re.search(btc_pattern, description) or re.search(btc_pattern, identifier)
+                if btc_match:
+                    txid = btc_match.group(1)
+
+            if not txid:
+                continue  # No blockchain TXID found
+
+            try:
+                # Fetch blockchain transaction details
+                blockchain_data = explorer.get_transaction_details(txid)
+
+                if blockchain_data:
+                    from_address = blockchain_data.get('from_address', '')
+                    to_address = blockchain_data.get('to_address', '')
+
+                    # Check if current Origin/Destination are meaningful or just placeholders
+                    current_origin = str(row.get('Origin', '')).strip()
+                    current_dest = str(row.get('Destination', '')).strip()
+
+                    placeholders = ['Unknown', 'External Account', 'External Destination', '', 'None', 'nan']
+                    origin_is_placeholder = current_origin in placeholders or not current_origin
+                    dest_is_placeholder = current_dest in placeholders or not current_dest
+
+                    # Update Origin if we have a from_address and current value is placeholder
+                    if from_address and origin_is_placeholder:
+                        # Check if we know this wallet
+                        if from_address.lower() in known_wallets:
+                            wallet_info = known_wallets[from_address.lower()]
+                            df.at[idx, 'Origin'] = wallet_info['entity_name']
+                            matched_count += 1
+                        else:
+                            # Use shortened address
+                            short_addr = from_address[:10] + '...' + from_address[-8:] if len(from_address) > 20 else from_address
+                            df.at[idx, 'Origin'] = short_addr
+
+                    # Update Destination if we have a to_address and current value is placeholder
+                    if to_address and dest_is_placeholder:
+                        # Check if we know this wallet
+                        if to_address.lower() in known_wallets:
+                            wallet_info = known_wallets[to_address.lower()]
+                            df.at[idx, 'Destination'] = wallet_info['entity_name']
+                            matched_count += 1
+                        else:
+                            # Use shortened address
+                            short_addr = to_address[:10] + '...' + to_address[-8:] if len(to_address) > 20 else to_address
+                            df.at[idx, 'Destination'] = short_addr
+
+                    enriched_count += 1
+
+                    if enriched_count <= 3:  # Log first few for visibility
+                        print(f"  🔗 Enriched: {from_address[:10] if from_address else 'N/A'}... → {to_address[:10] if to_address else 'N/A'}...")
+
+            except Exception as e:
+                # Silently skip failed enrichments (API errors, rate limits, etc.)
+                pass
+
+        if enriched_count > 0:
+            print(f"✅ Enriched {enriched_count} transactions with blockchain data ({matched_count} matched to known wallets)")
+        else:
+            print("ℹ️ No blockchain transactions found to enrich")
+
+        return df
+
     def add_usd_conversion(self, df):
         """Add USD conversion for crypto amounts using historic pricing"""
         print("💰 Converting crypto amounts to USD using historic prices...")
@@ -1298,13 +1415,15 @@ class DeltaCFOAgent:
         elif 'RECEIVE USDC - EXTERNAL ACCOUNT' in description_upper:
             # USDC receives from external sources - need manual classification
             # Could be: client payments, trading profits, returns from other operations
-            entity = 'Unclassified Revenue'
+            # Leave entity blank so TF-IDF can find similar transactions
+            entity = ''
             reason = 'USDC received from external account - needs manual classification'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
         elif 'RECEIVE USDT - EXTERNAL ACCOUNT' in description_upper:
             # USDT receives from external sources - likely trading but needs verification
-            entity = 'Unclassified Revenue'
+            # Leave entity blank so TF-IDF can find similar transactions
+            entity = ''
             reason = 'USDT received from external account - likely trading revenue'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.6, reason, acct_cat, subcat
@@ -1387,7 +1506,8 @@ class DeltaCFOAgent:
                 acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                 return entity, 1.0, reason, acct_cat, subcat
             elif currency_upper in ['USDT', 'USDC']:
-                entity = 'NEEDS REVIEW'
+                # Leave entity blank so TF-IDF can find similar transactions
+                entity = ''
                 reason = f'{currency_upper} deposit - determine if trading or revenue'
                 acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                 return entity, 0.0, reason, acct_cat, subcat
@@ -1468,13 +1588,14 @@ class DeltaCFOAgent:
             return entity, 0.95, reason, acct_cat, subcat
 
         # Default classification based on amount
+        # Leave entity blank so TF-IDF can find similar transactions
         if self.safe_float(amount) > 0:
-            entity = 'Unclassified Revenue'
+            entity = ''
             reason = 'Unknown revenue source'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
         else:
-            entity = 'Unclassified Expense'
+            entity = ''
             reason = 'Unknown expense'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
@@ -1880,7 +2001,10 @@ class DeltaCFOAgent:
             # Step 4: Enhance structure (Origin/Destination)
             df = self.enhance_structure(df)
 
-            # Step 5: Enhance descriptions with context
+            # Step 5: Enrich with blockchain data and wallet matching
+            df = self.enrich_with_blockchain_data(df)
+
+            # Step 6: Enhance descriptions with context
             df = self.enhance_description(df)
 
             # Step 6: Add USD conversion for crypto amounts

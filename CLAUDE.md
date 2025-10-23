@@ -103,6 +103,10 @@ The system follows a modular microservices architecture with three main layers:
 - `invoices`: Invoice data with vendor information and line items
 - `learned_patterns`: Machine learning feedback storage
 - `user_interactions`: Reinforcement learning data
+- `tenant_configuration`: Company settings, branding, and metadata per tenant
+- `wallet_addresses`: Cryptocurrency wallet addresses for transaction classification
+- `bank_accounts`: Bank account information for traditional banking integration
+- `homepage_content`: Cached AI-generated homepage content with KPIs and insights
 
 **Connection Management**: `DatabaseManager` class in `web_ui/database.py` provides centralized PostgreSQL connectivity for all components.
 
@@ -157,6 +161,56 @@ Business entities and rules are defined in `business_knowledge.md`.
 - `exchangelib`: Email automation (invoice processing)
 - `qrcode`: QR code generation (crypto invoices)
 
+### AI-Powered Homepage System
+
+**Dynamic Content Generation:**
+- `web_ui/services/data_queries.py`: Queries company data, KPIs, entities, and portfolio stats
+- `web_ui/services/homepage_generator.py`: Claude AI integration for generating personalized homepage content
+- 24-hour smart caching system to minimize API calls
+- Fallback content when AI is unavailable
+
+**API Endpoints:**
+- `GET /api/homepage/content` - Get cached or fresh AI-generated content
+- `POST /api/homepage/regenerate` - Force regeneration with Claude AI
+- `GET /api/homepage/data` - Raw data without AI processing
+- `GET /api/homepage/kpis` - Just KPI calculations
+
+**Frontend:**
+- `/` (business_overview.html) - Dynamic homepage with AI content
+- `static/js/homepage.js` - Handles content loading, regeneration, KPI animations
+- Animated KPI counters with smart number formatting
+- Real-time cache status indicators
+
+### White Listed Accounts Management
+
+**Account Types Supported:**
+- Bank Accounts: Checking, savings, credit, investment, loan accounts
+- Crypto Wallets: Multi-blockchain support (Ethereum, Bitcoin, Polygon, etc.)
+
+**API Endpoints:**
+- Bank Accounts: `GET/POST/PUT/DELETE /api/bank-accounts`
+- Crypto Wallets: `GET/POST/PUT/DELETE /api/wallets`
+
+**Frontend:**
+- `/whitelisted-accounts` - Two-tab interface for managing accounts
+- `static/js/whitelisted_accounts.js` - Full CRUD operations
+- Modal forms for add/edit operations
+- Color-coded account types and status indicators
+
+### Multi-Tenant Architecture
+
+**Tenant Configuration:**
+- `tenant_configuration` table stores company settings, branding, and metadata
+- Dynamic tenant_id support (currently defaults to 'delta' for development)
+- Centralized company name and description management
+- Support for custom branding colors and logos
+
+**Tenant Isolation:**
+- All queries filtered by tenant_id
+- Wallet addresses and bank accounts isolated per tenant
+- Homepage content cached per tenant
+- Future-ready for multi-client deployment
+
 ## Key Development Patterns
 
 ### Error Handling
@@ -164,11 +218,13 @@ The codebase uses a mix of patterns:
 - Try-catch with logging for external API calls
 - Graceful degradation when AI services are unavailable
 - Database transaction rollback for data integrity
+- Smart caching with fallback content for critical features
 
 ### Configuration Management
 - Environment variables for API keys and database credentials
 - `business_knowledge.md` for business logic configuration
 - Regional deployment configurations for different Cloud SQL instances
+- `tenant_configuration` table for per-tenant customization
 
 ### File Processing Pipeline
 1. File upload and validation
@@ -177,6 +233,12 @@ The codebase uses a mix of patterns:
 4. AI-powered classification
 5. Database storage with confidence scoring
 6. User feedback integration for learning
+
+### AI Integration Best Practices
+- **Caching Strategy**: 24-hour cache for homepage content to reduce API costs
+- **Fallback Content**: Always provide basic content when AI is unavailable
+- **Prompt Engineering**: Structured prompts with real data for consistent output
+- **Error Recovery**: Graceful handling of API failures with user notifications
 
 ## Database Guidelines - PostgreSQL Only
 
