@@ -478,3 +478,78 @@ class NotificationManager:
         except Exception as e:
             logger.error(f"Error sending client invoice sent notification: {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
+
+    def send_invoice_to_client(
+        self,
+        invoice_id: int,
+        client_email: str,
+        user_id: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Send invoice directly to client with payment instructions
+
+        Args:
+            invoice_id: Invoice ID
+            client_email: Client's email address
+            user_id: User ID (for getting company info)
+
+        Returns:
+            Dict with success status
+        """
+        try:
+            invoice = self.db_manager.get_invoice(invoice_id)
+            if not invoice:
+                return {'success': False, 'error': 'Invoice not found'}
+
+            # Get user/company info
+            user = self.db_manager.get_user(user_id)
+            if not user:
+                return {'success': False, 'error': 'User not found'}
+
+            # Calculate total amount
+            base_amount = float(invoice.get('amount_usd', 0))
+            fee_percent = float(invoice.get('transaction_fee_percent', 0))
+            tax_percent = float(invoice.get('tax_percent', 0))
+            invoice['total_amount'] = base_amount * (1 + fee_percent/100 + tax_percent/100)
+
+            payment_url = f"{self.base_url}/pay/{invoice['invoice_number']}"
+
+            # Get rate lock duration
+            try:
+                rate_locked_until = datetime.fromisoformat(invoice.get('rate_locked_until', ''))
+                created_at = datetime.fromisoformat(invoice.get('created_at', ''))
+                rate_lock_hours = int((rate_locked_until - created_at).total_seconds() / 3600)
+            except:
+                rate_lock_hours = invoice.get('expiration_hours', 24)
+
+            # Render client invoice template
+            html_body = self._render_template('email/client_invoice.html', {
+                'invoice': invoice,
+                'company_name': user['company_name'],
+                'contact_email': user['email'],
+                'payment_url': payment_url,
+                'rate_lock_hours': rate_lock_hours,
+                'subject': f"Invoice {invoice['invoice_number']} from {user['company_name']}"
+            })
+
+            # Send email directly to client (not through notification preferences)
+            result = self.email_service.send_email(
+                user_id=user_id,
+                recipient_email=client_email,
+                subject=f"Invoice {invoice['invoice_number']} from {user['company_name']}",
+                html_body=html_body,
+                notification_type='client_invoice',
+                invoice_id=invoice_id
+            )
+
+            if result.get('success'):
+                logger.info(f"Invoice {invoice['invoice_number']} sent to client {client_email}")
+
+                # Send confirmation to company user
+                self.notify_client_invoice_sent(invoice_id, client_email, user_id)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error sending invoice to client: {e}", exc_info=True)
+            return {'success': False, 'error': str(e)}

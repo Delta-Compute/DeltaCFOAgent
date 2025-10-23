@@ -198,6 +198,35 @@
             color: #7b1fa2;
         }
 
+        .invoice-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.85em;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .btn-small:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-small:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .status-partial {
             background: #ffe0b2;
             color: #e65100;
@@ -402,9 +431,52 @@
                         <div class="invoice-client">${invoice.client_name} • ${invoice.billing_period || 'N/A'}</div>
                     </div>
                     <div class="invoice-amount">$${invoice.amount_usd.toLocaleString()}</div>
-                    <span class="status-badge status-${invoice.status}">${invoice.status}</span>
+                    <div class="invoice-actions">
+                        <button class="btn-small" onclick="sendInvoiceToClient(${invoice.id}, '${invoice.client_name}')"
+                                title="Send invoice email to client">
+                            📧 Send to Client
+                        </button>
+                        <span class="status-badge status-${invoice.status}">${invoice.status}</span>
+                    </div>
                 </li>
             `).join('');
+        }
+
+        async function sendInvoiceToClient(invoiceId, clientName) {
+            const email = prompt(`Enter email address for ${clientName}:`);
+
+            if (!email) {
+                return; // User cancelled
+            }
+
+            if (!email.includes('@')) {
+                alert('Please enter a valid email address');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/invoice/${invoiceId}/send-to-client`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        client_email: email,
+                        user_id: 1
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert(`✅ ${data.message}`);
+                } else {
+                    alert(`❌ Error: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('Error sending invoice:', error);
+                alert('❌ Failed to send invoice. Please try again.');
+            }
         }
 
         async function refreshData() {

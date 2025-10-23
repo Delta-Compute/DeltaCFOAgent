@@ -703,6 +703,58 @@ def save_smtp_settings():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route('/api/invoice/<int:invoice_id>/send-to-client', methods=['POST'])
+def send_invoice_to_client(invoice_id):
+    """Send invoice email to client"""
+    try:
+        data = request.json or {}
+
+        # Get client email from request or invoice
+        client_email = data.get('client_email')
+
+        if not client_email:
+            # Try to get from invoice
+            invoice = db_manager.get_invoice(invoice_id)
+            if not invoice:
+                return jsonify({"success": False, "error": "Invoice not found"}), 404
+
+            client_email = invoice.get('client_contact')
+
+            if not client_email:
+                return jsonify({"success": False, "error": "Client email not found. Please provide client_email in request."}), 400
+
+        # Validate email format
+        if '@' not in client_email:
+            return jsonify({"success": False, "error": "Invalid email address"}), 400
+
+        # Get user ID (default to 1 for now, will use session later)
+        user_id = data.get('user_id', 1)
+
+        # Send invoice to client
+        result = notification_manager.send_invoice_to_client(
+            invoice_id=invoice_id,
+            client_email=client_email,
+            user_id=user_id
+        )
+
+        if result.get('success'):
+            logger.info(f"Invoice {invoice_id} sent to client {client_email}")
+            return jsonify({
+                "success": True,
+                "message": f"Invoice sent to {client_email}"
+            })
+        else:
+            logger.error(f"Failed to send invoice: {result.get('error')}")
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Failed to send invoice')
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error sending invoice to client: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 # Error handlers
 
 @app.errorhandler(404)
