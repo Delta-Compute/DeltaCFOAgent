@@ -5117,9 +5117,13 @@ def api_update_similar_descriptions():
 
 @app.route('/files')
 def files_page():
-    """Files management page - shows uploaded files from database"""
+    """Files management page - shows uploaded files grouped by account with gap detection"""
     try:
         from database import db_manager
+        from datetime import datetime, timedelta
+        from collections import defaultdict
+        import re
+
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
@@ -5142,52 +5146,206 @@ def files_page():
         files_data = cursor.fetchall()
         conn.close()
 
-        # Parse and categorize files
-        categorized_files = []
-        for row in files_data:
-            source_file, total_txns, archived_count, active_count, earliest, latest, latest_active = row
-
-            # Extract account/card number from filename
-            account_number = None
+        # Helper function to categorize account from filename
+        def categorize_account(filename):
+            """Enhanced account categorization supporting multiple account types"""
+            account_id = None
             account_type = 'Unknown'
+            account_category = 'Other'
 
-            # Parse Chase account patterns (e.g., Chase4774, Chase3687, etc.)
-            import re
-            chase_match = re.search(r'Chase(\d{4})', source_file, re.IGNORECASE)
+            # Chase patterns (credit cards and checking)
+            chase_match = re.search(r'Chase(\d{4})', filename, re.IGNORECASE)
             if chase_match:
-                account_number = chase_match.group(1)
-                account_type = 'Chase Credit Card' if account_number in ['4774', '3687', '3911', '5893', '6134'] else 'Chase Account'
+                account_id = f"Chase-{chase_match.group(1)}"
+                account_num = chase_match.group(1)
+                # Known Chase credit card numbers
+                if account_num in ['4774', '3687', '3911', '5893', '6134']:
+                    account_type = f'Chase Credit Card ...{account_num}'
+                    account_category = 'Credit Card'
+                else:
+                    account_type = f'Chase Checking ...{account_num}'
+                    account_category = 'Checking'
+                return account_id, account_type, account_category
 
-            # Parse date range from filename if available
-            date_pattern = re.search(r'(\d{8}).*?(\d{8})', source_file)
-            file_date_range = None
+            # Crypto wallet patterns (Coinbase, Binance, Kraken, etc.)
+            crypto_patterns = [
+                (r'coinbase', 'Coinbase Wallet'),
+                (r'binance', 'Binance Account'),
+                (r'kraken', 'Kraken Account'),
+                (r'crypto', 'Crypto Wallet'),
+                (r'btc|bitcoin', 'Bitcoin Wallet'),
+                (r'eth|ethereum', 'Ethereum Wallet'),
+            ]
+            for pattern, name in crypto_patterns:
+                if re.search(pattern, filename, re.IGNORECASE):
+                    account_id = name.replace(' ', '-')
+                    account_type = name
+                    account_category = 'Crypto Wallet'
+                    return account_id, account_type, account_category
+
+            # Generic credit card patterns
+            card_patterns = [
+                (r'(?:visa|mastercard|amex|discover).*?(\d{4})', 'Credit Card'),
+                (r'cc.*?(\d{4})', 'Credit Card'),
+                (r'card.*?(\d{4})', 'Credit Card'),
+            ]
+            for pattern, card_type in card_patterns:
+                match = re.search(pattern, filename, re.IGNORECASE)
+                if match:
+                    last_four = match.group(1)
+                    account_id = f"Card-{last_four}"
+                    account_type = f'{card_type} ...{last_four}'
+                    account_category = 'Credit Card'
+                    return account_id, account_type, account_category
+
+            # Generic checking account patterns
+            checking_patterns = [
+                (r'checking.*?(\d{4})', 'Checking'),
+                (r'bank.*?(\d{4})', 'Bank Account'),
+                (r'acct.*?(\d{4})', 'Account'),
+            ]
+            for pattern, acct_type in checking_patterns:
+                match = re.search(pattern, filename, re.IGNORECASE)
+                if match:
+                    last_four = match.group(1)
+                    account_id = f"Checking-{last_four}"
+                    account_type = f'{acct_type} ...{last_four}'
+                    account_category = 'Checking'
+                    return account_id, account_type, account_category
+
+            # If no pattern matches, use filename as account
+            account_id = 'Unknown'
+            account_type = 'Unknown Account'
+            account_category = 'Other'
+            return account_id, account_type, account_category
+
+        # Helper function to parse date range
+        def parse_date_range(filename, earliest_txn, latest_txn):
+            """Extract date range from filename or transaction dates"""
+            date_pattern = re.search(r'(\d{8}).*?(\d{8})', filename)
             if date_pattern:
-                start_date = date_pattern.group(1)
-                end_date = date_pattern.group(2)
-                # Format as YYYY-MM-DD
                 try:
-                    from datetime import datetime
-                    start = datetime.strptime(start_date, '%Y%m%d').strftime('%Y-%m-%d')
-                    end = datetime.strptime(end_date, '%Y%m%d').strftime('%Y-%m-%d')
-                    file_date_range = f"{start} to {end}"
+                    start = datetime.strptime(date_pattern.group(1), '%Y%m%d')
+                    end = datetime.strptime(date_pattern.group(2), '%Y%m%d')
+                    return start, end
                 except:
                     pass
 
-            categorized_files.append({
+            # Fall back to transaction dates
+            try:
+                if isinstance(earliest_txn, str):
+                    start = datetime.strptime(earliest_txn, '%Y-%m-%d')
+                else:
+                    start = earliest_txn
+
+                if isinstance(latest_txn, str):
+                    end = datetime.strptime(latest_txn, '%Y-%m-%d')
+                else:
+                    end = latest_txn
+
+                return start, end
+            except:
+                return None, None
+
+        # Process files and group by account
+        accounts = defaultdict(list)
+
+        for row in files_data:
+            source_file, total_txns, archived_count, active_count, earliest, latest, latest_active = row
+
+            # Categorize account
+            account_id, account_type, account_category = categorize_account(source_file)
+
+            # Parse dates
+            start_date, end_date = parse_date_range(source_file, earliest, latest)
+
+            file_info = {
                 'name': source_file,
-                'account_number': account_number,
                 'account_type': account_type,
+                'account_category': account_category,
                 'total_transactions': total_txns,
                 'active_transactions': active_count,
                 'archived_transactions': archived_count,
                 'earliest_date': earliest,
                 'latest_date': latest,
                 'latest_active_date': latest_active,
-                'file_date_range': file_date_range,
-                'size': total_txns * 150  # Approximate size based on transaction count
+                'start_date': start_date,
+                'end_date': end_date,
+                'start_date_str': start_date.strftime('%Y-%m-%d') if start_date else str(earliest),
+                'end_date_str': end_date.strftime('%Y-%m-%d') if end_date else str(latest),
+            }
+
+            accounts[account_id].append(file_info)
+
+        # Process each account group
+        account_groups = []
+        for account_id, files in accounts.items():
+            # Sort files by start date
+            files.sort(key=lambda f: f['start_date'] if f['start_date'] else datetime.min)
+
+            # Detect gaps between files
+            for i in range(len(files)):
+                files[i]['gap_before'] = None
+                if i > 0:
+                    prev_end = files[i-1]['end_date']
+                    curr_start = files[i]['start_date']
+
+                    if prev_end and curr_start:
+                        gap_days = (curr_start - prev_end).days - 1
+                        if gap_days > 7:  # More than a week gap
+                            gap_months = gap_days // 30
+                            files[i]['gap_before'] = {
+                                'days': gap_days,
+                                'months': gap_months,
+                                'from': prev_end.strftime('%Y-%m-%d'),
+                                'to': curr_start.strftime('%Y-%m-%d')
+                            }
+
+            # Calculate account statistics
+            total_files = len(files)
+            total_txns = sum(f['total_transactions'] for f in files)
+            active_txns = sum(f['active_transactions'] for f in files)
+            archived_txns = sum(f['archived_transactions'] for f in files)
+
+            # Get overall date range
+            all_start_dates = [f['start_date'] for f in files if f['start_date']]
+            all_end_dates = [f['end_date'] for f in files if f['end_date']]
+
+            overall_start = min(all_start_dates) if all_start_dates else None
+            overall_end = max(all_end_dates) if all_end_dates else None
+
+            # Calculate coverage (days covered vs total span)
+            total_days_covered = sum(
+                (f['end_date'] - f['start_date']).days + 1
+                for f in files if f['start_date'] and f['end_date']
+            )
+
+            total_span_days = None
+            coverage_pct = None
+            if overall_start and overall_end:
+                total_span_days = (overall_end - overall_start).days + 1
+                coverage_pct = (total_days_covered / total_span_days * 100) if total_span_days > 0 else 100
+
+            account_groups.append({
+                'id': account_id,
+                'name': files[0]['account_type'],
+                'category': files[0]['account_category'],
+                'files': files,
+                'total_files': total_files,
+                'total_transactions': total_txns,
+                'active_transactions': active_txns,
+                'archived_transactions': archived_txns,
+                'overall_start': overall_start.strftime('%Y-%m-%d') if overall_start else 'N/A',
+                'overall_end': overall_end.strftime('%Y-%m-%d') if overall_end else 'N/A',
+                'coverage_pct': round(coverage_pct, 1) if coverage_pct else None,
+                'has_gaps': any(f.get('gap_before') for f in files)
             })
 
-        return render_template('files.html', files=categorized_files)
+        # Sort account groups by category then name
+        category_order = {'Checking': 1, 'Credit Card': 2, 'Crypto Wallet': 3, 'Other': 4}
+        account_groups.sort(key=lambda g: (category_order.get(g['category'], 99), g['name']))
+
+        return render_template('files.html', account_groups=account_groups)
     except Exception as e:
         print(f"ERROR in files_page: {e}")
         import traceback
