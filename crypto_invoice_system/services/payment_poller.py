@@ -376,7 +376,7 @@ class PaymentPoller:
 
     def _confirm_payment(self, invoice: Dict, payment_id: int, deposit: Dict):
         """
-        Confirm payment and mark invoice as paid
+        Confirm payment and reconcile total amount received
 
         Args:
             invoice: Invoice record
@@ -393,16 +393,10 @@ class PaymentPoller:
             status=PaymentStatus.CONFIRMED.value
         )
 
-        # Mark invoice as paid
-        self.db.update_invoice_status(
-            invoice_id=invoice_id,
-            status=InvoiceStatus.PAID.value,
-            paid_at=datetime.now()
-        )
+        # Reconcile all payments for this invoice
+        self._reconcile_invoice_payments(invoice)
 
         self.stats["payments_confirmed"] += 1
-
-        self.logger.info(f"✅ Invoice {invoice_number} confirmed as PAID!")
 
         # Call payment callback for confirmation
         if self.payment_callback:
@@ -414,6 +408,139 @@ class PaymentPoller:
                 })
             except Exception as e:
                 self.logger.error(f"Error in payment callback: {e}")
+
+    def _reconcile_invoice_payments(self, invoice: Dict):
+        """
+        Reconcile all confirmed payments for an invoice and set appropriate status
+
+        Handles:
+        - Partial payments (underpayment)
+        - Exact payments
+        - Overpayments
+        - Multiple payments to same invoice
+
+        Args:
+            invoice: Invoice dictionary
+        """
+        invoice_id = invoice['id']
+        invoice_number = invoice['invoice_number']
+        expected_amount = float(invoice['crypto_amount'])
+        currency = invoice['crypto_currency']
+
+        # Get all confirmed payments for this invoice
+        all_payments = self.db.get_payments_for_invoice(invoice_id)
+        confirmed_payments = [p for p in all_payments if p['status'] == PaymentStatus.CONFIRMED.value]
+
+        if not confirmed_payments:
+            self.logger.warning(f"No confirmed payments found for invoice {invoice_number}")
+            return
+
+        # Calculate total amount received
+        total_received = sum(float(p['amount_received']) for p in confirmed_payments)
+
+        # Determine tolerance based on currency type
+        tolerance = 0.001 if currency in ['USDT', 'USDC', 'DAI', 'BUSD'] else 0.005
+        min_amount = expected_amount * (1 - tolerance)
+        max_amount = expected_amount * (1 + tolerance)
+
+        self.logger.info(
+            f"Payment reconciliation for {invoice_number}: "
+            f"Expected={expected_amount}, Received={total_received} {currency}"
+        )
+
+        # Determine invoice status based on total received
+        if total_received < min_amount:
+            # PARTIAL payment (underpaid)
+            shortage = expected_amount - total_received
+            shortage_percent = (shortage / expected_amount) * 100
+
+            self.logger.warning(
+                f"⚠️  PARTIAL payment for {invoice_number}: "
+                f"Received {total_received}/{expected_amount} {currency} "
+                f"(shortage: {shortage:.8f} {currency}, {shortage_percent:.2f}%)"
+            )
+
+            self.db.update_invoice_status(
+                invoice_id=invoice_id,
+                status=InvoiceStatus.PARTIAL.value
+            )
+
+            # Log partial payment event
+            self.db.log_polling_event(
+                invoice_id=invoice_id,
+                status='partial_payment',
+                error_message=f"Underpaid by {shortage:.8f} {currency} ({shortage_percent:.2f}%)"
+            )
+
+        elif total_received > max_amount:
+            # OVERPAID
+            overpayment = total_received - expected_amount
+            overpayment_percent = (overpayment / expected_amount) * 100
+
+            self.logger.warning(
+                f"💰 OVERPAYMENT for {invoice_number}: "
+                f"Received {total_received}/{expected_amount} {currency} "
+                f"(overpayment: {overpayment:.8f} {currency}, {overpayment_percent:.2f}%)"
+            )
+
+            self.db.update_invoice_status(
+                invoice_id=invoice_id,
+                status=InvoiceStatus.OVERPAID.value,
+                paid_at=datetime.now()
+            )
+
+            # Log overpayment event
+            self.db.log_polling_event(
+                invoice_id=invoice_id,
+                status='overpayment',
+                error_message=f"Overpaid by {overpayment:.8f} {currency} ({overpayment_percent:.2f}%)"
+            )
+
+            # TODO: Queue for refund processing
+            # self._queue_refund(invoice, overpayment, currency)
+
+        else:
+            # PAID (within tolerance)
+            self.logger.info(
+                f"✅ Invoice {invoice_number} confirmed as PAID: "
+                f"{total_received} {currency} (expected {expected_amount})"
+            )
+
+            self.db.update_invoice_status(
+                invoice_id=invoice_id,
+                status=InvoiceStatus.PAID.value,
+                paid_at=datetime.now()
+            )
+
+        # Log payment reconciliation
+        payment_count = len(confirmed_payments)
+        if payment_count > 1:
+            self.logger.info(
+                f"Invoice {invoice_number} paid with {payment_count} transactions: "
+                f"{', '.join([p['transaction_hash'][:16] + '...' for p in confirmed_payments])}"
+            )
+
+    def _queue_refund(self, invoice: Dict, overpayment_amount: float, currency: str):
+        """
+        Queue overpayment for refund processing
+
+        Args:
+            invoice: Invoice dictionary
+            overpayment_amount: Amount overpaid
+            currency: Currency symbol
+
+        Note: This is a placeholder for future refund automation
+        """
+        self.logger.info(
+            f"🔄 Queuing refund for invoice {invoice['invoice_number']}: "
+            f"{overpayment_amount:.8f} {currency}"
+        )
+
+        # TODO: Implement refund queue
+        # - Store in refunds table
+        # - Send notification to admin
+        # - Optionally auto-refund to client_wallet_address
+        pass
 
     def _get_expected_amount_with_rate_lock(self, invoice: Dict) -> float:
         """
