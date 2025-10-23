@@ -4325,12 +4325,13 @@ def api_ai_find_similar_after_suggestion():
                     break
 
         # Build simplified transaction list for Claude prompt - include origin/destination
+        # IMPORTANT: Do NOT include 'entity' field to prevent bias based on historical entity classifications
+        # We want to match based on DESCRIPTION similarity, not entity patterns
         candidate_list = [
             {
                 'id': t.get('transaction_id', ''),
                 'description': t.get('description', ''),
                 'amount': str(t.get('amount', '0')),
-                'entity': t.get('classified_entity', 'N/A'),
                 'origin': t.get('origin', 'N/A')[:40],  # Truncate for readability
                 'destination': t.get('destination', 'N/A')[:40]  # Truncate for readability
             }
@@ -4367,12 +4368,13 @@ When finding similar transactions, prioritize transactions that:
 Original Transaction:
 - Description: {original.get('description', 'N/A')}
 - Amount: ${original.get('amount', '0')}
-- Business Entity: {original.get('classified_entity', 'N/A')}
 - Origin: {original.get('origin', 'N/A')}
 - Destination: {original.get('destination', 'N/A')}
 - Applied categorization: {json.dumps(applied_fields, indent=2)}
 {wallet_match_note}
 Below are {len(candidate_transactions)} other transactions. Identify which ones are similar enough that they should have the SAME categorization applied.{exact_match_note}
+
+⚠️ **CRITICAL: Match ONLY by transaction description, purpose, and intent - IGNORE any historical entity classifications!**
 
 IMPORTANT MATCHING CRITERIA:
 1. **ABSOLUTE HIGHEST PRIORITY: Exact Wallet Address Matches** - If a transaction has the SAME wallet address in origin OR destination:
@@ -4386,22 +4388,19 @@ IMPORTANT MATCHING CRITERIA:
    - Example: "PETROBRAS AYOLAS" → "PETROBRAS AYOLAS" (MUST MATCH)
    - Example: "Netflix.com" → "Netflix.com" (MUST MATCH)
 
-3. **THIRD PRIORITY: Similar transaction intent/purpose** - Match transactions with similar business purposes:
+3. **THIRD PRIORITY: Similar transaction intent/purpose** - Match transactions with similar business purposes based on DESCRIPTION:
    - Restaurants should match with other restaurants (even if different restaurant names)
    - Technology software/SaaS should match with other technology software/SaaS
    - Cloud services should match with other cloud services
    - Office supplies should match with other office supplies
    - Professional services should match with other professional services
+   - **DO NOT match** transactions just because they were historically assigned to the same business entity!
 
-4. **FOURTH PRIORITY: Business Entity context** - Use the business entity to further refine subcategory assignments:
-   - Same entity transactions may have more specific subcategories
-   - Different entities may need different subcategory nuances
-
-5. **Consider transaction characteristics**:
+4. **Consider transaction characteristics**:
    - Similar transaction amounts may indicate similar types of expenses
    - Recurring patterns suggest similar vendor relationships
 
-**EXAMPLES OF GOOD MATCHES**:
+**EXAMPLES OF GOOD MATCHES** (based on description similarity):
 - **WALLET MATCH** (HIGHEST): "5GmeRR3w7a9R..." → Any transaction with "5GmeRR3w7a9R..." in origin/destination (MUST MATCH)
 - **VENDOR MATCH**: "Anthropic API" → "Anthropic API" (same vendor, MUST MATCH)
 - **INTENT MATCH**: "Anthropic API" (tech software) → "OpenAI API", "Google Cloud AI" (other tech software)
@@ -4409,9 +4408,11 @@ IMPORTANT MATCHING CRITERIA:
 - "AWS" (cloud infrastructure) → "Google Cloud", "Azure", "DigitalOcean" (other cloud providers)
 - "Staples" (office supplies) → "Office Depot", "Amazon - office supplies" (other office supplies)
 
-**EXAMPLES OF BAD MATCHES**:
+**EXAMPLES OF BAD MATCHES** (different transaction purposes):
 - "Anthropic API" (tech software) → "Bittensor wallet transfer" (cryptocurrency, different intent)
 - "McDonald's" (restaurant) → "Whole Foods grocery" (food retail, different purpose)
+- "Restaurant expense" → "USDT crypto transfer" (completely different transaction types)
+- "Office supplies" → "Cryptocurrency exchange" (different purposes)
 
 Candidate Transactions:
 {json.dumps(candidate_list, indent=2)}
