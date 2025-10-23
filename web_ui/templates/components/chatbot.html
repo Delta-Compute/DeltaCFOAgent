@@ -1,0 +1,90 @@
+<!-- AI CFO Assistant Chatbot Component -->
+<div id="cfoChatbot" class="cfo-chatbot">
+    <!-- Collapsed State: Floating Button -->
+    <button id="chatbotToggle" class="chatbot-toggle" aria-label="Open AI CFO Assistant">
+        <svg class="chatbot-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <path d="M8 10h.01M12 10h.01M16 10h.01"></path>
+        </svg>
+        <span class="chatbot-badge" id="chatbotBadge" style="display: none;">1</span>
+    </button>
+
+    <!-- Expanded State: Chat Window -->
+    <div id="chatbotWindow" class="chatbot-window" style="display: none;">
+        <!-- Header -->
+        <div class="chatbot-header">
+            <div class="chatbot-header-content">
+                <div class="chatbot-avatar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
+                        <line x1="9" y1="9" x2="9.01" y2="9"></line>
+                        <line x1="15" y1="9" x2="15.01" y2="9"></line>
+                    </svg>
+                </div>
+                <div class="chatbot-title">
+                    <h3>AI CFO Assistant</h3>
+                    <p class="chatbot-status">
+                        <span class="status-indicator"></span>
+                        <span id="tenantName">Delta CFO</span>
+                    </p>
+                </div>
+            </div>
+            <button id="chatbotClose" class="chatbot-close" aria-label="Close chat">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="chatbotMessages" class="chatbot-messages">
+            <!-- Welcome Message -->
+            <div class="chat-message bot-message">
+                <div class="message-content">
+                    <p>Hello! I'm your AI CFO Assistant. I have knowledge of your business entities, accounting rules, and financial data.</p>
+                    <p>How can I help you today?</p>
+                </div>
+                <div class="message-time">Just now</div>
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="chatbot-input-wrapper">
+            <div class="chatbot-input-container">
+                <textarea
+                    id="chatbotInput"
+                    class="chatbot-input"
+                    placeholder="Ask me about accounting, transactions, or financial rules..."
+                    rows="1"
+                    maxlength="2000"
+                ></textarea>
+                <button id="chatbotSend" class="chatbot-send" aria-label="Send message" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </div>
+            <div class="chatbot-suggestions" id="chatbotSuggestions">
+                <button class="suggestion-chip" data-message="What are my business entities?">What are my business entities?</button>
+                <button class="suggestion-chip" data-message="Explain revenue recognition rules">Explain revenue recognition</button>
+                <button class="suggestion-chip" data-message="What accounting standards do we use?">What accounting standards?</button>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="chatbotLoading" class="chatbot-loading" style="display: none;">
+            <div class="typing-indicator">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Load chatbot styles and scripts -->
+<link rel="stylesheet" href="{{ url_for('static', filename='chatbot.css') }}">
+<script src="{{ url_for('static', filename='chatbot.js') }}" defer></script>

@@ -42,7 +42,11 @@
       "Bash(python3:*)",
       "Read(//private/tmp/**)",
       "Bash(xargs:*)",
-      "Read(///**)"
+      "Read(///**)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

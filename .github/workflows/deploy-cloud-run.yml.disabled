@@ -4,11 +4,12 @@ on:
   push:
     branches:
       - main
+      - Dev
 
 env:
   PROJECT_ID: aicfo
-  SERVICE_NAME: delta-cfo-agent
-  REGION: us-central1
+  SERVICE_NAME: ${{ github.ref == 'refs/heads/main' && 'delta-cfo-agent' || 'delta-cfo-agent-dev' }}
+  REGION: southamerica-east1
 
 jobs:
   deploy:
