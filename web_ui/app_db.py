@@ -4058,6 +4058,411 @@ def api_delete_wallet(wallet_id):
         logger.error(f"Error deleting wallet: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# ========================================
+# HOMEPAGE CONTENT API ENDPOINTS
+# ========================================
+
+@app.route('/api/homepage/content', methods=['GET'])
+def api_get_homepage_content():
+    """Get current homepage content (cached or fresh)"""
+    try:
+        from database import db_manager
+        from services.homepage_generator import HomepageContentGenerator
+
+        tenant_id = get_current_tenant_id()
+        generator = HomepageContentGenerator(db_manager, tenant_id)
+
+        # Check for use_cache parameter (default: True)
+        use_cache = request.args.get('use_cache', 'true').lower() == 'true'
+
+        content = generator.generate_content(use_cache=use_cache)
+
+        return jsonify({
+            'success': True,
+            'content': content,
+            'cached': content.get('cached', False)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching homepage content: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/homepage/regenerate', methods=['POST'])
+def api_regenerate_homepage():
+    """Force regenerate homepage content with Claude AI"""
+    try:
+        from database import db_manager
+        from services.homepage_generator import HomepageContentGenerator
+
+        tenant_id = get_current_tenant_id()
+        generator = HomepageContentGenerator(db_manager, tenant_id)
+
+        # Invalidate cache first
+        generator.invalidate_cache()
+
+        # Generate fresh content
+        content = generator.generate_content(use_cache=False)
+
+        return jsonify({
+            'success': True,
+            'content': content,
+            'message': 'Homepage content regenerated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error regenerating homepage: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/homepage/data', methods=['GET'])
+def api_get_homepage_data():
+    """Get raw homepage data (KPIs, entities, portfolio) without AI generation"""
+    try:
+        from database import db_manager
+        from services.data_queries import DataQueryService
+
+        tenant_id = get_current_tenant_id()
+        data_service = DataQueryService(db_manager, tenant_id)
+
+        data = data_service.get_all_homepage_data()
+
+        return jsonify({
+            'success': True,
+            'data': data
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching homepage data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/homepage/kpis', methods=['GET'])
+def api_get_homepage_kpis():
+    """Get just the KPIs for homepage display"""
+    try:
+        from database import db_manager
+        from services.data_queries import DataQueryService
+
+        tenant_id = get_current_tenant_id()
+        data_service = DataQueryService(db_manager, tenant_id)
+
+        kpis = data_service.get_company_kpis()
+
+        return jsonify({
+            'success': True,
+            'kpis': kpis
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching KPIs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# BANK ACCOUNTS API ENDPOINTS
+# ========================================
+
+@app.route('/api/bank-accounts', methods=['GET'])
+def api_get_bank_accounts():
+    """Get all bank accounts for the current tenant"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            query = """
+                SELECT
+                    id, tenant_id, account_name, institution_name,
+                    account_number, routing_number, account_type, currency,
+                    current_balance, available_balance, last_sync_at,
+                    status, is_primary, institution_logo_url, account_color,
+                    notes, created_at, updated_at
+                FROM bank_accounts
+                WHERE tenant_id = %s AND status != 'closed'
+                ORDER BY is_primary DESC, created_at DESC
+            """
+
+            cursor.execute(query, (tenant_id,))
+            results = cursor.fetchall()
+
+            accounts = []
+            for row in results:
+                account = dict(row)
+                # Convert UUID to string
+                account['id'] = str(account['id'])
+                # Convert decimals to float
+                if account.get('current_balance'):
+                    account['current_balance'] = float(account['current_balance'])
+                if account.get('available_balance'):
+                    account['available_balance'] = float(account['available_balance'])
+                # Convert timestamps to ISO format
+                if account.get('last_sync_at'):
+                    account['last_sync_at'] = account['last_sync_at'].isoformat()
+                if account.get('created_at'):
+                    account['created_at'] = account['created_at'].isoformat()
+                if account.get('updated_at'):
+                    account['updated_at'] = account['updated_at'].isoformat()
+                accounts.append(account)
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'accounts': accounts,
+            'count': len(accounts)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching bank accounts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bank-accounts', methods=['POST'])
+def api_add_bank_account():
+    """Add a new bank account"""
+    try:
+        data = request.get_json()
+
+        # Validate required fields
+        account_name = data.get('account_name', '').strip()
+        institution_name = data.get('institution_name', '').strip()
+        account_type = data.get('account_type', '').strip()
+
+        if not account_name:
+            return jsonify({'error': 'account_name is required'}), 400
+        if not institution_name:
+            return jsonify({'error': 'institution_name is required'}), 400
+        if not account_type:
+            return jsonify({'error': 'account_type is required'}), 400
+
+        # Optional fields
+        account_number = data.get('account_number', '').strip()
+        routing_number = data.get('routing_number', '').strip()
+        currency = data.get('currency', 'USD').strip()
+        current_balance = data.get('current_balance')
+        available_balance = data.get('available_balance')
+        status = data.get('status', 'active').strip()
+        is_primary = data.get('is_primary', False)
+        institution_logo_url = data.get('institution_logo_url', '').strip()
+        account_color = data.get('account_color', '').strip()
+        notes = data.get('notes', '').strip()
+
+        tenant_id = get_current_tenant_id()
+
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Check for duplicate
+            check_query = """
+                SELECT id FROM bank_accounts
+                WHERE tenant_id = %s
+                AND institution_name = %s
+                AND account_number = %s
+            """
+            cursor.execute(check_query, (tenant_id, institution_name, account_number))
+            existing = cursor.fetchone()
+
+            if existing:
+                cursor.close()
+                return jsonify({'error': 'Bank account already exists'}), 409
+
+            # If this is set as primary, unset other primary accounts
+            if is_primary:
+                cursor.execute("""
+                    UPDATE bank_accounts
+                    SET is_primary = FALSE
+                    WHERE tenant_id = %s
+                """, (tenant_id,))
+
+            # Insert new account
+            insert_query = """
+                INSERT INTO bank_accounts (
+                    tenant_id, account_name, institution_name, account_number,
+                    routing_number, account_type, currency, current_balance,
+                    available_balance, status, is_primary, institution_logo_url,
+                    account_color, notes, created_by
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, created_at
+            """
+
+            cursor.execute(insert_query, (
+                tenant_id, account_name, institution_name, account_number,
+                routing_number, account_type, currency, current_balance,
+                available_balance, status, is_primary, institution_logo_url,
+                account_color, notes, 'user'
+            ))
+
+            result = cursor.fetchone()
+            account_id = str(result['id'])
+            created_at = result['created_at'].isoformat()
+
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Bank account added successfully',
+            'account': {
+                'id': account_id,
+                'account_name': account_name,
+                'institution_name': institution_name,
+                'account_type': account_type,
+                'status': status,
+                'created_at': created_at
+            }
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error adding bank account: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bank-accounts/<account_id>', methods=['PUT'])
+def api_update_bank_account(account_id):
+    """Update an existing bank account"""
+    try:
+        data = request.get_json()
+
+        # Build update fields dynamically
+        update_fields = []
+        params = []
+
+        if 'account_name' in data:
+            update_fields.append("account_name = %s")
+            params.append(data['account_name'].strip())
+
+        if 'institution_name' in data:
+            update_fields.append("institution_name = %s")
+            params.append(data['institution_name'].strip())
+
+        if 'account_number' in data:
+            update_fields.append("account_number = %s")
+            params.append(data['account_number'].strip())
+
+        if 'routing_number' in data:
+            update_fields.append("routing_number = %s")
+            params.append(data['routing_number'].strip())
+
+        if 'account_type' in data:
+            update_fields.append("account_type = %s")
+            params.append(data['account_type'].strip())
+
+        if 'current_balance' in data:
+            update_fields.append("current_balance = %s")
+            params.append(data['current_balance'])
+
+        if 'available_balance' in data:
+            update_fields.append("available_balance = %s")
+            params.append(data['available_balance'])
+
+        if 'status' in data:
+            update_fields.append("status = %s")
+            params.append(data['status'].strip())
+
+        if 'is_primary' in data:
+            update_fields.append("is_primary = %s")
+            params.append(bool(data['is_primary']))
+
+        if 'notes' in data:
+            update_fields.append("notes = %s")
+            params.append(data['notes'].strip())
+
+        if not update_fields:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        params.append(account_id)
+
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # If setting as primary, unset others first
+            if 'is_primary' in data and data['is_primary']:
+                cursor.execute("""
+                    UPDATE bank_accounts
+                    SET is_primary = FALSE
+                    WHERE tenant_id = %s AND id != %s
+                """, (tenant_id, account_id))
+
+            update_query = f"""
+                UPDATE bank_accounts
+                SET {', '.join(update_fields)}
+                WHERE id = %s
+                RETURNING account_name, institution_name, account_type, status, updated_at
+            """
+
+            cursor.execute(update_query, params)
+            result = cursor.fetchone()
+
+            if not result:
+                cursor.close()
+                return jsonify({'error': 'Bank account not found'}), 404
+
+            conn.commit()
+
+            account = dict(result)
+            account['id'] = account_id
+            if account.get('updated_at'):
+                account['updated_at'] = account['updated_at'].isoformat()
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Bank account updated successfully',
+            'account': account
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating bank account: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bank-accounts/<account_id>', methods=['DELETE'])
+def api_delete_bank_account(account_id):
+    """Soft delete a bank account (set status = 'closed')"""
+    try:
+        from database import db_manager
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            delete_query = """
+                UPDATE bank_accounts
+                SET status = 'closed'
+                WHERE id = %s
+                RETURNING account_name, institution_name
+            """
+
+            cursor.execute(delete_query, (account_id,))
+            result = cursor.fetchone()
+
+            if not result:
+                cursor.close()
+                return jsonify({'error': 'Bank account not found'}), 404
+
+            conn.commit()
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Bank account {result["account_name"]} at {result["institution_name"]} closed successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting bank account: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/suggestions')
 def api_suggestions():
     """API endpoint to get AI-powered field suggestions"""
@@ -5114,6 +5519,15 @@ def api_update_similar_descriptions():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/whitelisted-accounts')
+def whitelisted_accounts():
+    """White Listed Accounts page - manage bank accounts and crypto wallets"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('whitelisted_accounts.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading whitelisted accounts page: {str(e)}", 500
 
 @app.route('/files')
 def files_page():

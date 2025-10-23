@@ -340,6 +340,176 @@ GROUP BY status
 ORDER BY count DESC;
 
 -- ========================================
+-- MULTI-TENANT & CONFIGURATION SYSTEM
+-- ========================================
+
+-- Tenant configuration and branding
+CREATE TABLE IF NOT EXISTS tenant_configuration (
+    id SERIAL PRIMARY KEY,
+    tenant_id VARCHAR(100) UNIQUE NOT NULL,
+    company_name VARCHAR(255) NOT NULL,
+    company_tagline TEXT,
+    company_description TEXT,
+    logo_url TEXT,
+    primary_color VARCHAR(7) DEFAULT '#3b82f6',
+    secondary_color VARCHAR(7) DEFAULT '#10b981',
+    industry VARCHAR(100),
+    founded_date DATE,
+    headquarters_location VARCHAR(255),
+    website_url TEXT,
+    contact_email VARCHAR(255),
+    contact_phone VARCHAR(50),
+    tax_id VARCHAR(100),
+    fiscal_year_end VARCHAR(10) DEFAULT '12-31',
+    default_currency VARCHAR(3) DEFAULT 'USD',
+    timezone VARCHAR(50) DEFAULT 'UTC',
+    is_active BOOLEAN DEFAULT TRUE,
+    settings JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Wallet addresses for crypto transaction classification
+CREATE TABLE IF NOT EXISTS wallet_addresses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(100) NOT NULL,
+    wallet_address TEXT NOT NULL,
+    entity_name VARCHAR(255) NOT NULL,
+    wallet_type VARCHAR(50) NOT NULL, -- 'internal', 'exchange', 'customer', 'vendor', 'partner'
+    blockchain VARCHAR(50), -- 'ethereum', 'bitcoin', 'polygon', etc.
+    purpose TEXT,
+    confidence_score DECIMAL(5,2) DEFAULT 0.90,
+    is_active BOOLEAN DEFAULT TRUE,
+    balance DECIMAL(18,8),
+    last_balance_check TIMESTAMP,
+    notes TEXT,
+    created_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, wallet_address)
+);
+
+-- Bank accounts for traditional banking integration
+CREATE TABLE IF NOT EXISTS bank_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(100) NOT NULL,
+    account_name VARCHAR(255) NOT NULL,
+    institution_name VARCHAR(255) NOT NULL,
+    account_number VARCHAR(100), -- Last 4 digits or masked
+    account_number_encrypted TEXT, -- Full encrypted account number
+    routing_number VARCHAR(50),
+    account_type VARCHAR(50), -- 'checking', 'savings', 'credit', 'investment', 'loan'
+    currency VARCHAR(3) DEFAULT 'USD',
+    current_balance DECIMAL(15,2),
+    available_balance DECIMAL(15,2),
+    last_sync_at TIMESTAMP,
+    status VARCHAR(50) DEFAULT 'active', -- 'active', 'inactive', 'closed', 'pending'
+    is_primary BOOLEAN DEFAULT FALSE,
+    plaid_item_id TEXT, -- For Plaid integration
+    plaid_access_token TEXT, -- Encrypted Plaid token
+    institution_logo_url TEXT,
+    account_color VARCHAR(7),
+    notes TEXT,
+    created_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, institution_name, account_number)
+);
+
+-- AI-generated homepage content storage
+CREATE TABLE IF NOT EXISTS homepage_content (
+    id SERIAL PRIMARY KEY,
+    tenant_id VARCHAR(100) UNIQUE NOT NULL,
+    company_name VARCHAR(255),
+    tagline TEXT,
+    description TEXT,
+    kpis_json JSONB, -- Stores KPI data: transactions, revenue, expenses, etc.
+    entities_json JSONB, -- Stores business entities/portfolio companies
+    metrics_json JSONB, -- Stores calculated metrics
+    ai_insights TEXT, -- AI-generated insights and highlights
+    generation_prompt TEXT, -- Prompt used to generate content
+    generated_by VARCHAR(50) DEFAULT 'claude-ai',
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated_by VARCHAR(100),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- ========================================
+-- INDEXES FOR NEW TABLES
+-- ========================================
+
+CREATE INDEX IF NOT EXISTS idx_wallet_addresses_tenant ON wallet_addresses(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_addresses_active ON wallet_addresses(tenant_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_wallet_addresses_type ON wallet_addresses(wallet_type);
+
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_tenant ON bank_accounts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_status ON bank_accounts(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_type ON bank_accounts(account_type);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_configuration_tenant ON tenant_configuration(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_configuration_active ON tenant_configuration(is_active);
+
+CREATE INDEX IF NOT EXISTS idx_homepage_content_tenant ON homepage_content(tenant_id);
+
+-- ========================================
+-- TRIGGERS FOR NEW TABLES
+-- ========================================
+
+CREATE TRIGGER update_tenant_configuration_updated_at BEFORE UPDATE ON tenant_configuration
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_wallet_addresses_updated_at BEFORE UPDATE ON wallet_addresses
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_bank_accounts_updated_at BEFORE UPDATE ON bank_accounts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_homepage_content_updated_at BEFORE UPDATE ON homepage_content
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ========================================
+-- SEED DATA FOR DELTA TENANT
+-- ========================================
+
+-- Insert Delta tenant configuration
+INSERT INTO tenant_configuration (
+    tenant_id, company_name, company_tagline, company_description,
+    industry, default_currency, timezone
+) VALUES (
+    'delta',
+    'Delta Capital Holdings',
+    'Diversified Technology & Innovation Portfolio',
+    'A strategic holding company focused on emerging technologies, artificial intelligence, and digital transformation solutions. We build, acquire, and scale innovative businesses that shape the future of technology and commerce.',
+    'Technology & Investment',
+    'USD',
+    'America/New_York'
+) ON CONFLICT (tenant_id) DO UPDATE SET
+    company_name = EXCLUDED.company_name,
+    company_tagline = EXCLUDED.company_tagline,
+    company_description = EXCLUDED.company_description,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- Insert sample Delta wallet addresses
+INSERT INTO wallet_addresses (
+    tenant_id, wallet_address, entity_name, wallet_type, blockchain, purpose, created_by
+) VALUES
+    ('delta', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb', 'Coinbase Exchange', 'exchange', 'ethereum', 'Primary CEX wallet for trading', 'system'),
+    ('delta', '0x8f5832e8b0b0c8b8c9f0e5e3a2b1c0d9e8f7a6b5', 'Delta Internal Wallet', 'internal', 'ethereum', 'Company owned wallet for operations', 'system'),
+    ('delta', 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', 'Cold Storage BTC', 'internal', 'bitcoin', 'Long-term BTC holdings', 'system')
+ON CONFLICT (tenant_id, wallet_address) DO NOTHING;
+
+-- Insert sample Delta bank accounts (with masked account numbers)
+INSERT INTO bank_accounts (
+    tenant_id, account_name, institution_name, account_number,
+    account_type, status, is_primary, created_by
+) VALUES
+    ('delta', 'Operating Account', 'Chase Bank', '****1234', 'checking', 'active', TRUE, 'system'),
+    ('delta', 'Savings Reserve', 'Chase Bank', '****5678', 'savings', 'active', FALSE, 'system'),
+    ('delta', 'Business Credit', 'American Express', '****9012', 'credit', 'active', FALSE, 'system')
+ON CONFLICT (tenant_id, institution_name, account_number) DO NOTHING;
+
+-- ========================================
 -- COMPLETION MESSAGE
 -- ========================================
 
@@ -352,8 +522,10 @@ BEGIN
     RAISE NOTICE '- Main System: transactions, learned_patterns, user_interactions, business_entities';
     RAISE NOTICE '- Crypto Pricing: crypto_historic_prices';
     RAISE NOTICE '- Invoice System: clients, invoices, payment_transactions, mexc_addresses, etc.';
+    RAISE NOTICE '- Multi-Tenant: tenant_configuration, wallet_addresses, bank_accounts, homepage_content';
     RAISE NOTICE '- Analytics Views: monthly_transaction_summary, entity_performance, invoice_status_summary';
     RAISE NOTICE '';
+    RAISE NOTICE 'Default tenant "delta" configured with sample data';
     RAISE NOTICE 'System is ready for production use!';
     RAISE NOTICE '==============================================';
 END $$;
