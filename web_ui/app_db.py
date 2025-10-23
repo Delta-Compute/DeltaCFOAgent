@@ -1579,6 +1579,27 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                 amount_match = match_result.get('amount_match')
                 reasoning = match_result.get('reasoning', '')
 
+                # 🔥 CRITICAL FIX: Add description similarity filter to prevent entity bias
+                # Problem: Entity patterns can include diverse keywords (restaurant + crypto + etc.)
+                # if many different transaction types were historically classified under same entity
+                # Solution: Require BOTH entity pattern match AND description similarity
+                fuzzy_desc_score = fuzzy_match_pattern(ref_desc, tx_desc, threshold=0)
+                desc_similarity = fuzzy_desc_score / 100.0  # Convert to 0-1 range
+
+                # Apply penalty if descriptions are very different
+                # This prevents matching restaurant with crypto even if they share entity patterns
+                if desc_similarity < 0.30:  # Less than 30% description similarity
+                    # Strong penalty for completely different transaction types
+                    score = score * 0.3  # Reduce TF-IDF score by 70%
+                    reasoning += f" | Description mismatch penalty (similarity: {desc_similarity:.2f})"
+                elif desc_similarity < 0.50:  # 30-50% similarity
+                    # Moderate penalty for somewhat different transactions
+                    score = score * 0.6  # Reduce TF-IDF score by 40%
+                    reasoning += f" | Partial description match (similarity: {desc_similarity:.2f})"
+                else:
+                    # Good description match - use TF-IDF score as-is
+                    reasoning += f" | Good description match (similarity: {desc_similarity:.2f})"
+
             # 🔥 BOOST: Apply significant boost for exact wallet address matches
             wallet_boost = 0
             has_wallet_match = False
