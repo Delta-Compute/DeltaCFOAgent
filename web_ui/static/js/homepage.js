@@ -22,22 +22,24 @@ class HomepageManager {
             this.isLoading = true;
             this.showLoading();
 
-            const url = `/api/homepage/content?use_cache=${useCache}`;
+            // Use new standardized homepage data service
+            const url = `/api/homepage/data`;
             const response = await fetch(url);
             const result = await response.json();
 
-            if (result.success && result.content) {
-                this.content = result.content;
+            if (result.success) {
+                // Map new standardized format to content structure
+                this.content = {
+                    company_name: result.company_name,
+                    tagline: result.company_tagline,
+                    description: result.company_description,
+                    generated_at: result.last_updated || result.generated_at,
+                    metrics: result.metrics
+                };
                 this.renderContent();
                 this.animateKPIs();
 
-                if (result.cached) {
-                    console.log('Loaded cached content');
-                    this.showCacheStatus(true);
-                } else {
-                    console.log('Loaded fresh AI-generated content');
-                    this.showCacheStatus(false);
-                }
+                console.log('Loaded standardized homepage data');
             } else {
                 throw new Error(result.error || 'Failed to load content');
             }
@@ -113,17 +115,15 @@ class HomepageManager {
             descElement.textContent = this.content.description;
         }
 
-        // Update KPI highlights in metrics section
-        if (this.content.kpi_highlights && this.content.kpi_highlights.length > 0) {
-            this.renderKPIHighlights(this.content.kpi_highlights);
-        } else if (this.content.kpis) {
-            // Fallback to basic KPIs
-            this.renderBasicKPIs(this.content.kpis);
+        // Render standardized 4-box metrics
+        if (this.content.metrics) {
+            this.renderStandardizedMetrics(this.content.metrics);
         }
 
-        // Update AI insights
-        if (this.content.ai_insights) {
-            this.renderInsights(this.content.ai_insights);
+        // Hide AI insights section (no longer used in standardized design)
+        const aiInsightsSection = document.querySelector('[id="aiInsights"]')?.closest('section');
+        if (aiInsightsSection) {
+            aiInsightsSection.style.display = 'none';
         }
 
         // Update generated timestamp
@@ -131,6 +131,56 @@ class HomepageManager {
         if (timestampElement && this.content.generated_at) {
             const date = new Date(this.content.generated_at);
             timestampElement.textContent = `Last updated: ${date.toLocaleString()}`;
+        }
+    }
+
+    renderStandardizedMetrics(metrics) {
+        const container = document.getElementById('kpiMetricsGrid');
+        if (!container) return;
+
+        // Standardized 4-box layout (left to right):
+        // 1. Business Units
+        // 2. Account Integrations
+        // 3. Transaction Value
+        // 4. Quantity of Transactions
+        const standardizedBoxes = [
+            {
+                label: 'Business Units',
+                value: (metrics.business_units || 0).toLocaleString(),
+                rawValue: metrics.business_units || 0
+            },
+            {
+                label: 'Account Integrations',
+                value: (metrics.account_integrations || 0).toLocaleString(),
+                rawValue: metrics.account_integrations || 0
+            },
+            {
+                label: 'Transaction Value',
+                value: this.formatCurrency(metrics.transaction_value || 0),
+                rawValue: metrics.transaction_value || 0
+            },
+            {
+                label: 'Quantity of Transactions',
+                value: (metrics.transaction_count || 0).toLocaleString(),
+                rawValue: metrics.transaction_count || 0
+            }
+        ];
+
+        container.innerHTML = standardizedBoxes.map(box => `
+            <div class="metric-card">
+                <div class="metric-number" data-target="${box.rawValue}">${box.value}</div>
+                <div class="metric-title">${box.label}</div>
+            </div>
+        `).join('');
+    }
+
+    formatCurrency(value) {
+        if (value >= 1000000) {
+            return `$${(value / 1000000).toFixed(1)}M`;
+        } else if (value >= 1000) {
+            return `$${(value / 1000).toFixed(1)}K`;
+        } else {
+            return `$${value.toFixed(2)}`;
         }
     }
 
@@ -184,7 +234,6 @@ class HomepageManager {
 
         metricNumbers.forEach(element => {
             const target = parseFloat(element.dataset.target) || 0;
-            const icon = element.textContent.trim().split(' ')[0]; // Extract emoji if present
             const duration = 2000; // 2 seconds
             const steps = 60;
             const increment = target / steps;
@@ -197,7 +246,7 @@ class HomepageManager {
                     current = target;
                     clearInterval(timer);
                 }
-                element.textContent = `${icon} ${this.formatAnimatedNumber(current, target)}`;
+                element.textContent = this.formatAnimatedNumber(current, target);
             }, stepDuration);
         });
     }
