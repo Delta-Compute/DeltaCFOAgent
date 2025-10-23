@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from services.mexc_service import MEXCService, MEXCAPIError
 from models.database_postgresql import CryptoInvoiceDatabaseManager, InvoiceStatus, PaymentStatus
 from services.amount_based_matcher import AmountBasedPaymentMatcher
+from services.blockchain_explorer import BlockchainExplorer
 
 
 class PaymentPoller:
@@ -27,7 +28,8 @@ class PaymentPoller:
 
     def __init__(self, mexc_service: MEXCService, db_manager: CryptoInvoiceDatabaseManager,
                  poll_interval: int = 30, payment_callback: Callable = None,
-                 amount_matcher: AmountBasedPaymentMatcher = None):
+                 amount_matcher: AmountBasedPaymentMatcher = None,
+                 blockchain_explorer: BlockchainExplorer = None):
         """
         Initialize payment poller
 
@@ -37,12 +39,14 @@ class PaymentPoller:
             poll_interval: Polling interval in seconds (default 30)
             payment_callback: Optional callback function when payment detected
             amount_matcher: Amount-based matcher for shared addresses
+            blockchain_explorer: BlockchainExplorer instance for direct blockchain verification
         """
         self.mexc = mexc_service
         self.db = db_manager
         self.poll_interval = poll_interval
         self.payment_callback = payment_callback
         self.amount_matcher = amount_matcher or AmountBasedPaymentMatcher(tolerance_percent=0.1)
+        self.blockchain_explorer = blockchain_explorer or BlockchainExplorer()
 
         self.is_running = False
         self.polling_thread = None
@@ -477,6 +481,79 @@ class PaymentPoller:
             # This is a temporary solution until live price feed is integrated
             return original_crypto_amount
 
+    def verify_transaction_on_chain(self, invoice: Dict, tx_hash: str) -> Optional[Dict]:
+        """
+        Verify transaction directly on blockchain using explorer APIs
+
+        This is used for:
+        - Manual transaction verification
+        - Fallback when MEXC API fails
+        - Direct blockchain confirmation tracking
+        - Supporting chains not available on MEXC
+
+        Args:
+            invoice: Invoice dictionary
+            tx_hash: Transaction hash to verify
+
+        Returns:
+            Transaction details if found and valid, None otherwise
+        """
+        invoice_id = invoice['id']
+        invoice_number = invoice['invoice_number']
+        currency = invoice['crypto_currency']
+        network = invoice['crypto_network']
+        expected_amount = float(invoice['crypto_amount'])
+        deposit_address = invoice['deposit_address']
+
+        self.logger.info(
+            f"Verifying transaction on-chain for invoice {invoice_number}: "
+            f"tx={tx_hash}, expected={expected_amount} {currency}/{network}"
+        )
+
+        try:
+            # Use blockchain explorer to verify transaction
+            tx_details = self.blockchain_explorer.verify_transaction(
+                tx_hash=tx_hash,
+                currency=currency,
+                network=network,
+                expected_amount=expected_amount,
+                address=deposit_address
+            )
+
+            if not tx_details:
+                self.logger.warning(
+                    f"Transaction {tx_hash} not found on {network} blockchain"
+                )
+                return None
+
+            # Check if amount matches (with tolerance)
+            received_amount = tx_details.get('amount', 0)
+            tolerance = 0.01 if currency in ['USDT', 'USDC', 'DAI', 'BUSD'] else 0.005
+            min_amount = expected_amount * (1 - tolerance)
+            max_amount = expected_amount * (1 + tolerance)
+
+            if not (min_amount <= received_amount <= max_amount):
+                self.logger.warning(
+                    f"Amount mismatch for {tx_hash}: "
+                    f"expected={expected_amount}, received={received_amount}"
+                )
+                # Still return the transaction but flag the mismatch
+                tx_details['amount_mismatch'] = True
+
+            # Log successful verification
+            self.logger.info(
+                f"✅ Transaction verified on-chain: {tx_hash} - "
+                f"{received_amount} {currency} ({tx_details.get('confirmations', 0)} confirmations)"
+            )
+
+            return tx_details
+
+        except Exception as e:
+            self.logger.error(
+                f"Error verifying transaction {tx_hash} on-chain: {e}"
+            )
+            return None
+
     def check_confirmations_update(self):
         """
         Check all detected payments for confirmation updates
@@ -501,11 +578,29 @@ class PaymentPoller:
 
         for payment in unconfirmed_payments:
             try:
-                # Query MEXC for updated confirmation count
-                tx_info = self.mexc.verify_transaction_manually(
-                    txid=payment['transaction_hash'],
-                    currency=payment['currency']
-                )
+                # Try MEXC first for confirmation updates
+                tx_info = None
+
+                if self.mexc:
+                    try:
+                        tx_info = self.mexc.verify_transaction_manually(
+                            txid=payment['transaction_hash'],
+                            currency=payment['currency']
+                        )
+                    except Exception as e:
+                        self.logger.warning(f"MEXC confirmation check failed: {e}")
+
+                # Fallback to blockchain explorer
+                if not tx_info:
+                    invoice = self.db.get_invoice(payment['invoice_id'])
+                    if invoice:
+                        tx_info = self.blockchain_explorer.verify_transaction(
+                            tx_hash=payment['transaction_hash'],
+                            currency=payment['currency'],
+                            network=payment['network'],
+                            expected_amount=payment['amount_received'],
+                            address=payment['deposit_address']
+                        )
 
                 if tx_info:
                     new_confirmations = tx_info.get('confirmations', 0)
@@ -548,14 +643,39 @@ class PaymentPoller:
             return {"success": False, "error": "Invoice not found"}
 
         try:
-            # Verify transaction with MEXC
-            tx_info = self.mexc.verify_transaction_manually(
-                txid=txid,
-                currency=invoice['crypto_currency']
-            )
+            # Try MEXC verification first
+            tx_info = None
+            verification_source = None
+
+            if self.mexc:
+                try:
+                    tx_info = self.mexc.verify_transaction_manually(
+                        txid=txid,
+                        currency=invoice['crypto_currency']
+                    )
+                    if tx_info:
+                        verification_source = "MEXC"
+                except Exception as e:
+                    self.logger.warning(f"MEXC verification failed: {e}, trying blockchain explorer")
+
+            # Fallback to blockchain explorer if MEXC fails or unavailable
+            if not tx_info:
+                self.logger.info(f"Using blockchain explorer for verification of {txid}")
+                tx_info = self.verify_transaction_on_chain(invoice, txid)
+
+                if tx_info:
+                    verification_source = f"Blockchain ({invoice['crypto_network']})"
+                    # Adapt blockchain explorer format to match MEXC format
+                    tx_info['currency'] = invoice['crypto_currency']
+                    tx_info['network'] = invoice['crypto_network']
+                    tx_info['address'] = invoice['deposit_address']
+                    tx_info['raw_data'] = tx_info  # Store full details
 
             if not tx_info:
-                return {"success": False, "error": "Transaction not found on MEXC"}
+                return {
+                    "success": False,
+                    "error": "Transaction not found on MEXC or blockchain explorers"
+                }
 
             # Check if amount matches
             expected_amount = invoice['crypto_amount']
@@ -604,12 +724,16 @@ class PaymentPoller:
                 paid_at=datetime.now()
             )
 
-            self.logger.info(f"✅ Manual verification successful for invoice {invoice['invoice_number']}")
+            self.logger.info(
+                f"✅ Manual verification successful for invoice {invoice['invoice_number']} "
+                f"via {verification_source}"
+            )
 
             return {
                 "success": True,
                 "payment_id": payment_id,
-                "message": "Payment manually verified and invoice marked as paid"
+                "verification_source": verification_source,
+                "message": f"Payment manually verified via {verification_source} and invoice marked as paid"
             }
 
         except Exception as e:
