@@ -970,6 +970,154 @@ class CryptoInvoiceDatabaseManager:
             print(f"❌ Error getting pending notifications: {e}")
             return []
 
+    # User management operations (SaaS multi-tenant support)
+
+    def create_user(self, user_data: Dict[str, Any]) -> int:
+        """Create new user/company account"""
+        try:
+            if self.db.db_type == 'postgresql':
+                query = """
+                    INSERT INTO users (
+                        company_name, contact_name, email, password_hash,
+                        smtp_host, smtp_port, smtp_username, smtp_password,
+                        smtp_from_email, smtp_from_name
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """
+            else:
+                query = """
+                    INSERT INTO users (
+                        company_name, contact_name, email, password_hash,
+                        smtp_host, smtp_port, smtp_username, smtp_password,
+                        smtp_from_email, smtp_from_name
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+
+            params = (
+                user_data['company_name'],
+                user_data['contact_name'],
+                user_data['email'],
+                user_data.get('password_hash'),
+                user_data.get('smtp_host', 'smtp.gmail.com'),
+                user_data.get('smtp_port', 587),
+                user_data.get('smtp_username'),
+                user_data.get('smtp_password'),
+                user_data.get('smtp_from_email'),
+                user_data.get('smtp_from_name')
+            )
+
+            if self.db.db_type == 'postgresql':
+                result = self.db.execute_query(query, params, fetch_one=True)
+                return result['id']
+            else:
+                self.db.execute_query(query, params)
+                result = self.db.execute_query("SELECT last_insert_rowid() as id", fetch_one=True)
+                return result['id']
+
+        except Exception as e:
+            print(f"❌ Error creating user: {e}")
+            return 0
+
+    def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Get user by ID"""
+        try:
+            query = "SELECT * FROM users WHERE id = %s" if self.db.db_type == 'postgresql' else "SELECT * FROM users WHERE id = ?"
+            row = self.db.execute_query(query, (user_id,), fetch_one=True)
+            return dict(row) if row and hasattr(row, 'keys') else (dict(zip(row.keys(), row)) if row else None)
+        except Exception as e:
+            print(f"❌ Error getting user {user_id}: {e}")
+            return None
+
+    def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user by email"""
+        try:
+            query = "SELECT * FROM users WHERE email = %s" if self.db.db_type == 'postgresql' else "SELECT * FROM users WHERE email = ?"
+            row = self.db.execute_query(query, (email,), fetch_one=True)
+            return dict(row) if row and hasattr(row, 'keys') else (dict(zip(row.keys(), row)) if row else None)
+        except Exception as e:
+            print(f"❌ Error getting user by email {email}: {e}")
+            return None
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Get all active users"""
+        try:
+            query = "SELECT * FROM users WHERE is_active = TRUE ORDER BY company_name"
+            rows = self.db.execute_query(query, fetch_all=True)
+            return [dict(row) if hasattr(row, 'keys') else dict(zip(row.keys(), row)) for row in rows]
+        except Exception as e:
+            print(f"❌ Error getting users: {e}")
+            return []
+
+    def get_email_preferences(self, user_id: int) -> List[Dict[str, Any]]:
+        """Get email preferences for user"""
+        try:
+            query = """
+                SELECT * FROM email_preferences
+                WHERE user_id = %s
+                ORDER BY notification_type
+            """ if self.db.db_type == 'postgresql' else """
+                SELECT * FROM email_preferences
+                WHERE user_id = ?
+                ORDER BY notification_type
+            """
+            rows = self.db.execute_query(query, (user_id,), fetch_all=True)
+            return [dict(row) if hasattr(row, 'keys') else dict(zip(row.keys(), row)) for row in rows]
+        except Exception as e:
+            print(f"❌ Error getting email preferences: {e}")
+            return []
+
+    def update_email_preference(self, user_id: int, notification_type: str,
+                               enabled: bool, email_override: str = None):
+        """Update or create email preference"""
+        try:
+            if self.db.db_type == 'postgresql':
+                query = """
+                    INSERT INTO email_preferences (user_id, notification_type, enabled, email_override)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (user_id, notification_type)
+                    DO UPDATE SET enabled = EXCLUDED.enabled, email_override = EXCLUDED.email_override
+                """
+            else:
+                query = """
+                    INSERT OR REPLACE INTO email_preferences (user_id, notification_type, enabled, email_override)
+                    VALUES (?, ?, ?, ?)
+                """
+
+            self.db.execute_query(query, (user_id, notification_type, enabled, email_override))
+
+        except Exception as e:
+            print(f"❌ Error updating email preference: {e}")
+
+    def log_email_sent(self, user_id: int, invoice_id: int, notification_type: str,
+                      recipient_email: str, subject: str, status: str, error_message: str = None):
+        """Log email delivery"""
+        try:
+            if self.db.db_type == 'postgresql':
+                query = """
+                    INSERT INTO email_log (user_id, invoice_id, notification_type, recipient_email, subject, status, error_message)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                """
+            else:
+                query = """
+                    INSERT INTO email_log (user_id, invoice_id, notification_type, recipient_email, subject, status, error_message)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """
+
+            params = (user_id, invoice_id, notification_type, recipient_email, subject, status, error_message)
+
+            if self.db.db_type == 'postgresql':
+                result = self.db.execute_query(query, params, fetch_one=True)
+                return result['id']
+            else:
+                self.db.execute_query(query, params)
+                result = self.db.execute_query("SELECT last_insert_rowid() as id", fetch_one=True)
+                return result['id']
+
+        except Exception as e:
+            print(f"❌ Error logging email: {e}")
+            return 0
+
 
 # Global instance for backward compatibility
 db_manager_crypto = CryptoInvoiceDatabaseManager()
