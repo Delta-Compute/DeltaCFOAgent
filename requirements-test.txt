@@ -1,0 +1,16 @@
+# DeltaCFOAgent - Testing Dependencies
+# Phase 0: Minimal test suite dependencies
+
+# Core Testing Framework
+pytest>=7.4.0              # Main testing framework
+pytest-cov>=4.1.0          # Coverage reporting
+pytest-flask>=1.2.0        # Flask testing utilities
+
+# HTTP Mocking
+responses>=0.23.0          # Mock HTTP requests (for Claude API, crypto APIs)
+
+# Future phases will add:
+# pytest-postgresql>=5.0.0   # Test database (Phase 1)
+# pytest-mock>=3.11.1        # Advanced mocking (Phase 2)
+# faker>=19.0.0              # Test data generation (Phase 4)
+# freezegun>=1.2.0           # Time mocking (Phase 5)
