@@ -29,7 +29,8 @@ class PaymentPoller:
     def __init__(self, mexc_service: MEXCService, db_manager: CryptoInvoiceDatabaseManager,
                  poll_interval: int = 30, payment_callback: Callable = None,
                  amount_matcher: AmountBasedPaymentMatcher = None,
-                 blockchain_explorer: BlockchainExplorer = None):
+                 blockchain_explorer: BlockchainExplorer = None,
+                 notification_manager = None):
         """
         Initialize payment poller
 
@@ -40,6 +41,7 @@ class PaymentPoller:
             payment_callback: Optional callback function when payment detected
             amount_matcher: Amount-based matcher for shared addresses
             blockchain_explorer: BlockchainExplorer instance for direct blockchain verification
+            notification_manager: NotificationManager instance for email notifications
         """
         self.mexc = mexc_service
         self.db = db_manager
@@ -47,6 +49,7 @@ class PaymentPoller:
         self.payment_callback = payment_callback
         self.amount_matcher = amount_matcher or AmountBasedPaymentMatcher(tolerance_percent=0.1)
         self.blockchain_explorer = blockchain_explorer or BlockchainExplorer()
+        self.notification_manager = notification_manager
 
         self.is_running = False
         self.polling_thread = None
@@ -185,6 +188,15 @@ class PaymentPoller:
                 status='expired',
                 error_message=f"Invoice expired {time_expired:.1f} hours ago"
             )
+
+            # Send invoice expired notification
+            if self.notification_manager:
+                try:
+                    user_id = invoice.get('user_id', 1)
+                    self.notification_manager.notify_invoice_expired(invoice_id, user_id)
+                    self.logger.info(f"Invoice expired notification sent for {invoice_number}")
+                except Exception as e:
+                    self.logger.error(f"Error sending invoice expired notification: {e}")
 
             return True
         else:
@@ -333,6 +345,25 @@ class PaymentPoller:
         payment_id = self.db.create_payment_transaction(payment_data)
         self.logger.info(f"Payment transaction recorded (ID: {payment_id})")
 
+        # Send payment detected notification
+        if self.notification_manager:
+            try:
+                user_id = invoice.get('user_id', 1)
+                payment_notification_data = {
+                    'amount': deposit['amount'],
+                    'currency': deposit['currency'],
+                    'txid': deposit['transaction_hash'],
+                    'confirmations': deposit.get('confirmations', 0),
+                    'required_confirmations': payment_data['required_confirmations'],
+                    'detected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                }
+                self.notification_manager.notify_payment_detected(
+                    invoice_id, payment_notification_data, user_id
+                )
+                self.logger.info(f"Payment detected notification sent for {invoice_number}")
+            except Exception as e:
+                self.logger.error(f"Error sending payment detected notification: {e}")
+
         # Check if payment is confirmed
         if deposit.get('confirmations', 0) >= payment_data['required_confirmations']:
             self._confirm_payment(invoice, payment_id, deposit)
@@ -472,6 +503,27 @@ class PaymentPoller:
                 error_message=f"Underpaid by {shortage:.8f} {currency} ({shortage_percent:.2f}%)"
             )
 
+            # Send partial payment notification
+            if self.notification_manager:
+                try:
+                    user_id = invoice.get('user_id', 1)
+                    payment_data = {
+                        'amount': total_received,
+                        'currency': currency,
+                        'percentage': (total_received / expected_amount) * 100
+                    }
+                    shortfall_data = {
+                        'amount': shortage,
+                        'currency': currency,
+                        'usd_value': shortage * float(invoice.get('exchange_rate', 1))
+                    }
+                    self.notification_manager.notify_partial_payment(
+                        invoice_id, payment_data, shortfall_data, user_id
+                    )
+                    self.logger.info(f"Partial payment notification sent for {invoice_number}")
+                except Exception as e:
+                    self.logger.error(f"Error sending partial payment notification: {e}")
+
         elif total_received > max_amount:
             # OVERPAID
             overpayment = total_received - expected_amount
@@ -496,6 +548,27 @@ class PaymentPoller:
                 error_message=f"Overpaid by {overpayment:.8f} {currency} ({overpayment_percent:.2f}%)"
             )
 
+            # Send overpayment notification
+            if self.notification_manager:
+                try:
+                    user_id = invoice.get('user_id', 1)
+                    payment_data = {
+                        'amount': total_received,
+                        'currency': currency,
+                        'percentage': (total_received / expected_amount) * 100
+                    }
+                    overpayment_data = {
+                        'amount': overpayment,
+                        'currency': currency,
+                        'usd_value': overpayment * float(invoice.get('exchange_rate', 1))
+                    }
+                    self.notification_manager.notify_overpayment(
+                        invoice_id, payment_data, overpayment_data, user_id
+                    )
+                    self.logger.info(f"Overpayment notification sent for {invoice_number}")
+                except Exception as e:
+                    self.logger.error(f"Error sending overpayment notification: {e}")
+
             # TODO: Queue for refund processing
             # self._queue_refund(invoice, overpayment, currency)
 
@@ -511,6 +584,25 @@ class PaymentPoller:
                 status=InvoiceStatus.PAID.value,
                 paid_at=datetime.now()
             )
+
+            # Send payment confirmed notification
+            if self.notification_manager:
+                try:
+                    user_id = invoice.get('user_id', 1)
+                    payment_data = {
+                        'amount': total_received,
+                        'currency': currency,
+                        'usd_value': total_received * float(invoice.get('exchange_rate', 1)),
+                        'txid': confirmed_payments[0].get('transaction_hash', 'N/A'),
+                        'confirmations': confirmed_payments[0].get('confirmations', 0),
+                        'confirmed_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    self.notification_manager.notify_payment_confirmed(
+                        invoice_id, payment_data, user_id
+                    )
+                    self.logger.info(f"Payment confirmed notification sent for {invoice_number}")
+                except Exception as e:
+                    self.logger.error(f"Error sending payment confirmed notification: {e}")
 
         # Log payment reconciliation
         payment_count = len(confirmed_payments)

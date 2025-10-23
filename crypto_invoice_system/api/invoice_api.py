@@ -23,6 +23,8 @@ from models.database_postgresql import CryptoInvoiceDatabaseManager, InvoiceStat
 from services.mexc_service import MEXCService, MEXCAPIError
 from services.invoice_generator import InvoiceGenerator
 from services.payment_poller import PaymentPoller
+from services.email_service import EmailService
+from services.notification_manager import NotificationManager
 from config.blockchain_config import BlockchainRegistry
 
 
@@ -55,22 +57,36 @@ logger.info(f"MEXC API Key: {mexc_api_key[:10]}... (loaded)")
 
 if mexc_api_key and mexc_api_secret:
     mexc_service = MEXCService(mexc_api_key, mexc_api_secret)
-
-    # Initialize payment poller
-    payment_poller = PaymentPoller(
-        mexc_service=mexc_service,
-        db_manager=db_manager,
-        poll_interval=30
-    )
-    payment_poller.start()
-    logger.info("Payment polling service started")
 else:
     mexc_service = None
-    payment_poller = None
     logger.warning("MEXC API credentials not found - payment polling disabled")
 
 # Initialize blockchain registry
 blockchain_registry = BlockchainRegistry()
+
+# Initialize email service and notification manager
+email_service = EmailService(db_manager)
+base_url = os.getenv('BASE_URL', 'http://localhost:5003')
+notification_manager = NotificationManager(
+    email_service=email_service,
+    db_manager=db_manager,
+    base_url=base_url
+)
+logger.info(f"Notification manager initialized with base URL: {base_url}")
+
+# Initialize payment poller with notification support
+if mexc_service:
+    payment_poller = PaymentPoller(
+        mexc_service=mexc_service,
+        db_manager=db_manager,
+        poll_interval=30,
+        notification_manager=notification_manager
+    )
+    payment_poller.start()
+    logger.info("Payment polling service started with notification support")
+else:
+    payment_poller = None
+    logger.warning("Payment polling disabled (no MEXC credentials)")
 
 
 # Routes
@@ -342,6 +358,22 @@ def create_invoice():
         db_manager.mark_address_used(deposit_address, invoice_id)
 
         logger.info(f"Invoice created: {invoice_number} (ID: {invoice_id})")
+
+        # Send invoice created notification
+        try:
+            # Get user_id from invoice data (default to 1 for now)
+            user_id = invoice_data.get('user_id', 1)
+            notification_result = notification_manager.notify_invoice_created(
+                invoice_id=invoice_id,
+                user_id=user_id
+            )
+            if notification_result.get('success'):
+                logger.info(f"Invoice created notification sent for {invoice_number}")
+            elif not notification_result.get('skipped'):
+                logger.warning(f"Failed to send invoice created notification: {notification_result.get('error')}")
+        except Exception as e:
+            logger.error(f"Error sending invoice created notification: {e}")
+            # Don't fail invoice creation if notification fails
 
         return jsonify({
             "success": True,
