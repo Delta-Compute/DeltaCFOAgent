@@ -1,0 +1,70 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">⚠️</div>
+<div class="notification-title">Partial Payment Received</div>
+
+<div class="alert-box">
+    <p style="margin: 0; font-weight: 600;">
+        A partial payment has been detected for invoice {{ invoice.invoice_number }}.
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>The payment received is less than the invoice total. This may indicate:</p>
+    <ul style="margin: 10px 0; padding-left: 20px;">
+        <li>Client sent partial payment intentionally</li>
+        <li>Transaction fees reduced the amount sent</li>
+        <li>Exchange rate fluctuations during transfer</li>
+    </ul>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Expected Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Received Amount:</span>
+        <span class="info-value" style="color: #ffc107; font-weight: 600;">{{ payment.amount }} {{ payment.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Shortfall:</span>
+        <span class="info-value" style="color: #dc3545; font-weight: 600;">{{ shortfall.amount }} {{ shortfall.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Shortfall (USD):</span>
+        <span class="info-value">${{ "%.2f"|format(shortfall.usd_value) }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Percentage Paid:</span>
+        <span class="info-value">{{ "%.1f"|format(payment.percentage) }}%</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ payment_url }}" class="button">View Payment Details</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>Recommended Actions:</strong><br>
+        • Contact your client to verify if this was intentional<br>
+        • Check if additional payment is expected<br>
+        • Review transaction details for any issues<br>
+        • Consider accepting partial payment or requesting balance
+    </p>
+</div>
+
+<div style="background-color: #f8f9fa; padding: 12px; border-radius: 4px; margin-top: 20px; font-size: 13px; color: #666;">
+    <strong>Note:</strong> The invoice status has been updated to "Partially Paid". You can manually mark it as paid or wait for additional payments.
+</div>
+{% endblock %}

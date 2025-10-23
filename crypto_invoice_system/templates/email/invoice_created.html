@@ -1,0 +1,54 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">📝</div>
+<div class="notification-title">New Invoice Created</div>
+
+<div class="notification-message">
+    <p>A new crypto invoice has been successfully created and is ready to be sent to your client.</p>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Amount:</span>
+        <span class="info-value">${{ "%.2f"|format(invoice.total_amount) }} USD</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crypto Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Network:</span>
+        <span class="info-value">{{ invoice.crypto_network }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Due Date:</span>
+        <span class="info-value">{{ invoice.due_date }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Status:</span>
+        <span class="info-value">{{ invoice.status|title }}</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ payment_url }}" class="button">View Invoice</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>Next Steps:</strong><br>
+        • Share the payment link with your client<br>
+        • Monitor payment status in your dashboard<br>
+        • Payment will be automatically detected on the blockchain
+    </p>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">🔍</div>
+<div class="notification-title">Payment Detected</div>
+
+<div class="success-box">
+    <p style="margin: 0; font-weight: 600;">
+        A payment has been detected on the blockchain for invoice {{ invoice.invoice_number }}!
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>We've detected an incoming transaction to the invoice payment address. The payment is currently being confirmed on the blockchain.</p>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Expected Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Detected Amount:</span>
+        <span class="info-value">{{ payment.amount }} {{ payment.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Transaction Hash:</span>
+        <span class="info-value" style="font-size: 11px; word-break: break-all;">{{ payment.txid }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Confirmations:</span>
+        <span class="info-value">{{ payment.confirmations }} / {{ payment.required_confirmations }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Detected At:</span>
+        <span class="info-value">{{ payment.detected_at }}</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ payment_url }}" class="button">View Payment Status</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>What happens next:</strong><br>
+        • The transaction will gain more confirmations on the blockchain<br>
+        • You'll receive another notification once the payment is fully confirmed<br>
+        • Typical confirmation time: {{ payment.estimated_time }}
+    </p>
+</div>
+{% endblock %}

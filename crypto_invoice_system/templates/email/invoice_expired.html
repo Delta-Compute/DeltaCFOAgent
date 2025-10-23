@@ -1,0 +1,75 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">⏰</div>
+<div class="notification-title">Invoice Expired</div>
+
+<div class="error-box">
+    <p style="margin: 0; font-weight: 600;">
+        Invoice {{ invoice.invoice_number }} has expired without payment.
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>The invoice due date has passed and no payment has been received from the client.</p>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Amount Due:</span>
+        <span class="info-value">${{ "%.2f"|format(invoice.total_amount) }} USD</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crypto Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Due Date:</span>
+        <span class="info-value" style="color: #dc3545; font-weight: 600;">{{ invoice.due_date }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Days Overdue:</span>
+        <span class="info-value">{{ days_overdue }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Billing Period:</span>
+        <span class="info-value">{{ invoice.billing_period }}</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ invoice_url }}" class="button">View Invoice</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>Recommended Actions:</strong><br>
+        • Contact client to follow up on payment<br>
+        • Send payment reminder with updated exchange rates<br>
+        • Create a new invoice if rate lock has expired<br>
+        • Review client's payment history and credit terms
+    </p>
+</div>
+
+<div style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; border-radius: 4px; margin-top: 20px; font-size: 13px;">
+    <strong>Note:</strong> The crypto exchange rate may have changed significantly since invoice creation. Consider creating a new invoice with current rates if the client still wishes to pay.
+</div>
+
+{% if client_contact %}
+<div style="background-color: #f8f9fa; padding: 12px; border-radius: 4px; margin-top: 15px; font-size: 13px; color: #666;">
+    <strong>Client Contact:</strong><br>
+    Email: <a href="mailto:{{ client_contact.email }}" style="color: #667eea;">{{ client_contact.email }}</a><br>
+    {% if client_contact.phone %}
+    Phone: {{ client_contact.phone }}
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

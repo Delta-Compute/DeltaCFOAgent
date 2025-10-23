@@ -1,0 +1,63 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">✅</div>
+<div class="notification-title">Payment Confirmed!</div>
+
+<div class="success-box">
+    <p style="margin: 0; font-weight: 600; font-size: 16px;">
+        🎉 Payment for invoice {{ invoice.invoice_number }} has been fully confirmed!
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>Congratulations! The payment has received sufficient blockchain confirmations and has been marked as paid.</p>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Invoice Amount:</span>
+        <span class="info-value">${{ "%.2f"|format(invoice.total_amount) }} USD</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Paid Amount:</span>
+        <span class="info-value">{{ payment.amount }} {{ payment.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">USD Value:</span>
+        <span class="info-value">${{ "%.2f"|format(payment.usd_value) }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Transaction Hash:</span>
+        <span class="info-value" style="font-size: 11px; word-break: break-all;">{{ payment.txid }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Confirmations:</span>
+        <span class="info-value">{{ payment.confirmations }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Confirmed At:</span>
+        <span class="info-value">{{ payment.confirmed_at }}</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ invoice_url }}" class="button">View Invoice Details</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px; background-color: #f8f9fa; padding: 15px; border-radius: 4px;">
+    <p style="margin: 0; font-size: 14px; color: #666;">
+        <strong>✓ Invoice Status:</strong> Paid<br>
+        <strong>✓ Payment Method:</strong> {{ invoice.crypto_currency }} ({{ invoice.crypto_network }})<br>
+        <strong>✓ Next Steps:</strong> Review transaction details and update your accounting records
+    </p>
+</div>
+{% endblock %}

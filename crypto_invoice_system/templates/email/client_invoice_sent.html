@@ -1,0 +1,78 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">📧</div>
+<div class="notification-title">Invoice Sent to Client</div>
+
+<div class="success-box">
+    <p style="margin: 0; font-weight: 600;">
+        Invoice {{ invoice.invoice_number }} has been successfully sent to {{ invoice.client_name }}.
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>Your crypto invoice has been delivered to the client's email address. They can now view the invoice and make payment.</p>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Sent To:</span>
+        <span class="info-value">{{ recipient_email }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Amount:</span>
+        <span class="info-value">${{ "%.2f"|format(invoice.total_amount) }} USD</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Crypto Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Due Date:</span>
+        <span class="info-value">{{ invoice.due_date }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Sent At:</span>
+        <span class="info-value">{{ sent_at }}</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ payment_url }}" class="button">View Public Payment Page</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px; background-color: #f8f9fa; padding: 15px; border-radius: 4px;">
+    <p style="margin: 0 0 10px 0; font-size: 14px; color: #666;">
+        <strong>What your client received:</strong>
+    </p>
+    <ul style="margin: 5px 0; padding-left: 20px; font-size: 14px; color: #666;">
+        <li>Payment instructions with QR code</li>
+        <li>Deposit address for {{ invoice.crypto_currency }} ({{ invoice.crypto_network }})</li>
+        <li>Exact crypto amount to send</li>
+        <li>Invoice details and billing period</li>
+        <li>Real-time payment status tracking</li>
+    </ul>
+</div>
+
+<div style="background-color: #e7f3ff; border-left: 4px solid #2196F3; padding: 12px; border-radius: 4px; margin-top: 20px; font-size: 13px;">
+    <strong>💡 Tip:</strong> The payment page will automatically update when payment is detected on the blockchain. You'll receive notifications when payment is detected and confirmed.
+</div>
+
+<div class="notification-message" style="margin-top: 25px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>Next Steps:</strong><br>
+        • Monitor payment status in your dashboard<br>
+        • You'll be notified when payment is detected<br>
+        • Payment confirmation typically takes {{ confirmation_time }}<br>
+        • Follow up with client if no payment within 24-48 hours
+    </p>
+</div>
+{% endblock %}

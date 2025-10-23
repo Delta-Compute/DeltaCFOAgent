@@ -1,0 +1,77 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<div class="notification-icon">💰</div>
+<div class="notification-title">Overpayment Received</div>
+
+<div class="alert-box">
+    <p style="margin: 0; font-weight: 600;">
+        An overpayment has been detected for invoice {{ invoice.invoice_number }}.
+    </p>
+</div>
+
+<div class="notification-message">
+    <p>The payment received exceeds the invoice total. This may indicate:</p>
+    <ul style="margin: 10px 0; padding-left: 20px;">
+        <li>Client sent extra funds by mistake</li>
+        <li>Exchange rate improved during transfer</li>
+        <li>Client included tip or additional payment</li>
+    </ul>
+</div>
+
+<div class="info-box">
+    <div class="info-row">
+        <span class="info-label">Invoice Number:</span>
+        <span class="info-value">{{ invoice.invoice_number }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Client:</span>
+        <span class="info-value">{{ invoice.client_name }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Expected Amount:</span>
+        <span class="info-value">{{ invoice.crypto_amount }} {{ invoice.crypto_currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Received Amount:</span>
+        <span class="info-value" style="color: #28a745; font-weight: 600;">{{ payment.amount }} {{ payment.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Overpayment:</span>
+        <span class="info-value" style="color: #28a745; font-weight: 600;">{{ overpayment.amount }} {{ overpayment.currency }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Overpayment (USD):</span>
+        <span class="info-value">${{ "%.2f"|format(overpayment.usd_value) }}</span>
+    </div>
+    <div class="info-row">
+        <span class="info-label">Percentage Paid:</span>
+        <span class="info-value">{{ "%.1f"|format(payment.percentage) }}%</span>
+    </div>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ payment_url }}" class="button">View Payment Details</a>
+</div>
+
+<div class="notification-message" style="margin-top: 30px;">
+    <p style="font-size: 14px; color: #666;">
+        <strong>Recommended Actions:</strong><br>
+        • Contact your client to confirm if overpayment was intentional<br>
+        • Arrange refund of excess amount if requested<br>
+        • Apply overpayment to future invoices (with client approval)<br>
+        • Keep overpayment as gratuity if client confirms
+    </p>
+</div>
+
+<div style="background-color: #d4edda; border-left: 4px solid #28a745; padding: 12px; border-radius: 4px; margin-top: 20px; font-size: 13px;">
+    <strong>Note:</strong> The invoice has been marked as "Overpaid". The excess amount has been queued for refund processing. You can manage refunds in your dashboard.
+</div>
+
+{% if refund_address %}
+<div style="background-color: #f8f9fa; padding: 12px; border-radius: 4px; margin-top: 15px; font-size: 13px; color: #666;">
+    <strong>Refund Address (if needed):</strong><br>
+    <code style="background: white; padding: 4px 8px; border-radius: 3px; display: inline-block; margin-top: 5px;">{{ refund_address }}</code>
+</div>
+{% endif %}
+{% endblock %}
