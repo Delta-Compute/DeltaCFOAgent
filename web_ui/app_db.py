@@ -9718,6 +9718,541 @@ def api_test_blockchain_lookup(txid):
         }), 500
 
 
+# ========================================
+# CHATBOT API ENDPOINTS
+# ========================================
+
+# Import chatbot services
+try:
+    from services.chatbot_service import ChatbotService
+    from services.context_manager import ContextManager
+    from services.db_modifier import DatabaseModifier
+    CHATBOT_AVAILABLE = True
+except ImportError as e:
+    CHATBOT_AVAILABLE = False
+    logger.warning(f"Chatbot services not available: {e}")
+
+# Helper function to get tenant ID (for future multi-tenant support)
+def get_chatbot_tenant_id():
+    """Get current tenant ID from session or default"""
+    return session.get('tenant_id', 'delta')
+
+# Helper function to get user ID
+def get_chatbot_user_id():
+    """Get current user ID from session or default"""
+    return session.get('user_id', 'user')
+
+
+@app.route('/api/chatbot/session/create', methods=['POST'])
+def chatbot_create_session():
+    """Create a new chatbot session"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json or {}
+        user_agent = request.headers.get('User-Agent')
+        ip_address = request.remote_addr
+
+        chatbot = ChatbotService(get_chatbot_tenant_id(), get_chatbot_user_id())
+        session_id = chatbot.create_session(user_agent, ip_address)
+
+        return jsonify({
+            "success": True,
+            "session_id": session_id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error creating chatbot session: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/session/<session_id>', methods=['GET'])
+def chatbot_get_session(session_id):
+    """Get session information"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        chatbot = ChatbotService(get_chatbot_tenant_id(), get_chatbot_user_id())
+        session_data = chatbot.get_session(session_id)
+
+        if session_data:
+            return jsonify({
+                "success": True,
+                "session": session_data
+            }), 200
+        else:
+            return jsonify({"error": "Session not found"}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting session: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/session/<session_id>/end', methods=['POST'])
+def chatbot_end_session(session_id):
+    """End a chatbot session"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        chatbot = ChatbotService(get_chatbot_tenant_id(), get_chatbot_user_id())
+        chatbot.end_session(session_id)
+
+        return jsonify({
+            "success": True,
+            "message": "Session ended"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error ending session: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/message', methods=['POST'])
+def chatbot_message():
+    """
+    Send a message to the chatbot and get a response
+
+    Request body:
+    {
+        "session_id": "uuid",
+        "message": "User's message",
+        "use_sonnet": true  (optional, default true)
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'session_id' not in data or 'message' not in data:
+            return jsonify({"error": "session_id and message are required"}), 400
+
+        session_id = data['session_id']
+        message = data['message']
+        use_sonnet = data.get('use_sonnet', True)
+
+        chatbot = ChatbotService(get_chatbot_tenant_id(), get_chatbot_user_id())
+        result = chatbot.chat(session_id, message, use_sonnet)
+
+        if result.get('success'):
+            return jsonify({
+                "success": True,
+                "response": result['response'],
+                "function_calls": result.get('function_calls', []),
+                "model": result.get('model')
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Unknown error'),
+                "response": result.get('response', '')
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error processing chatbot message: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/history/<session_id>', methods=['GET'])
+def chatbot_history(session_id):
+    """Get conversation history for a session"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        limit = request.args.get('limit', 20, type=int)
+
+        chatbot = ChatbotService(get_chatbot_tenant_id(), get_chatbot_user_id())
+        history = chatbot.get_conversation_history(session_id, limit)
+
+        return jsonify({
+            "success": True,
+            "history": history,
+            "count": len(history)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting chatbot history: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/context/business-overview', methods=['GET'])
+def chatbot_business_overview():
+    """Get comprehensive business overview"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        context_manager = ContextManager(get_chatbot_tenant_id())
+        overview = context_manager.get_business_overview()
+
+        return jsonify({
+            "success": True,
+            "overview": overview
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting business overview: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/context/entities', methods=['GET'])
+def chatbot_get_entities():
+    """Get all business entities"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        context_manager = ContextManager(get_chatbot_tenant_id())
+        entities = context_manager.get_business_entities()
+
+        return jsonify({
+            "success": True,
+            "entities": entities,
+            "count": len(entities)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting entities: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/context/investors', methods=['GET'])
+def chatbot_get_investors():
+    """Get investor summary"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        context_manager = ContextManager(get_chatbot_tenant_id())
+        investors = context_manager.get_investor_summary()
+
+        return jsonify({
+            "success": True,
+            "investors": investors
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting investors: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/context/vendors', methods=['GET'])
+def chatbot_get_vendors():
+    """Get vendor summary"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        context_manager = ContextManager(get_chatbot_tenant_id())
+        vendors = context_manager.get_vendor_summary()
+
+        return jsonify({
+            "success": True,
+            "vendors": vendors
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting vendors: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/context/rules', methods=['GET'])
+def chatbot_get_rules():
+    """Get active business rules"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        context_manager = ContextManager(get_chatbot_tenant_id())
+        rules = context_manager.get_business_rules()
+
+        return jsonify({
+            "success": True,
+            "rules": rules,
+            "count": len(rules)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting rules: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/entities/add', methods=['POST'])
+def chatbot_add_entity():
+    """
+    Add a new business entity
+
+    Request body:
+    {
+        "name": "Entity Name",
+        "entity_type": "subsidiary|vendor|customer|internal",
+        "description": "Optional description"
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'name' not in data or 'entity_type' not in data:
+            return jsonify({"error": "name and entity_type are required"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, entity_id = db_modifier.add_business_entity(
+            data['name'],
+            data['entity_type'],
+            data.get('description')
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "entity_id": entity_id
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error adding entity: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/patterns/add', methods=['POST'])
+def chatbot_add_pattern():
+    """
+    Add a new classification pattern
+
+    Request body:
+    {
+        "pattern_type": "revenue|expense|crypto|transfer",
+        "description_pattern": "Pattern text",
+        "accounting_category": "Category name",
+        "entity": "Optional entity",
+        "confidence_score": 0.75
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        required_fields = ['pattern_type', 'description_pattern', 'accounting_category']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": f"Required fields: {', '.join(required_fields)}"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, pattern_id = db_modifier.add_classification_pattern(
+            data['pattern_type'],
+            data['description_pattern'],
+            data['accounting_category'],
+            data.get('entity'),
+            data.get('confidence_score', 0.75)
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "pattern_id": pattern_id
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error adding pattern: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/rules/create', methods=['POST'])
+def chatbot_create_rule():
+    """
+    Create a new business rule
+
+    Request body:
+    {
+        "rule_name": "Rule name",
+        "rule_type": "classification|alert|validation",
+        "description": "Rule description",
+        "conditions": [{"field": "description", "operator": "contains", "value": "AWS"}],
+        "actions": [{"action_type": "classify", "target_category": "Technology Expenses"}],
+        "priority": 100
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        required_fields = ['rule_name', 'rule_type', 'description', 'conditions', 'actions']
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": f"Required fields: {', '.join(required_fields)}"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, rule_id = db_modifier.create_business_rule(
+            data['rule_name'],
+            data['rule_type'],
+            data['description'],
+            data['conditions'],
+            data['actions'],
+            data.get('priority', 100)
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "rule_id": rule_id
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error creating rule: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/investors/add', methods=['POST'])
+def chatbot_add_investor():
+    """Add a new investor"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'investor_name' not in data or 'investor_type' not in data:
+            return jsonify({"error": "investor_name and investor_type are required"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, investor_id = db_modifier.add_investor(
+            data['investor_name'],
+            data['investor_type'],
+            data.get('contact_email'),
+            data.get('country'),
+            data.get('investment_focus')
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "investor_id": investor_id
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error adding investor: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/vendors/add', methods=['POST'])
+def chatbot_add_vendor():
+    """Add a new vendor"""
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'vendor_name' not in data or 'vendor_type' not in data:
+            return jsonify({"error": "vendor_name and vendor_type are required"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, vendor_id = db_modifier.add_vendor(
+            data['vendor_name'],
+            data['vendor_type'],
+            data.get('contact_email'),
+            data.get('payment_terms'),
+            data.get('is_preferred', False)
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "vendor_id": vendor_id
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error adding vendor: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/transactions/reclassify/preview', methods=['POST'])
+def chatbot_reclassify_preview():
+    """
+    Preview transaction reclassification (doesn't make changes)
+
+    Request body:
+    {
+        "filters": {"description_contains": "AWS", "entity": "Delta LLC"},
+        "new_classification": {"category": "Technology Expenses", "confidence_score": 0.9}
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'filters' not in data or 'new_classification' not in data:
+            return jsonify({"error": "filters and new_classification are required"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, affected_ids = db_modifier.reclassify_transactions(
+            data['filters'],
+            data['new_classification'],
+            preview=True
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "affected_count": len(affected_ids),
+            "affected_ids": affected_ids[:10]  # First 10 IDs
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error previewing reclassification: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/chatbot/transactions/reclassify/apply', methods=['POST'])
+def chatbot_reclassify_apply():
+    """
+    Apply transaction reclassification (makes actual changes)
+
+    Request body:
+    {
+        "filters": {"description_contains": "AWS"},
+        "new_classification": {"category": "Technology Expenses"}
+    }
+    """
+    if not CHATBOT_AVAILABLE:
+        return jsonify({"error": "Chatbot service not available"}), 503
+
+    try:
+        data = request.json
+
+        if not data or 'filters' not in data or 'new_classification' not in data:
+            return jsonify({"error": "filters and new_classification are required"}), 400
+
+        db_modifier = DatabaseModifier(get_chatbot_tenant_id(), get_chatbot_user_id())
+        success, message, affected_ids = db_modifier.reclassify_transactions(
+            data['filters'],
+            data['new_classification'],
+            preview=False
+        )
+
+        return jsonify({
+            "success": success,
+            "message": message,
+            "affected_count": len(affected_ids)
+        }), 200 if success else 400
+
+    except Exception as e:
+        logger.error(f"Error applying reclassification: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
