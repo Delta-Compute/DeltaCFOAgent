@@ -5365,11 +5365,142 @@ def api_ai_find_similar_after_suggestion():
 
         logging.info(f"[TFIDF_MODAL] Found {len(similar_transactions)} similar transactions using TF-IDF")
 
-        return jsonify({
-            'similar_transactions': similar_transactions,
-            'applied_fields': applied_fields,
-            'success': True
-        })
+        # 🔥 HYBRID APPROACH: Use Claude AI to intelligently filter TF-IDF results
+        # This combines speed of TF-IDF (pre-filter from 1000s → 50) with intelligence of Claude (refine 50 → truly similar)
+        # Same pattern as AI Suggestions endpoint for consistency
+
+        if not similar_transactions:
+            return jsonify({
+                'similar_transactions': [],
+                'applied_fields': applied_fields,
+                'success': True
+            })
+
+        if not claude_client:
+            # Fallback: Return TF-IDF results if Claude not available
+            logging.warning(f"[TFIDF_MODAL] Claude AI not available, returning raw TF-IDF results")
+            return jsonify({
+                'similar_transactions': similar_transactions,
+                'applied_fields': applied_fields,
+                'success': True
+            })
+
+        # Build Claude prompt for intelligent filtering
+        # Include original transaction context
+        original_desc = original.get('description', 'N/A')
+        original_amount = original.get('amount', '0')
+        original_origin = original.get('origin', 'N/A')
+        original_dest = original.get('destination', 'N/A')
+
+        # Build candidate list for Claude (limit to top 30 for context window)
+        top_candidates = similar_transactions[:30]
+        candidate_list = [
+            {
+                'id': t.get('transaction_id', ''),
+                'description': t.get('description', ''),
+                'amount': str(t.get('amount', '0')),
+                'tfidf_score': t.get('match_score', 0),
+                'origin': t.get('origin', 'N/A')[:40],
+                'destination': t.get('destination', 'N/A')[:40]
+            }
+            for t in top_candidates
+        ]
+
+        # Get business knowledge context
+        business_context = ""
+        try:
+            entities = get_tenant_entities(tenant_id)
+            entity_list = format_entities_for_prompt(entities)
+            business_context = f"\n\nKNOWN BUSINESS ENTITIES:\n{entity_list}"
+        except Exception as e:
+            logging.warning(f"[TFIDF_MODAL] Could not load business context: {e}")
+
+        prompt = f"""You are a CFO analyzing financial transactions. A transaction was just categorized and you need to find OTHER transactions that should receive the SAME categorization.
+
+ORIGINAL TRANSACTION (Just Categorized):
+- Description: {original_desc}
+- Amount: ${original_amount}
+- Origin: {original_origin}
+- Destination: {original_dest}
+- Applied Categorization: {json.dumps(applied_fields, indent=2)}
+
+Below are {len(top_candidates)} candidate transactions that TF-IDF pattern matching identified as potentially similar (scored {top_candidates[0].get('match_score', 0):.2f} to {top_candidates[-1].get('match_score', 0):.2f}).
+
+**YOUR TASK**: Filter this list to return ONLY transactions that are truly similar enough to warrant the SAME categorization.{business_context}
+
+**CRITICAL MATCHING RULES**:
+1. **Transaction Type Match**: Must be the SAME type of transaction
+   - Restaurant → Other restaurants ONLY
+   - Crypto/Wallet → Other crypto/wallet ONLY
+   - Software SaaS → Other software SaaS ONLY
+   - Office supplies → Other office supplies ONLY
+
+2. **Wallet Address Priority**: If original has a wallet address, transactions with the SAME wallet are ALWAYS similar (same counterparty)
+
+3. **Vendor Match**: Transactions from the SAME vendor/company should match (e.g., "Netflix" → "Netflix")
+
+4. **Description Intent**: Match by business purpose, NOT just by shared entity classification
+   - ❌ BAD: Match restaurant with crypto just because both were classified under same entity
+   - ✅ GOOD: Match restaurant with restaurant even if different vendors
+
+**DO NOT MATCH** transactions just because they were historically classified under the same business entity. Entity classification can be broad and include many transaction types.
+
+Candidate Transactions (with TF-IDF scores):
+{json.dumps(candidate_list, indent=2)}
+
+Return ONLY a JSON array of transaction IDs that are truly similar and should receive the same categorization.
+
+Example response format:
+["tx_id_1", "tx_id_2", "tx_id_3"]
+
+If NO transactions are truly similar, return an empty array: []"""
+
+        logging.info(f"[CLAUDE_FILTER] Sending {len(top_candidates)} TF-IDF candidates to Claude for intelligent filtering...")
+
+        try:
+            response = claude_client.messages.create(
+                model="claude-3-haiku-20240307",
+                max_tokens=1000,
+                temperature=0.3,
+                messages=[{"role": "user", "content": prompt}]
+            )
+
+            answer_text = response.content[0].text.strip()
+            logging.info(f"[CLAUDE_FILTER] Claude response: {answer_text}")
+
+            # Parse JSON response
+            import re
+            json_match = re.search(r'\[[\s\S]*?\]', answer_text)
+            if json_match:
+                claude_filtered_ids = json.loads(json_match.group(0))
+            else:
+                claude_filtered_ids = []
+
+            # Filter to only transactions Claude approved
+            final_similar_transactions = [
+                t for t in similar_transactions
+                if t.get('transaction_id') in claude_filtered_ids
+            ]
+
+            logging.info(f"[CLAUDE_FILTER] Claude filtered {len(similar_transactions)} TF-IDF candidates → {len(final_similar_transactions)} truly similar transactions")
+
+            return jsonify({
+                'similar_transactions': final_similar_transactions,
+                'applied_fields': applied_fields,
+                'success': True,
+                'tfidf_candidates': len(similar_transactions),
+                'claude_filtered': len(final_similar_transactions)
+            })
+
+        except Exception as claude_error:
+            logging.error(f"[CLAUDE_FILTER] Claude filtering failed: {claude_error}")
+            # Fallback to TF-IDF results if Claude fails
+            return jsonify({
+                'similar_transactions': similar_transactions,
+                'applied_fields': applied_fields,
+                'success': True,
+                'warning': 'Claude filtering failed, returning TF-IDF results'
+            })
 
     except Exception as e:
         print(f"ERROR: AI find similar transactions error: {e}", flush=True)
