@@ -35,45 +35,40 @@ class DataQueryService:
             Dictionary with company name, tagline, description, and settings
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            query = """
+                SELECT
+                    tenant_id, company_name, company_tagline, company_description,
+                    logo_url, primary_color, secondary_color, industry,
+                    founded_date, headquarters_location, website_url,
+                    contact_email, contact_phone, default_currency, timezone,
+                    settings, created_at, updated_at
+                FROM tenant_configuration
+                WHERE tenant_id = %s AND is_active = TRUE
+            """
 
-                query = """
-                    SELECT
-                        tenant_id, company_name, company_tagline, company_description,
-                        logo_url, primary_color, secondary_color, industry,
-                        founded_date, headquarters_location, website_url,
-                        contact_email, contact_phone, default_currency, timezone,
-                        settings, created_at, updated_at
-                    FROM tenant_configuration
-                    WHERE tenant_id = %s AND is_active = TRUE
-                """
+            result = self.db_manager.execute_query(query, (self.tenant_id,), fetch_one=True)
 
-                cursor.execute(query, (self.tenant_id,))
-                result = cursor.fetchone()
-                cursor.close()
-
-                if result:
-                    # Convert to regular dict and handle date serialization
-                    overview = dict(result)
-                    if overview.get('founded_date'):
-                        overview['founded_date'] = overview['founded_date'].isoformat()
-                    if overview.get('created_at'):
-                        overview['created_at'] = overview['created_at'].isoformat()
-                    if overview.get('updated_at'):
-                        overview['updated_at'] = overview['updated_at'].isoformat()
-                    return overview
-                else:
-                    # Return default if no configuration exists
-                    return {
-                        'tenant_id': self.tenant_id,
-                        'company_name': 'Delta Capital Holdings',
-                        'company_tagline': 'Diversified Technology & Innovation Portfolio',
-                        'company_description': 'A strategic holding company focused on emerging technologies.',
-                        'industry': 'Technology & Investment',
-                        'default_currency': 'USD',
-                        'timezone': 'UTC'
-                    }
+            if result:
+                # execute_query returns dict rows by default, handle date serialization
+                overview = dict(result)
+                if overview.get('founded_date'):
+                    overview['founded_date'] = overview['founded_date'].isoformat()
+                if overview.get('created_at'):
+                    overview['created_at'] = overview['created_at'].isoformat()
+                if overview.get('updated_at'):
+                    overview['updated_at'] = overview['updated_at'].isoformat()
+                return overview
+            else:
+                # Return default if no configuration exists
+                return {
+                    'tenant_id': self.tenant_id,
+                    'company_name': 'Delta Capital Holdings',
+                    'company_tagline': 'Diversified Technology & Innovation Portfolio',
+                    'company_description': 'A strategic holding company focused on emerging technologies.',
+                    'industry': 'Technology & Investment',
+                    'default_currency': 'USD',
+                    'timezone': 'UTC'
+                }
 
         except Exception as e:
             logger.error(f"Error fetching company overview: {e}")
@@ -91,33 +86,33 @@ class DataQueryService:
             List of business entities with their details
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            query = """
+                SELECT
+                    id, name, description, entity_type,
+                    active, created_at
+                FROM business_entities
+                WHERE active = TRUE
+                ORDER BY name
+            """
 
-                query = """
-                    SELECT
-                        id, name, description, entity_type,
-                        active, created_at
-                    FROM business_entities
-                    WHERE active = TRUE
-                    ORDER BY name
-                """
+            results = self.db_manager.execute_query(query, fetch_all=True)
 
-                cursor.execute(query)
-                results = cursor.fetchall()
-                cursor.close()
+            if not results:
+                return []
 
-                entities = []
-                for row in results:
-                    entity = dict(row)
-                    if entity.get('created_at'):
-                        entity['created_at'] = entity['created_at'].isoformat()
-                    entities.append(entity)
+            entities = []
+            for row in results:
+                entity = dict(row)
+                if entity.get('created_at'):
+                    entity['created_at'] = entity['created_at'].isoformat()
+                entities.append(entity)
 
-                return entities
+            return entities
 
         except Exception as e:
-            logger.error(f"Error fetching business entities: {e}")
+            # Graceful failure if business_entities table doesn't exist yet
+            logger.warning(f"Business entities table not found or error: {e}")
+            # TODO: Create business_entities table or query from transactions.classified_entity
             return []
 
     def get_company_kpis(self) -> Dict[str, Any]:
@@ -128,154 +123,142 @@ class DataQueryService:
             Dictionary with KPIs: total transactions, revenue, expenses, date ranges, etc.
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            kpis = {}
 
-                kpis = {}
+            # Total transactions (exclude archived)
+            result = self.db_manager.execute_query("""
+                SELECT COUNT(*) as total
+                FROM transactions
+                WHERE tenant_id = %s AND (archived = FALSE OR archived IS NULL)
+            """, (self.tenant_id,), fetch_one=True)
+            kpis['total_transactions'] = result['total'] if result else 0
 
-                # Total transactions (exclude archived)
-                cursor.execute("""
-                    SELECT COUNT(*) as total
-                    FROM transactions
-                    WHERE tenant_id = %s AND (archived = FALSE OR archived IS NULL)
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                kpis['total_transactions'] = result['total'] if result else 0
+            # Revenue (positive amounts)
+            result = self.db_manager.execute_query("""
+                SELECT COALESCE(SUM(amount), 0) as revenue
+                FROM transactions
+                WHERE tenant_id = %s
+                AND amount > 0
+                AND (archived = FALSE OR archived IS NULL)
+            """, (self.tenant_id,), fetch_one=True)
+            kpis['total_revenue'] = float(result['revenue']) if result else 0.0
 
-                # Revenue (positive amounts)
-                cursor.execute("""
-                    SELECT COALESCE(SUM(amount), 0) as revenue
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    AND amount > 0
-                    AND (archived = FALSE OR archived IS NULL)
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                kpis['total_revenue'] = float(result['revenue']) if result else 0.0
+            # Expenses (negative amounts)
+            result = self.db_manager.execute_query("""
+                SELECT COALESCE(SUM(ABS(amount)), 0) as expenses
+                FROM transactions
+                WHERE tenant_id = %s
+                AND amount < 0
+                AND (archived = FALSE OR archived IS NULL)
+            """, (self.tenant_id,), fetch_one=True)
+            kpis['total_expenses'] = float(result['expenses']) if result else 0.0
 
-                # Expenses (negative amounts)
-                cursor.execute("""
-                    SELECT COALESCE(SUM(ABS(amount)), 0) as expenses
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    AND amount < 0
-                    AND (archived = FALSE OR archived IS NULL)
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                kpis['total_expenses'] = float(result['expenses']) if result else 0.0
+            # Net profit
+            kpis['net_profit'] = kpis['total_revenue'] - kpis['total_expenses']
 
-                # Net profit
-                kpis['net_profit'] = kpis['total_revenue'] - kpis['total_expenses']
+            # Date range
+            result = self.db_manager.execute_query("""
+                SELECT
+                    MIN(date) as min_date,
+                    MAX(date) as max_date
+                FROM transactions
+                WHERE tenant_id = %s AND (archived = FALSE OR archived IS NULL)
+            """, (self.tenant_id,), fetch_one=True)
+            if result and result['min_date']:
+                kpis['date_range'] = {
+                    'min': result['min_date'].isoformat(),
+                    'max': result['max_date'].isoformat()
+                }
+                # Calculate years of data
+                min_date = result['min_date']
+                max_date = result['max_date']
+                years = (max_date - min_date).days / 365.25
+                kpis['years_of_data'] = round(years, 1)
+            else:
+                kpis['date_range'] = {'min': 'N/A', 'max': 'N/A'}
+                kpis['years_of_data'] = 0
 
-                # Date range
-                cursor.execute("""
-                    SELECT
-                        MIN(date) as min_date,
-                        MAX(date) as max_date
-                    FROM transactions
-                    WHERE tenant_id = %s AND (archived = FALSE OR archived IS NULL)
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                if result and result['min_date']:
-                    kpis['date_range'] = {
-                        'min': result['min_date'].isoformat(),
-                        'max': result['max_date'].isoformat()
-                    }
-                    # Calculate years of data
-                    min_date = result['min_date']
-                    max_date = result['max_date']
-                    years = (max_date - min_date).days / 365.25
-                    kpis['years_of_data'] = round(years, 1)
-                else:
-                    kpis['date_range'] = {'min': 'N/A', 'max': 'N/A'}
-                    kpis['years_of_data'] = 0
+            # Transactions by entity
+            results = self.db_manager.execute_query("""
+                SELECT
+                    classified_entity,
+                    COUNT(*) as count,
+                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses
+                FROM transactions
+                WHERE tenant_id = %s
+                AND classified_entity IS NOT NULL
+                AND (archived = FALSE OR archived IS NULL)
+                GROUP BY classified_entity
+                ORDER BY count DESC
+                LIMIT 10
+            """, (self.tenant_id,), fetch_all=True)
+            kpis['top_entities'] = [
+                {
+                    'name': row['classified_entity'],
+                    'transaction_count': row['count'],
+                    'revenue': float(row['revenue']) if row['revenue'] else 0.0,
+                    'expenses': float(row['expenses']) if row['expenses'] else 0.0
+                }
+                for row in (results or [])
+            ]
 
-                # Transactions by entity
-                cursor.execute("""
-                    SELECT
-                        classified_entity,
-                        COUNT(*) as count,
-                        SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
-                        SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    AND classified_entity IS NOT NULL
-                    AND (archived = FALSE OR archived IS NULL)
-                    GROUP BY classified_entity
-                    ORDER BY count DESC
-                    LIMIT 10
-                """, (self.tenant_id,))
-                results = cursor.fetchall()
-                kpis['top_entities'] = [
-                    {
-                        'name': row['classified_entity'],
-                        'transaction_count': row['count'],
-                        'revenue': float(row['revenue']) if row['revenue'] else 0.0,
-                        'expenses': float(row['expenses']) if row['expenses'] else 0.0
-                    }
-                    for row in results
-                ]
+            # Needs review count
+            result = self.db_manager.execute_query("""
+                SELECT COUNT(*) as needs_review
+                FROM transactions
+                WHERE tenant_id = %s
+                AND (confidence < 0.8 OR confidence IS NULL)
+                AND (archived = FALSE OR archived IS NULL)
+            """, (self.tenant_id,), fetch_one=True)
+            kpis['needs_review'] = result['needs_review'] if result else 0
 
-                # Needs review count
-                cursor.execute("""
-                    SELECT COUNT(*) as needs_review
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    AND (confidence < 0.8 OR confidence IS NULL)
-                    AND (archived = FALSE OR archived IS NULL)
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                kpis['needs_review'] = result['needs_review'] if result else 0
+            # Invoice statistics
+            result = self.db_manager.execute_query("""
+                SELECT
+                    COUNT(*) as total_invoices,
+                    COALESCE(SUM(amount_usd), 0) as total_invoice_value,
+                    COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
+                    COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdue_invoices
+                FROM invoices
+            """, (), fetch_one=True)
+            if result:
+                kpis['total_invoices'] = result['total_invoices']
+                kpis['total_invoice_value'] = float(result['total_invoice_value']) if result['total_invoice_value'] else 0.0
+                kpis['paid_invoices'] = result['paid_invoices']
+                kpis['overdue_invoices'] = result['overdue_invoices']
+            else:
+                kpis['total_invoices'] = 0
+                kpis['total_invoice_value'] = 0.0
+                kpis['paid_invoices'] = 0
+                kpis['overdue_invoices'] = 0
 
-                # Invoice statistics
-                cursor.execute("""
-                    SELECT
-                        COUNT(*) as total_invoices,
-                        COALESCE(SUM(amount_usd), 0) as total_invoice_value,
-                        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
-                        COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdue_invoices
-                    FROM invoices
-                """, ())
-                result = cursor.fetchone()
-                if result:
-                    kpis['total_invoices'] = result['total_invoices']
-                    kpis['total_invoice_value'] = float(result['total_invoice_value']) if result['total_invoice_value'] else 0.0
-                    kpis['paid_invoices'] = result['paid_invoices']
-                    kpis['overdue_invoices'] = result['overdue_invoices']
-                else:
-                    kpis['total_invoices'] = 0
-                    kpis['total_invoice_value'] = 0.0
-                    kpis['paid_invoices'] = 0
-                    kpis['overdue_invoices'] = 0
+            # Monthly trends (last 12 months)
+            results = self.db_manager.execute_query("""
+                SELECT
+                    DATE_TRUNC('month', date) as month,
+                    SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE tenant_id = %s
+                AND date >= CURRENT_DATE - INTERVAL '12 months'
+                AND (archived = FALSE OR archived IS NULL)
+                GROUP BY DATE_TRUNC('month', date)
+                ORDER BY month DESC
+                LIMIT 12
+            """, (self.tenant_id,), fetch_all=True)
+            kpis['monthly_trends'] = [
+                {
+                    'month': row['month'].isoformat() if row['month'] else None,
+                    'revenue': float(row['revenue']) if row['revenue'] else 0.0,
+                    'expenses': float(row['expenses']) if row['expenses'] else 0.0,
+                    'transaction_count': row['transaction_count']
+                }
+                for row in (results or [])
+            ]
 
-                # Monthly trends (last 12 months)
-                cursor.execute("""
-                    SELECT
-                        DATE_TRUNC('month', date) as month,
-                        SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
-                        SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
-                        COUNT(*) as transaction_count
-                    FROM transactions
-                    WHERE tenant_id = %s
-                    AND date >= CURRENT_DATE - INTERVAL '12 months'
-                    AND (archived = FALSE OR archived IS NULL)
-                    GROUP BY DATE_TRUNC('month', date)
-                    ORDER BY month DESC
-                    LIMIT 12
-                """, (self.tenant_id,))
-                results = cursor.fetchall()
-                kpis['monthly_trends'] = [
-                    {
-                        'month': row['month'].isoformat() if row['month'] else None,
-                        'revenue': float(row['revenue']) if row['revenue'] else 0.0,
-                        'expenses': float(row['expenses']) if row['expenses'] else 0.0,
-                        'transaction_count': row['transaction_count']
-                    }
-                    for row in results
-                ]
-
-                cursor.close()
-                return kpis
+            return kpis
 
         except Exception as e:
             logger.error(f"Error calculating KPIs: {e}")
@@ -294,58 +277,58 @@ class DataQueryService:
             Dictionary with portfolio company counts and metrics
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            entity_counts = {}
+            total_entities = 0
 
-                # Count entities by type
-                cursor.execute("""
+            # Count entities by type (graceful failure if table doesn't exist)
+            try:
+                results = self.db_manager.execute_query("""
                     SELECT
                         entity_type,
                         COUNT(*) as count
                     FROM business_entities
                     WHERE active = TRUE
                     GROUP BY entity_type
-                """)
-                results = cursor.fetchall()
+                """, fetch_all=True)
 
-                entity_counts = {}
-                total_entities = 0
-                for row in results:
-                    entity_counts[row['entity_type']] = row['count']
-                    total_entities += row['count']
+                if results:
+                    for row in results:
+                        entity_counts[row['entity_type']] = row['count']
+                        total_entities += row['count']
+            except Exception as e:
+                logger.warning(f"Business entities table not found: {e}")
+                # Graceful failure - continue with other stats
 
-                # Count wallet addresses
-                cursor.execute("""
-                    SELECT COUNT(*) as count
-                    FROM wallet_addresses
-                    WHERE tenant_id = %s AND is_active = TRUE
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                wallet_count = result['count'] if result else 0
+            # Count wallet addresses
+            result = self.db_manager.execute_query("""
+                SELECT COUNT(*) as count
+                FROM wallet_addresses
+                WHERE tenant_id = %s AND is_active = TRUE
+            """, (self.tenant_id,), fetch_one=True)
+            wallet_count = result['count'] if result else 0
 
-                # Count bank accounts
-                cursor.execute("""
-                    SELECT COUNT(*) as count
-                    FROM bank_accounts
-                    WHERE tenant_id = %s AND status = 'active'
-                """, (self.tenant_id,))
-                result = cursor.fetchone()
-                bank_account_count = result['count'] if result else 0
+            # Count bank accounts
+            result = self.db_manager.execute_query("""
+                SELECT COUNT(*) as count
+                FROM bank_accounts
+                WHERE tenant_id = %s AND is_active = TRUE
+            """, (self.tenant_id,), fetch_one=True)
+            bank_account_count = result['count'] if result else 0
 
-                cursor.close()
-
-                return {
-                    'total_entities': total_entities,
-                    'entity_counts': entity_counts,
-                    'wallet_count': wallet_count,
-                    'bank_account_count': bank_account_count
-                }
+            return {
+                'total_entities': total_entities,
+                'entity_counts': entity_counts,
+                'wallet_count': wallet_count,
+                'bank_account_count': bank_account_count
+            }
 
         except Exception as e:
             logger.error(f"Error fetching portfolio stats: {e}")
             return {
                 'total_entities': 0,
                 'entity_counts': {},
+                'wallet_count': 0,
+                'bank_account_count': 0,
                 'error': str(e)
             }
 

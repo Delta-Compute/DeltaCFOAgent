@@ -281,38 +281,28 @@ Important guidelines:
             Cached content or None if not found/expired
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            query = """
+                SELECT
+                    content_json,
+                    generated_at
+                FROM homepage_content
+                WHERE tenant_id = %s
+                AND (expires_at IS NULL OR expires_at > NOW())
+                AND generated_at > NOW() - INTERVAL '24 hours'
+            """
 
-                query = """
-                    SELECT
-                        company_name, tagline, description,
-                        kpis_json, entities_json, metrics_json,
-                        ai_insights, generated_at
-                    FROM homepage_content
-                    WHERE tenant_id = %s
-                    AND is_active = TRUE
-                    AND generated_at > NOW() - INTERVAL '24 hours'
-                """
+            result = self.db_manager.execute_query(query, (self.tenant_id,), fetch_one=True)
 
-                cursor.execute(query, (self.tenant_id,))
-                result = cursor.fetchone()
-                cursor.close()
+            if result and result['content_json']:
+                content = result['content_json']
+                # Add metadata
+                content['cached'] = True
+                if result.get('generated_at'):
+                    content['generated_at'] = result['generated_at'].isoformat()
+                logger.info(f"Retrieved cached homepage content for tenant {self.tenant_id}")
+                return content
 
-                if result:
-                    return {
-                        'company_name': result[0],
-                        'tagline': result[1],
-                        'description': result[2],
-                        'kpis': result[3] if result[3] else {},
-                        'entities': result[4] if result[4] else [],
-                        'metrics': result[5] if result[5] else {},
-                        'ai_insights': result[6].split('\n') if result[6] else [],
-                        'generated_at': result[7].isoformat() if result[7] else None,
-                        'cached': True
-                    }
-
-                return None
+            return None
 
         except Exception as e:
             logger.error(f"Error fetching cached content: {e}")
@@ -329,49 +319,33 @@ Important guidelines:
             True if successful, False otherwise
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            # Store full content as JSON in content_json field
+            query = """
+                INSERT INTO homepage_content (
+                    tenant_id,
+                    content_json,
+                    generation_prompt,
+                    model_version,
+                    expires_at
+                ) VALUES (%s, %s, %s, %s, NOW() + INTERVAL '24 hours')
+                ON CONFLICT (tenant_id) DO UPDATE SET
+                    content_json = EXCLUDED.content_json,
+                    generation_prompt = EXCLUDED.generation_prompt,
+                    model_version = EXCLUDED.model_version,
+                    generated_at = CURRENT_TIMESTAMP,
+                    expires_at = EXCLUDED.expires_at,
+                    updated_at = CURRENT_TIMESTAMP
+            """
 
-                # Convert insights list to text
-                insights_text = '\n'.join(content.get('ai_insights', []))
+            self.db_manager.execute_query(query, (
+                self.tenant_id,
+                json.dumps(content),
+                content.get('generation_prompt'),
+                'claude-3-5-sonnet-20241022'
+            ))
 
-                query = """
-                    INSERT INTO homepage_content (
-                        tenant_id, company_name, tagline, description,
-                        kpis_json, entities_json, metrics_json,
-                        ai_insights, generation_prompt, generated_by
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (tenant_id) DO UPDATE SET
-                        company_name = EXCLUDED.company_name,
-                        tagline = EXCLUDED.tagline,
-                        description = EXCLUDED.description,
-                        kpis_json = EXCLUDED.kpis_json,
-                        entities_json = EXCLUDED.entities_json,
-                        metrics_json = EXCLUDED.metrics_json,
-                        ai_insights = EXCLUDED.ai_insights,
-                        generation_prompt = EXCLUDED.generation_prompt,
-                        generated_at = CURRENT_TIMESTAMP,
-                        updated_at = CURRENT_TIMESTAMP
-                """
-
-                cursor.execute(query, (
-                    self.tenant_id,
-                    content.get('company_name'),
-                    content.get('tagline'),
-                    content.get('description'),
-                    json.dumps(content.get('kpis')),
-                    json.dumps(content.get('entities')),
-                    json.dumps(content.get('kpi_highlights')),
-                    insights_text,
-                    content.get('generation_prompt'),
-                    'claude-ai'
-                ))
-
-                conn.commit()
-                cursor.close()
-
-                logger.info(f"Cached homepage content for tenant {self.tenant_id}")
-                return True
+            logger.info(f"Cached homepage content for tenant {self.tenant_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Error caching content: {e}")
@@ -379,27 +353,22 @@ Important guidelines:
 
     def invalidate_cache(self) -> bool:
         """
-        Invalidate cached homepage content
+        Invalidate cached homepage content by setting expires_at to the past
 
         Returns:
             True if successful, False otherwise
         """
         try:
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            query = """
+                UPDATE homepage_content
+                SET expires_at = NOW() - INTERVAL '1 hour'
+                WHERE tenant_id = %s
+            """
 
-                query = """
-                    UPDATE homepage_content
-                    SET is_active = FALSE
-                    WHERE tenant_id = %s
-                """
+            self.db_manager.execute_query(query, (self.tenant_id,))
 
-                cursor.execute(query, (self.tenant_id,))
-                conn.commit()
-                cursor.close()
-
-                logger.info(f"Invalidated cache for tenant {self.tenant_id}")
-                return True
+            logger.info(f"Invalidated cache for tenant {self.tenant_id}")
+            return True
 
         except Exception as e:
             logger.error(f"Error invalidating cache: {e}")
