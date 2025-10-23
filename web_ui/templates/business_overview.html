@@ -345,7 +345,6 @@
                     <button id="regenerateBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.3s;">
                         🔄 Regenerate with AI
                     </button>
-                    <div id="cacheStatus" style="display: none; padding: 0.75rem 1.5rem; border-radius: 8px; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); font-size: 0.9rem;"></div>
                 </div>
                 <div id="generatedTimestamp" style="margin-top: 1rem; opacity: 0.8; font-size: 0.85rem;"></div>
                 <div id="loadingIndicator" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.2); border-radius: 8px; backdrop-filter: blur(10px);">
@@ -391,7 +390,150 @@
 
     </div>
 
+    <!-- Onboarding Bot Widget -->
+    <button id="onboardingBotToggle" style="position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); z-index: 1000; display: flex; align-items: center; justify-content: center; transition: all 0.3s;">
+        💬
+    </button>
+
+    <div id="onboardingBotWindow" style="display: none; position: fixed !important; bottom: 90px !important; right: 20px !important; width: 400px; height: 600px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15); z-index: 1001; overflow: hidden;">
+        <!-- Bot Header -->
+        <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 1.1rem; font-weight: 600;">Business Onboarding</div>
+                <div style="font-size: 0.85rem; opacity: 0.9;">Tell us about your company</div>
+            </div>
+            <button id="onboardingBotClose" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;">
+                ×
+            </button>
+        </div>
+
+        <!-- Progress Bar -->
+        <div style="background: #f1f5f9; padding: 0.75rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                <span style="font-size: 0.85rem; color: #64748b;">Setup Progress</span>
+                <span id="onboardingProgressText" style="font-size: 0.85rem; font-weight: 600; color: #3b82f6;">0%</span>
+            </div>
+            <div style="width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                <div id="onboardingProgress" style="width: 0%; height: 100%; background: linear-gradient(90deg, #3b82f6, #10b981); transition: width 0.5s;"></div>
+            </div>
+        </div>
+
+        <!-- Messages Container -->
+        <div id="onboardingBotMessages" style="flex: 1; overflow-y: auto; padding: 1.5rem; background: #fafafa;">
+            <!-- Messages will be added here -->
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="onboardingBotLoading" style="display: none; padding: 1rem; text-align: center; color: #64748b; font-size: 0.9rem;">
+            <div style="display: inline-block; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; margin: 0 3px; animation: bounce 1.4s infinite ease-in-out;"></div>
+            <div style="display: inline-block; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; margin: 0 3px; animation: bounce 1.4s infinite ease-in-out 0.16s;"></div>
+            <div style="display: inline-block; width: 8px; height: 8px; background: #3b82f6; border-radius: 50%; margin: 0 3px; animation: bounce 1.4s infinite ease-in-out 0.32s;"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; background: white;">
+            <div style="display: flex; gap: 0.75rem;">
+                <textarea id="onboardingBotInput" placeholder="Type your message..." style="flex: 1; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; resize: none; font-family: inherit; font-size: 0.95rem; max-height: 100px;"></textarea>
+                <button id="onboardingBotSend" disabled style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; padding: 0.75rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.3s;">
+                    Send
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        /* Onboarding Bot Widget Positioning - HIGH SPECIFICITY */
+        #onboardingBotWindow {
+            position: fixed !important;
+            bottom: 90px !important;
+            right: 20px !important;
+            left: auto !important;
+            top: auto !important;
+            transform: none !important;
+            margin: 0 !important;
+        }
+
+        #onboardingBotWindow[style*="display: flex"] {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        .chat-message {
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-message {
+            align-items: flex-end;
+        }
+
+        .bot-message {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 80%;
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .user-message .message-content {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .bot-message .message-content {
+            background: white;
+            border: 1px solid #e2e8f0;
+            color: #1e293b;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-content p {
+            margin: 0;
+            margin-bottom: 0.5rem;
+        }
+
+        .message-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-time {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 0.25rem;
+            padding: 0 0.5rem;
+        }
+
+        .error-message .message-content {
+            background: #fee2e2;
+            border-color: #fecaca;
+            color: #991b1b;
+        }
+
+        #onboardingBotToggle:hover {
+            transform: scale(1.1);
+        }
+
+        #onboardingBotSend:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+
     <!-- Homepage Dynamic Content JavaScript -->
     <script src="{{ url_for('static', filename='js/homepage.js') }}?v={{ cache_buster }}"></script>
+
+    <!-- Onboarding Bot JavaScript -->
+    <script src="{{ url_for('static', filename='onboarding_bot.js') }}?v={{ cache_buster }}"></script>
 </body>
 </html>

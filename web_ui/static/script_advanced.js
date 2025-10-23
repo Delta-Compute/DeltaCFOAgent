@@ -25,6 +25,9 @@ let dragFillState = {
 // Bulk edit state - track selected transactions
 let selectedTransactionIds = new Set();
 
+// Track current active operation to prevent stale async operations from interfering
+let currentActiveOperation = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
 
@@ -2930,6 +2933,11 @@ function toggleArchivedView() {
  */
 async function getAISmartSuggestions(transactionId, transaction) {
     try {
+        // Mark this as the current active operation to prevent stale operations
+        const operationId = `ai-suggestions-${transactionId}-${Date.now()}`;
+        currentActiveOperation = operationId;
+        console.log(`🎯 Starting AI Suggestions operation: ${operationId}`);
+
         // Show modal immediately with loading state
         showModal();
 
@@ -3405,12 +3413,17 @@ async function applySelectedAISuggestions(transactionId) {
  */
 async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions) {
     try {
+        // Create operation ID for this find-similar operation and mark it as active
+        const operationId = `find-similar-${transactionId}-${Date.now()}`;
+        currentActiveOperation = operationId;
+        console.log(`🔍 Starting Find Similar operation: ${operationId} (now active)`);
+
         // Support both single suggestion (legacy) and array of suggestions
         if (!Array.isArray(appliedSuggestions)) {
             appliedSuggestions = [appliedSuggestions];
         }
 
-        console.log(`🔍 Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
+        console.log(`Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
 
         // Show loading modal
         const modal = document.getElementById('suggestionsModal');
@@ -3446,6 +3459,9 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
         showModal();
 
         // Call the API endpoint with ALL applied suggestions
+        console.log(`📡 Calling /api/ai/find-similar-after-suggestion for transaction ${transactionId}`);
+        console.log(`📦 Sending ${appliedSuggestions.length} applied suggestions:`, appliedSuggestions);
+
         const response = await fetch('/api/ai/find-similar-after-suggestion', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -3455,19 +3471,31 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             })
         });
 
+        console.log(`📡 Response status: ${response.status}`);
         const data = await response.json();
+        console.log(`📦 Response data:`, data);
+
+        // CRITICAL: Check if this operation is still the active one
+        // Only abort if a DIFFERENT operation has started (different operationId)
+        if (currentActiveOperation !== operationId) {
+            console.log(`⚠️  Find Similar operation ${operationId} cancelled - different operation now active: ${currentActiveOperation}`);
+            // Silently abort this operation without showing anything
+            return;
+        }
 
         if (data.error) {
             console.log('❌ Error finding similar transactions:', data.error);
+            showToast('Error finding similar transactions: ' + data.error, 'error');
             closeModal();
-            loadTransactions();
+            // Don't reload - just close the modal and let user continue working
             return;
         }
 
         if (!data.similar_transactions || data.similar_transactions.length === 0) {
             console.log('ℹ️ No similar transactions found');
+            showToast('No similar transactions found', 'info');
             closeModal();
-            loadTransactions();
+            // Don't reload - just close the modal and let user continue working
             return;
         }
 
@@ -3587,8 +3615,9 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
     } catch (error) {
         console.error('Error finding similar transactions after AI suggestion:', error);
+        showToast('Error finding similar transactions: ' + error.message, 'error');
         closeModal();
-        loadTransactions();
+        // Don't reload - just close the modal and let user continue working
     }
 }
 

@@ -1319,7 +1319,7 @@ def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT transaction_id, description, amount, account, date, classified_entity
+            SELECT transaction_id, description, amount, date, classified_entity
             FROM transactions
             WHERE tenant_id = %s AND transaction_id = %s
         """, (tenant_id, transaction_id))
@@ -1333,17 +1333,15 @@ def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant
         if isinstance(ref_tx, dict):
             ref_desc = ref_tx.get('description', '')
             ref_amount = ref_tx.get('amount', 0)
-            ref_account = ref_tx.get('account', '')
         else:
             ref_desc = ref_tx[1] if len(ref_tx) > 1 else ''
             ref_amount = ref_tx[2] if len(ref_tx) > 2 else 0
-            ref_account = ref_tx[3] if len(ref_tx) > 3 else ''
 
         logging.info(f"[TFIDF_SIMILAR] Finding similar transactions for entity='{entity_name}', desc='{ref_desc[:50]}...', amount=${ref_amount}")
 
         # Step 2: Use TF-IDF system to score ALL unclassified/different entity transactions
         cursor.execute("""
-            SELECT transaction_id, description, amount, account, date, classified_entity, suggested_entity
+            SELECT transaction_id, description, amount, date, classified_entity, suggested_entity
             FROM transactions
             WHERE tenant_id = %s
             AND transaction_id != %s
@@ -1459,7 +1457,7 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         cursor = conn.cursor()
 
         cursor.execute("""
-            SELECT transaction_id, description, amount, account, date, classified_entity,
+            SELECT transaction_id, description, amount, date, classified_entity,
                    origin, destination
             FROM transactions
             WHERE tenant_id = %s AND transaction_id = %s
@@ -1475,15 +1473,13 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         if isinstance(ref_tx, dict):
             ref_desc = ref_tx.get('description', '')
             ref_amount = ref_tx.get('amount', 0)
-            ref_account = ref_tx.get('account', '')
             ref_origin = ref_tx.get('origin', '')
             ref_dest = ref_tx.get('destination', '')
         else:
             ref_desc = ref_tx[1] if len(ref_tx) > 1 else ''
             ref_amount = ref_tx[2] if len(ref_tx) > 2 else 0
-            ref_account = ref_tx[3] if len(ref_tx) > 3 else ''
-            ref_origin = ref_tx[6] if len(ref_tx) > 6 else ''
-            ref_dest = ref_tx[7] if len(ref_tx) > 7 else ''
+            ref_origin = ref_tx[5] if len(ref_tx) > 5 else ''
+            ref_dest = ref_tx[6] if len(ref_tx) > 6 else ''
 
         # Auto-detect wallet address if not provided
         if not wallet_address:
@@ -1498,19 +1494,13 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
         # Step 2: Query uncategorized or low-confidence transactions (same as old endpoint logic)
         cursor.execute("""
-            SELECT transaction_id, description, amount, account, date, classified_entity,
-                   suggested_entity, confidence, accounting_category, subcategory,
-                   origin, destination
+            SELECT transaction_id, description, amount, date, classified_entity,
+                   origin, destination, confidence
             FROM transactions
             WHERE tenant_id = %s
             AND transaction_id != %s
             AND (
-                accounting_category IS NULL
-                OR accounting_category = 'N/A'
-                OR accounting_category = ''
-                OR subcategory IS NULL
-                OR subcategory = 'N/A'
-                OR subcategory = ''
+                confidence IS NULL
                 OR confidence < 0.8
                 OR classified_entity IS NULL
                 OR classified_entity = ''
@@ -1531,10 +1521,15 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         conn.close()
 
         if not candidate_txs:
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] No candidate transactions found")
+            logging.warning(f"[TFIDF_AFTER_SUGGESTION] ❌ No candidate transactions found in database")
             return []
 
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] Scoring {len(candidate_txs)} candidate transactions using TF-IDF")
+        logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Found {len(candidate_txs)} candidate transactions to score")
+        # Log first 3 candidates for debugging
+        for i, tx in enumerate(candidate_txs[:3]):
+            tx_desc = tx[1] if len(tx) > 1 else ''
+            tx_amount = tx[2] if len(tx) > 2 else 0
+            logging.info(f"[TFIDF_AFTER_SUGGESTION]   Candidate {i+1}: '{tx_desc[:50]}...' Amount: {tx_amount}")
 
         # 🔥 FALLBACK: Check if entity has any patterns in database
         # If no patterns exist, we'll use direct description matching instead of TF-IDF
@@ -1550,39 +1545,42 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
         use_direct_matching = (pattern_count == 0)
         if use_direct_matching:
-            logging.warning(f"[TFIDF_AFTER_SUGGESTION] Entity '{entity_name}' has NO patterns - using direct description matching fallback")
+            logging.warning(f"[TFIDF_AFTER_SUGGESTION] ⚠️ Entity '{entity_name}' has NO patterns (count={pattern_count}) - using direct description matching fallback")
+        else:
+            logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Entity '{entity_name}' has {pattern_count} patterns - using TF-IDF matching")
 
         # Step 3: Score each candidate using TF-IDF system (or direct matching fallback)
         scored_transactions = []
         wallet_exact_matches = 0
+        filtered_out_count = 0
+        filtered_out_reasons = []
 
-        for tx in candidate_txs:
+        logging.info(f"[TFIDF_AFTER_SUGGESTION] 🔍 Starting to score {len(candidate_txs)} candidates...")
+
+        # Create ONE shared database connection for all scoring operations (performance optimization)
+        conn_scoring = db_manager._get_postgresql_connection()
+        cursor_scoring = conn_scoring.cursor()
+
+        for i, tx in enumerate(candidate_txs):
             if isinstance(tx, dict):
                 tx_id = tx.get('transaction_id')
                 tx_desc = tx.get('description', '')
                 tx_amount = tx.get('amount', 0)
-                tx_account = tx.get('account', '')
                 tx_date = tx.get('date')
                 tx_entity = tx.get('classified_entity', '')
-                tx_suggested = tx.get('suggested_entity', '')
-                tx_confidence = tx.get('confidence', 0)
-                tx_category = tx.get('accounting_category', '')
-                tx_subcategory = tx.get('subcategory', '')
                 tx_origin = tx.get('origin', '')
                 tx_dest = tx.get('destination', '')
+                tx_confidence = tx.get('confidence', 0)
             else:
+                # Column order from query: transaction_id, description, amount, date, classified_entity, origin, destination, confidence
                 tx_id = tx[0]
                 tx_desc = tx[1] if len(tx) > 1 else ''
                 tx_amount = tx[2] if len(tx) > 2 else 0
-                tx_account = tx[3] if len(tx) > 3 else ''
-                tx_date = tx[4] if len(tx) > 4 else None
-                tx_entity = tx[5] if len(tx) > 5 else ''
-                tx_suggested = tx[6] if len(tx) > 6 else ''
+                tx_date = tx[3] if len(tx) > 3 else None
+                tx_entity = tx[4] if len(tx) > 4 else ''
+                tx_origin = tx[5] if len(tx) > 5 else ''
+                tx_dest = tx[6] if len(tx) > 6 else ''
                 tx_confidence = tx[7] if len(tx) > 7 else 0
-                tx_category = tx[8] if len(tx) > 8 else ''
-                tx_subcategory = tx[9] if len(tx) > 9 else ''
-                tx_origin = tx[10] if len(tx) > 10 else ''
-                tx_dest = tx[11] if len(tx) > 11 else ''
 
             # 🔥 Use TF-IDF scoring OR direct description matching fallback
             if use_direct_matching:
@@ -1600,7 +1598,8 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                     entity_name=entity_name,
                     tenant_id=tenant_id,
                     amount=tx_amount,
-                    account=tx_account
+                    account='',  # account field no longer exists in schema
+                    cursor=cursor_scoring  # Reuse shared cursor for performance
                 )
 
                 score = match_result.get('score', 0)
@@ -1621,18 +1620,20 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
             boosted_score = min(1.0, score + wallet_boost)
 
+            # Log first 10 candidates' scores for debugging
+            if i < 10:
+                logging.info(f"[TFIDF_AFTER_SUGGESTION]   Candidate {i+1}/{len(candidate_txs)}: '{tx_desc[:40]}...'")
+                logging.info(f"[TFIDF_AFTER_SUGGESTION]     Base score: {score:.3f}, Wallet boost: {wallet_boost:.3f}, Final: {boosted_score:.3f}")
+                logging.info(f"[TFIDF_AFTER_SUGGESTION]     Threshold: 0.25, Pass: {boosted_score >= 0.25}")
+
             # Only include transactions with meaningful match scores (>= 0.25 after boost)
             if boosted_score >= 0.25:
                 scored_transactions.append({
                     'transaction_id': tx_id,
                     'description': tx_desc,
                     'amount': float(tx_amount) if tx_amount else 0,
-                    'account': tx_account,
                     'date': str(tx_date) if tx_date else '',
                     'classified_entity': tx_entity,
-                    'suggested_entity': tx_suggested,
-                    'accounting_category': tx_category,
-                    'subcategory': tx_subcategory,
                     'confidence': float(tx_confidence) if tx_confidence else 0,
                     'match_score': round(boosted_score, 3),
                     'base_tfidf_score': round(score, 3),
@@ -1643,6 +1644,18 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                     'destination': tx_dest,
                     'has_wallet_match': has_wallet_match
                 })
+            else:
+                # Track filtered out transactions
+                filtered_out_count += 1
+                if len(filtered_out_reasons) < 5:  # Log first 5 filtered out transactions
+                    filtered_out_reasons.append(f"'{tx_desc[:40]}...' - Score {boosted_score:.3f} < 0.25")
+
+        # Log filtering summary
+        logging.info(f"[TFIDF_AFTER_SUGGESTION] 📊 Scoring complete: {len(scored_transactions)} passed, {filtered_out_count} filtered out (< 0.25 threshold)")
+        if filtered_out_reasons:
+            logging.info(f"[TFIDF_AFTER_SUGGESTION] Sample filtered out transactions:")
+            for reason in filtered_out_reasons:
+                logging.info(f"[TFIDF_AFTER_SUGGESTION]   ❌ {reason}")
 
         # Step 4: Sort by match score (wallet matches + TF-IDF score)
         scored_transactions.sort(key=lambda x: (x['has_wallet_match'], x['match_score']), reverse=True)
@@ -1652,11 +1665,27 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         if wallet_address:
             logging.info(f"[TFIDF_AFTER_SUGGESTION] Including {wallet_exact_matches} exact wallet matches (boosted)")
 
+        # Close the shared connection after scoring all candidates
+        cursor_scoring.close()
+        conn_scoring.close()
+        logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Closed shared database connection")
+
         return top_matches
 
     except Exception as e:
         logging.error(f"[TFIDF_AFTER_SUGGESTION] Error finding similar transactions: {e}")
         logging.error(traceback.format_exc())
+
+        # Clean up the shared connection if it was created
+        try:
+            if 'cursor_scoring' in locals() and cursor_scoring:
+                cursor_scoring.close()
+            if 'conn_scoring' in locals() and conn_scoring:
+                conn_scoring.close()
+            logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Closed shared connection in exception handler")
+        except Exception as cleanup_error:
+            logging.error(f"[TFIDF_AFTER_SUGGESTION] Error closing connection: {cleanup_error}")
+
         return []
 
 
@@ -9879,7 +9908,7 @@ def handle_classification_feedback(transaction_id: str, suggested_entity: str, a
         print(traceback.format_exc())
 
 def calculate_entity_match_score(description: str, entity_name: str, tenant_id: str,
-                                  amount: float = None, account: str = None) -> dict:
+                                  amount: float = None, account: str = None, cursor=None) -> dict:
     """
     Calculate weighted match score for an entity using aggregated pattern statistics.
 
@@ -9892,6 +9921,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
         tenant_id: Tenant ID for multi-tenant isolation
         amount: Optional transaction amount for amount pattern matching
         account: Optional account name/type for context-aware scoring
+        cursor: Optional database cursor to reuse (for performance when calling in loops)
 
     Returns:
         dict: {
@@ -9907,8 +9937,14 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
     from database import db_manager
     import math
 
-    conn = db_manager._get_postgresql_connection()
-    cursor = conn.cursor()
+    # Reuse provided cursor or create new connection
+    own_connection = cursor is None
+    if own_connection:
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+    # Convert amount to float early to avoid Decimal/float type mismatches throughout
+    amount_float = float(amount) if amount is not None else None
 
     # Get aggregated statistics for this entity
     cursor.execute("""
@@ -9925,7 +9961,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
 
     # 🔥 NEW: Get historical amount patterns for this entity if amount provided
     amount_match_score = 0.0
-    if amount is not None and amount > 0:
+    if amount_float is not None and amount_float > 0:
         cursor.execute("""
             SELECT AVG(amount) as avg_amount, STDDEV(amount) as stddev_amount, COUNT(*) as count
             FROM transactions
@@ -9942,18 +9978,20 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
 
             if avg_amount > 0:
                 # Calculate how close the amount is to the typical amount for this entity
-                # Use z-score normalized to 0-1 range
+                # Use z-score normalized to 0-1 range (amount_float already converted at top of function)
                 if stddev_amount > 0:
-                    z_score = abs(amount - avg_amount) / stddev_amount
+                    z_score = abs(amount_float - avg_amount) / stddev_amount
                     # Convert z-score to similarity (closer to average = higher score)
                     # z_score of 0 = perfect match, z_score > 2 = very different
                     amount_match_score = max(0, 1.0 - (z_score / 3.0))
                 else:
                     # No variation - exact match check
-                    amount_match_score = 1.0 if abs(amount - avg_amount) < 0.01 else 0.5
+                    amount_match_score = 1.0 if abs(amount_float - avg_amount) < 0.01 else 0.5
 
-    cursor.close()
-    conn.close()
+    # Only close connection if we created it ourselves
+    if own_connection:
+        cursor.close()
+        conn.close()
 
     if not patterns:
         return {

@@ -80,7 +80,7 @@ class DataQueryService:
 
     def get_business_entities(self) -> List[Dict[str, Any]]:
         """
-        Get all business entities/portfolio companies
+        Get all business entities/portfolio companies for the current tenant
 
         Returns:
             List of business entities with their details
@@ -89,13 +89,14 @@ class DataQueryService:
             query = """
                 SELECT
                     id, name, description, entity_type,
-                    active, created_at
+                    annual_revenue, transaction_volume,
+                    active, created_at, updated_at
                 FROM business_entities
-                WHERE active = TRUE
+                WHERE tenant_id = %s AND active = TRUE
                 ORDER BY name
             """
 
-            results = self.db_manager.execute_query(query, fetch_all=True)
+            results = self.db_manager.execute_query(query, (self.tenant_id,), fetch_all=True)
 
             if not results:
                 return []
@@ -105,6 +106,11 @@ class DataQueryService:
                 entity = dict(row)
                 if entity.get('created_at'):
                     entity['created_at'] = entity['created_at'].isoformat()
+                if entity.get('updated_at'):
+                    entity['updated_at'] = entity['updated_at'].isoformat()
+                # Convert Decimal to float for JSON serialization
+                if entity.get('annual_revenue'):
+                    entity['annual_revenue'] = float(entity['annual_revenue'])
                 entities.append(entity)
 
             return entities
@@ -112,7 +118,6 @@ class DataQueryService:
         except Exception as e:
             # Graceful failure if business_entities table doesn't exist yet
             logger.warning(f"Business entities table not found or error: {e}")
-            # TODO: Create business_entities table or query from transactions.classified_entity
             return []
 
     def get_company_kpis(self) -> Dict[str, Any]:

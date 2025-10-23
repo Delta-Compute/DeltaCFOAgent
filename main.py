@@ -1415,13 +1415,15 @@ class DeltaCFOAgent:
         elif 'RECEIVE USDC - EXTERNAL ACCOUNT' in description_upper:
             # USDC receives from external sources - need manual classification
             # Could be: client payments, trading profits, returns from other operations
-            entity = 'Unclassified Revenue'
+            # Leave entity blank so TF-IDF can find similar transactions
+            entity = ''
             reason = 'USDC received from external account - needs manual classification'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
         elif 'RECEIVE USDT - EXTERNAL ACCOUNT' in description_upper:
             # USDT receives from external sources - likely trading but needs verification
-            entity = 'Unclassified Revenue'
+            # Leave entity blank so TF-IDF can find similar transactions
+            entity = ''
             reason = 'USDT received from external account - likely trading revenue'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.6, reason, acct_cat, subcat
@@ -1504,7 +1506,8 @@ class DeltaCFOAgent:
                 acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                 return entity, 1.0, reason, acct_cat, subcat
             elif currency_upper in ['USDT', 'USDC']:
-                entity = 'NEEDS REVIEW'
+                # Leave entity blank so TF-IDF can find similar transactions
+                entity = ''
                 reason = f'{currency_upper} deposit - determine if trading or revenue'
                 acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                 return entity, 0.0, reason, acct_cat, subcat
@@ -1585,13 +1588,14 @@ class DeltaCFOAgent:
             return entity, 0.95, reason, acct_cat, subcat
 
         # Default classification based on amount
+        # Leave entity blank so TF-IDF can find similar transactions
         if self.safe_float(amount) > 0:
-            entity = 'Unclassified Revenue'
+            entity = ''
             reason = 'Unknown revenue source'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
         else:
-            entity = 'Unclassified Expense'
+            entity = ''
             reason = 'Unknown expense'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 0.5, reason, acct_cat, subcat
