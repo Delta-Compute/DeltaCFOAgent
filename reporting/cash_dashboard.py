@@ -138,14 +138,16 @@ class CashDashboard:
                     logger.warning(f"Invalid amount in transaction {txn.get('transaction_id', 'unknown')}: {txn.get('amount')} / {txn.get('usd_equivalent')}")
                     amount = Decimal('0')
 
-                entity_name = txn.get('classified_entity', 'Unknown Entity')
-                currency = txn.get('currency', 'USD')
+                # Ensure entity_name is never None
+                entity_name = txn.get('classified_entity') or 'Unknown Entity'
+                currency = txn.get('currency') or 'USD'
 
                 total_cash += amount
                 cash_by_entity[entity_name] += amount
 
                 # Track original currency amounts for crypto tracking
-                if currency != 'USD' and txn.get('amount'):
+                # Only track if currency is not None and not USD
+                if currency and currency != 'USD' and txn.get('amount'):
                     try:
                         raw_amount = str(txn.get('amount', 0))
                         # Skip NaN values for crypto currencies

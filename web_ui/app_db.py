@@ -3290,9 +3290,9 @@ def expenses():
     except Exception as e:
         return f"Error loading expenses dashboard: {str(e)}", 500
 
-@app.route('/cfo-dashboard')
-def cfo_dashboard():
-    """CFO Financial Dashboard with charts and analytics"""
+@app.route('/reports')
+def reports():
+    """Financial Reports Dashboard with charts and analytics"""
     try:
         cache_buster = str(random.randint(1000, 9999))
         return render_template('cfo_dashboard.html', cache_buster=cache_buster)
