@@ -21,6 +21,69 @@ let dragFillState = {
     affectedRows: []
 };
 
+// Match mode preference (simple or ml)
+let matchMode = 'simple'; // Default to simple mode
+
+/**
+ * Get the current match mode preference
+ * @returns {string} 'simple' or 'ml'
+ */
+function getMatchMode() {
+    // Check if toggle exists in DOM
+    const simpleToggle = document.getElementById('modeSimple');
+    if (simpleToggle) {
+        return simpleToggle.checked ? 'simple' : 'ml';
+    }
+
+    // Fall back to localStorage
+    const saved = localStorage.getItem('matchMode');
+    return saved || 'simple';
+}
+
+/**
+ * Set the match mode preference
+ * @param {string} mode - 'simple' or 'ml'
+ */
+function setMatchMode(mode) {
+    matchMode = mode;
+    localStorage.setItem('matchMode', mode);
+
+    // Update toggle if it exists
+    const simpleToggle = document.getElementById('modeSimple');
+    const mlToggle = document.getElementById('modeML');
+
+    if (simpleToggle && mlToggle) {
+        simpleToggle.checked = (mode === 'simple');
+        mlToggle.checked = (mode === 'ml');
+    }
+
+    // Update description
+    updateMatchModeDescription(mode);
+
+    console.log(`🔍 Match mode set to: ${mode}`);
+}
+
+/**
+ * Update the match mode description text
+ * @param {string} mode - 'simple' or 'ml'
+ */
+function updateMatchModeDescription(mode) {
+    const descElement = document.getElementById('modeDescription');
+    if (!descElement) return;
+
+    if (mode === 'simple') {
+        descElement.innerHTML = `
+            <strong>Simple Match:</strong> Finds transactions with matching keywords in Origin, Destination, and Description fields.
+            Best for quick categorization of similar vendors or recurring transactions.
+        `;
+    } else {
+        descElement.innerHTML = `
+            <strong>ML Approach:</strong> Uses Claude AI to understand context, business logic, and complex patterns.
+            Best for sophisticated pattern detection and cross-entity relationships.
+        `;
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
 
@@ -271,6 +334,31 @@ function setupEventListeners() {
             closeModal();
         }
     });
+
+    // Match mode toggle event listeners
+    const simpleToggle = document.getElementById('modeSimple');
+    const mlToggle = document.getElementById('modeML');
+
+    if (simpleToggle && mlToggle) {
+        simpleToggle.addEventListener('change', () => {
+            if (simpleToggle.checked) {
+                setMatchMode('simple');
+                showToast('Match mode: Simple Match (keyword-based)', 'success');
+            }
+        });
+
+        mlToggle.addEventListener('change', () => {
+            if (mlToggle.checked) {
+                setMatchMode('ml');
+                showToast('Match mode: ML Approach (AI-powered)', 'success');
+            }
+        });
+
+        // Initialize match mode from localStorage
+        const savedMode = localStorage.getItem('matchMode') || 'simple';
+        setMatchMode(savedMode);
+        console.log(`🔍 Match mode initialized to: ${savedMode}`);
+    }
 }
 
 function clearFilters() {
@@ -2784,6 +2872,10 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
         console.log(`🔍 Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
 
+        // Get current match mode
+        const currentMatchMode = getMatchMode();
+        console.log(`🔍 Using match mode: ${currentMatchMode}`);
+
         // Show loading modal
         const modal = document.getElementById('suggestionsModal');
         const content = document.getElementById('suggestionsContent');
@@ -2802,13 +2894,20 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             return `${fieldLabel}: "${s.suggested_value}"`;
         }).join(', ');
 
+        // Set loading message based on match mode
+        const modeIcon = currentMatchMode === 'simple' ? '⚡' : '🤖';
+        const modeLabel = currentMatchMode === 'simple' ? 'Simple Match' : 'ML Approach';
+        const loadingMessage = currentMatchMode === 'simple'
+            ? 'Analyzing keywords in Origin, Destination, and Description fields...'
+            : 'Claude AI is analyzing for similar transactions...';
+
         content.innerHTML = `
             <div class="modal-header">
-                <h3>🤖 Finding Similar Transactions</h3>
+                <h3>${modeIcon} Finding Similar Transactions (${modeLabel})</h3>
             </div>
             <div class="loading-state" style="text-align: center; padding: 40px;">
                 <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
-                <p>Claude AI is analyzing for similar transactions...</p>
+                <p>${loadingMessage}</p>
                 <div style="margin-top: 10px; color: #666; font-size: 14px;">
                     Will apply: ${appliedFieldsList}
                 </div>
@@ -2817,17 +2916,45 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
         showModal();
 
-        // Call the API endpoint with ALL applied suggestions
-        const response = await fetch('/api/ai/find-similar-after-suggestion', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                transaction_id: transactionId,
-                applied_suggestions: appliedSuggestions  // Send all suggestions
-            })
-        });
+        // Call the appropriate API endpoint based on match mode
+        let response, data;
 
-        const data = await response.json();
+        if (currentMatchMode === 'simple') {
+            // Use simple keyword-based matching
+            response = await fetch('/api/ai/find-similar-simple', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    transaction_id: transactionId,
+                    min_confidence: 0.3
+                })
+            });
+            data = await response.json();
+
+            // Transform simple match response to match expected format
+            if (data.success && data.similar_transactions) {
+                // Build applied_fields from the suggestions
+                const applied_fields = {};
+                appliedSuggestions.forEach(s => {
+                    if (s.field && s.suggested_value) {
+                        applied_fields[s.field] = s.suggested_value;
+                    }
+                });
+
+                data.applied_fields = applied_fields;
+            }
+        } else {
+            // Use ML/AI approach
+            response = await fetch('/api/ai/find-similar-after-suggestion', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    transaction_id: transactionId,
+                    applied_suggestions: appliedSuggestions
+                })
+            });
+            data = await response.json();
+        }
 
         if (data.error) {
             console.log('❌ Error finding similar transactions:', data.error);
@@ -2879,9 +3006,19 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             </span>`;
         };
 
+        // Build mode-specific modal content
+        const modalIcon = currentMatchMode === 'simple' ? '⚡' : '🤖';
+        const modalTitle = currentMatchMode === 'simple'
+            ? 'Apply Suggestions to Similar Transactions (Simple Match)'
+            : 'Apply AI Suggestions to Similar Transactions';
+
+        const matchingInfoText = currentMatchMode === 'simple'
+            ? `⚡ Simple Match: Found transactions with matching keywords in Origin, Destination, and Description fields`
+            : `✨ AI-powered: Claude analyzed transaction patterns across ${Object.keys(appliedFields).length} field(s) to find similar cases`;
+
         content.innerHTML = `
             <div class="modal-header">
-                <h3>🤖 Apply AI Suggestions to Similar Transactions</h3>
+                <h3>${modalIcon} ${modalTitle}</h3>
                 <span class="close" onclick="closeModalAndRefresh()">&times;</span>
             </div>
 
@@ -2897,20 +3034,34 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
             <div class="modal-body">
                 <div class="update-preview">
-                    <h4>📋 AI Suggestions Application</h4>
+                    <h4>📋 Suggestions Application</h4>
                     <p><strong>Changes to Apply:</strong></p>
                     <ul style="margin: 10px 0; padding-left: 20px;">
                         ${changesHTML}
                     </ul>
-                    <p><strong>AI Found:</strong> ${similarTxs.length} similar transaction(s)</p>
+                    <p><strong>Found:</strong> ${similarTxs.length} similar transaction(s)</p>
                     <p><strong>Impact:</strong> <span id="aiSimilarImpactSummary">Select transactions below</span></p>
                     <div class="matching-info">
-                        <small>✨ AI-powered: Claude analyzed transaction patterns across ${Object.keys(appliedFields).length} field(s) to find similar cases</small>
+                        <small>${matchingInfoText}</small>
                     </div>
                 </div>
 
                 <div class="transactions-list">
-                    ${similarTxs.map((t, index) => `
+                    ${similarTxs.map((t, index) => {
+                        // Build match details display for simple mode
+                        let matchDetailsHTML = '';
+                        if (currentMatchMode === 'simple' && t.match_details) {
+                            const matchedFields = t.match_details.matched_fields || [];
+                            const fieldIcons = {
+                                'origin': '🔹 Origin',
+                                'destination': '🔸 Dest',
+                                'description': '📝 Desc'
+                            };
+                            const matchedFieldsDisplay = matchedFields.map(f => fieldIcons[f] || f).join(', ');
+                            matchDetailsHTML = matchedFieldsDisplay ? `<span> • Matched: ${matchedFieldsDisplay}</span>` : '';
+                        }
+
+                        return `
                         <div class="transaction-item" data-tx-id="${t.transaction_id}">
                             <input type="checkbox"
                                    class="transaction-checkbox ai-similar-tx-cb"
@@ -2930,12 +3081,14 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
                                         }).join(' <span>•</span> ')}
                                         <span>•</span>
                                         <span>Confidence: ${Math.round((t.confidence || 0) * 100)}%</span>
+                                        ${matchDetailsHTML}
                                     </div>
                                 </div>
                                 ${formatTxAmount(t.amount)}
                             </div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
 

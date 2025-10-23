@@ -4471,6 +4471,176 @@ If no transactions have similar intent, return an empty array: []"""
             'success': False
         }), 500
 
+@app.route('/api/ai/find-similar-simple', methods=['POST'])
+def api_find_similar_simple():
+    """
+    API endpoint for simple keyword-based transaction matching.
+
+    Uses simple_match_engine for fast, transparent keyword matching on
+    Origin, Destination, and Description fields.
+
+    Request body:
+        {
+            "transaction_id": "abc123",
+            "min_confidence": 0.3  // optional, defaults to 0.3
+        }
+
+    Response:
+        {
+            "success": true,
+            "match_mode": "simple",
+            "original_transaction": {...},
+            "similar_transactions": [...],
+            "total_found": 5
+        }
+    """
+    try:
+        data = request.json
+        transaction_id = data.get('transaction_id')
+        min_confidence = data.get('min_confidence', 0.3)
+
+        if not transaction_id:
+            return jsonify({'error': 'transaction_id is required'}), 400
+
+        # Validate min_confidence
+        if not isinstance(min_confidence, (int, float)) or not (0.0 <= min_confidence <= 1.0):
+            return jsonify({'error': 'min_confidence must be a number between 0.0 and 1.0'}), 400
+
+        # Get current tenant_id for multi-tenant isolation
+        tenant_id = get_current_tenant_id()
+
+        # Get the target transaction
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+        placeholder = '%s' if is_postgresql else '?'
+
+        cursor.execute(
+            f"SELECT * FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+            (tenant_id, transaction_id)
+        )
+        target_row = cursor.fetchone()
+
+        if not target_row:
+            conn.close()
+            return jsonify({'error': 'Transaction not found'}), 404
+
+        # Convert row to dictionary
+        column_names = [desc[0] for desc in cursor.description]
+        target_transaction = dict(zip(column_names, target_row))
+
+        # Get candidate transactions
+        # Focus on transactions that:
+        # 1. Are not the target transaction
+        # 2. Are missing categorization OR have low confidence
+        # 3. Are not archived
+
+        cursor.execute(f"""
+            SELECT transaction_id, date, origin, destination, description, amount,
+                   classified_entity, accounting_category, subcategory, justification, confidence
+            FROM transactions
+            WHERE tenant_id = {placeholder}
+            AND transaction_id != {placeholder}
+            AND (archived IS NULL OR archived = FALSE)
+            AND (
+                accounting_category IS NULL
+                OR accounting_category = 'N/A'
+                OR accounting_category = ''
+                OR subcategory IS NULL
+                OR subcategory = 'N/A'
+                OR subcategory = ''
+                OR classified_entity IS NULL
+                OR classified_entity = 'N/A'
+                OR classified_entity = ''
+                OR classified_entity = 'NEEDS REVIEW'
+                OR confidence < 0.8
+            )
+            ORDER BY date DESC
+            LIMIT 500
+        """, (tenant_id, transaction_id))
+
+        candidate_rows = cursor.fetchall()
+        candidate_column_names = [desc[0] for desc in cursor.description]
+        candidate_transactions = [dict(zip(candidate_column_names, row)) for row in candidate_rows]
+
+        conn.close()
+
+        # Use simple match engine to find similar transactions
+        from simple_match_engine import find_similar_simple
+
+        matches = find_similar_simple(
+            target_transaction,
+            candidate_transactions,
+            min_confidence=min_confidence
+        )
+
+        # Filter matches to only include those that have categorization to suggest
+        # (i.e., they have values that the target transaction is missing)
+        useful_matches = []
+        for match in matches:
+            suggested_values = match.get('suggested_values', {})
+
+            # Check if match has any useful suggestions
+            has_useful_suggestion = False
+
+            # Check Entity
+            if suggested_values.get('classified_entity') and \
+               suggested_values.get('classified_entity') not in ['N/A', '', 'NEEDS REVIEW', None]:
+                has_useful_suggestion = True
+
+            # Check Category
+            if suggested_values.get('accounting_category') and \
+               suggested_values.get('accounting_category') not in ['N/A', '', None]:
+                has_useful_suggestion = True
+
+            # Check Subcategory
+            if suggested_values.get('subcategory') and \
+               suggested_values.get('subcategory') not in ['N/A', '', None]:
+                has_useful_suggestion = True
+
+            # Check Justification
+            if suggested_values.get('justification') and \
+               suggested_values.get('justification') not in ['N/A', '', None]:
+                has_useful_suggestion = True
+
+            # Only include if it has something useful to suggest
+            if has_useful_suggestion:
+                useful_matches.append(match)
+
+        # Build response
+        response = {
+            'success': True,
+            'match_mode': 'simple',
+            'original_transaction': {
+                'transaction_id': target_transaction.get('transaction_id'),
+                'date': target_transaction.get('date'),
+                'origin': target_transaction.get('origin'),
+                'destination': target_transaction.get('destination'),
+                'description': target_transaction.get('description'),
+                'amount': str(target_transaction.get('amount')),
+                'classified_entity': target_transaction.get('classified_entity'),
+                'accounting_category': target_transaction.get('accounting_category'),
+                'subcategory': target_transaction.get('subcategory')
+            },
+            'similar_transactions': useful_matches[:20],  # Limit to top 20 matches
+            'total_found': len(useful_matches),
+            'min_confidence': min_confidence
+        }
+
+        print(f"Simple Match: Found {len(useful_matches)} similar transactions for {transaction_id}")
+
+        return jsonify(response)
+
+    except Exception as e:
+        print(f"ERROR: Simple match error: {e}", flush=True)
+        import traceback
+        print(f"ERROR TRACEBACK: {traceback.format_exc()}", flush=True)
+        return jsonify({
+            'error': f'Failed to find similar transactions: {str(e)}',
+            'success': False
+        }), 500
+
 @app.route('/api/accounting_categories', methods=['GET'])
 def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""

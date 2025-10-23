@@ -1406,3 +1406,117 @@ th:nth-child(14), td:nth-child(14) { /* Actions */
     transition: background-color 0.3s;
 }
 
+/* ============================================
+   Match Mode Toggle Styles
+   ============================================ */
+
+.match-mode-section {
+    margin: 25px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.match-mode-section h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 16px;
+}
+
+.match-mode-toggle {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.toggle-container {
+    flex: 1;
+}
+
+.toggle-container input[type="radio"] {
+    display: none;
+}
+
+.toggle-option {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+    min-height: 70px;
+}
+
+.toggle-option:hover {
+    border-color: #4CAF50;
+    background: #f8f9fa;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.toggle-container input[type="radio"]:checked + .toggle-option {
+    border-color: #4CAF50;
+    background: #e8f5e9;
+    box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+}
+
+.toggle-icon {
+    font-size: 28px;
+    margin-right: 12px;
+    flex-shrink: 0;
+}
+
+.toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.toggle-text strong {
+    font-size: 15px;
+    color: #333;
+    font-weight: 600;
+}
+
+.toggle-text small {
+    font-size: 12px;
+    color: #666;
+    font-weight: normal;
+}
+
+.match-mode-description {
+    padding: 12px;
+    background: white;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #555;
+    border: 1px solid #e0e0e0;
+}
+
+.match-mode-description p {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.match-mode-description strong {
+    color: #4CAF50;
+}
+
+/* Responsive adjustments for match mode toggle */
+@media (max-width: 768px) {
+    .match-mode-toggle {
+        flex-direction: column;
+    }
+
+    .toggle-option {
+        min-height: 60px;
+    }
+
+    .toggle-icon {
+        font-size: 24px;
+    }
+}
+

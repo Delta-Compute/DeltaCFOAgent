@@ -142,6 +142,39 @@
                 <button id="filterYTD" class="btn-quick">2025 YTD</button>
             </div>
 
+            <!-- Match Mode Toggle -->
+            <div class="match-mode-section">
+                <h3>🔍 Similar Transaction Matching Mode:</h3>
+                <div class="match-mode-toggle">
+                    <div class="toggle-container">
+                        <input type="radio" id="modeSimple" name="matchMode" value="simple" checked>
+                        <label for="modeSimple" class="toggle-option">
+                            <span class="toggle-icon">⚡</span>
+                            <span class="toggle-text">
+                                <strong>Simple Match</strong>
+                                <small>Fast keyword-based matching</small>
+                            </span>
+                        </label>
+                    </div>
+                    <div class="toggle-container">
+                        <input type="radio" id="modeML" name="matchMode" value="ml">
+                        <label for="modeML" class="toggle-option">
+                            <span class="toggle-icon">🤖</span>
+                            <span class="toggle-text">
+                                <strong>ML Approach</strong>
+                                <small>AI-powered intelligent matching</small>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <div class="match-mode-description">
+                    <p id="modeDescription">
+                        <strong>Simple Match:</strong> Finds transactions with matching keywords in Origin, Destination, and Description fields.
+                        Best for quick categorization of similar vendors or recurring transactions.
+                    </p>
+                </div>
+            </div>
+
             <button id="applyFilters" class="btn-primary">Apply Filters</button>
             <button id="clearFilters" class="btn-secondary">Clear All</button>
         </div>
