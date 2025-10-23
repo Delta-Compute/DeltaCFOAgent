@@ -88,6 +88,27 @@ def create_invoice_page():
     return render_template('create_invoice.html', clients=clients)
 
 
+@app.route('/email-settings')
+def email_settings_page():
+    """Email notification settings page"""
+    try:
+        # TODO: Get user_id from session/auth once implemented
+        # For now, use default Delta Energy user (ID=1)
+        user_id = 1
+
+        user = db_manager.get_user(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        preferences = db_manager.get_email_preferences(user_id)
+
+        return render_template('email_settings.html', user=user, preferences=preferences)
+
+    except Exception as e:
+        logger.error(f"Error loading email settings: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/pay/<invoice_number>')
 def payment_page(invoice_number):
     """Public payment page - no authentication required"""
@@ -521,6 +542,132 @@ def test_mexc_connection():
 
     except Exception as e:
         logger.error(f"Error testing MEXC connection: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/email-preferences', methods=['POST'])
+def save_email_preferences():
+    """Save email notification preferences"""
+    try:
+        data = request.json
+
+        # Validate required fields
+        if 'user_id' not in data or 'preferences' not in data:
+            return jsonify({"success": False, "error": "Missing user_id or preferences"}), 400
+
+        user_id = int(data['user_id'])
+        preferences = data['preferences']
+
+        # Validate that preferences is a list
+        if not isinstance(preferences, list):
+            return jsonify({"success": False, "error": "Preferences must be a list"}), 400
+
+        # Update each preference
+        for pref in preferences:
+            notification_type = pref.get('notification_type')
+            enabled = pref.get('enabled', True)
+            email_override = pref.get('email_override')
+
+            if not notification_type:
+                continue
+
+            # Clean up empty email override
+            if email_override == '':
+                email_override = None
+
+            db_manager.update_email_preference(
+                user_id=user_id,
+                notification_type=notification_type,
+                enabled=enabled,
+                email_override=email_override
+            )
+
+        logger.info(f"Updated email preferences for user {user_id}")
+
+        return jsonify({
+            "success": True,
+            "message": "Email preferences saved successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Error saving email preferences: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/smtp-settings', methods=['POST'])
+def save_smtp_settings():
+    """Save SMTP configuration for user"""
+    try:
+        data = request.json
+
+        # Validate required field
+        if 'user_id' not in data:
+            return jsonify({"success": False, "error": "Missing user_id"}), 400
+
+        user_id = int(data['user_id'])
+
+        # Get current user
+        user = db_manager.get_user(user_id)
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        # Build update query
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+
+        update_fields = []
+        update_values = []
+
+        # Add SMTP fields if provided
+        if 'smtp_host' in data and data['smtp_host']:
+            update_fields.append("smtp_host = %s")
+            update_values.append(data['smtp_host'])
+
+        if 'smtp_port' in data and data['smtp_port']:
+            update_fields.append("smtp_port = %s")
+            update_values.append(int(data['smtp_port']))
+
+        if 'smtp_username' in data and data['smtp_username']:
+            update_fields.append("smtp_username = %s")
+            update_values.append(data['smtp_username'])
+
+        # Only update password if provided
+        if 'smtp_password' in data and data['smtp_password']:
+            update_fields.append("smtp_password = %s")
+            update_values.append(data['smtp_password'])
+
+        if 'smtp_from_email' in data and data['smtp_from_email']:
+            update_fields.append("smtp_from_email = %s")
+            update_values.append(data['smtp_from_email'])
+
+        if 'smtp_from_name' in data and data['smtp_from_name']:
+            update_fields.append("smtp_from_name = %s")
+            update_values.append(data['smtp_from_name'])
+
+        # Always update updated_at timestamp
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+
+        if len(update_values) > 0:
+            update_values.append(user_id)
+            query = f"""
+                UPDATE users
+                SET {', '.join(update_fields)}
+                WHERE id = %s
+            """
+            cursor.execute(query, update_values)
+            conn.commit()
+
+        conn.close()
+
+        logger.info(f"Updated SMTP settings for user {user_id}")
+
+        return jsonify({
+            "success": True,
+            "message": "SMTP settings saved successfully"
+        })
+
+    except Exception as e:
+        logger.error(f"Error saving SMTP settings: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 

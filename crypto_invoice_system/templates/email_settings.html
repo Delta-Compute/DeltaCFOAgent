@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Notification Settings - Delta CFO</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #2d3748;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            color: #1a202c;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 1.1em;
+        }
+
+        .section {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .section h2 {
+            font-size: 1.5em;
+            color: #1a202c;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .info-box {
+            background: #EBF4FF;
+            border-left: 4px solid #2563eb;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-box strong {
+            color: #1a202c;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2d3748;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .notification-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: #f7fafc;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            border: 2px solid #e2e8f0;
+            transition: all 0.2s;
+        }
+
+        .notification-item:hover {
+            background: #edf2f7;
+            border-color: #667eea;
+        }
+
+        .notification-info {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            color: #1a202c;
+            margin-bottom: 5px;
+        }
+
+        .notification-description {
+            font-size: 0.9em;
+            color: #718096;
+        }
+
+        .notification-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e0;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .override-email {
+            margin-top: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            display: none;
+        }
+
+        .override-email.show {
+            display: block;
+        }
+
+        .override-email input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #2d3748;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e0;
+            box-shadow: 0 5px 20px rgba(203, 213, 224, 0.4);
+        }
+
+        .success-message {
+            background: #D1FAE5;
+            border-left: 4px solid #059669;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .help-text {
+            font-size: 0.85em;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .notification-controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚙️ Email Notification Settings</h1>
+            <p>Manage your email notification preferences for invoice events</p>
+        </div>
+
+        <div id="successMessage" class="success-message">
+            <strong>✓ Settings saved successfully!</strong>
+        </div>
+
+        <!-- User Info Section -->
+        <div class="section">
+            <h2>👤 Your Account</h2>
+            <div class="info-box">
+                <strong>Company:</strong> {{ user.company_name }}<br>
+                <strong>Contact:</strong> {{ user.contact_name }}<br>
+                <strong>Email:</strong> {{ user.email }}
+            </div>
+        </div>
+
+        <!-- Email Notifications Section -->
+        <div class="section">
+            <h2>📧 Email Notifications</h2>
+            <p style="margin-bottom: 20px; color: #718096;">
+                Choose which email notifications you want to receive. You can also specify a different email address for specific notification types.
+            </p>
+
+            <div id="notificationsList">
+                {% for pref in preferences %}
+                <div class="notification-item">
+                    <div class="notification-info">
+                        <div class="notification-title">
+                            {% if pref.notification_type == 'invoice_created' %}
+                                📝 Invoice Created
+                            {% elif pref.notification_type == 'payment_detected' %}
+                                💰 Payment Detected
+                            {% elif pref.notification_type == 'payment_confirmed' %}
+                                ✅ Payment Confirmed
+                            {% elif pref.notification_type == 'partial_payment' %}
+                                ⚠️ Partial Payment
+                            {% elif pref.notification_type == 'overpayment' %}
+                                💸 Overpayment
+                            {% elif pref.notification_type == 'invoice_expired' %}
+                                ⏰ Invoice Expired
+                            {% elif pref.notification_type == 'client_invoice_sent' %}
+                                📨 Client Invoice Sent
+                            {% endif %}
+                        </div>
+                        <div class="notification-description">
+                            {% if pref.notification_type == 'invoice_created' %}
+                                Get notified when you create a new invoice
+                            {% elif pref.notification_type == 'payment_detected' %}
+                                Get notified when a payment is first detected on the blockchain
+                            {% elif pref.notification_type == 'payment_confirmed' %}
+                                Get notified when a payment is fully confirmed
+                            {% elif pref.notification_type == 'partial_payment' %}
+                                Alert when client underpays an invoice
+                            {% elif pref.notification_type == 'overpayment' %}
+                                Alert when client overpays an invoice
+                            {% elif pref.notification_type == 'invoice_expired' %}
+                                Alert when an invoice expires without payment
+                            {% elif pref.notification_type == 'client_invoice_sent' %}
+                                Notify you when invoice is sent to client
+                            {% endif %}
+                        </div>
+
+                        <div class="override-email" id="override-{{ pref.notification_type }}" {% if pref.email_override %}class="override-email show"{% endif %}>
+                            <label style="font-size: 0.9em; color: #718096;">Send to different email:</label>
+                            <input type="email"
+                                   class="override-input"
+                                   data-type="{{ pref.notification_type }}"
+                                   value="{{ pref.email_override or '' }}"
+                                   placeholder="optional@email.com">
+                        </div>
+                    </div>
+
+                    <div class="notification-controls">
+                        <label class="toggle-switch">
+                            <input type="checkbox"
+                                   class="notification-toggle"
+                                   data-type="{{ pref.notification_type }}"
+                                   {% if pref.enabled %}checked{% endif %}
+                                   onchange="toggleNotification('{{ pref.notification_type }}', this.checked)">
+                            <span class="slider"></span>
+                        </label>
+                        <button class="btn btn-secondary"
+                                style="padding: 8px 15px; font-size: 0.9em;"
+                                onclick="toggleOverride('{{ pref.notification_type }}')">
+                            📧
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div style="margin-top: 20px;">
+                <button class="btn" onclick="saveAllPreferences()">💾 Save All Changes</button>
+            </div>
+        </div>
+
+        <!-- SMTP Settings Section (Optional) -->
+        <div class="section">
+            <h2>📮 SMTP Settings (Optional)</h2>
+            <p style="margin-bottom: 20px; color: #718096;">
+                Configure your own SMTP server for sending emails. Leave blank to use default Gmail settings.
+            </p>
+
+            <form id="smtpForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SMTP Host</label>
+                        <input type="text" id="smtp_host" value="{{ user.smtp_host or 'smtp.gmail.com' }}">
+                        <div class="help-text">e.g., smtp.gmail.com, smtp.sendgrid.net</div>
+                    </div>
+                    <div class="form-group">
+                        <label>SMTP Port</label>
+                        <input type="number" id="smtp_port" value="{{ user.smtp_port or 587 }}">
+                        <div class="help-text">Usually 587 (TLS) or 465 (SSL)</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SMTP Username</label>
+                        <input type="text" id="smtp_username" value="{{ user.smtp_username or '' }}" placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label>SMTP Password</label>
+                        <input type="password" id="smtp_password" placeholder="••••••••">
+                        <div class="help-text">Leave blank to keep current password</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>From Email</label>
+                        <input type="email" id="smtp_from_email" value="{{ user.smtp_from_email or '' }}" placeholder="invoices@yourcompany.com">
+                        <div class="help-text">Email address shown as sender</div>
+                    </div>
+                    <div class="form-group">
+                        <label>From Name</label>
+                        <input type="text" id="smtp_from_name" value="{{ user.smtp_from_name or '' }}" placeholder="Your Company Invoices">
+                        <div class="help-text">Name shown as sender</div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">💾 Save SMTP Settings</button>
+            </form>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; color: #718096;">
+            <a href="/" style="color: #667eea; text-decoration: none;">← Back to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        const userId = {{ user.id }};
+        let preferences = {};
+
+        // Load initial preferences
+        {% for pref in preferences %}
+        preferences['{{ pref.notification_type }}'] = {
+            enabled: {{ 'true' if pref.enabled else 'false' }},
+            email_override: '{{ pref.email_override or '' }}'
+        };
+        {% endfor %}
+
+        function toggleNotification(type, enabled) {
+            preferences[type].enabled = enabled;
+            console.log(`${type}: ${enabled ? 'enabled' : 'disabled'}`);
+        }
+
+        function toggleOverride(type) {
+            const overrideDiv = document.getElementById(`override-${type}`);
+            overrideDiv.classList.toggle('show');
+        }
+
+        async function saveAllPreferences() {
+            // Collect all preferences including overrides
+            const allPrefs = [];
+
+            document.querySelectorAll('.notification-toggle').forEach(toggle => {
+                const type = toggle.dataset.type;
+                const enabled = toggle.checked;
+                const overrideInput = document.querySelector(`.override-input[data-type="${type}"]`);
+                const emailOverride = overrideInput ? overrideInput.value : null;
+
+                allPrefs.push({
+                    notification_type: type,
+                    enabled: enabled,
+                    email_override: emailOverride || null
+                });
+            });
+
+            try {
+                const response = await fetch('/api/email-preferences', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        preferences: allPrefs
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess();
+                } else {
+                    alert('Error saving preferences: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to save preferences');
+            }
+        }
+
+        document.getElementById('smtpForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const smtpSettings = {
+                user_id: userId,
+                smtp_host: document.getElementById('smtp_host').value,
+                smtp_port: parseInt(document.getElementById('smtp_port').value),
+                smtp_username: document.getElementById('smtp_username').value,
+                smtp_password: document.getElementById('smtp_password').value,
+                smtp_from_email: document.getElementById('smtp_from_email').value,
+                smtp_from_name: document.getElementById('smtp_from_name').value
+            };
+
+            try {
+                const response = await fetch('/api/smtp-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(smtpSettings)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess();
+                } else {
+                    alert('Error saving SMTP settings: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to save SMTP settings');
+            }
+        });
+
+        function showSuccess() {
+            const msg = document.getElementById('successMessage');
+            msg.classList.add('show');
+            setTimeout(() => {
+                msg.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
