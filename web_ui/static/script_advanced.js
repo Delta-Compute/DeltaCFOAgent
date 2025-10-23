@@ -1991,6 +1991,14 @@ function closeModal() {
     if (suggestionsList) {
         suggestionsList.innerHTML = '';
     }
+
+    // Clean up global state to prevent state leaks into next interaction
+    if (window.currentAppliedFields) {
+        delete window.currentAppliedFields;
+    }
+    if (window.currentAISuggestions) {
+        delete window.currentAISuggestions;
+    }
 }
 
 function showNotification(message, type = 'success') {

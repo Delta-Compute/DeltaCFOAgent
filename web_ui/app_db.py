@@ -4175,7 +4175,7 @@ def api_ai_find_similar_after_suggestion():
 
         # Build WHERE clause based on what fields were applied
         exclude_conditions = []
-        query_params = [transaction_id]
+        query_params = [tenant_id, transaction_id]
 
         for field, value in applied_fields.items():
             if field == 'accounting_category':
@@ -4189,9 +4189,10 @@ def api_ai_find_similar_after_suggestion():
 
         cursor.execute(f"""
             SELECT transaction_id, date, description, amount, classified_entity,
-                   accounting_category, subcategory, confidence
+                   accounting_category, subcategory, confidence, origin, destination
             FROM transactions
-            WHERE transaction_id != {placeholder}
+            WHERE tenant_id = {placeholder}
+            AND transaction_id != {placeholder}
             AND ({exclude_clause})
             AND (
                 accounting_category IS NULL
