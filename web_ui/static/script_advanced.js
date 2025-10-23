@@ -1,4 +1,5 @@
 // Delta CFO Agent - Advanced Dashboard JavaScript
+console.log('🚀 script_advanced.js LOADED - Version:', new Date().toISOString());
 
 let currentTransactions = [];
 let currentPage = 1;
@@ -305,41 +306,74 @@ function setupEventListeners() {
         loadTransactions();
     });
 
-    // Filter out Internal Transactions button
-    document.getElementById('filterExcludeInternal').addEventListener('click', () => {
-        excludeInternalTransfers = true;
-        currentPage = 1;
-        loadTransactions();
-    });
+    // Filter out Internal Transactions button (optional)
+    const filterExcludeInternalBtn = document.getElementById('filterExcludeInternal');
+    if (filterExcludeInternalBtn) {
+        filterExcludeInternalBtn.addEventListener('click', () => {
+            excludeInternalTransfers = true;
+            currentPage = 1;
+            loadTransactions();
+        });
+    }
 
-    // Duplicates detection button
-    document.getElementById('filterDuplicates').addEventListener('click', detectDuplicates);
+    // Duplicates detection button (optional)
+    const filterDuplicatesBtn = document.getElementById('filterDuplicates');
+    if (filterDuplicatesBtn) {
+        filterDuplicatesBtn.addEventListener('click', detectDuplicates);
+    }
 
     // Pagination buttons
-    document.getElementById('prevPage').addEventListener('click', () => {
-        if (currentPage > 1) {
-            currentPage--;
-            loadTransactions();
-        }
-    });
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
 
-    document.getElementById('nextPage').addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            currentPage++;
-            loadTransactions();
-        }
-    });
+    console.log('Setting up pagination buttons:', {prevPageBtn, nextPageBtn});
+
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', () => {
+            console.log(`Previous button clicked! currentPage: ${currentPage}, totalPages: ${totalPages}`);
+            if (currentPage > 1) {
+                currentPage--;
+                console.log(`Moving to page ${currentPage}`);
+                loadTransactions();
+            } else {
+                console.warn('Already on first page');
+            }
+        });
+    } else {
+        console.error('prevPage button not found!');
+    }
+
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', () => {
+            console.log(`Next button clicked! currentPage: ${currentPage}, totalPages: ${totalPages}`);
+            if (currentPage < totalPages) {
+                currentPage++;
+                console.log(`Moving to page ${currentPage}`);
+                loadTransactions();
+            } else {
+                console.warn('Already on last page');
+            }
+        });
+    } else {
+        console.error('nextPage button not found!');
+    }
 
     // Per-page size selector buttons
-    document.querySelectorAll('.btn-per-page').forEach(button => {
+    const perPageButtons = document.querySelectorAll('.btn-per-page');
+    console.log(`Found ${perPageButtons.length} per-page buttons`);
+
+    perPageButtons.forEach(button => {
         button.addEventListener('click', () => {
             const newPerPage = parseInt(button.dataset.perPage);
+            console.log(`Per-page button clicked: ${newPerPage} (current: ${perPageSize})`);
+
             if (newPerPage !== perPageSize) {
                 perPageSize = newPerPage;
                 currentPage = 1;
 
                 // Save to localStorage
                 localStorage.setItem('perPageSize', perPageSize);
+                console.log(`Saved perPageSize to localStorage: ${perPageSize}`);
 
                 // Update URL parameters
                 updateURLParameters();
@@ -350,7 +384,10 @@ function setupEventListeners() {
                 });
                 button.classList.add('active');
 
+                console.log(`Loading transactions with ${perPageSize} per page`);
                 loadTransactions();
+            } else {
+                console.log('Same per-page size selected, no reload needed');
             }
         });
     });
@@ -484,9 +521,13 @@ async function loadTransactions() {
 
         // Update pagination info
         if (data.pagination) {
+            console.log('Pagination data received:', data.pagination);
             currentPage = data.pagination.page;
             totalPages = data.pagination.pages;
+            console.log(`Current page: ${currentPage}, Total pages: ${totalPages}`);
             updatePaginationControls();
+        } else {
+            console.warn('No pagination data received from API');
         }
 
         renderTransactionTable(currentTransactions);
@@ -2515,9 +2556,19 @@ function updatePaginationControls() {
     const nextBtn = document.getElementById('nextPage');
     const pageInfo = document.getElementById('pageInfo');
 
+    console.log(`updatePaginationControls called - currentPage: ${currentPage}, totalPages: ${totalPages}`);
+    console.log(`prevBtn:`, prevBtn, `nextBtn:`, nextBtn, `pageInfo:`, pageInfo);
+
+    if (!prevBtn || !nextBtn || !pageInfo) {
+        console.error('Pagination controls not found in DOM!');
+        return;
+    }
+
     prevBtn.disabled = currentPage <= 1;
     nextBtn.disabled = currentPage >= totalPages;
     pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+    console.log(`Pagination controls updated - prev disabled: ${prevBtn.disabled}, next disabled: ${nextBtn.disabled}`);
 }
 
 function viewTransactionDetails(id) {
