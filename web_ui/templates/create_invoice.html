@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Invoice - Delta CFO Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 2em;
+        }
+
+        .back-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .form-card {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .form-row-three {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .line-items {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .line-items-header {
+            display: grid;
+            grid-template-columns: 3fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-weight: 600;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .line-item {
+            display: grid;
+            grid-template-columns: 3fr 1fr 1fr 1fr auto;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: end;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #95a5a6;
+        }
+
+        .btn-small {
+            padding: 8px 15px;
+            font-size: 0.9em;
+        }
+
+        .btn-remove {
+            background: #e74c3c;
+        }
+
+        .summary-box {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .summary-row.total {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #667eea;
+            border-top: 2px solid #e0e0e0;
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .invoice-number-display {
+            font-family: monospace;
+            background: #f8f9fa;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            color: #667eea;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Create New Invoice</h1>
+            <a href="/invoices" class="back-link">Back to Invoices</a>
+        </div>
+
+        <div class="form-card">
+            <div class="success-message" id="successMessage"></div>
+            <div class="error-message" id="errorMessage"></div>
+
+            <form id="invoiceForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="invoice_number">Invoice Number *</label>
+                        <div class="invoice-number-display" id="invoiceNumberDisplay">Loading...</div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="currency_type">Currency Type *</label>
+                        <select id="currency_type" name="currency_type" required onchange="toggleCurrencyFields()">
+                            <option value="fiat">FIAT Currency</option>
+                            <option value="crypto">Cryptocurrency</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="vendor_name">Vendor (From) *</label>
+                    <select id="vendor_name" name="vendor_name" required onchange="handleVendorChange()">
+                        <option value="">Select vendor...</option>
+                        <option value="DELTA ENERGY" selected>DELTA ENERGY</option>
+                        <option value="Delta LLC">Delta LLC</option>
+                        <option value="Delta Prop Shop LLC">Delta Prop Shop LLC</option>
+                        <option value="Delta Mining Paraguay S.A.">Delta Mining Paraguay S.A.</option>
+                        <option value="Delta Brazil">Delta Brazil</option>
+                        <option value="CUSTOM">+ Add Custom Vendor...</option>
+                    </select>
+                    <input type="text" id="custom_vendor" name="custom_vendor" style="display:none; margin-top: 10px;" placeholder="Enter custom vendor name">
+                </div>
+
+                <!-- FIAT Currency Fields -->
+                <div id="fiatFields" class="form-row">
+                    <div class="form-group">
+                        <label for="currency">FIAT Currency *</label>
+                        <select id="currency" name="currency">
+                            <option value="USD">USD - US Dollar</option>
+                            <option value="BRL">BRL - Brazilian Real</option>
+                            <option value="EUR">EUR - Euro</option>
+                            <option value="GBP">GBP - British Pound</option>
+                        </select>
+                    </div>
+                    <div class="form-group"></div>
+                </div>
+
+                <!-- Crypto Currency Fields -->
+                <div id="cryptoFields" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="crypto_currency">Cryptocurrency *</label>
+                            <select id="crypto_currency" name="crypto_currency" onchange="updateNetworkOptions()">
+                                <option value="">Select Currency</option>
+                                <option value="BTC">Bitcoin (BTC)</option>
+                                <option value="USDT">Tether (USDT)</option>
+                                <option value="TAO">Bittensor (TAO)</option>
+                                <option value="OTHER">Other (Custom)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="crypto_network">Network *</label>
+                            <select id="crypto_network" name="crypto_network" onchange="toggleNetworkCustomInput()">
+                                <option value="">Select Network</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Custom Crypto Input -->
+                    <div id="customCryptoField" class="form-group" style="display: none;">
+                        <label for="custom_crypto">Custom Cryptocurrency *</label>
+                        <input type="text" id="custom_crypto" name="custom_crypto" placeholder="e.g., ETH, SOL, MATIC">
+                    </div>
+
+                    <!-- Custom Network Input -->
+                    <div id="customNetworkField" class="form-group" style="display: none;">
+                        <label for="custom_network">Custom Network *</label>
+                        <input type="text" id="custom_network" name="custom_network" placeholder="e.g., Polygon, Solana, Arbitrum">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="customer_name">Customer Name *</label>
+                    <input type="text" id="customer_name" name="customer_name" required
+                           placeholder="e.g., Alps Blockchain">
+                </div>
+
+                <div class="form-group">
+                    <label for="customer_address">Customer Address</label>
+                    <textarea id="customer_address" name="customer_address" rows="2"
+                              placeholder="Customer's billing address"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="invoice_date">Invoice Date *</label>
+                        <input type="date" id="invoice_date" name="invoice_date" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="due_date">Due Date *</label>
+                        <input type="date" id="due_date" name="due_date" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <input type="text" id="description" name="description"
+                           placeholder="e.g., Professional Services - October 2025">
+                </div>
+
+                <div class="form-group">
+                    <label>Line Items *</label>
+                    <div class="line-items">
+                        <div class="line-items-header">
+                            <div>Description</div>
+                            <div>Quantity</div>
+                            <div>Unit Price</div>
+                            <div>Amount</div>
+                            <div></div>
+                        </div>
+                        <div id="lineItemsContainer">
+                            <div class="line-item">
+                                <input type="text" placeholder="Item description" class="line-desc" required>
+                                <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
+                                <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
+                                <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
+                                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-secondary btn-small" onclick="addLineItem()">+ Add Line Item</button>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="tax_percentage">Tax Percentage (%)</label>
+                        <input type="number" id="tax_percentage" name="tax_percentage" step="0.01" value="0"
+                               placeholder="0.00" onchange="calculateTotals()">
+                    </div>
+                    <div class="form-group"></div>
+                </div>
+
+                <div class="summary-box">
+                    <div class="summary-row">
+                        <span>Subtotal:</span>
+                        <span id="subtotalDisplay">$0.00</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Tax:</span>
+                        <span id="taxDisplay">$0.00</span>
+                    </div>
+                    <div class="summary-row total">
+                        <span>Total:</span>
+                        <span id="totalDisplay">$0.00</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="payment_terms">Payment Instructions / Terms</label>
+                    <textarea id="payment_terms" name="payment_terms" rows="4"
+                              placeholder="Enter payment instructions (e.g., bank account details, wire transfer info, crypto wallet address, payment terms, or any additional notes for the customer)"></textarea>
+                </div>
+
+                <button type="submit" class="btn" style="width: 100%;">Generate Invoice PDF</button>
+            </form>
+
+            <div class="loading" id="loading">
+                <p>Generating invoice PDF and saving to database...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let invoiceNumber = '';
+
+        // Network options for crypto
+        const networkOptions = {
+            'BTC': ['BTC'],
+            'USDT': ['TRC20', 'ERC20', 'BEP20'],
+            'TAO': ['TAO']
+        };
+
+        // Toggle between FIAT and Crypto fields
+        function toggleCurrencyFields() {
+            const currencyType = document.getElementById('currency_type').value;
+            const fiatFields = document.getElementById('fiatFields');
+            const cryptoFields = document.getElementById('cryptoFields');
+
+            if (currencyType === 'fiat') {
+                fiatFields.style.display = 'grid';
+                cryptoFields.style.display = 'none';
+                document.getElementById('currency').required = true;
+                document.getElementById('crypto_currency').required = false;
+                document.getElementById('crypto_network').required = false;
+                document.getElementById('custom_crypto').required = false;
+                document.getElementById('custom_network').required = false;
+            } else {
+                fiatFields.style.display = 'none';
+                cryptoFields.style.display = 'block';
+                document.getElementById('currency').required = false;
+                document.getElementById('crypto_currency').required = true;
+                document.getElementById('crypto_network').required = true;
+            }
+            calculateTotals();
+        }
+
+        // Update network options based on crypto currency
+        function updateNetworkOptions() {
+            const currency = document.getElementById('crypto_currency').value;
+            const networkSelect = document.getElementById('crypto_network');
+            const customCryptoField = document.getElementById('customCryptoField');
+            const customNetworkField = document.getElementById('customNetworkField');
+
+            // Reset network dropdown
+            networkSelect.innerHTML = '<option value="">Select Network</option>';
+
+            if (currency === 'OTHER') {
+                // Show custom crypto input
+                customCryptoField.style.display = 'block';
+                customNetworkField.style.display = 'block';
+                document.getElementById('custom_crypto').required = true;
+                document.getElementById('custom_network').required = true;
+                networkSelect.required = false;
+                networkSelect.disabled = true;
+            } else {
+                // Hide custom fields
+                customCryptoField.style.display = 'none';
+                customNetworkField.style.display = 'none';
+                document.getElementById('custom_crypto').required = false;
+                document.getElementById('custom_network').required = false;
+                networkSelect.required = true;
+                networkSelect.disabled = false;
+
+                // Populate network options
+                if (currency && networkOptions[currency]) {
+                    networkOptions[currency].forEach(network => {
+                        const option = document.createElement('option');
+                        option.value = network;
+                        option.textContent = network;
+                        networkSelect.appendChild(option);
+                    });
+                }
+
+                // Add "Other" option to networks
+                const otherOption = document.createElement('option');
+                otherOption.value = 'OTHER';
+                otherOption.textContent = 'Other (Custom)';
+                networkSelect.appendChild(otherOption);
+            }
+            calculateTotals();
+        }
+
+        // Toggle custom network input
+        function toggleNetworkCustomInput() {
+            const network = document.getElementById('crypto_network').value;
+            const customNetworkField = document.getElementById('customNetworkField');
+
+            if (network === 'OTHER') {
+                customNetworkField.style.display = 'block';
+                document.getElementById('custom_network').required = true;
+            } else {
+                customNetworkField.style.display = 'none';
+                document.getElementById('custom_network').required = false;
+            }
+        }
+
+        // Fetch next invoice number on page load
+        async function fetchInvoiceNumber() {
+            try {
+                const response = await fetch('/api/invoices/next-number');
+                const data = await response.json();
+                if (data.success) {
+                    invoiceNumber = data.invoice_number;
+                    document.getElementById('invoiceNumberDisplay').textContent = invoiceNumber;
+                }
+            } catch (error) {
+                console.error('Error fetching invoice number:', error);
+                document.getElementById('invoiceNumberDisplay').textContent = 'ERROR';
+            }
+        }
+
+        // Fetch vendors from database
+        async function fetchVendors() {
+            try {
+                const response = await fetch('/api/invoices/vendors');
+                const data = await response.json();
+                if (data.success && data.vendors.length > 0) {
+                    const vendorSelect = document.getElementById('vendor_name');
+                    const customOption = vendorSelect.querySelector('option[value="CUSTOM"]');
+
+                    // List of vendors already in the dropdown
+                    const existingVendors = [
+                        'DELTA ENERGY', 'Delta LLC', 'Delta Prop Shop LLC',
+                        'Delta Mining Paraguay S.A.', 'Delta Brazil'
+                    ];
+
+                    // Add vendors from database that aren't already in the list
+                    data.vendors.forEach(vendor => {
+                        if (!existingVendors.includes(vendor)) {
+                            const option = document.createElement('option');
+                            option.value = vendor;
+                            option.textContent = vendor;
+                            // Insert before the "Custom" option
+                            vendorSelect.insertBefore(option, customOption);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching vendors:', error);
+            }
+        }
+
+        // Handle vendor selection change
+        function handleVendorChange() {
+            const vendorSelect = document.getElementById('vendor_name');
+            const customVendorField = document.getElementById('custom_vendor');
+
+            if (vendorSelect.value === 'CUSTOM') {
+                customVendorField.style.display = 'block';
+                customVendorField.required = true;
+                vendorSelect.required = false;
+                customVendorField.focus(); // Focus on the input field
+            } else {
+                customVendorField.style.display = 'none';
+                customVendorField.required = false;
+                customVendorField.value = ''; // Clear the custom field
+                vendorSelect.required = true;
+            }
+        }
+
+        // Set default dates
+        const today = new Date();
+        document.getElementById('invoice_date').valueAsDate = today;
+
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30);
+        document.getElementById('due_date').valueAsDate = dueDate;
+
+        // Calculate line item amount
+        function calculateLineAmount(lineItem) {
+            const qty = parseFloat(lineItem.querySelector('.line-qty').value) || 0;
+            const price = parseFloat(lineItem.querySelector('.line-price').value) || 0;
+            const amount = qty * price;
+            lineItem.querySelector('.line-amount').value = amount.toFixed(2);
+            calculateTotals();
+        }
+
+        // Add event listeners to line items
+        function attachLineItemListeners(lineItem) {
+            lineItem.querySelector('.line-qty').addEventListener('input', () => calculateLineAmount(lineItem));
+            lineItem.querySelector('.line-price').addEventListener('input', () => calculateLineAmount(lineItem));
+        }
+
+        // Add initial listeners
+        document.querySelectorAll('.line-item').forEach(item => attachLineItemListeners(item));
+
+        function addLineItem() {
+            const container = document.getElementById('lineItemsContainer');
+            const newItem = document.createElement('div');
+            newItem.className = 'line-item';
+            newItem.innerHTML = `
+                <input type="text" placeholder="Item description" class="line-desc" required>
+                <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
+                <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
+                <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
+                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+            `;
+            container.appendChild(newItem);
+            attachLineItemListeners(newItem);
+        }
+
+        function removeLineItem(button) {
+            const container = document.getElementById('lineItemsContainer');
+            if (container.children.length > 1) {
+                button.parentElement.remove();
+                calculateTotals();
+            }
+        }
+
+        function calculateTotals() {
+            let subtotal = 0;
+            document.querySelectorAll('.line-item').forEach(item => {
+                const amount = parseFloat(item.querySelector('.line-amount').value) || 0;
+                subtotal += amount;
+            });
+
+            const taxPercentage = parseFloat(document.getElementById('tax_percentage').value) || 0;
+            const tax = subtotal * (taxPercentage / 100);
+            const total = subtotal + tax;
+
+            // Determine if FIAT or crypto
+            const currencyType = document.getElementById('currency_type').value;
+            let symbol = '';
+
+            if (currencyType === 'fiat') {
+                const currency = document.getElementById('currency').value;
+                const currencySymbols = {
+                    'USD': '$',
+                    'BRL': 'R$',
+                    'EUR': '€',
+                    'GBP': '£'
+                };
+                symbol = currencySymbols[currency] || '$';
+            } else {
+                const cryptoCurrency = document.getElementById('crypto_currency').value;
+                if (cryptoCurrency === 'OTHER') {
+                    const customCrypto = document.getElementById('custom_crypto').value;
+                    symbol = customCrypto || 'CRYPTO';
+                } else {
+                    symbol = cryptoCurrency || 'CRYPTO';
+                }
+            }
+
+            document.getElementById('subtotalDisplay').textContent = `${symbol} ${subtotal.toFixed(2)}`;
+            document.getElementById('taxDisplay').textContent = `${symbol} ${tax.toFixed(2)}`;
+            document.getElementById('totalDisplay').textContent = `${symbol} ${total.toFixed(2)}`;
+        }
+
+        // Update currency symbol when currency changes
+        document.getElementById('currency').addEventListener('change', calculateTotals);
+        document.getElementById('crypto_currency').addEventListener('change', calculateTotals);
+        document.getElementById('custom_crypto').addEventListener('input', calculateTotals);
+
+        document.getElementById('invoiceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const form = e.target;
+
+            // Collect line items
+            const lineItems = [];
+            document.querySelectorAll('.line-item').forEach(item => {
+                const desc = item.querySelector('.line-desc').value;
+                const qty = parseFloat(item.querySelector('.line-qty').value) || 0;
+                const price = parseFloat(item.querySelector('.line-price').value) || 0;
+                const amount = parseFloat(item.querySelector('.line-amount').value) || 0;
+
+                if (desc && qty && price) {
+                    lineItems.push({
+                        description: desc,
+                        quantity: qty,
+                        unit_price: price,
+                        amount: amount
+                    });
+                }
+            });
+
+            if (lineItems.length === 0) {
+                document.getElementById('errorMessage').textContent = 'Please add at least one line item.';
+                document.getElementById('errorMessage').style.display = 'block';
+                return;
+            }
+
+            // Calculate totals
+            const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+            const taxPercentage = parseFloat(document.getElementById('tax_percentage').value) || 0;
+            const taxAmount = subtotal * (taxPercentage / 100);
+            const totalAmount = subtotal + taxAmount;
+
+            // Determine currency based on type
+            const currencyType = document.getElementById('currency_type').value;
+            let currency;
+            let cryptoCurrency = null;
+            let cryptoNetwork = null;
+
+            if (currencyType === 'fiat') {
+                currency = document.getElementById('currency').value;
+            } else {
+                const selectedCrypto = document.getElementById('crypto_currency').value;
+                const selectedNetwork = document.getElementById('crypto_network').value;
+
+                // Check if custom crypto is selected
+                if (selectedCrypto === 'OTHER') {
+                    cryptoCurrency = document.getElementById('custom_crypto').value;
+                    cryptoNetwork = document.getElementById('custom_network').value;
+                } else {
+                    cryptoCurrency = selectedCrypto;
+                    // Check if custom network is selected
+                    if (selectedNetwork === 'OTHER') {
+                        cryptoNetwork = document.getElementById('custom_network').value;
+                    } else {
+                        cryptoNetwork = selectedNetwork;
+                    }
+                }
+                currency = cryptoCurrency; // Use crypto as currency for database
+            }
+
+            // Get vendor name (use custom if selected)
+            const vendorSelect = document.getElementById('vendor_name');
+            const vendor_name = vendorSelect.value === 'CUSTOM'
+                ? document.getElementById('custom_vendor').value
+                : vendorSelect.value;
+
+            const invoiceData = {
+                invoice_number: invoiceNumber,
+                vendor_name: vendor_name,
+                customer_name: document.getElementById('customer_name').value,
+                customer_address: document.getElementById('customer_address').value,
+                invoice_date: document.getElementById('invoice_date').value,
+                due_date: document.getElementById('due_date').value,
+                currency: currency,
+                currency_type: currencyType,
+                crypto_currency: cryptoCurrency,
+                crypto_network: cryptoNetwork,
+                description: document.getElementById('description').value,
+                line_items: lineItems,
+                subtotal: subtotal,
+                tax_percentage: taxPercentage,
+                tax_amount: taxAmount,
+                total_amount: totalAmount,
+                payment_terms: document.getElementById('payment_terms').value
+            };
+
+            // Hide form, show loading
+            form.style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('errorMessage').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/invoices/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(invoiceData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Extract filename from pdf_path
+                    const pdfFilename = data.pdf_path.split(/[/\\]/).pop();
+                    const downloadUrl = `/api/invoices/pdf/${pdfFilename}`;
+
+                    document.getElementById('successMessage').innerHTML = `
+                        <h3>Invoice Created Successfully!</h3>
+                        <p><strong>Invoice Number:</strong> ${data.invoice_number}</p>
+                        <p>Invoice has been saved to the database.</p>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <a href="${downloadUrl}" class="btn" target="_blank" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">Download PDF</a>
+                            <a href="/invoices" class="btn">Return to Invoices</a>
+                        </div>
+                    `;
+                    document.getElementById('successMessage').style.display = 'block';
+                } else {
+                    throw new Error(data.error || 'Unknown error');
+                }
+            } catch (error) {
+                document.getElementById('errorMessage').textContent = 'Error creating invoice: ' + error.message;
+                document.getElementById('errorMessage').style.display = 'block';
+                form.style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        });
+
+        // Fetch invoice number and vendors on load
+        fetchInvoiceNumber();
+        fetchVendors();
+    </script>
+</body>
+</html>

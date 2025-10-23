@@ -220,6 +220,34 @@ def init_invoice_tables():
                 )
             ''')
 
+            # Add crypto fields if they don't exist
+            try:
+                cursor.execute('''
+                    ALTER TABLE invoices ADD COLUMN crypto_currency TEXT
+                ''')
+                print("Added crypto_currency column to invoices table")
+            except Exception as e:
+                # Column already exists
+                pass
+
+            try:
+                cursor.execute('''
+                    ALTER TABLE invoices ADD COLUMN crypto_network TEXT
+                ''')
+                print("Added crypto_network column to invoices table")
+            except Exception as e:
+                # Column already exists
+                pass
+
+            try:
+                cursor.execute('''
+                    ALTER TABLE invoices ADD COLUMN payment_terms TEXT
+                ''')
+                print("Added payment_terms column to invoices table")
+            except Exception as e:
+                # Column already exists
+                pass
+
             # Email processing log
             if is_postgresql:
                 cursor.execute('''
@@ -7164,6 +7192,367 @@ def invoices_page():
         return render_template('invoices.html', cache_buster=cache_buster)
     except Exception as e:
         return f"Error loading invoices page: {str(e)}", 500
+
+@app.route('/invoices/create-preview')
+def create_invoice_preview():
+    """Preview of crypto invoice creation template"""
+    try:
+        return render_template('create_invoice_preview.html')
+    except Exception as e:
+        return f"Error loading create invoice preview: {str(e)}", 500
+
+@app.route('/invoices/create')
+def create_invoice():
+    """Render invoice creation form"""
+    try:
+        return render_template('create_invoice.html')
+    except Exception as e:
+        return f"Error loading create invoice page: {str(e)}", 500
+
+@app.route('/api/invoices/next-number')
+def api_get_next_invoice_number():
+    """API endpoint to get next available invoice number based on timestamp"""
+    try:
+        from datetime import datetime
+
+        # Generate invoice number from current timestamp: YYYYMMDDHHMMSS
+        now = datetime.now()
+        invoice_number = now.strftime('%Y%m%d%H%M%S')
+
+        return jsonify({'success': True, 'invoice_number': invoice_number})
+
+    except Exception as e:
+        print(f"Error generating invoice number: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/vendors')
+def api_get_vendors():
+    """API endpoint to get unique vendors from invoices"""
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+
+        # Get distinct vendor names from invoices (excluding NULL and empty strings)
+        cursor.execute("""
+            SELECT DISTINCT vendor_name
+            FROM invoices
+            WHERE vendor_name IS NOT NULL
+            AND vendor_name != ''
+            ORDER BY vendor_name
+        """)
+
+        vendors = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+
+        return jsonify({'success': True, 'vendors': vendors})
+
+    except Exception as e:
+        print(f"Error fetching vendors: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/create', methods=['POST'])
+def api_create_invoice():
+    """API endpoint to create a new invoice with PDF generation"""
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.pdfgen import canvas
+        import os
+        from datetime import datetime
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Extract data
+        invoice_number = data.get('invoice_number')
+        vendor_name = data.get('vendor_name', 'DELTA ENERGY')  # Default to DELTA ENERGY
+        customer_name = data.get('customer_name')
+        customer_address = data.get('customer_address', '')
+        invoice_date = data.get('invoice_date')
+        due_date = data.get('due_date')
+        currency = data.get('currency', 'USD')
+        description = data.get('description', '')
+        line_items = data.get('line_items', [])
+        subtotal = float(data.get('subtotal', 0))
+        tax_percentage = float(data.get('tax_percentage', 0))
+        tax_amount = float(data.get('tax_amount', 0))
+        total_amount = float(data.get('total_amount', 0))
+        payment_terms = data.get('payment_terms', '')
+
+        # Extract crypto fields
+        currency_type = data.get('currency_type', 'fiat')
+        crypto_currency = data.get('crypto_currency')
+        crypto_network = data.get('crypto_network')
+
+        # Create invoices/issued directory if it doesn't exist
+        issued_dir = os.path.join('invoices', 'issued')
+        os.makedirs(issued_dir, exist_ok=True)
+
+        # Generate PDF filename
+        pdf_filename = f"{invoice_number}_{invoice_date}.pdf"
+        pdf_path = os.path.join(issued_dir, pdf_filename)
+
+        # Create PDF with modern design
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.75*inch)
+        story = []
+        styles = getSampleStyleSheet()
+
+        # Define custom colors - softer, more vibrant palette
+        delta_blue = colors.HexColor('#2563eb')  # Brighter blue
+        delta_light_blue = colors.HexColor('#60a5fa')  # Lighter, more visible blue
+        delta_header = colors.HexColor('#1e40af')  # Rich blue for headers
+        crypto_gold = colors.HexColor('#f59e0b')
+        crypto_bg = colors.HexColor('#fef3c7')  # Soft yellow
+        light_gray = colors.HexColor('#f8fafc')  # Very light gray
+        medium_gray = colors.HexColor('#e2e8f0')  # Medium gray for borders
+        dark_gray = colors.HexColor('#475569')  # Softer dark gray
+
+        # Header section with vendor name (gradient-like effect using rounded corners)
+        header_data = [[Paragraph(f"<b><font size='26' color='white'>{vendor_name.upper()}</font></b>", styles['Normal'])]]
+        header_table = Table(header_data, colWidths=[7.5*inch])
+        header_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), delta_header),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 25),
+            ('TOPPADDING', (0, 0), (-1, -1), 22),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 22),
+            ('ROUNDEDCORNERS', [8, 8, 0, 0]),  # Rounded top corners
+        ]))
+        story.append(header_table)
+        story.append(Spacer(1, 0.35*inch))
+
+        # Invoice number and type badge with modern styling
+        invoice_type_color = crypto_gold if currency_type == 'crypto' else delta_blue
+        invoice_type_text = 'CRYPTOCURRENCY INVOICE' if currency_type == 'crypto' else 'INVOICE'
+        type_color_hex = '#f59e0b' if currency_type == 'crypto' else '#2563eb'
+
+        invoice_header_data = [
+            [Paragraph(f"<b><font size='20' color='{type_color_hex}'>{invoice_type_text}</font></b>", styles['Normal']),
+             Paragraph(f"<b><font size='15' color='#475569'>#{invoice_number}</font></b>", styles['Normal'])]
+        ]
+        invoice_header_table = Table(invoice_header_data, colWidths=[5*inch, 2.5*inch])
+        invoice_header_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(invoice_header_table)
+        story.append(Spacer(1, 0.25*inch))
+
+        # Two-column info section
+        left_col_data = [
+            [Paragraph("<b>BILL TO:</b>", styles['Normal'])],
+            [Paragraph(f"<font size='11'><b>{customer_name}</b></font>", styles['Normal'])],
+            [Paragraph(f"<font size='9'>{customer_address or ''}</font>", styles['Normal'])],
+        ]
+
+        right_col_data = [
+            [Paragraph("<b>Invoice Date:</b>", styles['Normal']), Paragraph(invoice_date, styles['Normal'])],
+            [Paragraph("<b>Due Date:</b>", styles['Normal']), Paragraph(due_date, styles['Normal'])],
+        ]
+
+        if description:
+            right_col_data.append([Paragraph("<b>Description:</b>", styles['Normal']), Paragraph(description, styles['Normal'])])
+
+        left_table = Table(left_col_data, colWidths=[3.5*inch])
+        left_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), light_gray),
+            ('LEFTPADDING', (0, 0), (-1, -1), 18),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 18),
+            ('TOPPADDING', (0, 0), (-1, -1), 15),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ROUNDEDCORNERS', [6, 6, 6, 6]),  # All corners rounded
+            ('LINEABOVE', (0, 0), (-1, 0), 0.5, medium_gray),
+        ]))
+
+        right_table = Table(right_col_data, colWidths=[1.3*inch, 2.2*inch])
+        right_table.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+
+        info_layout = Table([[left_table, right_table]], colWidths=[3.5*inch, 3.5*inch], hAlign='LEFT')
+        info_layout.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.append(info_layout)
+        story.append(Spacer(1, 0.3*inch))
+
+        # Crypto payment info box (if applicable) - with rounded corners and modern style
+        if currency_type == 'crypto' and crypto_currency:
+            crypto_display = f"{crypto_currency}"
+            if crypto_network:
+                crypto_display += f" ({crypto_network})"
+
+            crypto_box_data = [[Paragraph(f"<b><font size='12' color='#92400e'>PAYMENT CURRENCY: {crypto_display}</font></b>", styles['Normal'])]]
+            crypto_box = Table(crypto_box_data, colWidths=[7*inch])
+            crypto_box.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), crypto_bg),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 20),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 20),
+                ('TOPPADDING', (0, 0), (-1, -1), 16),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
+                ('BOX', (0, 0), (-1, -1), 2, crypto_gold),
+                ('ROUNDEDCORNERS', [8, 8, 8, 8]),  # All corners rounded
+            ]))
+            story.append(crypto_box)
+            story.append(Spacer(1, 0.3*inch))
+
+        # Line items table with modern styling
+        line_items_data = [[
+            Paragraph("<b>DESCRIPTION</b>", styles['Normal']),
+            Paragraph("<b>QTY</b>", styles['Normal']),
+            Paragraph("<b>UNIT PRICE</b>", styles['Normal']),
+            Paragraph("<b>AMOUNT</b>", styles['Normal'])
+        ]]
+
+        for item in line_items:
+            line_items_data.append([
+                Paragraph(item['description'], styles['Normal']),
+                Paragraph(str(item['quantity']), styles['Normal']),
+                Paragraph(f"{currency} {item['unit_price']:.2f}", styles['Normal']),
+                Paragraph(f"{currency} {item['amount']:.2f}", styles['Normal'])
+            ])
+
+        items_table = Table(line_items_data, colWidths=[3.8*inch, 0.8*inch, 1.4*inch, 1.5*inch])
+        items_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), delta_blue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 14),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_gray]),
+            ('GRID', (0, 0), (-1, -1), 0.5, medium_gray),
+            ('TOPPADDING', (0, 1), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('ROUNDEDCORNERS', [6, 6, 6, 6]),  # Rounded corners for table
+        ]))
+        story.append(items_table)
+        story.append(Spacer(1, 0.25*inch))
+
+        # Summary table
+        summary_data = []
+        summary_data.append(['Subtotal:', f"{currency} {subtotal:.2f}"])
+        if tax_amount > 0:
+            summary_data.append([f'Tax ({tax_percentage}%):', f"{currency} {tax_amount:.2f}"])
+        summary_data.append(['TOTAL:', f"{currency} {total_amount:.2f}"])
+
+        summary_table = Table(summary_data, colWidths=[1.5*inch, 1.5*inch], hAlign='RIGHT')
+        summary_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, -1), (-1, -1), 14),
+            ('FONTSIZE', (0, 0), (-1, -2), 11),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('BACKGROUND', (0, -1), (-1, -1), delta_light_blue),
+            ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
+            ('LINEABOVE', (0, -1), (-1, -1), 2, delta_blue),
+            ('ROUNDEDCORNERS', [6, 6, 6, 6]),
+        ]))
+        story.append(summary_table)
+
+        # Payment terms
+        if payment_terms:
+            story.append(Spacer(1, 0.4*inch))
+            terms_header = Paragraph("<b><font size='11' color='#1e40af'>PAYMENT TERMS & NOTES</font></b>", styles['Normal'])
+            story.append(terms_header)
+            story.append(Spacer(1, 0.1*inch))
+
+            terms_box_data = [[Paragraph(f"<font size='9'>{payment_terms}</font>", styles['Normal'])]]
+            terms_box = Table(terms_box_data, colWidths=[7*inch])
+            terms_box.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), light_gray),
+                ('LEFTPADDING', (0, 0), (-1, -1), 15),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('ROUNDEDCORNERS', [6, 6, 6, 6]),
+            ]))
+            story.append(terms_box)
+
+        # Footer
+        story.append(Spacer(1, 0.3*inch))
+        footer_text = Paragraph("<font size='8' color='gray'>Thank you for your business!</font>", styles['Normal'])
+        footer_table = Table([[footer_text]], colWidths=[7*inch])
+        footer_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ]))
+        story.append(footer_table)
+
+        # Build PDF
+        doc.build(story)
+
+        # Save to database
+        invoice_id = str(uuid.uuid4())
+        created_at = datetime.utcnow().isoformat()
+
+        db_manager.execute_query("""
+            INSERT INTO invoices (
+                id, tenant_id, invoice_number, date, due_date,
+                vendor_name, customer_name, customer_address, total_amount, currency,
+                tax_amount, subtotal, line_items, payment_terms,
+                status, invoice_type, source_file, created_at,
+                currency_type, crypto_currency, crypto_network
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            invoice_id, tenant_id, invoice_number, invoice_date, due_date,
+            vendor_name, customer_name, customer_address, total_amount, currency,
+            tax_amount, subtotal, json.dumps(line_items), payment_terms,
+            'pending', 'issued', pdf_path, created_at,
+            currency_type, crypto_currency, crypto_network
+        ))
+
+        return jsonify({
+            'success': True,
+            'invoice_number': invoice_number,
+            'invoice_id': invoice_id,
+            'pdf_path': pdf_path
+        })
+
+    except Exception as e:
+        print(f"Error creating invoice: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/invoices/pdf/<path:filename>')
+def api_download_invoice_pdf(filename):
+    """API endpoint to download invoice PDF"""
+    try:
+        from flask import send_file
+        import os
+
+        # Construct the full path
+        pdf_path = os.path.join('invoices', 'issued', filename)
+
+        # Check if file exists
+        if not os.path.exists(pdf_path):
+            return jsonify({'success': False, 'error': 'PDF file not found'}), 404
+
+        # Send the file
+        return send_file(pdf_path, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+    except Exception as e:
+        print(f"Error downloading invoice PDF: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/invoices')
 def api_get_invoices():
