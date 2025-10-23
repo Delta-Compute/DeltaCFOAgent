@@ -28,9 +28,12 @@ import zipfile
 import re
 import logging
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Load environment variables from .env file
-load_dotenv()
+# Look for .env in parent directory (project root) since app_db.py is in web_ui/
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -4118,20 +4121,18 @@ def api_regenerate_homepage():
 
 @app.route('/api/homepage/data', methods=['GET'])
 def api_get_homepage_data():
-    """Get raw homepage data (KPIs, entities, portfolio) without AI generation"""
+    """Get standardized homepage data - exact database fields only"""
     try:
         from database import db_manager
-        from services.data_queries import DataQueryService
+        from services.homepage_data_service import HomepageDataService
 
         tenant_id = get_current_tenant_id()
-        data_service = DataQueryService(db_manager, tenant_id)
+        homepage_service = HomepageDataService(db_manager, tenant_id)
 
-        data = data_service.get_all_homepage_data()
+        # Get complete homepage data with exact database fields
+        data = homepage_service.get_homepage_data()
 
-        return jsonify({
-            'success': True,
-            'data': data
-        })
+        return jsonify(data)
 
     except Exception as e:
         logger.error(f"Error fetching homepage data: {e}")
@@ -4157,6 +4158,116 @@ def api_get_homepage_kpis():
 
     except Exception as e:
         logger.error(f"Error fetching KPIs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# ONBOARDING BOT API ENDPOINTS
+# ========================================
+
+@app.route('/api/bot/start-session', methods=['POST'])
+def api_bot_start_session():
+    """Start a new onboarding bot session"""
+    try:
+        from database import db_manager
+        from services.onboarding_bot import OnboardingBot
+
+        tenant_id = get_current_tenant_id()
+        bot = OnboardingBot(db_manager, tenant_id)
+
+        session_id = bot.start_new_session()
+
+        # Get initial greeting
+        history = bot.get_conversation_history(session_id)
+        initial_message = history[0] if history else {'role': 'assistant', 'content': 'Hello!'}
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'message': initial_message['content']
+        })
+
+    except Exception as e:
+        logger.error(f"Error starting bot session: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bot/chat', methods=['POST'])
+def api_bot_chat():
+    """Send a message to the onboarding bot"""
+    try:
+        from database import db_manager
+        from services.onboarding_bot import OnboardingBot
+
+        data = request.get_json()
+        session_id = data.get('session_id')
+        user_message = data.get('message')
+
+        if not session_id or not user_message:
+            return jsonify({'error': 'session_id and message are required'}), 400
+
+        tenant_id = get_current_tenant_id()
+        bot = OnboardingBot(db_manager, tenant_id)
+
+        # Process message
+        result = bot.chat(session_id, user_message)
+
+        return jsonify({
+            'success': result.get('success', False),
+            'response': result.get('response'),
+            'extracted_data': result.get('extracted_data'),
+            'completion_percentage': result.get('completion_percentage', 0),
+            'error': result.get('error')
+        })
+
+    except Exception as e:
+        logger.error(f"Error in bot chat: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bot/status', methods=['GET'])
+def api_bot_status():
+    """Get current onboarding status"""
+    try:
+        from database import db_manager
+        from services.onboarding_bot import OnboardingBot
+
+        tenant_id = get_current_tenant_id()
+        bot = OnboardingBot(db_manager, tenant_id)
+
+        status = bot.get_onboarding_status()
+
+        return jsonify({
+            'success': True,
+            'status': status
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting bot status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/bot/history/<session_id>', methods=['GET'])
+def api_bot_history(session_id):
+    """Get conversation history for a session"""
+    try:
+        from database import db_manager
+        from services.onboarding_bot import OnboardingBot
+
+        tenant_id = get_current_tenant_id()
+        bot = OnboardingBot(db_manager, tenant_id)
+
+        history = bot.get_conversation_history(session_id)
+
+        return jsonify({
+            'success': True,
+            'history': history
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting bot history: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -5841,7 +5952,19 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                 elif ' ' in date_str:
                     date_str = date_str.split(' ')[0]
 
-                # Validate date format (should be YYYY-MM-DD)
+                # Convert date to YYYY-MM-DD format if needed
+                # Handle MM/DD/YYYY format from classified files
+                if '/' in date_str:
+                    try:
+                        from datetime import datetime
+                        # Parse MM/DD/YYYY and convert to YYYY-MM-DD
+                        date_obj = datetime.strptime(date_str, '%m/%d/%Y')
+                        date_str = date_obj.strftime('%Y-%m-%d')
+                    except ValueError:
+                        print(f"⚠️ Skipping row {index + 1} - invalid date format: {date_str}")
+                        continue
+
+                # Validate date format (should be YYYY-MM-DD now)
                 if not date_str or len(date_str) < 8 or '-' not in date_str:
                     print(f"⚠️ Skipping row {index + 1} - invalid date format: {date_str}")
                     continue

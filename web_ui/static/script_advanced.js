@@ -4766,48 +4766,7 @@ async function archiveAllButFirstGlobally() {
     }
 }
 
-async function archiveSelectedTransactions() {
-    // Get all checked checkboxes
-    const selectedCheckboxes = document.querySelectorAll('.duplicate-checkbox:checked');
-
-    if (selectedCheckboxes.length === 0) {
-        showToast('⚠️ No transactions selected. Use the checkboxes to select transactions to archive.', 'warning');
-        return;
-    }
-
-    const transactionIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.transactionId);
-
-    if (!confirm(`Archive ${transactionIds.length} selected transaction(s)?`)) {
-        return;
-    }
-
-    try {
-        const response = await fetch(`/api/archive_transactions`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ transaction_ids: transactionIds })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showToast(`✅ Archived ${transactionIds.length} selected transaction(s)`, 'success');
-            // Refresh duplicates modal
-            findDuplicates();
-            // Refresh main table if function exists
-            if (typeof loadTransactions === 'function') {
-                setTimeout(() => loadTransactions(), 1000);
-            }
-        } else {
-            throw new Error(data.error || 'Failed to archive transactions');
-        }
-    } catch (error) {
-        console.error('Error archiving selected transactions:', error);
-        showToast('❌ Error: ' + error.message, 'error');
-    }
-}
+// Removed duplicate archiveSelectedTransactions() function here - the correct one is defined earlier in the file (line ~2819)
 
 // ============================================================================
 // EXCEL-LIKE DRAG-DOWN FILL FUNCTIONALITY
