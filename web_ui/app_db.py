@@ -1508,7 +1508,23 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
         logging.info(f"[TFIDF_AFTER_SUGGESTION] Scoring {len(candidate_txs)} candidate transactions using TF-IDF")
 
-        # Step 3: Score each candidate using TF-IDF system
+        # 🔥 FALLBACK: Check if entity has any patterns in database
+        # If no patterns exist, we'll use direct description matching instead of TF-IDF
+        conn_check = db_manager._get_postgresql_connection()
+        cursor_check = conn_check.cursor()
+        cursor_check.execute("""
+            SELECT COUNT(*) FROM entity_pattern_statistics
+            WHERE tenant_id = %s AND entity_name = %s
+        """, (tenant_id, entity_name))
+        pattern_count = cursor_check.fetchone()[0]
+        cursor_check.close()
+        conn_check.close()
+
+        use_direct_matching = (pattern_count == 0)
+        if use_direct_matching:
+            logging.warning(f"[TFIDF_AFTER_SUGGESTION] Entity '{entity_name}' has NO patterns - using direct description matching fallback")
+
+        # Step 3: Score each candidate using TF-IDF system (or direct matching fallback)
         scored_transactions = []
         wallet_exact_matches = 0
 
@@ -1540,19 +1556,29 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                 tx_origin = tx[10] if len(tx) > 10 else ''
                 tx_dest = tx[11] if len(tx) > 11 else ''
 
-            # 🔥 Use the sophisticated TF-IDF scoring system
-            match_result = calculate_entity_match_score(
-                description=tx_desc,
-                entity_name=entity_name,
-                tenant_id=tenant_id,
-                amount=tx_amount,
-                account=tx_account
-            )
+            # 🔥 Use TF-IDF scoring OR direct description matching fallback
+            if use_direct_matching:
+                # FALLBACK: Direct fuzzy description matching when no TF-IDF patterns exist
+                fuzzy_score = fuzzy_match_pattern(ref_desc, tx_desc, threshold=70)
+                score = fuzzy_score / 100.0  # Convert to 0-1 range
+                confidence = score
+                amount_match = None
+                reasoning = f"Direct description match (no patterns available): {int(fuzzy_score)}%"
+                logging.info(f"[TFIDF_FALLBACK] Direct match for '{tx_desc[:40]}...': score={score:.2f}")
+            else:
+                # Standard TF-IDF pattern matching
+                match_result = calculate_entity_match_score(
+                    description=tx_desc,
+                    entity_name=entity_name,
+                    tenant_id=tenant_id,
+                    amount=tx_amount,
+                    account=tx_account
+                )
 
-            score = match_result.get('score', 0)
-            confidence = match_result.get('confidence', 0)
-            amount_match = match_result.get('amount_match')
-            reasoning = match_result.get('reasoning', '')
+                score = match_result.get('score', 0)
+                confidence = match_result.get('confidence', 0)
+                amount_match = match_result.get('amount_match')
+                reasoning = match_result.get('reasoning', '')
 
             # 🔥 BOOST: Apply significant boost for exact wallet address matches
             wallet_boost = 0
@@ -9506,6 +9532,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
     """, (tenant_id, entity_name))
 
     patterns = cursor.fetchall()
+    logging.info(f"[TFIDF_MATCH_SCORE] Entity '{entity_name}' has {len(patterns)} patterns in database")
 
     # 🔥 NEW: Get historical amount patterns for this entity if amount provided
     amount_match_score = 0.0

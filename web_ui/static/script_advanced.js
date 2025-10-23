@@ -2507,15 +2507,29 @@ function closeModal() {
         modalContent.classList.remove('similar-transactions-modal');
     }
 
-    // Clear modal content to prevent stale data
-    const suggestionsContent = document.getElementById('suggestionsContent');
+    // Clear suggestions list but DON'T clear suggestionsContent
+    // suggestionsContent contains the static HTML structure (transaction info, assessment sections)
+    // Only clear the dynamic suggestionsList which holds AI suggestions
     const suggestionsList = document.getElementById('suggestionsList');
-    if (suggestionsContent) {
-        suggestionsContent.innerHTML = '';
-    }
     if (suggestionsList) {
         suggestionsList.innerHTML = '';
     }
+
+    // Clear transaction info values (but don't remove the HTML structure)
+    const descEl = document.getElementById('suggestionDescription');
+    const amountEl = document.getElementById('suggestionAmount');
+    const confEl = document.getElementById('suggestionCurrentConfidence');
+    if (descEl) descEl.textContent = '';
+    if (amountEl) amountEl.textContent = '';
+    if (confEl) confEl.textContent = '';
+
+    // Hide error/empty/assessment sections
+    const errorDiv = document.getElementById('suggestionsError');
+    const emptyDiv = document.getElementById('suggestionsEmpty');
+    const assessmentDiv = document.getElementById('suggestionAssessment');
+    if (errorDiv) errorDiv.style.display = 'none';
+    if (emptyDiv) emptyDiv.style.display = 'none';
+    if (assessmentDiv) assessmentDiv.style.display = 'none';
 }
 
 async function logUserInteraction(transactionId, fieldType, originalValue, userChoice, actionType) {
