@@ -328,6 +328,7 @@
                 <a href="/revenue" class="nav-link">Revenue Recognition</a>
                 <a href="/cfo-dashboard" class="nav-link">Reports</a>
                 <a href="/invoices" class="nav-link">Invoices</a>
+                <a href="/whitelisted-accounts" class="nav-link">Accounts</a>
                 <a href="/files" class="nav-link">File Manager</a>
             </div>
         </nav>
@@ -335,35 +336,40 @@
         <!-- Hero Section -->
         <section class="hero-business">
             <div class="hero-content">
-                <h1 class="company-title">Delta Capital Holdings</h1>
-                <p class="company-tagline">Diversified Technology & Innovation Portfolio</p>
-                <p class="company-description">
+                <h1 class="company-title" id="companyTitle">Delta Capital Holdings</h1>
+                <p class="company-tagline" id="companyTagline">Diversified Technology & Innovation Portfolio</p>
+                <p class="company-description" id="companyDescription">
                     A strategic holding company focused on emerging technologies, artificial intelligence,
                     and digital transformation solutions. We build, acquire, and scale innovative businesses
                     that shape the future of technology and commerce.
                 </p>
+                <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                    <button id="regenerateBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.3s;">
+                        🔄 Regenerate with AI
+                    </button>
+                    <div id="cacheStatus" style="display: none; padding: 0.75rem 1.5rem; border-radius: 8px; background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); font-size: 0.9rem;"></div>
+                </div>
+                <div id="generatedTimestamp" style="margin-top: 1rem; opacity: 0.8; font-size: 0.85rem;"></div>
+                <div id="loadingIndicator" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.2); border-radius: 8px; backdrop-filter: blur(10px);">
+                    ⏳ Loading content...
+                </div>
             </div>
         </section>
 
         <!-- Key Metrics -->
         <section class="metrics-section">
-            <div class="metrics-grid">
+            <div class="metrics-grid" id="kpiMetricsGrid">
                 <div class="metric-card">
-                    <div class="metric-number">7</div>
-                    <div class="metric-title">Portfolio Companies</div>
+                    <div class="metric-number" data-target="0">📊 0</div>
+                    <div class="metric-title">Loading...</div>
                 </div>
-                <div class="metric-card">
-                    <div class="metric-number">$2.4M</div>
-                    <div class="metric-title">Assets Under Management</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-number">3</div>
-                    <div class="metric-title">Active Verticals</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-number">24+</div>
-                    <div class="metric-title">Team Members</div>
-                </div>
+            </div>
+        </section>
+
+        <!-- AI Insights Section -->
+        <section style="background: white; padding: 3rem 2rem;">
+            <div style="max-width: 1000px; margin: 0 auto;" id="aiInsights">
+                <p style="text-align: center; color: #94a3b8;">Loading AI insights...</p>
             </div>
         </section>
 
@@ -603,207 +609,9 @@
             </div>
         </section>
 
-        <!-- Wallet Management Section -->
-        <section class="holdings-section" id="wallet-management" style="padding-top: 2rem;">
-            <h2 class="section-title">🔐 Wallet Address Management</h2>
-            <p class="section-subtitle">Manage known cryptocurrency wallet addresses for accurate transaction classification</p>
-
-            <!-- Add Wallet Form -->
-            <div style="background: white; padding: 2rem; border-radius: 12px; margin: 2rem auto; max-width: 1400px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
-                <h3 style="color: #3b82f6; margin-bottom: 1.5rem; font-size: 1.3rem;">➕ Add New Wallet</h3>
-                <form id="addWalletForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Wallet Address *</label>
-                        <input type="text" id="walletAddress" name="wallet_address" required
-                               placeholder="0x..."
-                               style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 6px; font-family: monospace;">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Entity Name *</label>
-                        <input type="text" id="entityName" name="entity_name" required
-                               placeholder="e.g., Coinbase Exchange"
-                               style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 6px;">
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Wallet Type *</label>
-                        <select id="walletType" name="wallet_type" required
-                                style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 6px;">
-                            <option value="">Select type...</option>
-                            <option value="internal">Internal (Company Owned)</option>
-                            <option value="exchange">Exchange</option>
-                            <option value="customer">Customer</option>
-                            <option value="vendor">Vendor</option>
-                            <option value="partner">Partner</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Purpose</label>
-                        <input type="text" id="walletPurpose" name="purpose"
-                               placeholder="e.g., Primary trading wallet"
-                               style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 6px;">
-                    </div>
-                    <div style="grid-column: 1 / -1;">
-                        <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Notes</label>
-                        <textarea id="walletNotes" name="notes" rows="2"
-                                  placeholder="Optional notes about this wallet..."
-                                  style="width: 100%; padding: 0.75rem; border: 2px solid #e2e8f0; border-radius: 6px; resize: vertical;"></textarea>
-                    </div>
-                    <div style="grid-column: 1 / -1;">
-                        <button type="submit" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 1rem 2rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 1rem; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.3s;">
-                            ✅ Add Wallet
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            <!-- Wallets List -->
-            <div style="background: white; padding: 2rem; border-radius: 12px; max-width: 1400px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0;">
-                <h3 style="color: #3b82f6; margin-bottom: 1.5rem; font-size: 1.3rem;">📋 Known Wallets (<span id="walletCount">0</span>)</h3>
-                <div id="walletsList" style="display: grid; gap: 1rem;">
-                    <!-- Wallets will be loaded here -->
-                    <div style="text-align: center; padding: 2rem; color: #999;">
-                        <p>Loading wallets...</p>
-                    </div>
-                </div>
-            </div>
-        </section>
     </div>
 
-    <!-- Wallet Management JavaScript -->
-    <script>
-        // Load wallets on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            loadWallets();
-        });
-
-        // Add wallet form submission
-        document.getElementById('addWalletForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-
-            const formData = {
-                wallet_address: document.getElementById('walletAddress').value.trim(),
-                entity_name: document.getElementById('entityName').value.trim(),
-                wallet_type: document.getElementById('walletType').value,
-                purpose: document.getElementById('walletPurpose').value.trim(),
-                notes: document.getElementById('walletNotes').value.trim()
-            };
-
-            try {
-                const response = await fetch('/api/wallets', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(formData)
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    alert('✅ Wallet added successfully!');
-                    document.getElementById('addWalletForm').reset();
-                    loadWallets();
-                } else {
-                    alert('❌ Error: ' + (result.error || 'Failed to add wallet'));
-                }
-            } catch (error) {
-                alert('❌ Error: ' + error.message);
-            }
-        });
-
-        // Load and display wallets
-        async function loadWallets() {
-            try {
-                const response = await fetch('/api/wallets');
-                const result = await response.json();
-
-                if (result.success && result.wallets) {
-                    displayWallets(result.wallets);
-                } else {
-                    document.getElementById('walletsList').innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;"><p>No wallets found</p></div>';
-                }
-            } catch (error) {
-                document.getElementById('walletsList').innerHTML = '<div style="text-align: center; padding: 2rem; color: #e53e3e;"><p>Error loading wallets: ' + error.message + '</p></div>';
-            }
-        }
-
-        // Display wallets in the list
-        function displayWallets(wallets) {
-            const walletsList = document.getElementById('walletsList');
-            const walletCount = document.getElementById('walletCount');
-
-            walletCount.textContent = wallets.length;
-
-            if (wallets.length === 0) {
-                walletsList.innerHTML = '<div style="text-align: center; padding: 2rem; color: #999;"><p>No wallets added yet. Add your first wallet above!</p></div>';
-                return;
-            }
-
-            walletsList.innerHTML = wallets.map(wallet => `
-                <div style="background: #f8fafc; padding: 1.5rem; border-radius: 8px; border-left: 4px solid ${getWalletTypeColor(wallet.wallet_type)}; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: start; gap: 1rem; flex-wrap: wrap;">
-                        <div style="flex: 1; min-width: 250px;">
-                            <div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem;">
-                                <span style="background: ${getWalletTypeColor(wallet.wallet_type)}; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase;">
-                                    ${wallet.wallet_type}
-                                </span>
-                                <h4 style="margin: 0; color: #1e293b; font-size: 1.1rem; font-weight: 700;">${wallet.entity_name}</h4>
-                            </div>
-                            <p style="margin: 0.5rem 0; font-family: monospace; color: #3b82f6; font-size: 0.9rem; word-break: break-all;">
-                                ${wallet.wallet_address}
-                            </p>
-                            ${wallet.purpose ? `<p style="margin: 0.5rem 0; color: #475569; font-size: 0.9rem;">📝 ${wallet.purpose}</p>` : ''}
-                            ${wallet.notes ? `<p style="margin: 0.5rem 0; color: #64748b; font-size: 0.85rem; font-style: italic;">${wallet.notes}</p>` : ''}
-                            <p style="margin: 0.5rem 0 0 0; color: #94a3b8; font-size: 0.75rem;">
-                                Added: ${new Date(wallet.created_at).toLocaleString()}
-                            </p>
-                        </div>
-                        <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="deleteWallet('${wallet.id}')"
-                                    style="background: #dc2626; color: white; padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: background 0.3s;">
-                                🗑️ Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Get color based on wallet type
-        function getWalletTypeColor(type) {
-            const colors = {
-                'internal': '#3b82f6',
-                'exchange': '#10b981',
-                'customer': '#06b6d4',
-                'vendor': '#f59e0b',
-                'partner': '#8b5cf6'
-            };
-            return colors[type] || '#6b7280';
-        }
-
-        // Delete wallet
-        async function deleteWallet(walletId) {
-            if (!confirm('Are you sure you want to delete this wallet? This action cannot be undone.')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/wallets/${walletId}`, {
-                    method: 'DELETE'
-                });
-
-                const result = await response.json();
-
-                if (response.ok && result.success) {
-                    alert('✅ Wallet deleted successfully!');
-                    loadWallets();
-                } else {
-                    alert('❌ Error: ' + (result.error || 'Failed to delete wallet'));
-                }
-            } catch (error) {
-                alert('❌ Error: ' + error.message);
-            }
-        }
-    </script>
+    <!-- Homepage Dynamic Content JavaScript -->
+    <script src="{{ url_for('static', filename='js/homepage.js') }}?v={{ cache_buster }}"></script>
 </body>
 </html>
