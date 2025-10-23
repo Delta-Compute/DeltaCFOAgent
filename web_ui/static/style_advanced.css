@@ -1423,3 +1423,85 @@ td.wallet-field {
 td.wallet-field:hover {
     background-color: #f0f8ff;
 }
+
+/* AI-Generated Dynamic Content Tables - Homepage and Overview Pages */
+.hero-content table,
+.holdings-section table,
+.metrics-section table,
+#aiInsights table,
+.holding-card table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.hero-content table th,
+.holdings-section table th,
+.metrics-section table th,
+#aiInsights table th,
+.holding-card table th {
+    background: #f7fafc;
+    color: #4a5568;
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+}
+
+.hero-content table td,
+.holdings-section table td,
+.metrics-section table td,
+#aiInsights table td,
+.holding-card table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #2d3748;
+    font-size: 0.875rem;
+    vertical-align: top;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.hero-content table tr:hover,
+.holdings-section table tr:hover,
+.metrics-section table tr:hover,
+#aiInsights table tr:hover,
+.holding-card table tr:hover {
+    background: #f7fafc;
+}
+
+/* Specific column width for common table patterns in AI content */
+.hero-content table th:first-child,
+.hero-content table td:first-child,
+#aiInsights table th:first-child,
+#aiInsights table td:first-child {
+    width: 35%;
+    min-width: 150px;
+}
+
+.hero-content table th:last-child,
+.hero-content table td:last-child,
+#aiInsights table th:last-child,
+#aiInsights table td:last-child {
+    width: 65%;
+    min-width: 200px;
+}
+
+/* Ensure table cells don't overlap */
+.hero-content table,
+#aiInsights table {
+    table-layout: auto;
+}
+
+.hero-content table td,
+#aiInsights table td {
+    position: relative;
+    display: table-cell;
+}

@@ -4676,6 +4676,8 @@ def api_ai_get_suggestions():
     API endpoint for AI Smart Recommendations modal
     Returns AI-powered suggestions for improving a transaction's classification
     """
+    import traceback
+
     try:
         transaction_id = request.args.get('transaction_id')
 
@@ -4773,7 +4775,7 @@ def api_ai_get_suggestions():
                 patterns_context = f"\n\n{enhanced_context}"
         except Exception as e:
             # Fallback to simple pattern query if enhancement fails
-            print(f"⚠️  Pattern enhancement error: {e}")
+            logger.warning(f"Pattern enhancement error: {e}")
             import traceback
             traceback.print_exc()
             # Leave patterns_context empty if enhancement fails
@@ -9708,7 +9710,7 @@ def get_candidate_entities_optimized(description: str, tenant_id: str, max_candi
         if results:
             candidate_entities = [row[0] for row in results]
             conn.close()
-            print(f"📊 Pre-filtered to {len(candidate_entities)} candidates from terms: {meaningful_terms}")
+            logger.info(f"Pre-filtered to {len(candidate_entities)} candidates from terms: {meaningful_terms}")
             return candidate_entities
 
         # Step 3: Fallback - no exact matches, get top entities by TF-IDF
@@ -9724,13 +9726,13 @@ def get_candidate_entities_optimized(description: str, tenant_id: str, max_candi
         fallback_results = cursor.fetchall()
         conn.close()
 
-        print(f"📊 Pre-filtering fallback: returning top {len(fallback_results)} entities by TF-IDF")
+        logger.info(f"Pre-filtering fallback: returning top {len(fallback_results)} entities by TF-IDF")
         return [row[0] for row in fallback_results]
 
     except Exception as e:
-        print(f"❌ ERROR in get_candidate_entities_optimized: {e}")
+        logger.error(f"ERROR in get_candidate_entities_optimized: {e}")
         import traceback
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
         return []
 
 def normalize_company_name(company_name: str) -> str:

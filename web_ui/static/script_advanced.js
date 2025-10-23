@@ -190,6 +190,19 @@ function setupEventListeners() {
         });
     }
 
+    // Keyword filter - real-time filtering as you type
+    let keywordTimeout;
+    const keywordInput = document.getElementById('keywordFilter');
+    if (keywordInput) {
+        keywordInput.addEventListener('input', () => {
+            clearTimeout(keywordTimeout);
+            keywordTimeout = setTimeout(() => {
+                currentPage = 1;
+                loadTransactions();
+            }, 500);
+        });
+    }
+
     // Clear filters button
     document.getElementById('clearFilters').addEventListener('click', clearFilters);
 
@@ -473,6 +486,9 @@ function buildFilterQuery() {
 
     const destination = document.getElementById('destinationFilter')?.value;
     if (destination) params.append('destination', destination);
+
+    const keyword = document.getElementById('keywordFilter')?.value;
+    if (keyword) params.append('keyword', keyword);
 
     // Add archived filter
     if (showingArchived) {

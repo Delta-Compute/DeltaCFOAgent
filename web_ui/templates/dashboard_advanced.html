@@ -17,10 +17,11 @@
             </div>
             <div class="nav-links">
                 <a href="/" class="nav-link">Home</a>
-                <a href="/dashboard" class="nav-link active">Expenses</a>
+                <a href="/dashboard" class="nav-link active">Transaction Manager</a>
                 <a href="/revenue" class="nav-link">Revenue Recognition</a>
                 <a href="/cfo-dashboard" class="nav-link">Reports</a>
                 <a href="/invoices" class="nav-link">Invoices</a>
+                <a href="/whitelisted-accounts" class="nav-link">Accounts</a>
                 <a href="/files" class="nav-link">File Manager</a>
             </div>
         </nav>
@@ -167,7 +168,7 @@
                     <thead>
                         <tr>
                             <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAll"></th>
-                            <th class="sortable" data-sort="date">Date ↕</th>
+                            <th class="sortable" data-sort="date">Action ↕</th>
                             <th class="sortable" data-sort="origin">Origin ↕</th>
                             <th class="sortable" data-sort="destination">Destination ↕</th>
                             <th class="sortable" data-sort="description">Description ↕</th>
@@ -272,7 +273,7 @@
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr style="background: #e0e0e0;">
-                                    <th style="padding: 10px; text-align: left;">Date</th>
+                                    <th style="padding: 10px; text-align: left;">Action</th>
                                     <th style="padding: 10px; text-align: right;">Amount</th>
                                     <th style="padding: 10px; text-align: left;">Description</th>
                                     <th style="padding: 10px; text-align: left;">Old → New Category</th>
