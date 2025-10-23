@@ -8,6 +8,8 @@ class CFOChatbot {
         this.isOpen = false;
         this.conversationHistory = [];
         this.isLoading = false;
+        this.sessionId = null;
+        this.useAdvancedBackend = true; // Use new session-based backend with function calling
 
         // DOM elements
         this.toggle = document.getElementById('chatbotToggle');
@@ -22,7 +24,7 @@ class CFOChatbot {
         this.init();
     }
 
-    init() {
+    async init() {
         // Event listeners
         this.toggle.addEventListener('click', () => this.open());
         this.closeBtn.addEventListener('click', () => this.close());
@@ -43,10 +45,18 @@ class CFOChatbot {
         // Auto-resize textarea
         this.input.addEventListener('input', () => this.autoResizeTextarea());
 
+        // Create session for advanced backend
+        if (this.useAdvancedBackend) {
+            await this.createSession();
+        }
+
         // Load conversation history from localStorage
         this.loadHistory();
 
-        console.log('CFO Chatbot initialized');
+        console.log('CFO Chatbot initialized', {
+            sessionId: this.sessionId,
+            advancedBackend: this.useAdvancedBackend
+        });
     }
 
     open() {
@@ -85,6 +95,30 @@ class CFOChatbot {
         this.input.style.height = Math.min(this.input.scrollHeight, 100) + 'px';
     }
 
+    async createSession() {
+        try {
+            const response = await fetch('/api/chatbot/session/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                this.sessionId = data.session_id;
+                console.log('Chat session created:', this.sessionId);
+            } else {
+                console.error('Failed to create session, falling back to simple mode');
+                this.useAdvancedBackend = false;
+            }
+        } catch (error) {
+            console.error('Session creation error:', error);
+            this.useAdvancedBackend = false;
+        }
+    }
+
     async sendMessage() {
         const message = this.input.value.trim();
 
@@ -113,16 +147,18 @@ class CFOChatbot {
         this.setLoading(true);
 
         try {
-            // Call backend API
-            const response = await fetch('/api/chatbot', {
+            // Call backend API (advanced or simple)
+            const endpoint = this.useAdvancedBackend ? '/api/chatbot/message' : '/api/chatbot';
+            const requestBody = this.useAdvancedBackend
+                ? { session_id: this.sessionId, message: message, use_sonnet: true }
+                : { message: message, history: this.conversationHistory };
+
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    message: message,
-                    history: this.conversationHistory
-                })
+                body: JSON.stringify(requestBody)
             });
 
             if (!response.ok) {
@@ -130,6 +166,11 @@ class CFOChatbot {
             }
 
             const data = await response.json();
+
+            // Check if there were function calls (advanced backend only)
+            if (data.function_calls && data.function_calls.length > 0) {
+                this.displayFunctionCalls(data.function_calls);
+            }
 
             // Add assistant response to UI
             this.addMessage(data.response, 'bot');
@@ -263,6 +304,53 @@ class CFOChatbot {
         } catch (error) {
             console.error('Error loading chat history:', error);
         }
+    }
+
+    displayFunctionCalls(functionCalls) {
+        functionCalls.forEach(call => {
+            const funcDiv = document.createElement('div');
+            funcDiv.className = 'chat-message bot-message function-call';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content function-content';
+
+            // Function name and success status
+            const status = call.success ? '✅' : '❌';
+            const statusClass = call.success ? 'success' : 'error';
+
+            let html = `
+                <div class="function-header ${statusClass}">
+                    <span class="function-icon">🔧</span>
+                    <strong>${call.function_name}</strong>
+                    <span class="function-status">${status}</span>
+                </div>
+            `;
+
+            // Function result message
+            if (call.result && call.result.message) {
+                html += `<div class="function-result">${call.result.message}</div>`;
+            }
+
+            // Function arguments (collapsed by default)
+            if (call.arguments && Object.keys(call.arguments).length > 0) {
+                html += `<details class="function-details">
+                    <summary>View details</summary>
+                    <pre>${JSON.stringify(call.arguments, null, 2)}</pre>
+                </details>`;
+            }
+
+            contentDiv.innerHTML = html;
+            funcDiv.appendChild(contentDiv);
+
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = this.formatTime(new Date());
+            funcDiv.appendChild(timeDiv);
+
+            this.messagesContainer.appendChild(funcDiv);
+        });
+
+        this.scrollToBottom();
     }
 
     clearHistory() {

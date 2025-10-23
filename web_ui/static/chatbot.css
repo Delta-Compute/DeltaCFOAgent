@@ -466,3 +466,78 @@
         transform: translateY(20px);
     }
 }
+
+/* ========================================
+   Function Call Display
+   ======================================== */
+
+.function-call .message-content {
+    background: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
+    border-left: 4px solid #667eea;
+}
+
+.function-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    padding: 8px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.function-header.success {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+.function-header.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.function-icon {
+    font-size: 18px;
+}
+
+.function-status {
+    margin-left: auto;
+    font-size: 16px;
+}
+
+.function-result {
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.function-details {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.function-details summary {
+    cursor: pointer;
+    color: #667eea;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.function-details summary:hover {
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.function-details pre {
+    margin-top: 8px;
+    padding: 8px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+}
