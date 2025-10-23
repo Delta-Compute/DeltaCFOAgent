@@ -155,6 +155,7 @@
                     <button id="refreshData" class="btn-secondary">🔄 Refresh</button>
                     <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()">💰 Run Invoice Matching</button>
                     <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()">🔗 Enrich Blockchain Transactions</button>
+                    <button id="findDuplicates" class="btn-primary" onclick="findDuplicates()">🔍 Find Duplicates</button>
                     <button id="exportCSV" class="btn-secondary">📥 Export CSV</button>
                     <button id="archiveSelected" class="btn-secondary" style="display: none;">🗄️ Archive Selected</button>
                     <button id="showArchived" class="btn-secondary">📦 Show Archived</button>
@@ -359,6 +360,66 @@
         </div>
     </div>
 
+    <!-- Find Duplicates Modal -->
+    <div id="findDuplicatesModal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 1200px;">
+            <div class="modal-header">
+                <h3>🔍 Duplicate Transaction Detection</h3>
+                <span class="close" onclick="closeFindDuplicatesModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <!-- Loading State -->
+                <div id="duplicatesLoading" style="display: none; text-align: center; padding: 40px;">
+                    <div class="loading">Scanning for duplicate transactions...</div>
+                    <p style="margin-top: 20px; color: #666;">Analyzing transactions by date, description, and amount...</p>
+                </div>
+
+                <!-- Results Summary -->
+                <div id="duplicatesSummary" style="display: none; background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffc107;">
+                    <h4>⚠️ Duplicates Found</h4>
+                    <p><strong>Total Duplicate Groups:</strong> <span id="totalDuplicateGroups">0</span></p>
+                    <p><strong>Total Duplicate Transactions:</strong> <span id="totalDuplicateTransactions">0</span></p>
+                    <p style="font-size: 0.9em; color: #666;">Review each group below. You can use checkboxes to select specific transactions or use the bulk actions below.</p>
+
+                    <!-- Global Bulk Actions -->
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ffc107; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="archiveAllButFirstGlobally()" style="font-size: 0.95em;">
+                            🗄️ Archive All But First (All Groups)
+                        </button>
+                        <button class="btn-secondary" onclick="archiveSelectedTransactions()" style="font-size: 0.95em;">
+                            🗄️ Archive Selected
+                        </button>
+                        <button class="btn-secondary" onclick="selectAllDuplicates()" style="font-size: 0.95em;">
+                            ☑️ Select All
+                        </button>
+                        <button class="btn-secondary" onclick="deselectAllDuplicates()" style="font-size: 0.95em;">
+                            ⬜ Deselect All
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Duplicates Table -->
+                <div id="duplicatesContainer" style="display: none;">
+                    <div id="duplicateGroupsContainer">
+                        <!-- Populated by JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="duplicatesEmpty" style="display: none; text-align: center; padding: 40px; background: #d4edda; border-radius: 8px; border: 1px solid #28a745;">
+                    <p style="font-size: 1.2em; color: #155724;">✅ No duplicates found!</p>
+                    <p style="color: #155724;">All transactions appear to be unique.</p>
+                </div>
+
+                <!-- Error State -->
+                <div id="duplicatesError" style="display: none; padding: 20px; background: #fee; border-radius: 8px; color: #c33; border: 1px solid #c33;">
+                    <p><strong>⚠️ Error finding duplicates:</strong></p>
+                    <p id="duplicatesErrorMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Revenue Sync Notification Script -->
     <script>
         // Revenue Sync Notification System
@@ -523,5 +584,8 @@
     </style>
 
     <script src="{{ url_for('static', filename='script_advanced.js') }}?v={{ cache_buster }}"></script>
+
+    <!-- AI CFO Assistant Chatbot -->
+    {% include 'components/chatbot.html' %}
 </body>
 </html>

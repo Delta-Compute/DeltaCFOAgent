@@ -32,3 +32,37 @@ test_*.csv
 *_test.csv
 Chase*.CSV
 *backup*
+
+# Ignore temporary development files
+*.py.tmp
+*.tmp
+*.temp
+temp_*.html
+nul
+
+# Ignore development script files
+add_*.py
+analyze_*.py
+apply_*.py
+check_*.py
+complete_*.py
+debug_*.py
+fix_*.py
+force_*.py
+hyper_*.py
+manual_*.py
+matching_*.py
+monitor_*.py
+nuclear_*.py
+optimized_*.py
+reset_*.py
+run_*.py
+simple_*.py
+test_*.py
+ultra_*.py
+
+# Ignore SQL files
+*.sql
+
+# Ignore PDF test files
+*.pdf

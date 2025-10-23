@@ -32,13 +32,13 @@
 
                 <!-- Upload Section -->
                 <div class="filter-section">
-                    <h2>📤 Upload New CSV Files</h2>
+                    <h2>📤 Upload CSV or PDF Files</h2>
                     <div class="upload-area" id="uploadArea">
                         <div class="upload-content">
                             <div class="upload-icon">📁</div>
-                            <h3>Drag & Drop CSV Files Here</h3>
+                            <h3>Drag & Drop CSV or PDF Files Here</h3>
                             <p>Or click to select files</p>
-                            <input type="file" id="fileInput" multiple accept=".csv" style="display: none;">
+                            <input type="file" id="fileInput" multiple accept=".csv,.pdf" style="display: none;">
                             <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
                                 Choose Files
                             </button>
@@ -55,7 +55,7 @@
                 <!-- Files Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>📋 CSV Files</h2>
+                        <h2>📋 Files</h2>
                         <div class="table-info">
                             <span>{{ files|length }} files found</span>
                         </div>
@@ -197,8 +197,10 @@
         }
 
         async function uploadFile(file) {
-            if (!file.name.toLowerCase().endsWith('.csv')) {
-                showToast('Only CSV files are allowed', 'error');
+            const allowedExtensions = ['.csv', '.pdf'];
+            const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+            if (!allowedExtensions.includes(fileExt)) {
+                showToast('Only CSV and PDF files are allowed', 'error');
                 return;
             }
 

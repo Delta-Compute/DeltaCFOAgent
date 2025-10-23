@@ -11,6 +11,7 @@ from collections import defaultdict
 import sqlite3
 import psycopg2
 from database import db_manager
+from tenant_config import get_current_tenant_id, get_tenant_entity_families
 
 
 class TransactionChainAnalyzer:
@@ -399,14 +400,28 @@ class TransactionChainAnalyzer:
         return [dict(row) for row in results] if results else []
 
     def _find_related_entities(self, base_entity: str) -> List[str]:
-        """Find related business entities"""
-        entity_families = {
-            'Delta': ['Delta LLC', 'Delta Prop Shop LLC', 'Delta Mining Paraguay S.A.', 'Delta Mining'],
-            'Infinity': ['Infinity Validator', 'Infinity Staking', 'Infinity Pool']
-        }
+        """
+        Find related business entities based on tenant configuration.
 
+        Args:
+            base_entity: The base entity name to find related entities for
+
+        Returns:
+            List of related entity names
+        """
+        # Get tenant-specific entity families from configuration
+        tenant_id = get_current_tenant_id()
+        entity_families = get_tenant_entity_families(tenant_id)
+
+        # If no configuration found, return empty list
+        if not entity_families:
+            return []
+
+        # Search for the base entity in any family
         for family_name, entities in entity_families.items():
-            if any(family_name.lower() in base_entity.lower() for family_name in [family_name]):
+            # Check if base_entity belongs to this family
+            if any(family_name.lower() in base_entity.lower()):
+                # Return all entities in this family except the base entity
                 return [e for e in entities if e != base_entity]
 
         return []

@@ -1,3 +1,6 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   # Build the container image using Dockerfile
   - name: 'gcr.io/cloud-builders/docker'
@@ -28,16 +31,14 @@ steps:
       - '--port'
       - '8080'
       - '--timeout'
-      - '900'
+      - '1800'
       - '--cpu-boost'
-      - '--startup-cpu-boost'
-      - '--cpu-throttling'
       - '--execution-environment'
       - 'gen2'
       - '--max-instances'
       - '100'
       - '--set-env-vars'
-      - 'DB_TYPE=postgresql,DB_SOCKET_PATH=/cloudsql/$PROJECT_ID:southamerica-east1:delta-cfo-db,DB_NAME=delta_cfo,DB_USER=delta_user,FLASK_ENV=production,PORT=8080,PYTHONUNBUFFERED=1'
+      - 'DB_TYPE=postgresql,DB_SOCKET_PATH=/cloudsql/$PROJECT_ID:southamerica-east1:delta-cfo-db,DB_NAME=delta_cfo,DB_USER=delta_user,FLASK_ENV=production,PYTHONUNBUFFERED=1'
       - '--set-cloudsql-instances'
       - '$PROJECT_ID:southamerica-east1:delta-cfo-db'
       - '--set-secrets'
