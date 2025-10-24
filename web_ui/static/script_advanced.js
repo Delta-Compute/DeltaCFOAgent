@@ -12,14 +12,16 @@ let isLoading = false;
 let cachedAccountingCategories = [];
 let cachedSubcategories = [];
 
-// Drag-down fill state
+// Drag-down fill state (now supports horizontal and vertical)
 let dragFillState = {
     isDragging: false,
+    direction: null,  // 'vertical', 'horizontal', or null (not determined yet)
     startRow: null,
     startCell: null,
     fieldName: null,
     value: null,
-    affectedRows: []
+    affectedRows: [],
+    affectedCells: []  // For horizontal selection
 };
 
 // Bulk edit state - track selected transactions
@@ -27,6 +29,199 @@ let selectedTransactionIds = new Set();
 
 // Track current active operation to prevent stale async operations from interfering
 let currentActiveOperation = null;
+
+// Undo/Redo system
+let undoStack = [];
+let redoStack = [];
+const MAX_UNDO_HISTORY = 50;
+
+function createUndoSnapshot(type, data) {
+    return {
+        type: type,  // 'single', 'bulk', 'drag-fill'
+        timestamp: new Date().toISOString(),
+        data: data
+    };
+}
+
+function updateUndoButton() {
+    const undoBtn = document.getElementById('undoBtn');
+    const undoCount = document.getElementById('undoCount');
+
+    if (undoBtn && undoCount) {
+        if (undoStack.length > 0) {
+            undoBtn.disabled = false;
+            undoBtn.style.opacity = '1';
+            undoCount.textContent = `(${undoStack.length})`;
+        } else {
+            undoBtn.disabled = true;
+            undoBtn.style.opacity = '0.5';
+            undoCount.textContent = '(0)';
+        }
+    }
+}
+
+function updateRedoButton() {
+    const redoBtn = document.getElementById('redoBtn');
+    const redoCount = document.getElementById('redoCount');
+
+    if (redoBtn && redoCount) {
+        if (redoStack.length > 0) {
+            redoBtn.disabled = false;
+            redoBtn.style.opacity = '1';
+            redoCount.textContent = `(${redoStack.length})`;
+        } else {
+            redoBtn.disabled = true;
+            redoBtn.style.opacity = '0.5';
+            redoCount.textContent = '(0)';
+        }
+    }
+}
+
+function addToUndoStack(snapshot) {
+    undoStack.push(snapshot);
+    if (undoStack.length > MAX_UNDO_HISTORY) {
+        undoStack.shift();
+    }
+
+    redoStack = [];
+
+    updateUndoButton();
+    updateRedoButton();
+
+    console.log(`Added to undo stack (${undoStack.length}/${MAX_UNDO_HISTORY})`);
+}
+
+async function performUndo() {
+    if (undoStack.length === 0) {
+        showToast('Nothing to undo', 'info');
+        return;
+    }
+
+    const snapshot = undoStack.pop();
+    console.log(`Performing undo:`, snapshot);
+
+    try {
+        if (snapshot.type === 'single') {
+            const { transactionId, fieldName, oldValue } = snapshot.data;
+            await updateTransactionFieldDirect(transactionId, fieldName, oldValue, true);
+            redoStack.push(snapshot);
+
+        } else if (snapshot.type === 'drag-fill' || snapshot.type === 'bulk') {
+            const changes = snapshot.data.changes || [];
+
+            for (const change of changes) {
+                await updateTransactionFieldDirect(change.transactionId, change.fieldName, change.oldValue, true);
+            }
+
+            redoStack.push(snapshot);
+        }
+
+        updateUndoButton();
+        updateRedoButton();
+        showToast('Undo successful', 'success');
+
+        await loadTransactions();
+
+    } catch (error) {
+        console.error('Undo error:', error);
+        showToast('Undo failed: ' + error.message, 'error');
+    }
+}
+
+async function performRedo() {
+    if (redoStack.length === 0) {
+        showToast('Nothing to redo', 'info');
+        return;
+    }
+
+    const snapshot = redoStack.pop();
+    console.log(`Performing redo:`, snapshot);
+
+    try {
+        if (snapshot.type === 'single') {
+            const { transactionId, fieldName, newValue } = snapshot.data;
+            await updateTransactionFieldDirect(transactionId, fieldName, newValue, true);
+            undoStack.push(snapshot);
+
+        } else if (snapshot.type === 'drag-fill' || snapshot.type === 'bulk') {
+            const changes = snapshot.data.changes || [];
+
+            for (const change of changes) {
+                await updateTransactionFieldDirect(change.transactionId, change.fieldName, change.newValue, true);
+            }
+
+            undoStack.push(snapshot);
+        }
+
+        updateUndoButton();
+        updateRedoButton();
+        showToast('Redo successful', 'success');
+
+        await loadTransactions();
+
+    } catch (error) {
+        console.error('Redo error:', error);
+        showToast('Redo failed: ' + error.message, 'error');
+    }
+}
+
+async function updateTransactionFieldDirect(transactionId, fieldName, value, skipUndo = false) {
+    const response = await fetch('/api/bulk_update_transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            updates: [{
+                transaction_id: transactionId,
+                field: fieldName,
+                value: value
+            }]
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Update failed: ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+function selectCellsHorizontally(targetCell) {
+    const row = targetCell.closest('tr[data-transaction-id]');
+    if (!row) return;
+
+    const allCells = Array.from(row.querySelectorAll('td[data-field]'));
+    const startIndex = allCells.indexOf(dragFillState.startCell);
+    const targetIndex = allCells.indexOf(targetCell);
+
+    if (startIndex === -1 || targetIndex === -1) return;
+
+    const minIndex = Math.min(startIndex, targetIndex);
+    const maxIndex = Math.max(startIndex, targetIndex);
+
+    // Clear previous highlights from all rows
+    document.querySelectorAll('td.drag-fill-target').forEach(cell => {
+        cell.classList.remove('drag-fill-target');
+    });
+
+    // Collect selected columns (fields)
+    dragFillState.selectedColumns = [];
+    dragFillState.affectedCells = [];
+
+    for (let i = minIndex; i <= maxIndex; i++) {
+        const cell = allCells[i];
+        if (cell.dataset.field) {
+            cell.classList.add('drag-fill-target');
+            dragFillState.selectedColumns.push(cell.dataset.field);
+            dragFillState.affectedCells.push({
+                cell: cell,
+                row: row,
+                fieldName: cell.dataset.field
+            });
+        }
+    }
+
+    console.log(`Horizontal selection: ${dragFillState.selectedColumns.length} columns selected`);
+}
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🟢 DOM Content Loaded - starting initialization');
@@ -422,11 +617,41 @@ function setupEventListeners() {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
+        // Escape key - close modals
         if (e.key === 'Escape') {
             closeModal();
             closeBulkEditModal();
         }
+
+        // Only handle undo/redo if not typing in input/textarea
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
+        }
+
+        // Undo: Ctrl+Z
+        if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            performUndo();
+        }
+
+        // Redo: Ctrl+Y or Ctrl+Shift+Z
+        if ((e.ctrlKey && e.key === 'y') || (e.ctrlKey && e.shiftKey && e.key === 'z')) {
+            e.preventDefault();
+            performRedo();
+        }
     });
+
+    // Undo/Redo button handlers
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+
+    if (undoBtn) {
+        undoBtn.addEventListener('click', performUndo);
+    }
+
+    if (redoBtn) {
+        redoBtn.addEventListener('click', performRedo);
+    }
 
     // Bulk Edit Selected button
     const bulkEditBtn = document.getElementById('bulkEditSelected');
@@ -4886,11 +5111,14 @@ function startDragFill(cell) {
     // Initialize drag state
     dragFillState = {
         isDragging: true,
+        direction: null,
         startRow: row,
         startCell: cell,
         fieldName: fieldName,
         value: value,
-        affectedRows: [row]
+        affectedRows: [row],
+        affectedCells: [],
+        selectedColumns: [fieldName]  // Track selected columns for block selection
     };
 
     // Add visual feedback
@@ -4907,35 +5135,79 @@ function startDragFill(cell) {
 function handleDragFillMove(e) {
     if (!dragFillState.isDragging) return;
 
-    // Find the row under the mouse
     const targetElement = document.elementFromPoint(e.clientX, e.clientY);
     if (!targetElement) return;
 
-    const targetRow = targetElement.closest('tr');
-    if (!targetRow || !targetRow.dataset.transactionId) return;
+    const targetCell = targetElement.closest('td[data-field]');
+    const targetRow = targetElement.closest('tr[data-transaction-id]');
 
-    // Get all rows in the table
+    if (!targetRow) return;
+
+    const startCellRect = dragFillState.startCell.getBoundingClientRect();
+    const targetCellRect = targetCell ? targetCell.getBoundingClientRect() : null;
+
+    if (targetCellRect) {
+        const deltaX = Math.abs(targetCellRect.left - startCellRect.left);
+        const deltaY = Math.abs(targetCellRect.top - startCellRect.top);
+
+        // First determine initial direction (horizontal selection)
+        if (!dragFillState.direction && deltaX > 30) {
+            dragFillState.direction = 'horizontal';
+            console.log('Initial direction: HORIZONTAL');
+        }
+
+        // If horizontal selection exists and now dragging vertically -> block selection
+        if (dragFillState.direction === 'horizontal' && deltaY > 30) {
+            dragFillState.direction = 'block';
+            console.log('Direction changed to: BLOCK (horizontal + vertical)');
+        }
+
+        // If no horizontal selection and dragging vertically -> simple vertical
+        if (!dragFillState.direction && deltaY > 30) {
+            dragFillState.direction = 'vertical';
+            console.log('Initial direction: VERTICAL');
+        }
+    }
+
+    // Apply selection based on direction
+    if (dragFillState.direction === 'horizontal' && targetCell) {
+        selectCellsHorizontally(targetCell);
+    } else if (dragFillState.direction === 'block' || dragFillState.direction === 'vertical') {
+        selectRowsVertically(targetRow);
+    }
+}
+
+function selectRowsVertically(targetRow) {
     const tbody = document.getElementById('transactionTableBody');
     const allRows = Array.from(tbody.querySelectorAll('tr[data-transaction-id]'));
     const startIndex = allRows.indexOf(dragFillState.startRow);
     const targetIndex = allRows.indexOf(targetRow);
 
-    // Determine range of affected rows
     const minIndex = Math.min(startIndex, targetIndex);
     const maxIndex = Math.max(startIndex, targetIndex);
 
     // Clear previous highlights
-    dragFillState.affectedRows.forEach(row => {
-        row.classList.remove('drag-fill-target');
+    document.querySelectorAll('td.drag-fill-target').forEach(cell => {
+        cell.classList.remove('drag-fill-target');
     });
 
-    // Highlight affected rows
     dragFillState.affectedRows = [];
+
+    // Highlight the block: all selected columns in all selected rows
     for (let i = minIndex; i <= maxIndex; i++) {
         const row = allRows[i];
-        row.classList.add('drag-fill-target');
         dragFillState.affectedRows.push(row);
+
+        // Highlight each selected column in this row
+        dragFillState.selectedColumns.forEach(fieldName => {
+            const cell = row.querySelector(`td[data-field="${fieldName}"]`);
+            if (cell) {
+                cell.classList.add('drag-fill-target');
+            }
+        });
     }
+
+    console.log(`Block selection: ${dragFillState.affectedRows.length} rows x ${dragFillState.selectedColumns.length} columns`);
 }
 
 async function handleDragFillEnd(e) {
@@ -4945,37 +5217,99 @@ async function handleDragFillEnd(e) {
     document.removeEventListener('mousemove', handleDragFillMove);
     document.removeEventListener('mouseup', handleDragFillEnd);
 
-    const affectedCount = dragFillState.affectedRows.length;
+    const updates = [];
+    const undoChanges = [];
 
-    console.log(`🖱️ Drag ended. Affected rows: ${affectedCount}`);
+    // Handle horizontal selection first (just selecting columns)
+    if (dragFillState.direction === 'horizontal' && dragFillState.selectedColumns.length > 1 && dragFillState.affectedRows.length === 1) {
+        console.log(`Horizontal only: ${dragFillState.selectedColumns.length} columns selected`);
+        // Just selected columns, no vertical drag yet - do nothing
+        // Clear drag state and return
+        clearDragState();
+        return;
+    }
 
-    if (affectedCount > 1) {
-        // Apply the value to all affected rows
-        console.log(`📝 Applying "${dragFillState.value}" to ${affectedCount} rows for field "${dragFillState.fieldName}"`);
-        console.log('Affected rows:', dragFillState.affectedRows.map(r => r.dataset.transactionId));
+    // Handle block selection (horizontal selection + vertical drag)
+    if ((dragFillState.direction === 'block' || dragFillState.direction === 'vertical') && dragFillState.selectedColumns.length > 1 && dragFillState.affectedRows.length > 1) {
+        console.log(`Block selection: ${dragFillState.affectedRows.length} rows x ${dragFillState.selectedColumns.length} columns`);
 
-        const updates = [];
+        // Get source values from the first row (startRow) for each selected column
+        const sourceValues = {};
+        dragFillState.selectedColumns.forEach(fieldName => {
+            const sourceCell = dragFillState.startRow.querySelector(`td[data-field="${fieldName}"]`);
+            if (sourceCell) {
+                if (sourceCell.classList.contains('wallet-field') && sourceCell.dataset.fullAddress) {
+                    sourceValues[fieldName] = sourceCell.dataset.fullAddress;
+                } else if (sourceCell.classList.contains('smart-dropdown')) {
+                    const span = sourceCell.querySelector('span');
+                    sourceValues[fieldName] = span ? span.textContent.trim() : sourceCell.textContent.trim();
+                } else {
+                    sourceValues[fieldName] = sourceCell.textContent.trim();
+                }
+            }
+        });
+
+        // Apply to all selected rows (excluding the first one which is the source)
+        for (const row of dragFillState.affectedRows) {
+            if (row === dragFillState.startRow) continue; // Skip source row
+
+            const transactionId = row.dataset.transactionId;
+            if (!transactionId) continue;
+
+            // Apply each column value
+            dragFillState.selectedColumns.forEach(fieldName => {
+                const cell = row.querySelector(`td[data-field="${fieldName}"]`);
+                if (cell && sourceValues[fieldName] !== undefined) {
+                    const oldValue = cell.textContent.trim();
+                    const newValue = sourceValues[fieldName];
+
+                    updates.push({
+                        transaction_id: transactionId,
+                        field: fieldName,
+                        value: newValue
+                    });
+
+                    undoChanges.push({
+                        transactionId: transactionId,
+                        fieldName: fieldName,
+                        oldValue: oldValue,
+                        newValue: newValue
+                    });
+                }
+            });
+        }
+    }
+
+    // Handle single column vertical drag (original behavior)
+    else if (dragFillState.direction === 'vertical' && dragFillState.selectedColumns.length === 1 && dragFillState.affectedRows.length > 1) {
+        console.log(`Single column vertical: ${dragFillState.affectedRows.length} rows`);
+
         for (const row of dragFillState.affectedRows) {
             const transactionId = row.dataset.transactionId;
-            if (transactionId) {
-                updates.push({
-                    transaction_id: transactionId,
-                    field: dragFillState.fieldName,
-                    value: dragFillState.value
-                });
-                console.log(`  ✓ Queuing update for transaction: ${transactionId}`);
-            } else {
-                console.warn(`  ✗ Row missing transaction ID:`, row);
-            }
+            if (!transactionId) continue;
+
+            const cell = row.querySelector(`[data-field="${dragFillState.fieldName}"]`);
+            const oldValue = cell ? cell.textContent.trim() : '';
+
+            updates.push({
+                transaction_id: transactionId,
+                field: dragFillState.fieldName,
+                value: dragFillState.value
+            });
+
+            undoChanges.push({
+                transactionId: transactionId,
+                fieldName: dragFillState.fieldName,
+                oldValue: oldValue,
+                newValue: dragFillState.value
+            });
         }
+    }
 
-        console.log(`📦 Prepared ${updates.length} updates out of ${affectedCount} affected rows`);
-        console.log('Updates:', JSON.stringify(updates, null, 2));
+    // Apply updates if any
+    if (updates.length > 0) {
+        showToast(`Updating ${updates.length} transactions...`, 'info');
 
-        // Show loading toast
-        showToast(`⏳ Updating ${updates.length} transactions...`, 'info');
-
-        // Send bulk update to backend
         try {
             const response = await fetch('/api/bulk_update_transactions', {
                 method: 'POST',
@@ -4986,43 +5320,18 @@ async function handleDragFillEnd(e) {
             const result = await response.json();
 
             if (result.success) {
-                showToast(`✅ Successfully updated ${updates.length} transactions`, 'success');
+                // Create undo snapshot
+                const snapshot = createUndoSnapshot('drag-fill', { changes: undoChanges });
+                addToUndoStack(snapshot);
 
-                // Update the cells in place instead of reloading
-                // This preserves the current sort order and avoids page reset
-                dragFillState.affectedRows.forEach(row => {
-                    const cell = row.querySelector(`[data-field="${dragFillState.fieldName}"]`);
-                    if (cell) {
-                        // IMPORTANT: Clear any inline editing elements (select dropdowns, inputs)
-                        // before updating the cell value to prevent concatenation bugs
-                        const inlineSelect = cell.querySelector('.smart-select');
-                        const inlineInput = cell.querySelector('.inline-input');
-                        if (inlineSelect || inlineInput) {
-                            // Cell is in editing mode - clear it completely
-                            cell.innerHTML = '';
-                            cell.classList.remove('editing');
-                        }
+                showToast(`Successfully updated ${updates.length} transactions`, 'success');
 
-                        // Update the cell's displayed value
-                        if (cell.classList.contains('smart-dropdown')) {
-                            const span = cell.querySelector('span');
-                            if (span) {
-                                span.textContent = dragFillState.value;
-                            } else {
-                                // For fields without span (accounting_category, subcategory)
-                                // Clear and set as plain text
-                                cell.textContent = dragFillState.value;
-                            }
-                        } else {
-                            cell.textContent = dragFillState.value;
-                        }
-                    }
-                });
+                // Update cells in place
+                // Reload the table to show all changes
+                await loadTransactions();
 
-                // Refresh stats only (not the full table)
                 await loadDashboardStats();
 
-                // Re-add drag handles to updated cells
                 setTimeout(() => {
                     setupDragDownHandles();
                 }, 100);
@@ -5031,23 +5340,37 @@ async function handleDragFillEnd(e) {
             }
         } catch (error) {
             console.error('Bulk update error:', error);
-            showToast(`❌ Error updating transactions: ${error.message}`, 'error');
+            showToast(`Error updating transactions: ${error.message}`, 'error');
         }
     }
 
     // Clear drag state and visual feedback
-    dragFillState.affectedRows.forEach(row => {
-        row.classList.remove('drag-fill-target', 'drag-fill-source');
-    });
-    dragFillState.startCell?.classList.remove('drag-fill-active');
+    clearDragState();
+}
 
+function clearDragState() {
+    // Clear visual feedback
+    document.querySelectorAll('td.drag-fill-target').forEach(cell => {
+        cell.classList.remove('drag-fill-target');
+    });
+    document.querySelectorAll('tr.drag-fill-source').forEach(row => {
+        row.classList.remove('drag-fill-source');
+    });
+    document.querySelectorAll('td.drag-fill-active').forEach(cell => {
+        cell.classList.remove('drag-fill-active');
+    });
+
+    // Reset drag state
     dragFillState = {
         isDragging: false,
+        direction: null,
         startRow: null,
         startCell: null,
         fieldName: null,
         value: null,
-        affectedRows: []
+        affectedRows: [],
+        affectedCells: [],
+        selectedColumns: []
     };
 }
 

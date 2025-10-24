@@ -160,6 +160,12 @@
                     <button id="exportCSV" class="btn-secondary">📥 Export CSV</button>
                     <button id="archiveSelected" class="btn-secondary" style="display: none;">🗄️ Archive Selected</button>
                     <button id="showArchived" class="btn-secondary">📦 Show Archived</button>
+                    <button id="undoBtn" class="btn-secondary" disabled title="Undo last change (Ctrl+Z)">
+                        ↶ Undo <span id="undoCount">(0)</span>
+                    </button>
+                    <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">
+                        ↷ Redo <span id="redoCount">(0)</span>
+                    </button>
                 </div>
             </div>
 
@@ -581,6 +587,11 @@
         .btn-link:hover {
             background: rgba(255, 255, 255, 0.3);
             border-color: rgba(255, 255, 255, 0.5);
+        }
+        /* Drag-fill horizontal selection highlight */
+        td.drag-fill-target {
+            background: rgba(59, 130, 246, 0.2) !important;
+            border: 2px solid #3b82f6 !important;
         }
     </style>
 
