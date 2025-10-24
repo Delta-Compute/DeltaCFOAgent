@@ -78,6 +78,18 @@
                             </select>
                         </div>
 
+                        <div class="filter-group">
+                            <label for="internalFilter">
+                                Transaction Type:
+                                <span class="info-tooltip" title="External Only: Real business revenue/expenses (recommended for financial reports). All Transactions: Includes internal transfers between accounts (may show imbalanced totals).">ℹ️</span>
+                            </label>
+                            <select id="internalFilter">
+                                <option value="">All Transactions</option>
+                                <option value="false" selected>External Only (Recommended)</option>
+                                <option value="true">Internal Only</option>
+                            </select>
+                        </div>
+
                         <div class="filter-group" id="customDateRange" style="display: none;">
                             <label for="startDateInput">Start Date:</label>
                             <input type="date" id="startDateInput">
@@ -99,6 +111,11 @@
 
                     <button id="refreshDashboard" class="btn-primary">🔄 Refresh Dashboard</button>
                     <button id="resetFilters" class="btn-secondary">Clear Filters</button>
+
+                    <!-- Warning for All Transactions -->
+                    <div id="allTransactionsWarning" style="display: none; margin-top: 1rem; padding: 1rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
+                        <strong>⚠️ Notice:</strong> "All Transactions" includes internal transfers which may show imbalanced totals. Use "External Only" for accurate financial reporting.
+                    </div>
                 </div>
 
                 <!-- Financial Reports Section - Moved to top for better UX -->

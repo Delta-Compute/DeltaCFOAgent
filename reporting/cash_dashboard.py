@@ -36,13 +36,15 @@ class CashDashboard:
         self.db = db_manager
 
     def get_current_cash_position(self, entity: Optional[str] = None,
-                                 as_of_date: Optional[date] = None) -> Dict[str, Any]:
+                                 as_of_date: Optional[date] = None,
+                                 is_internal: Optional[str] = None) -> Dict[str, Any]:
         """
         Get current cash position (cumulative sum of all transactions)
 
         Args:
             entity: Specific entity to analyze (Delta LLC, Prop Shop, etc.)
             as_of_date: Calculate position as of specific date (defaults to today)
+            is_internal: Filter by internal transactions ('true'/'false')
 
         Returns:
             Dict with current cash position and breakdown
@@ -58,8 +60,10 @@ class CashDashboard:
             logger.info(f"Calculating cash position as of {as_of_date_str}")
             if entity:
                 logger.info(f"Filtering for entity: {entity}")
+            if is_internal:
+                logger.info(f"Filtering for is_internal: {is_internal}")
 
-            # Build query based on entity filter
+            # Build query based on filters
             entity_filter = ""
             params = [as_of_date_str]
 
@@ -69,6 +73,13 @@ class CashDashboard:
                 else:
                     entity_filter = "AND classified_entity = ?"
                 params.append(entity)
+
+            # Add internal transaction filter
+            internal_filter = ""
+            if is_internal == 'true':
+                internal_filter = "AND is_internal_transaction = TRUE"
+            elif is_internal == 'false':
+                internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
 
             # Query all transactions up to the specified date with NaN filtering
             if self.db.db_type == 'postgresql':
@@ -88,6 +99,7 @@ class CashDashboard:
                     WHERE date <= %s
                     AND amount::text != 'NaN' AND amount IS NOT NULL
                     {entity_filter}
+                    {internal_filter}
                     ORDER BY date, amount DESC
                 """
             else:
@@ -107,6 +119,7 @@ class CashDashboard:
                     WHERE date <= ?
                     AND amount IS NOT NULL
                     {entity_filter}
+                    {internal_filter}
                     ORDER BY date, amount DESC
                 """
 
@@ -201,13 +214,14 @@ class CashDashboard:
             logger.error(f"Error calculating cash position: {e}")
             raise
 
-    def get_cash_trend(self, days: int = 30, entity: Optional[str] = None) -> Dict[str, Any]:
+    def get_cash_trend(self, days: int = 30, entity: Optional[str] = None, is_internal: Optional[str] = None) -> Dict[str, Any]:
         """
         Get cash position trend over specified number of days - OPTIMIZED VERSION
 
         Args:
             days: Number of days to analyze (7, 30, 90, etc.)
             entity: Specific entity to analyze
+            is_internal: Filter by internal transactions ('true'/'false')
 
         Returns:
             Dict with daily cash positions and trend analysis
@@ -221,6 +235,8 @@ class CashDashboard:
             logger.info(f"Calculating {days}-day cash trend for period: {start_date} to {today}")
             if entity:
                 logger.info(f"Filtering for entity: {entity}")
+            if is_internal:
+                logger.info(f"Filtering for is_internal: {is_internal}")
 
             # OPTIMIZATION: Get ALL transactions once and process efficiently
             entity_filter = ""
@@ -232,6 +248,13 @@ class CashDashboard:
                 else:
                     entity_filter = "AND classified_entity = ?"
                 params.append(entity)
+
+            # Add internal transaction filter
+            internal_filter = ""
+            if is_internal == 'true':
+                internal_filter = "AND is_internal_transaction = TRUE"
+            elif is_internal == 'false':
+                internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
 
             # Get all transactions ordered by date
             if self.db.db_type == 'postgresql':
@@ -245,6 +268,7 @@ class CashDashboard:
                     FROM transactions
                     WHERE amount::text != 'NaN' AND amount IS NOT NULL
                     {entity_filter}
+                    {internal_filter}
                     ORDER BY date
                 """
             else:
@@ -258,6 +282,7 @@ class CashDashboard:
                     FROM transactions
                     WHERE amount IS NOT NULL
                     {entity_filter}
+                    {internal_filter}
                     ORDER BY date
                 """
 

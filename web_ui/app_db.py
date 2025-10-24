@@ -890,6 +890,16 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
                 where_conditions = [c for c in where_conditions if 'archived' not in c]
             # If empty string or None, keep default behavior (active only)
 
+            # Handle internal transaction filter
+            internal_filter = filters.get('is_internal')
+            if internal_filter == 'true':
+                # Show only internal transactions
+                where_conditions.append("is_internal_transaction = TRUE")
+            elif internal_filter == 'false':
+                # Show only non-internal transactions
+                where_conditions.append("(is_internal_transaction = FALSE OR is_internal_transaction IS NULL)")
+            # If not specified, show all (both internal and non-internal)
+
         where_clause = " AND ".join(where_conditions)
 
         # Get total count with filters
@@ -3371,7 +3381,8 @@ def api_transactions():
             'start_date': request.args.get('start_date'),
             'end_date': request.args.get('end_date'),
             'keyword': request.args.get('keyword'),
-            'show_archived': request.args.get('show_archived')
+            'show_archived': request.args.get('show_archived'),
+            'is_internal': request.args.get('is_internal')
         }
 
         # Remove None values

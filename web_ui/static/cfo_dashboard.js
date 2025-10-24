@@ -8,7 +8,8 @@ let currentFilters = {
     period: 'all_time',
     entity: '',
     startDate: null,
-    endDate: null
+    endDate: null,
+    isInternal: 'false'  // Default to External Only for accurate financial reporting
 };
 
 let dashboardData = {};
@@ -76,6 +77,21 @@ function setupEventListeners() {
     // Entity filter
     document.getElementById('entityFilter').addEventListener('change', function() {
         currentFilters.entity = this.value;
+        refreshDashboard();
+    });
+
+    // Internal transaction filter
+    document.getElementById('internalFilter').addEventListener('change', function() {
+        currentFilters.isInternal = this.value;
+
+        // Show/hide warning when "All Transactions" is selected
+        const warning = document.getElementById('allTransactionsWarning');
+        if (this.value === '') {
+            warning.style.display = 'block';
+        } else {
+            warning.style.display = 'none';
+        }
+
         refreshDashboard();
     });
 
@@ -254,6 +270,10 @@ function getAPIParams() {
 
     if (currentFilters.endDate) {
         params.end_date = currentFilters.endDate;
+    }
+
+    if (currentFilters.isInternal) {
+        params.is_internal = currentFilters.isInternal;
     }
 
     return params;
@@ -554,6 +574,9 @@ function updateFilterDisplay() {
     // Update entity selector
     document.getElementById('entityFilter').value = currentFilters.entity;
 
+    // Update internal transaction filter
+    document.getElementById('internalFilter').value = currentFilters.isInternal;
+
     // Set date inputs
     if (currentFilters.startDate) {
         const startInput = document.getElementById('startDateInput');
@@ -581,7 +604,8 @@ function resetFilters() {
         period: 'all_time',
         entity: '',
         startDate: null,
-        endDate: null
+        endDate: null,
+        isInternal: ''
     };
 
     updateFilterDisplay();

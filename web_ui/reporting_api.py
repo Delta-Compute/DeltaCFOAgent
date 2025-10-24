@@ -1000,10 +1000,12 @@ def register_reporting_routes(app):
 
                     UNION ALL
 
-                    -- Invoices data (always revenue)
+                    -- Invoices data (always revenue) - use USD equivalent when available
                     SELECT
                         CASE
-                            WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                            THEN usd_equivalent_amount
+                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                             THEN total_amount::float
                             ELSE 0
                         END as revenue,
@@ -1037,11 +1039,13 @@ def register_reporting_routes(app):
 
                     UNION ALL
 
-                    -- Invoices revenue categories
+                    -- Invoices revenue categories - use USD equivalent when available
                     SELECT
                         COALESCE(vendor_name, 'Invoice Revenue') as category,
                         CASE
-                            WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                            THEN usd_equivalent_amount
+                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                             THEN total_amount::float
                             ELSE 0
                         END as amount,
@@ -1109,11 +1113,13 @@ def register_reporting_routes(app):
 
                         UNION ALL
 
-                        -- Invoices monthly data (always revenue)
+                        -- Invoices monthly data (always revenue) - use USD equivalent when available
                         SELECT
                             DATE_TRUNC('month', date::date) as month,
                             CASE
-                                WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                                WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                                THEN usd_equivalent_amount
+                                WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                                 THEN total_amount::float
                                 ELSE 0
                             END as revenue,
@@ -2254,6 +2260,7 @@ def register_reporting_routes(app):
             - start_date: Start date for analysis (YYYY-MM-DD) (optional)
             - end_date: End date for analysis (YYYY-MM-DD) (optional)
             - entity: Specific entity filter (optional)
+            - is_internal: Filter by internal transactions (true/false) (optional)
 
         Returns:
             JSON with cash position, trends, and entity breakdown
@@ -2265,6 +2272,7 @@ def register_reporting_routes(app):
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
             entity_filter = request.args.get('entity')
+            is_internal_filter = request.args.get('is_internal')
 
             # Parse dates if provided
             start_date = None
@@ -2286,11 +2294,22 @@ def register_reporting_routes(app):
             cash_dashboard = CashDashboard()
 
             # Get current cash position
-            cash_position = cash_dashboard.get_current_cash_position(entity=entity_filter)
+            cash_position = cash_dashboard.get_current_cash_position(
+                entity=entity_filter,
+                is_internal=is_internal_filter
+            )
 
             # Get cash trend (7 and 30 days)
-            trend_7_days = cash_dashboard.get_cash_trend(days=7, entity=entity_filter)
-            trend_30_days = cash_dashboard.get_cash_trend(days=30, entity=entity_filter)
+            trend_7_days = cash_dashboard.get_cash_trend(
+                days=7,
+                entity=entity_filter,
+                is_internal=is_internal_filter
+            )
+            trend_30_days = cash_dashboard.get_cash_trend(
+                days=30,
+                entity=entity_filter,
+                is_internal=is_internal_filter
+            )
 
             # Get entity comparison
             entity_comparison = cash_dashboard.get_entity_cash_comparison()
@@ -2544,6 +2563,7 @@ def register_reporting_routes(app):
             - months_back: Number of months to analyze (default: 12, use 'all' for all data)
             - start_date: Custom start date (YYYY-MM-DD)
             - end_date: Custom end date (YYYY-MM-DD)
+            - is_internal: Filter by internal transactions (true/false)
 
         Returns:
             JSON with monthly P&L analysis ready for charts and dashboards
@@ -2555,6 +2575,7 @@ def register_reporting_routes(app):
             months_back_param = request.args.get('months_back', '12')
             start_date_param = request.args.get('start_date')
             end_date_param = request.args.get('end_date')
+            is_internal_param = request.args.get('is_internal')
 
             # Determine date range
             if start_date_param and end_date_param:
@@ -2590,8 +2611,15 @@ def register_reporting_routes(app):
                 end_date = date.today()
                 start_date = end_date - timedelta(days=months_back * 30)
 
+            # Build internal transaction filter
+            internal_filter = ""
+            if is_internal_param == 'true':
+                internal_filter = "AND is_internal_transaction = TRUE"
+            elif is_internal_param == 'false':
+                internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
+
             # Consolidated query combining transactions + invoices - with NaN filtering
-            monthly_pl_query = """
+            monthly_pl_query = f"""
                 WITH combined_data AS (
                     -- Transactions data (can be revenue or expenses)
                     SELECT
@@ -2602,14 +2630,17 @@ def register_reporting_routes(app):
                     FROM transactions
                     WHERE date::date >= %s AND date::date <= %s
                         AND amount::text != 'NaN' AND amount IS NOT NULL
+                        {internal_filter}
 
                     UNION ALL
 
-                    -- Invoices data (always revenue)
+                    -- Invoices data (always revenue) - use USD equivalent when available
                     SELECT
                         date::date as transaction_date,
                         CASE
-                            WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                            THEN usd_equivalent_amount
+                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                             THEN total_amount::float
                             ELSE 0
                         END as revenue,
@@ -2717,6 +2748,7 @@ def register_reporting_routes(app):
             - end_date: End date for analysis (YYYY-MM-DD) (optional)
             - include_trends: Include trend analysis (true/false) (default: true)
             - min_transactions: Minimum transactions to include entity (default: 5)
+            - is_internal: Filter by internal transactions (true/false)
 
         Returns:
             JSON with comprehensive entity performance analysis for Delta companies
@@ -2730,6 +2762,7 @@ def register_reporting_routes(app):
             end_date_str = request.args.get('end_date')
             include_trends = request.args.get('include_trends', 'true').lower() == 'true'
             min_transactions = int(request.args.get('min_transactions', 5))
+            is_internal_param = request.args.get('is_internal')
 
             # Validate parameters
             if period not in ['monthly', 'quarterly', 'yearly', 'all_time', 'custom']:
@@ -2776,6 +2809,13 @@ def register_reporting_routes(app):
                     """
                     params = [start_date_str, end_date_str]
 
+            # Build internal transaction filter
+            internal_filter = ""
+            if is_internal_param == 'true':
+                internal_filter = "AND is_internal_transaction = TRUE"
+            elif is_internal_param == 'false':
+                internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
+
             # Entity performance query - comprehensive analysis
             entity_query = f"""
                 SELECT
@@ -2796,6 +2836,7 @@ def register_reporting_routes(app):
                 WHERE 1=1
                 AND amount::text != 'NaN' AND amount IS NOT NULL
                 {date_filter}
+                {internal_filter}
                 GROUP BY COALESCE(classified_entity, accounting_category, 'Uncategorized')
                 HAVING COUNT(*) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 ORDER BY SUM(amount) DESC
@@ -3337,16 +3378,20 @@ def register_reporting_routes(app):
 
                     UNION ALL
 
-                    -- Invoice data (always revenue)
+                    -- Invoice data (always revenue) - use USD equivalent when available
                     SELECT
                         CASE
-                            WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                            THEN usd_equivalent_amount
+                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                             THEN total_amount::float
                             ELSE 0
                         END as revenue,
                         0 as expenses,
                         CASE
-                            WHEN total_amount::text ~ '^[0-9]+\.?[0-9]*$'
+                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                            THEN usd_equivalent_amount
+                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
                             THEN total_amount::float
                             ELSE 0
                         END as net_amount,
