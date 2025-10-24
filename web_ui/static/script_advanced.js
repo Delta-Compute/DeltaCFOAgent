@@ -537,8 +537,6 @@ function setupEventListeners() {
     const prevPageBtn = document.getElementById('prevPage');
     const nextPageBtn = document.getElementById('nextPage');
 
-    console.log('Setting up pagination buttons:', {prevPageBtn, nextPageBtn});
-
     if (prevPageBtn) {
         prevPageBtn.addEventListener('click', () => {
             console.log(`Previous button clicked! currentPage: ${currentPage}, totalPages: ${totalPages}`);
@@ -744,6 +742,12 @@ function updateURLParameters() {
 async function loadTransactions() {
     if (isLoading) return;
 
+    // CRITICAL: Block loadTransactions() while AI workflow is active to prevent modal interference
+    if (window.aiWorkflowInProgress) {
+        console.log('⏸️ Blocking loadTransactions() - AI workflow in progress');
+        return;
+    }
+
     try {
         isLoading = true;
         showLoadingState();
@@ -765,10 +769,8 @@ async function loadTransactions() {
 
         // Update pagination info
         if (data.pagination) {
-            console.log('Pagination data received:', data.pagination);
             currentPage = data.pagination.page;
             totalPages = data.pagination.pages;
-            console.log(`Current page: ${currentPage}, Total pages: ${totalPages}`);
             updatePaginationControls();
         } else {
             console.warn('No pagination data received from API');
@@ -820,7 +822,6 @@ function formatCurrency(amount, currency) {
 
 // Format crypto token amounts (without dollar signs, show token quantity)
 function formatCryptoAmount(amount, currency) {
-    console.log(`formatCryptoAmount called with amount: ${amount}, currency: ${currency}`);
     if (!amount || amount === 0) return '';
     const isCrypto = ['BTC', 'ETH', 'TAO', 'SOL', 'USDC', 'USDT'].includes(currency);
     if (isCrypto) {
@@ -832,7 +833,6 @@ function formatCryptoAmount(amount, currency) {
 
         const tokenAmount = parseFloat(amount).toFixed(precision);
         const result = `<span class="crypto">${tokenAmount} ${currency}</span>`;
-        console.log(`formatCryptoAmount returning: ${result}`);
         return result;
     }
     return '';
@@ -2814,9 +2814,6 @@ function updatePaginationControls() {
     const nextBtn = document.getElementById('nextPage');
     const pageInfo = document.getElementById('pageInfo');
 
-    console.log(`updatePaginationControls called - currentPage: ${currentPage}, totalPages: ${totalPages}`);
-    console.log(`prevBtn:`, prevBtn, `nextBtn:`, nextBtn, `pageInfo:`, pageInfo);
-
     if (!prevBtn || !nextBtn || !pageInfo) {
         console.error('Pagination controls not found in DOM!');
         return;
@@ -2825,8 +2822,6 @@ function updatePaginationControls() {
     prevBtn.disabled = currentPage <= 1;
     nextBtn.disabled = currentPage >= totalPages;
     pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-
-    console.log(`Pagination controls updated - prev disabled: ${prevBtn.disabled}, next disabled: ${nextBtn.disabled}`);
 }
 
 function viewTransactionDetails(id) {
@@ -3163,20 +3158,33 @@ async function getAISmartSuggestions(transactionId, transaction) {
         currentActiveOperation = operationId;
         console.log(`🎯 Starting AI Suggestions operation: ${operationId}`);
 
-        // Show modal immediately with loading state
-        showModal();
-
-        // Hide any previous error/empty states - with null checks
+        // CRITICAL FIX: Clear modal content IMMEDIATELY to prevent stale data from previous operation
+        // This must happen BEFORE showModal() to avoid flash of old content
+        const suggestionsList = document.getElementById('suggestionsList');
         const errorDiv = document.getElementById('suggestionsError');
         const emptyDiv = document.getElementById('suggestionsEmpty');
         const assessmentDiv = document.getElementById('suggestionAssessment');
 
+        // Clear all modal content immediately
+        // DON'T touch suggestionsContent innerHTML - it contains the HTML structure for transaction info
+        // But DO clear the text content of the transaction info elements to prevent stale data
+        const descEl = document.getElementById('suggestionDescription');
+        const amountEl = document.getElementById('suggestionAmount');
+        const confEl = document.getElementById('suggestionCurrentConfidence');
+        if (descEl) descEl.textContent = 'Loading...';
+        if (amountEl) amountEl.textContent = 'Loading...';
+        if (confEl) confEl.textContent = 'Loading...';
+
+        // Clear suggestionsList which will show loading state
+        if (suggestionsList) suggestionsList.innerHTML = '';
         if (errorDiv) errorDiv.style.display = 'none';
         if (emptyDiv) emptyDiv.style.display = 'none';
         if (assessmentDiv) assessmentDiv.style.display = 'none';
 
-        // Clear previous suggestions
-        const suggestionsList = document.getElementById('suggestionsList');
+        // Now show modal with clean state
+        showModal();
+
+        // Set proper loading message
         if (suggestionsList) {
             suggestionsList.innerHTML = '<div class="loading">🤖 AI is analyzing this transaction...</div>';
         }
@@ -3189,11 +3197,7 @@ async function getAISmartSuggestions(transactionId, transaction) {
         // This avoids fragile JSON.stringify() in onclick attributes
         const transactionData = data.transaction || transaction || {};
 
-        // Populate transaction info - with null checks
-        const descEl = document.getElementById('suggestionDescription');
-        const amountEl = document.getElementById('suggestionAmount');
-        const confEl = document.getElementById('suggestionCurrentConfidence');
-
+        // Populate transaction info - with null checks (reusing element references from above)
         if (descEl) descEl.textContent = transactionData.description || 'N/A';
         if (amountEl) amountEl.textContent = formatCurrency(transactionData.amount);
         if (confEl) confEl.textContent = transactionData.confidence ? (transactionData.confidence * 100).toFixed(0) + '%' : 'N/A';
@@ -3532,12 +3536,20 @@ function updateAISuggestionSelectionCount() {
  * Apply all selected AI suggestions to the transaction
  */
 async function applySelectedAISuggestions(transactionId) {
+    console.log('🚀 applySelectedAISuggestions() called with transactionId:', transactionId);
+
+    // Set flag to block loadTransactions() during AI workflow
+    window.aiWorkflowInProgress = true;
+
     try {
         // Get all selected checkboxes
         const checkedBoxes = document.querySelectorAll('.ai-suggestion-checkbox:checked');
+        console.log('📦 Found', checkedBoxes.length, 'checked suggestion boxes');
 
         if (checkedBoxes.length === 0) {
+            console.warn('⚠️ No suggestions selected');
             showToast('Please select at least one suggestion to apply', 'warning');
+            window.aiWorkflowInProgress = false;  // Clear flag before exit
             return;
         }
 
@@ -3556,13 +3568,18 @@ async function applySelectedAISuggestions(transactionId) {
                 }
 
                 selectedSuggestions.push(suggestion);
+                console.log(`  ✓ Added suggestion ${index}:`, suggestion.field, '=', suggestion.suggested_value);
             }
         });
 
         if (selectedSuggestions.length === 0) {
+            console.error('❌ No valid suggestions found in window.currentAISuggestions');
             showToast('Error: No valid suggestions selected', 'error');
+            window.aiWorkflowInProgress = false;  // Clear flag before exit
             return;
         }
+
+        console.log('📤 Preparing to apply', selectedSuggestions.length, 'suggestion(s)');
 
         // No confirmation needed - apply directly
         // (User already selected checkboxes and clicked "Apply Selected Suggestions")
@@ -3579,6 +3596,7 @@ async function applySelectedAISuggestions(transactionId) {
         let appliedSuggestions = [];  // Track ALL successfully applied suggestions
 
         for (const suggestion of selectedSuggestions) {
+            console.log(`🔄 Applying suggestion: ${suggestion.field} = "${suggestion.suggested_value}"`);
             try {
                 const response = await fetch('/api/ai/apply-suggestion', {
                     method: 'POST',
@@ -3589,18 +3607,23 @@ async function applySelectedAISuggestions(transactionId) {
                     })
                 });
 
+                console.log(`  ↳ Response status: ${response.status} ${response.statusText}`);
                 const data = await response.json();
+                console.log(`  ↳ Response data:`, data);
 
                 if (data.success) {
                     successCount++;
                     appliedSuggestions.push(suggestion);  // Add to list of applied suggestions
+                    console.log(`  ✅ Successfully applied: ${suggestion.field}`);
                 } else {
-                    console.error(`Failed to apply suggestion for ${suggestion.field}:`, data.error);
+                    console.error(`  ❌ Failed to apply suggestion for ${suggestion.field}:`, data.error);
                 }
             } catch (error) {
-                console.error(`Error applying suggestion for ${suggestion.field}:`, error);
+                console.error(`  ❌ Error applying suggestion for ${suggestion.field}:`, error);
             }
         }
+
+        console.log(`📊 Summary: ${successCount} of ${selectedSuggestions.length} suggestions applied successfully`);
 
         if (successCount > 0) {
             showToast(`✅ Successfully applied ${successCount} of ${selectedSuggestions.length} suggestion(s)!`, 'success');
@@ -3611,6 +3634,7 @@ async function applySelectedAISuggestions(transactionId) {
                 await findSimilarTransactionsAfterAISuggestion(transactionId, appliedSuggestions);
             } else {
                 // No similar transaction search, just refresh
+                window.aiWorkflowInProgress = false;  // Clear flag before exit
                 closeModal();
                 loadTransactions();
             }
@@ -3619,6 +3643,7 @@ async function applySelectedAISuggestions(transactionId) {
             delete window.currentAISuggestions;
         } else {
             showToast('Error: Failed to apply any suggestions', 'error');
+            window.aiWorkflowInProgress = false;  // Clear flag before exit
             if (applyBtn) {
                 applyBtn.disabled = false;
                 applyBtn.textContent = `Apply Selected Suggestions (${selectedSuggestions.length})`;
@@ -3628,6 +3653,7 @@ async function applySelectedAISuggestions(transactionId) {
     } catch (error) {
         console.error('Error applying selected AI suggestions:', error);
         showToast('Error applying suggestions: ' + error.message, 'error');
+        window.aiWorkflowInProgress = false;  // Clear flag before exit
     }
 }
 
@@ -3643,6 +3669,22 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
         currentActiveOperation = operationId;
         console.log(`🔍 Starting Find Similar operation: ${operationId} (now active)`);
 
+        // CRITICAL FIX: Clear modal content IMMEDIATELY to prevent stale data from previous transaction
+        // This must happen BEFORE showModal() to avoid flash of old content
+        const modal = document.getElementById('suggestionsModal');
+        const suggestionsList = document.getElementById('suggestionsList');
+
+        // Clear suggestionsList only - DON'T destroy suggestionsContent HTML structure
+        if (suggestionsList) suggestionsList.innerHTML = '';
+
+        // Clear transaction info elements to show loading state
+        const descEl = document.getElementById('suggestionDescription');
+        const amountEl = document.getElementById('suggestionAmount');
+        const confEl = document.getElementById('suggestionCurrentConfidence');
+        if (descEl) descEl.textContent = 'Finding similar...';
+        if (amountEl) amountEl.textContent = '';
+        if (confEl) confEl.textContent = '';
+
         // Support both single suggestion (legacy) and array of suggestions
         if (!Array.isArray(appliedSuggestions)) {
             appliedSuggestions = [appliedSuggestions];
@@ -3650,38 +3692,31 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
 
         console.log(`Looking for similar transactions after applying ${appliedSuggestions.length} suggestion(s)...`);
 
-        // Show loading modal
-        const modal = document.getElementById('suggestionsModal');
-        const content = document.getElementById('suggestionsContent');
-        const suggestionsList = document.getElementById('suggestionsList');
-
-        // Clear previous content
-        if (suggestionsList) suggestionsList.innerHTML = '';
-
         // Create a friendly list of what was applied
         const appliedFieldsList = appliedSuggestions.map(s => {
             const fieldLabel = {
                 'classified_entity': 'Business Entity',
                 'accounting_category': 'Accounting Category',
-                'justification': 'Justification'
+                'justification': 'Justification',
+                'subcategory': 'Subcategory'
             }[s.field] || s.field;
             return `${fieldLabel}: "${s.suggested_value}"`;
         }).join(', ');
 
-        content.innerHTML = `
-            <div class="modal-header">
-                <h3>🤖 Finding Similar Transactions</h3>
-            </div>
-            <div class="loading-state" style="text-align: center; padding: 40px;">
-                <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
-                <p>Claude AI is analyzing for similar transactions...</p>
-                <div style="margin-top: 10px; color: #666; font-size: 14px;">
-                    Will apply: ${appliedFieldsList}
+        // Show loading state in suggestionsList
+        if (suggestionsList) {
+            suggestionsList.innerHTML = `
+                <div class="loading-state" style="text-align: center; padding: 40px;">
+                    <div style="font-size: 24px; margin-bottom: 15px;">🔍</div>
+                    <p>Claude AI is analyzing for similar transactions...</p>
+                    <div style="margin-top: 10px; color: #666; font-size: 14px;">
+                        Will apply: ${appliedFieldsList}
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        }
 
-        showModal();
+        // Modal is already open from the initial AI suggestions, so don't call showModal() again
 
         // Call the API endpoint with ALL applied suggestions
         console.log(`📡 Calling /api/ai/find-similar-after-suggestion for transaction ${transactionId}`);
@@ -3705,22 +3740,25 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
         if (currentActiveOperation !== operationId) {
             console.log(`⚠️  Find Similar operation ${operationId} cancelled - different operation now active: ${currentActiveOperation}`);
             // Silently abort this operation without showing anything
+            window.aiWorkflowInProgress = false;  // Clear flag before exit
             return;
         }
 
         if (data.error) {
             console.log('❌ Error finding similar transactions:', data.error);
             showToast('Error finding similar transactions: ' + data.error, 'error');
+            window.aiWorkflowInProgress = false;  // Clear flag before reload
             closeModal();
-            // Don't reload - just close the modal and let user continue working
+            loadTransactions();  // Reload to show updated confidence and values
             return;
         }
 
         if (!data.similar_transactions || data.similar_transactions.length === 0) {
             console.log('ℹ️ No similar transactions found');
             showToast('No similar transactions found', 'info');
+            window.aiWorkflowInProgress = false;  // Clear flag before reload
             closeModal();
-            // Don't reload - just close the modal and let user continue working
+            loadTransactions();  // Reload to show updated confidence and values
             return;
         }
 
@@ -3766,6 +3804,15 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
             </span>`;
         };
 
+        // Get suggestionsContent to replace with similar transactions UI
+        const content = document.getElementById('suggestionsContent');
+        if (!content) {
+            console.error('❌ suggestionsContent element not found');
+            showToast('Error: Modal content element not found', 'error');
+            window.aiWorkflowInProgress = false;  // Clear flag before exit
+            return;
+        }
+
         content.innerHTML = `
             <div class="modal-header">
                 <h3>🤖 Apply AI Suggestions to Similar Transactions</h3>
@@ -3810,6 +3857,11 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
                                     <div class="transaction-description" title="${t.description}">
                                         ${t.description}
                                     </div>
+                                    <div class="transaction-meta" style="margin-top: 5px; color: #666;">
+                                        <span><strong>Origin:</strong> ${t.origin || 'N/A'}</span>
+                                        <span>•</span>
+                                        <span><strong>Destination:</strong> ${t.destination || 'N/A'}</span>
+                                    </div>
                                     <div class="transaction-meta">
                                         ${Object.keys(appliedFields).map(field => {
                                             const label = fieldLabelMap[field] || field;
@@ -3841,8 +3893,9 @@ async function findSimilarTransactionsAfterAISuggestion(transactionId, appliedSu
     } catch (error) {
         console.error('Error finding similar transactions after AI suggestion:', error);
         showToast('Error finding similar transactions: ' + error.message, 'error');
+        window.aiWorkflowInProgress = false;  // Clear flag before reload
         closeModal();
-        // Don't reload - just close the modal and let user continue working
+        loadTransactions();  // Reload to show updated confidence and values
     }
 }
 

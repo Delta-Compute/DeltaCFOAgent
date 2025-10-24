@@ -1437,17 +1437,17 @@ def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant
 def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: str, tenant_id: str,
                                              wallet_address: str = None, max_results: int = 50) -> List[Dict]:
     """
-    🔥 NEW: TF-IDF-based similar transaction finder for "Apply AI Suggestions" modal
+    🔥 UPDATED: Simple Match engine for "Apply AI Suggestions" modal
 
-    This replaces the Claude AI call in /api/ai/find-similar-after-suggestion endpoint
-    with the sophisticated TF-IDF pattern system for faster, more accurate results.
+    This replaces the TF-IDF approach with the proven Simple Match engine
+    that uses keyword-based Jaccard similarity to prevent false positives.
 
     Optimized for the "apply suggestions to similar transactions" workflow:
-    - Uses TF-IDF scoring from learned patterns
+    - Uses keyword-based similarity (prevents gas station → API service false matches)
+    - Requires description field matching (most important field)
     - Prioritizes wallet address matches (crypto transactions)
-    - Z-score normalized amount matching
     - Only returns uncategorized/low-confidence transactions
-    - 5x faster than Claude AI analysis
+    - Fast and accurate
 
     Args:
         transaction_id: The reference transaction that was just categorized
@@ -1457,10 +1457,11 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         max_results: Maximum number of similar transactions to return
 
     Returns:
-        List of dicts with transaction details + TF-IDF match scores, sorted by relevance
+        List of dicts with transaction details + similarity scores, sorted by relevance
     """
     try:
         from database import db_manager
+        from simple_match_engine import find_similar_simple
 
         # Step 1: Get reference transaction details
         conn = db_manager._get_postgresql_connection()
@@ -1468,44 +1469,56 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
         cursor.execute("""
             SELECT transaction_id, description, amount, date, classified_entity,
-                   origin, destination
+                   origin, destination, accounting_category, subcategory, justification
             FROM transactions
             WHERE tenant_id = %s AND transaction_id = %s
         """, (tenant_id, transaction_id))
 
         ref_tx = cursor.fetchone()
         if not ref_tx:
-            logging.warning(f"[TFIDF_AFTER_SUGGESTION] Reference transaction {transaction_id} not found")
+            logging.warning(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Reference transaction {transaction_id} not found")
             conn.close()
             return []
 
         # Extract reference transaction details
         if isinstance(ref_tx, dict):
-            ref_desc = ref_tx.get('description', '')
-            ref_amount = ref_tx.get('amount', 0)
-            ref_origin = ref_tx.get('origin', '')
-            ref_dest = ref_tx.get('destination', '')
+            ref_tx_dict = ref_tx
         else:
-            ref_desc = ref_tx[1] if len(ref_tx) > 1 else ''
-            ref_amount = ref_tx[2] if len(ref_tx) > 2 else 0
-            ref_origin = ref_tx[5] if len(ref_tx) > 5 else ''
-            ref_dest = ref_tx[6] if len(ref_tx) > 6 else ''
+            # Column order: transaction_id, description, amount, date, classified_entity, origin, destination, accounting_category, subcategory, justification
+            ref_tx_dict = {
+                'transaction_id': ref_tx[0],
+                'description': ref_tx[1] if len(ref_tx) > 1 else '',
+                'amount': ref_tx[2] if len(ref_tx) > 2 else 0,
+                'date': ref_tx[3] if len(ref_tx) > 3 else None,
+                'classified_entity': ref_tx[4] if len(ref_tx) > 4 else '',
+                'origin': ref_tx[5] if len(ref_tx) > 5 else '',
+                'destination': ref_tx[6] if len(ref_tx) > 6 else '',
+                'accounting_category': ref_tx[7] if len(ref_tx) > 7 else '',
+                'subcategory': ref_tx[8] if len(ref_tx) > 8 else '',
+                'justification': ref_tx[9] if len(ref_tx) > 9 else '',
+            }
 
-        # Auto-detect wallet address if not provided
-        if not wallet_address:
-            if ref_origin and len(str(ref_origin)) > 20:
-                wallet_address = str(ref_origin)
-            elif ref_dest and len(str(ref_dest)) > 20:
-                wallet_address = str(ref_dest)
+        ref_desc = ref_tx_dict.get('description', '')
+        ref_origin = ref_tx_dict.get('origin', '')
+        ref_dest = ref_tx_dict.get('destination', '')
 
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] Finding similar transactions for entity='{entity_name}', desc='{ref_desc[:50]}...'")
-        if wallet_address:
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] Wallet address priority: {wallet_address[:30]}...")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Finding similar transactions for entity='{entity_name}', desc='{ref_desc[:50]}...'")
 
-        # Step 2: Query uncategorized or low-confidence transactions (same as old endpoint logic)
+        # Step 2: Query uncategorized or low-confidence transactions
+        # 🔥 NEW: Add detailed logging of query criteria
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🔍 Querying candidates with:")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - tenant_id: {tenant_id}")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - exclude: {transaction_id}")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - criteria: confidence < 0.8 OR entity NULL/empty/N/A")
+
+        # 🔥 NEW: Extract first significant word from description for filtering
+        # This ensures we prioritize similar transaction types (e.g., all "Ethereum" transactions together)
+        ref_desc_words = ref_desc.upper().split()
+        ref_first_word = ref_desc_words[0] if ref_desc_words else ''
+
         cursor.execute("""
             SELECT transaction_id, description, amount, date, classified_entity,
-                   origin, destination, confidence
+                   origin, destination, confidence, accounting_category, subcategory, justification
             FROM transactions
             WHERE tenant_id = %s
             AND transaction_id != %s
@@ -1517,185 +1530,148 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                 OR classified_entity = 'N/A'
             )
             ORDER BY
+                -- Prioritize transactions with same first word (e.g., "Ethereum", "USDT", "Tether")
+                CASE WHEN UPPER(description) LIKE %s THEN 0 ELSE 1 END ASC,
+                -- Then by confidence (lowest first)
                 CASE
                     WHEN confidence IS NULL THEN 0
                     WHEN confidence < 0.5 THEN 1
                     WHEN confidence < 0.8 THEN 2
                     ELSE 3
                 END ASC,
+                -- Then by date (newest first)
                 date DESC
             LIMIT 500
-        """, (tenant_id, transaction_id))
+        """, (tenant_id, transaction_id, f'{ref_first_word}%'))
 
         candidate_txs = cursor.fetchall()
         conn.close()
 
         if not candidate_txs:
-            logging.warning(f"[TFIDF_AFTER_SUGGESTION] ❌ No candidate transactions found in database")
+            logging.warning(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ❌ No candidate transactions found in database")
             return []
 
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Found {len(candidate_txs)} candidate transactions to score")
-        # Log first 3 candidates for debugging
-        for i, tx in enumerate(candidate_txs[:3]):
-            tx_desc = tx[1] if len(tx) > 1 else ''
-            tx_amount = tx[2] if len(tx) > 2 else 0
-            logging.info(f"[TFIDF_AFTER_SUGGESTION]   Candidate {i+1}: '{tx_desc[:50]}...' Amount: {tx_amount}")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ✅ Found {len(candidate_txs)} candidate transactions to score")
 
-        # 🔥 FALLBACK: Check if entity has any patterns in database
-        # If no patterns exist, we'll use direct description matching instead of TF-IDF
-        conn_check = db_manager._get_postgresql_connection()
-        cursor_check = conn_check.cursor()
-        cursor_check.execute("""
-            SELECT COUNT(*) FROM entity_pattern_statistics
-            WHERE tenant_id = %s AND entity_name = %s
-        """, (tenant_id, entity_name))
-        pattern_count = cursor_check.fetchone()[0]
-        cursor_check.close()
-        conn_check.close()
+        # 🔥 NEW: Log sample of candidate descriptions to understand what we're matching against
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 📋 Sample of first 10 candidates:")
+        for i, tx in enumerate(candidate_txs[:10], 1):
+            sample_desc = tx[1] if len(tx) > 1 else '' if isinstance(tx, tuple) else tx.get('description', '')
+            sample_entity = tx[4] if len(tx) > 4 else '' if isinstance(tx, tuple) else tx.get('classified_entity', '')
+            logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   {i}. '{sample_desc[:60]}...' (entity: {sample_entity})")
 
-        use_direct_matching = (pattern_count == 0)
-        if use_direct_matching:
-            logging.warning(f"[TFIDF_AFTER_SUGGESTION] ⚠️ Entity '{entity_name}' has NO patterns (count={pattern_count}) - using direct description matching fallback")
-        else:
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Entity '{entity_name}' has {pattern_count} patterns - using TF-IDF matching")
-
-        # Step 3: Score each candidate using TF-IDF system (or direct matching fallback)
-        scored_transactions = []
-        wallet_exact_matches = 0
-        filtered_out_count = 0
-        filtered_out_reasons = []
-
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] 🔍 Starting to score {len(candidate_txs)} candidates...")
-
-        # Create ONE shared database connection for all scoring operations (performance optimization)
-        conn_scoring = db_manager._get_postgresql_connection()
-        cursor_scoring = conn_scoring.cursor()
-
-        for i, tx in enumerate(candidate_txs):
+        # Convert candidates to dicts for Simple Match engine
+        candidate_dicts = []
+        for tx in candidate_txs:
             if isinstance(tx, dict):
-                tx_id = tx.get('transaction_id')
-                tx_desc = tx.get('description', '')
-                tx_amount = tx.get('amount', 0)
-                tx_date = tx.get('date')
-                tx_entity = tx.get('classified_entity', '')
-                tx_origin = tx.get('origin', '')
-                tx_dest = tx.get('destination', '')
-                tx_confidence = tx.get('confidence', 0)
+                candidate_dicts.append(tx)
             else:
-                # Column order from query: transaction_id, description, amount, date, classified_entity, origin, destination, confidence
-                tx_id = tx[0]
-                tx_desc = tx[1] if len(tx) > 1 else ''
-                tx_amount = tx[2] if len(tx) > 2 else 0
-                tx_date = tx[3] if len(tx) > 3 else None
-                tx_entity = tx[4] if len(tx) > 4 else ''
-                tx_origin = tx[5] if len(tx) > 5 else ''
-                tx_dest = tx[6] if len(tx) > 6 else ''
-                tx_confidence = tx[7] if len(tx) > 7 else 0
+                # Column order: transaction_id, description, amount, date, classified_entity, origin, destination, confidence, accounting_category, subcategory, justification
+                candidate_dicts.append({
+                    'transaction_id': tx[0],
+                    'description': tx[1] if len(tx) > 1 else '',
+                    'amount': tx[2] if len(tx) > 2 else 0,
+                    'date': tx[3] if len(tx) > 3 else None,
+                    'classified_entity': tx[4] if len(tx) > 4 else '',
+                    'origin': tx[5] if len(tx) > 5 else '',
+                    'destination': tx[6] if len(tx) > 6 else '',
+                    'confidence': tx[7] if len(tx) > 7 else 0,
+                    'accounting_category': tx[8] if len(tx) > 8 else '',
+                    'subcategory': tx[9] if len(tx) > 9 else '',
+                    'justification': tx[10] if len(tx) > 10 else '',
+                })
 
-            # 🔥 Use TF-IDF scoring OR direct description matching fallback
-            if use_direct_matching:
-                # FALLBACK: Direct fuzzy description matching when no TF-IDF patterns exist
-                fuzzy_score = fuzzy_match_pattern(ref_desc, tx_desc, threshold=70)
-                score = fuzzy_score / 100.0  # Convert to 0-1 range
-                confidence = score
-                amount_match = None
-                reasoning = f"Direct description match (no patterns available): {int(fuzzy_score)}%"
-                logging.info(f"[TFIDF_FALLBACK] Direct match for '{tx_desc[:40]}...': score={score:.2f}")
-            else:
-                # Standard TF-IDF pattern matching
-                match_result = calculate_entity_match_score(
-                    description=tx_desc,
-                    entity_name=entity_name,
-                    tenant_id=tenant_id,
-                    amount=tx_amount,
-                    account='',  # account field no longer exists in schema
-                    cursor=cursor_scoring  # Reuse shared cursor for performance
-                )
+        # Step 3: Use Simple Match engine to find similar transactions
+        # Use min_confidence=0.3 to match Simple Match engine defaults
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🔍 Running Simple Match engine with min_confidence=0.3...")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🐛 DEBUG MODE ENABLED - Detailed matching logs will follow")
+        matches = find_similar_simple(
+            target_transaction=ref_tx_dict,
+            candidate_transactions=candidate_dicts,
+            min_confidence=0.3,
+            debug=True  # 🔥 Enable detailed logging
+        )
 
-                score = match_result.get('score', 0)
-                confidence = match_result.get('confidence', 0)
-                amount_match = match_result.get('amount_match')
-                reasoning = match_result.get('reasoning', '')
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ✅ Simple Match found {len(matches)} similar transactions")
 
-            # 🔥 BOOST: Apply significant boost for exact wallet address matches
-            wallet_boost = 0
-            has_wallet_match = False
-            if wallet_address:
-                wallet_lower = wallet_address.lower()
+        # Step 4: Apply wallet address boost if applicable
+        wallet_exact_matches = 0
+        if wallet_address:
+            logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Applying wallet address boost for: {wallet_address[:30]}...")
+            wallet_lower = wallet_address.lower()
+
+            for match in matches:
+                tx_origin = match.get('origin', '')
+                tx_dest = match.get('destination', '')
+
+                # Check for wallet match
                 if (tx_origin and wallet_lower in tx_origin.lower()) or \
                    (tx_dest and wallet_lower in tx_dest.lower()):
-                    wallet_boost = 0.4  # +40% boost for wallet matches
-                    has_wallet_match = True
+                    # Boost confidence by 0.2 (20%) for wallet matches
+                    original_confidence = match.get('confidence', 0)
+                    match['confidence'] = min(1.0, original_confidence + 0.2)
+                    match['wallet_boost'] = 0.2
+                    match['has_wallet_match'] = True
                     wallet_exact_matches += 1
+                    logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   🎯 Wallet match: '{match.get('description', '')[:40]}...' boosted from {original_confidence:.3f} to {match['confidence']:.3f}")
+                else:
+                    match['wallet_boost'] = None
+                    match['has_wallet_match'] = False
 
-            boosted_score = min(1.0, score + wallet_boost)
+            logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Found {wallet_exact_matches} wallet address matches (boosted)")
 
-            # Log first 10 candidates' scores for debugging
-            if i < 10:
-                logging.info(f"[TFIDF_AFTER_SUGGESTION]   Candidate {i+1}/{len(candidate_txs)}: '{tx_desc[:40]}...'")
-                logging.info(f"[TFIDF_AFTER_SUGGESTION]     Base score: {score:.3f}, Wallet boost: {wallet_boost:.3f}, Final: {boosted_score:.3f}")
-                logging.info(f"[TFIDF_AFTER_SUGGESTION]     Threshold: 0.25, Pass: {boosted_score >= 0.25}")
+        # Step 5: Sort by wallet match status and confidence
+        matches.sort(key=lambda x: (x.get('has_wallet_match', False), x.get('confidence', 0)), reverse=True)
 
-            # Only include transactions with meaningful match scores (>= 0.25 after boost)
-            if boosted_score >= 0.25:
-                scored_transactions.append({
-                    'transaction_id': tx_id,
-                    'description': tx_desc,
-                    'amount': float(tx_amount) if tx_amount else 0,
-                    'date': str(tx_date) if tx_date else '',
-                    'classified_entity': tx_entity,
-                    'confidence': float(tx_confidence) if tx_confidence else 0,
-                    'match_score': round(boosted_score, 3),
-                    'base_tfidf_score': round(score, 3),
-                    'wallet_boost': round(wallet_boost, 3) if wallet_boost > 0 else None,
-                    'amount_match': round(amount_match, 3) if amount_match is not None else None,
-                    'reasoning': reasoning,
-                    'origin': tx_origin,
-                    'destination': tx_dest,
-                    'has_wallet_match': has_wallet_match
-                })
-            else:
-                # Track filtered out transactions
-                filtered_out_count += 1
-                if len(filtered_out_reasons) < 5:  # Log first 5 filtered out transactions
-                    filtered_out_reasons.append(f"'{tx_desc[:40]}...' - Score {boosted_score:.3f} < 0.25")
+        # Limit to max_results
+        top_matches = matches[:max_results]
 
-        # Log filtering summary
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] 📊 Scoring complete: {len(scored_transactions)} passed, {filtered_out_count} filtered out (< 0.25 threshold)")
-        if filtered_out_reasons:
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] Sample filtered out transactions:")
-            for reason in filtered_out_reasons:
-                logging.info(f"[TFIDF_AFTER_SUGGESTION]   ❌ {reason}")
+        # Step 6: Format for API response (ensure consistency with old TF-IDF format)
+        # Helper function to sanitize NaN/Infinity values for JSON serialization
+        def sanitize_for_json(value, default=0):
+            """Convert NaN/Infinity to safe JSON values"""
+            import math
+            if value is None:
+                return default
+            if isinstance(value, float):
+                if math.isnan(value) or math.isinf(value):
+                    return default
+            return value
 
-        # Step 4: Sort by match score (wallet matches + TF-IDF score)
-        scored_transactions.sort(key=lambda x: (x['has_wallet_match'], x['match_score']), reverse=True)
-        top_matches = scored_transactions[:max_results]
+        formatted_matches = []
+        for match in top_matches:
+            # Extract classification fields from nested suggested_values structure
+            suggested_values = match.get('suggested_values', {})
 
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] Found {len(top_matches)} similar transactions (scores >= 0.25)")
-        if wallet_address:
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] Including {wallet_exact_matches} exact wallet matches (boosted)")
+            formatted_matches.append({
+                'transaction_id': match.get('transaction_id'),
+                'description': match.get('description', ''),
+                'amount': sanitize_for_json(match.get('amount', 0), default=0),
+                'date': str(match.get('date', '')),
+                'classified_entity': suggested_values.get('classified_entity', ''),
+                'accounting_category': suggested_values.get('accounting_category', ''),
+                'subcategory': suggested_values.get('subcategory', ''),
+                'justification': suggested_values.get('justification', ''),
+                'confidence': sanitize_for_json(match.get('confidence', 0), default=0),
+                'match_score': round(sanitize_for_json(match.get('confidence', 0), default=0), 3),
+                'base_tfidf_score': None,  # Not using TF-IDF anymore
+                'wallet_boost': match.get('wallet_boost'),
+                'amount_match': None,  # Simple Match doesn't return this separately
+                'reasoning': f"Simple Match: {', '.join(match.get('match_details', {}).get('matched_fields', []))}",
+                'origin': match.get('origin', ''),
+                'destination': match.get('destination', ''),
+                'has_wallet_match': match.get('has_wallet_match', False),
+                'match_details': match.get('match_details', {}),
+                'suggested_values': suggested_values
+            })
 
-        # Close the shared connection after scoring all candidates
-        cursor_scoring.close()
-        conn_scoring.close()
-        logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Closed shared database connection")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Returning {len(formatted_matches)} formatted matches")
 
-        return top_matches
+        return formatted_matches
 
     except Exception as e:
-        logging.error(f"[TFIDF_AFTER_SUGGESTION] Error finding similar transactions: {e}")
+        logging.error(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Error finding similar transactions: {e}")
         logging.error(traceback.format_exc())
-
-        # Clean up the shared connection if it was created
-        try:
-            if 'cursor_scoring' in locals() and cursor_scoring:
-                cursor_scoring.close()
-            if 'conn_scoring' in locals() and conn_scoring:
-                conn_scoring.close()
-            logging.info(f"[TFIDF_AFTER_SUGGESTION] ✅ Closed shared connection in exception handler")
-        except Exception as cleanup_error:
-            logging.error(f"[TFIDF_AFTER_SUGGESTION] Error closing connection: {cleanup_error}")
-
         return []
 
 
@@ -4957,28 +4933,28 @@ Return JSON in this EXACT format:
       "current_value": "{current_entity}",
       "suggested_value": "Delta Mining Paraguay S.A.",
       "reason": "Transaction description indicates this is a Paraguay operation",
-      "confidence_impact": 0.2
+      "confidence": 0.85
     }},
     {{
       "field": "accounting_category",
       "current_value": "{current_accounting_category}",
       "suggested_value": "OPERATING_EXPENSE",
       "reason": "This is an operational expense for vehicle maintenance",
-      "confidence_impact": 0.15
+      "confidence": 0.80
     }},
     {{
       "field": "subcategory",
       "current_value": "{current_subcategory}",
       "suggested_value": "Auto Maintenance",
       "reason": "Description indicates auto service/maintenance",
-      "confidence_impact": 0.15
+      "confidence": 0.75
     }},
     {{
       "field": "justification",
       "current_value": "{current_justification}",
       "suggested_value": "Paraguay operations vehicle maintenance",
       "reason": "Specific business justification based on entity and transaction type",
-      "confidence_impact": 0.1
+      "confidence": 0.70
     }}
   ]
 }}
