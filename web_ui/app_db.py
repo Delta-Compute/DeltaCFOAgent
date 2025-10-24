@@ -7351,6 +7351,38 @@ def api_create_invoice():
         medium_gray = colors.HexColor('#e2e8f0')  # Medium gray for borders
         dark_gray = colors.HexColor('#475569')  # Softer dark gray
 
+        # Business entity data
+        business_entities = {
+            'DELTA ENERGY': {
+                'address': '123 Energy Way, Miami, FL 33101',
+                'tax_id': 'EIN: 12-3456789',
+                'contact': 'info@deltaenergy.com | +1 (305) 555-0100'
+            },
+            'Delta LLC': {
+                'address': '456 Commerce St, New York, NY 10001',
+                'tax_id': 'EIN: 98-7654321',
+                'contact': 'contact@deltallc.com | +1 (212) 555-0200'
+            },
+            'Delta Prop Shop LLC': {
+                'address': '789 Trading Blvd, Chicago, IL 60601',
+                'tax_id': 'EIN: 11-2233445',
+                'contact': 'trading@deltapropshop.com | +1 (312) 555-0300'
+            },
+            'Delta Mining Paraguay S.A.': {
+                'address': 'Av. Mariscal Lopez 1234, Asunción, Paraguay',
+                'tax_id': 'RUC: 80123456-7',
+                'contact': 'mining@deltaparaguay.com | +595 21 555 0400'
+            },
+            'Delta Brazil': {
+                'address': 'Av. Paulista 1000, São Paulo, SP 01310-100, Brasil',
+                'tax_id': 'CNPJ: 12.345.678/0001-90',
+                'contact': 'contato@deltabrasil.com.br | +55 11 5555-0500'
+            }
+        }
+
+        # Get vendor entity data if available
+        vendor_entity_data = business_entities.get(vendor_name)
+
         # Header section with vendor name (gradient-like effect using rounded corners)
         header_data = [[Paragraph(f"<b><font size='26' color='white'>{vendor_name.upper()}</font></b>", styles['Normal'])]]
         header_table = Table(header_data, colWidths=[7.5*inch])
@@ -7363,7 +7395,23 @@ def api_create_invoice():
             ('ROUNDEDCORNERS', [8, 8, 0, 0]),  # Rounded top corners
         ]))
         story.append(header_table)
-        story.append(Spacer(1, 0.35*inch))
+
+        # Add vendor entity info if available
+        if vendor_entity_data:
+            vendor_info_data = [[
+                Paragraph(f"<font size='9' color='#64748b'>{vendor_entity_data['address']}<br/>{vendor_entity_data['tax_id']}<br/>{vendor_entity_data['contact']}</font>", styles['Normal'])
+            ]]
+            vendor_info_table = Table(vendor_info_data, colWidths=[7.5*inch])
+            vendor_info_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 25),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            story.append(vendor_info_table)
+            story.append(Spacer(1, 0.25*inch))
+        else:
+            story.append(Spacer(1, 0.35*inch))
 
         # Invoice number and type badge with modern styling
         invoice_type_color = crypto_gold if currency_type == 'crypto' else delta_blue
@@ -7456,12 +7504,20 @@ def api_create_invoice():
         ]]
 
         for item in line_items:
+            # Add main item row
             line_items_data.append([
-                Paragraph(item['description'], styles['Normal']),
+                Paragraph(f"<b>{item['description']}</b>", styles['Normal']),
                 Paragraph(str(item['quantity']), styles['Normal']),
                 Paragraph(f"{currency} {item['unit_price']:.2f}", styles['Normal']),
                 Paragraph(f"{currency} {item['amount']:.2f}", styles['Normal'])
             ])
+
+            # Add details row if details exist
+            if item.get('details') and item['details'].strip():
+                line_items_data.append([
+                    Paragraph(f"<font size='8' color='#64748b'><i>{item['details']}</i></font>", styles['Normal']),
+                    '', '', ''
+                ])
 
         items_table = Table(line_items_data, colWidths=[3.8*inch, 0.8*inch, 1.4*inch, 1.5*inch])
         items_table.setStyle(TableStyle([

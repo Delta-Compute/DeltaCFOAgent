@@ -761,6 +761,13 @@
             </div>
         </div>
 
+        <!-- Create Invoice Button -->
+        <div style="margin-bottom: 2rem; text-align: center;">
+            <a href="/invoices/create" class="btn" style="padding: 1rem 2.5rem; text-decoration: none; display: inline-block; font-size: 1.1rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); border-radius: 25px;">
+                ➕ Create New Invoice
+            </a>
+        </div>
+
         <!-- Upload Section -->
         <div class="upload-section">
             <h3 style="margin-bottom: 1rem;">Upload Invoices</h3>
@@ -1499,7 +1506,11 @@
                             <td class="editable-cell" data-field="vendor_name" data-invoice-id="${invoice.id}">${invoice.vendor_name || 'N/A'}</td>
                             <td class="editable-cell" data-field="customer_name" data-invoice-id="${invoice.id}">${invoice.customer_name || 'N/A'}</td>
                             <td class="editable-cell" data-field="total_amount" data-invoice-id="${invoice.id}">${invoice.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                            <td class="editable-cell" data-field="currency" data-invoice-id="${invoice.id}">${invoice.currency || 'USD'}</td>
+                            <td class="editable-cell" data-field="currency" data-invoice-id="${invoice.id}">
+                                ${invoice.currency_type === 'crypto' && invoice.crypto_currency ?
+                                    `${invoice.crypto_currency}${invoice.crypto_network ? ' (' + invoice.crypto_network + ')' : ''}` :
+                                    (invoice.currency || 'USD')}
+                            </td>
                             <td class="editable-cell" data-field="business_unit" data-invoice-id="${invoice.id}">${invoice.business_unit || 'N/A'}</td>
                             <td class="editable-cell" data-field="category" data-invoice-id="${invoice.id}">${invoice.category || 'N/A'}</td>
                             <td>

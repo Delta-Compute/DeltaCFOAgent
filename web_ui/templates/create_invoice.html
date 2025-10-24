@@ -107,11 +107,30 @@
         }
 
         .line-item {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .line-item:last-child {
+            border-bottom: none;
+        }
+
+        .line-item-row {
             display: grid;
             grid-template-columns: 3fr 1fr 1fr 1fr auto;
             gap: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
             align-items: end;
+        }
+
+        .line-item-details {
+            grid-column: 1 / -1;
+        }
+
+        .line-item-details textarea {
+            font-size: 0.9em;
+            min-height: 60px;
         }
 
         .btn {
@@ -129,6 +148,15 @@
         .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border-radius: 25px;
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 5px 20px rgba(59, 130, 246, 0.4);
         }
 
         .btn-secondary {
@@ -334,11 +362,16 @@
                         </div>
                         <div id="lineItemsContainer">
                             <div class="line-item">
-                                <input type="text" placeholder="Item description" class="line-desc" required>
-                                <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
-                                <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
-                                <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
-                                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                                <div class="line-item-row">
+                                    <input type="text" placeholder="Item name" class="line-desc" required>
+                                    <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
+                                    <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
+                                    <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
+                                    <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                                </div>
+                                <div class="line-item-details">
+                                    <textarea placeholder="Item details/description (optional)" class="line-details"></textarea>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -375,7 +408,7 @@
                               placeholder="Enter payment instructions (e.g., bank account details, wire transfer info, crypto wallet address, payment terms, or any additional notes for the customer)"></textarea>
                 </div>
 
-                <button type="submit" class="btn" style="width: 100%;">Generate Invoice PDF</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Generate Invoice PDF</button>
             </form>
 
             <div class="loading" id="loading">
@@ -573,11 +606,16 @@
             const newItem = document.createElement('div');
             newItem.className = 'line-item';
             newItem.innerHTML = `
-                <input type="text" placeholder="Item description" class="line-desc" required>
-                <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
-                <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
-                <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
-                <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                <div class="line-item-row">
+                    <input type="text" placeholder="Item name" class="line-desc" required>
+                    <input type="number" step="1" placeholder="1" value="1" class="line-qty" required>
+                    <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
+                    <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
+                    <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                </div>
+                <div class="line-item-details">
+                    <textarea placeholder="Item details/description (optional)" class="line-details"></textarea>
+                </div>
             `;
             container.appendChild(newItem);
             attachLineItemListeners(newItem);
@@ -644,6 +682,7 @@
             const lineItems = [];
             document.querySelectorAll('.line-item').forEach(item => {
                 const desc = item.querySelector('.line-desc').value;
+                const details = item.querySelector('.line-details').value;
                 const qty = parseFloat(item.querySelector('.line-qty').value) || 0;
                 const price = parseFloat(item.querySelector('.line-price').value) || 0;
                 const amount = parseFloat(item.querySelector('.line-amount').value) || 0;
@@ -651,6 +690,7 @@
                 if (desc && qty && price) {
                     lineItems.push({
                         description: desc,
+                        details: details,
                         quantity: qty,
                         unit_price: price,
                         amount: amount
