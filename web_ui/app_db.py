@@ -7665,6 +7665,9 @@ def api_get_invoices():
             'linked_transaction_id': request.args.get('linked_transaction_id')
         }
 
+        # Get keyword search parameter
+        keyword = request.args.get('keyword')
+
         # Get advanced filter parameters
         advanced_filters = {
             'invoice_number': request.args.get('invoice_number'),
@@ -7706,6 +7709,23 @@ def api_get_invoices():
         # Build query - add tenant_id filter
         query = f"SELECT * FROM invoices WHERE tenant_id = {placeholder}"
         params = [tenant_id]
+
+        # Apply keyword search across multiple fields (case-insensitive with ILIKE)
+        if keyword:
+            keyword_condition = f"""
+                AND (
+                    invoice_number ILIKE {placeholder} OR
+                    vendor_name ILIKE {placeholder} OR
+                    customer_name ILIKE {placeholder} OR
+                    business_unit ILIKE {placeholder} OR
+                    category ILIKE {placeholder} OR
+                    processing_notes ILIKE {placeholder} OR
+                    CAST(total_amount AS TEXT) ILIKE {placeholder}
+                )
+            """
+            query += keyword_condition
+            keyword_param = f"%{keyword}%"
+            params.extend([keyword_param] * 7)  # 7 fields being searched
 
         if filters.get('business_unit'):
             query += f" AND business_unit = {placeholder}"

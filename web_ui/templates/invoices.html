@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Invoice Processing - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
     <style>
@@ -100,38 +103,22 @@
             color: #1e293b;
         }
 
-        .toggle-advanced-btn {
-            padding: 0.5rem 1rem;
-            background: #f1f5f9;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s ease;
+        .keyword-search-container {
+            margin-bottom: 1.5rem;
         }
 
-        .toggle-advanced-btn:hover {
-            background: #e2e8f0;
+        .keyword-search-container input {
+            font-size: 1rem;
+            font-weight: 500;
         }
 
-        .basic-filters {
+        .all-filters-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .advanced-filters {
-            display: none;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 1rem;
             margin-top: 1rem;
             padding-top: 1rem;
             border-top: 1px solid #e2e8f0;
-        }
-
-        .advanced-filters.active {
-            display: grid;
         }
 
         .filter-group {
@@ -963,13 +950,18 @@
         <div class="invoice-filters">
             <div class="filters-header">
                 <div class="filters-title">Filters & Search</div>
-                <button class="toggle-advanced-btn" onclick="toggleAdvancedFilters()">
-                    <span id="toggle-advanced-text">Show Advanced Filters</span>
-                </button>
             </div>
 
-            <!-- Basic Filters -->
-            <div class="basic-filters">
+            <!-- Keyword Search -->
+            <div class="keyword-search-container">
+                <div class="filter-group">
+                    <label class="filter-label">Keyword Search</label>
+                    <input type="text" id="filter-keyword" placeholder="Search across all fields (invoice #, vendor, customer, notes...)">
+                </div>
+            </div>
+
+            <!-- All Filters (Always Visible) -->
+            <div class="all-filters-grid">
                 <div class="filter-group">
                     <label class="filter-label">Search Vendor</label>
                     <input type="text" id="filter-vendor" placeholder="Enter vendor name...">
@@ -1001,10 +993,6 @@
                         <option value="Other">Other</option>
                     </select>
                 </div>
-            </div>
-
-            <!-- Advanced Filters -->
-            <div class="advanced-filters" id="advanced-filters">
                 <div class="filter-group">
                     <label class="filter-label">Invoice Number</label>
                     <input type="text" id="filter-invoice-number" placeholder="Search invoice #...">
@@ -1328,27 +1316,17 @@
         }
 
         // ========================================
-        // ADVANCED FILTERS
+        // FILTERS
         // ========================================
-
-        function toggleAdvancedFilters() {
-            const advancedFilters = document.getElementById('advanced-filters');
-            const toggleText = document.getElementById('toggle-advanced-text');
-
-            if (advancedFilters.classList.contains('active')) {
-                advancedFilters.classList.remove('active');
-                toggleText.textContent = 'Show Advanced Filters';
-            } else {
-                advancedFilters.classList.add('active');
-                toggleText.textContent = 'Hide Advanced Filters';
-            }
-        }
 
         function applyFilters() {
             loadInvoices(1); // Reset to page 1 when applying filters
         }
 
         function clearAllFilters() {
+            // Clear keyword search
+            document.getElementById('filter-keyword').value = '';
+
             // Clear basic filters
             document.getElementById('filter-vendor').value = '';
             document.getElementById('filter-customer').value = '';
@@ -1373,12 +1351,29 @@
         }
 
         // Initialize
+        // Debounce function to limit API calls
+        function debounce(func, delay) {
+            let timeoutId;
+            return function(...args) {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             loadStats();
             loadInvoices();
             setupUpload();
             setupEditModal();
             restoreActiveJobs(); // Restore any running background jobs
+
+            // Setup real-time keyword search with debounce (300ms delay)
+            const keywordInput = document.getElementById('filter-keyword');
+            if (keywordInput) {
+                keywordInput.addEventListener('input', debounce(function() {
+                    loadInvoices(1); // Reset to page 1 when searching
+                }, 300));
+            }
         });
 
         // Setup file upload
@@ -1747,6 +1742,9 @@
         async function loadInvoices(page = 1) {
             currentPage = page;
 
+            // Keyword search
+            const keyword = document.getElementById('filter-keyword')?.value;
+
             // Basic filters
             const filters = {
                 business_unit: document.getElementById('filter-business-unit').value,
@@ -1766,6 +1764,9 @@
             const queryParams = new URLSearchParams();
             queryParams.append('page', page);
             queryParams.append('per_page', 20);
+
+            // Add keyword search
+            if (keyword) queryParams.append('keyword', keyword);
 
             // Add basic filters
             Object.keys(filters).forEach(key => {
