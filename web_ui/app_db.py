@@ -7656,7 +7656,7 @@ def api_get_invoices():
     try:
         tenant_id = get_current_tenant_id()
         print(f"[DEBUG] api_get_invoices called with args: {request.args}")
-        # Get filter parameters
+        # Get basic filter parameters
         filters = {
             'business_unit': request.args.get('business_unit'),
             'category': request.args.get('category'),
@@ -7665,8 +7665,33 @@ def api_get_invoices():
             'linked_transaction_id': request.args.get('linked_transaction_id')
         }
 
+        # Get advanced filter parameters
+        advanced_filters = {
+            'invoice_number': request.args.get('invoice_number'),
+            'date_from': request.args.get('date_from'),
+            'date_to': request.args.get('date_to'),
+            'amount_min': request.args.get('amount_min'),
+            'amount_max': request.args.get('amount_max'),
+            'currency': request.args.get('currency')
+        }
+
+        # Get sorting parameters
+        sort_by = request.args.get('sort_by', 'created_at')
+        sort_order = request.args.get('sort_order', 'desc').upper()
+
+        # Validate sort order
+        if sort_order not in ['ASC', 'DESC']:
+            sort_order = 'DESC'
+
+        # Validate sort field (prevent SQL injection)
+        allowed_sort_fields = ['invoice_number', 'date', 'due_date', 'vendor_name', 'customer_name',
+                              'total_amount', 'currency', 'business_unit', 'category', 'created_at']
+        if sort_by not in allowed_sort_fields:
+            sort_by = 'created_at'
+
         # Remove None values
         filters = {k: v for k, v in filters.items() if v}
+        advanced_filters = {k: v for k, v in advanced_filters.items() if v}
 
         # Pagination
         page = int(request.args.get('page', 1))
@@ -7698,6 +7723,31 @@ def api_get_invoices():
             query += f" AND customer_name LIKE {placeholder}"
             params.append(f"%{filters['customer_name']}%")
 
+        # Apply advanced filters
+        if advanced_filters.get('invoice_number'):
+            query += f" AND invoice_number LIKE {placeholder}"
+            params.append(f"%{advanced_filters['invoice_number']}%")
+
+        if advanced_filters.get('date_from'):
+            query += f" AND date >= {placeholder}"
+            params.append(advanced_filters['date_from'])
+
+        if advanced_filters.get('date_to'):
+            query += f" AND date <= {placeholder}"
+            params.append(advanced_filters['date_to'])
+
+        if advanced_filters.get('amount_min'):
+            query += f" AND total_amount >= {placeholder}"
+            params.append(float(advanced_filters['amount_min']))
+
+        if advanced_filters.get('amount_max'):
+            query += f" AND total_amount <= {placeholder}"
+            params.append(float(advanced_filters['amount_max']))
+
+        if advanced_filters.get('currency'):
+            query += f" AND currency = {placeholder}"
+            params.append(advanced_filters['currency'])
+
         # Filter by linked_transaction_id (special handling before filters cleanup)
         linked_filter = request.args.get('linked_transaction_id')
         if linked_filter:
@@ -7720,8 +7770,8 @@ def api_get_invoices():
         count_result = db_manager.execute_query(count_query, tuple(params), fetch_one=True)
         total_count = count_result['total'] if count_result else 0
 
-        # Add ordering and pagination
-        query += f" ORDER BY created_at DESC LIMIT {placeholder} OFFSET {placeholder}"
+        # Add ordering and pagination - use validated sort_by and sort_order
+        query += f" ORDER BY {sort_by} {sort_order} LIMIT {placeholder} OFFSET {placeholder}"
         params.extend([per_page, offset])
 
         results = db_manager.execute_query(query, tuple(params), fetch_all=True)

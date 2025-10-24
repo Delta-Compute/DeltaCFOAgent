@@ -80,18 +80,121 @@
         }
 
         .invoice-filters {
-            display: flex;
-            gap: 1rem;
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
             margin-bottom: 2rem;
-            flex-wrap: wrap;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .filters-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .filters-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .toggle-advanced-btn {
+            padding: 0.5rem 1rem;
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .toggle-advanced-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .basic-filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .advanced-filters {
+            display: none;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .advanced-filters.active {
+            display: grid;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .invoice-filters input,
         .invoice-filters select {
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1rem;
             border: 1px solid #cbd5e1;
             border-radius: 6px;
             font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .invoice-filters input:focus,
+        .invoice-filters select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+
+        .filter-actions button {
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .btn-apply-filters {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-apply-filters:hover {
+            background: #2563eb;
+        }
+
+        .btn-clear-filters {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .btn-clear-filters:hover {
+            background: #e2e8f0;
         }
 
         .invoice-table {
@@ -116,6 +219,41 @@
             color: #475569;
             border-bottom: 2px solid #e2e8f0;
             white-space: nowrap;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            transition: background 0.2s ease;
+        }
+
+        .invoice-table th:hover {
+            background: #e2e8f0;
+        }
+
+        .invoice-table th.sortable::after {
+            content: '↕';
+            margin-left: 0.5rem;
+            opacity: 0.3;
+            font-size: 0.9rem;
+        }
+
+        .invoice-table th.sort-asc::after {
+            content: '↑';
+            opacity: 1;
+            color: #3b82f6;
+        }
+
+        .invoice-table th.sort-desc::after {
+            content: '↓';
+            opacity: 1;
+            color: #3b82f6;
+        }
+
+        .invoice-table th:first-child {
+            cursor: default;
+        }
+
+        .invoice-table th:first-child:hover {
+            background: #f1f5f9;
         }
 
         /* Column width specifications */
@@ -823,26 +961,87 @@
 
         <!-- Filters -->
         <div class="invoice-filters">
-            <select id="filter-business-unit">
-                <option value="">All Business Units</option>
-                <option value="Delta LLC">Delta LLC</option>
-                <option value="Delta Prop Shop LLC">Delta Prop Shop LLC</option>
-                <option value="Delta Mining Paraguay S.A.">Delta Mining Paraguay S.A.</option>
-                <option value="Delta Brazil">Delta Brazil</option>
-                <option value="Personal">Personal</option>
-            </select>
-            <select id="filter-category">
-                <option value="">All Categories</option>
-                <option value="Technology Expenses">Technology Expenses</option>
-                <option value="Utilities">Utilities</option>
-                <option value="Insurance">Insurance</option>
-                <option value="Professional Services">Professional Services</option>
-                <option value="Office Expenses">Office Expenses</option>
-                <option value="Other">Other</option>
-            </select>
-            <input type="text" id="filter-vendor" placeholder="Search vendor...">
-            <input type="text" id="filter-customer" placeholder="Search customer...">
-            <button class="action-btn btn-view" onclick="loadInvoices()">Apply Filters</button>
+            <div class="filters-header">
+                <div class="filters-title">Filters & Search</div>
+                <button class="toggle-advanced-btn" onclick="toggleAdvancedFilters()">
+                    <span id="toggle-advanced-text">Show Advanced Filters</span>
+                </button>
+            </div>
+
+            <!-- Basic Filters -->
+            <div class="basic-filters">
+                <div class="filter-group">
+                    <label class="filter-label">Search Vendor</label>
+                    <input type="text" id="filter-vendor" placeholder="Enter vendor name...">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Search Customer</label>
+                    <input type="text" id="filter-customer" placeholder="Enter customer name...">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Business Unit</label>
+                    <select id="filter-business-unit">
+                        <option value="">All Business Units</option>
+                        <option value="Delta LLC">Delta LLC</option>
+                        <option value="Delta Prop Shop LLC">Delta Prop Shop LLC</option>
+                        <option value="Delta Mining Paraguay S.A.">Delta Mining Paraguay S.A.</option>
+                        <option value="Delta Brazil">Delta Brazil</option>
+                        <option value="Personal">Personal</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Category</label>
+                    <select id="filter-category">
+                        <option value="">All Categories</option>
+                        <option value="Technology Expenses">Technology Expenses</option>
+                        <option value="Utilities">Utilities</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="Professional Services">Professional Services</option>
+                        <option value="Office Expenses">Office Expenses</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Advanced Filters -->
+            <div class="advanced-filters" id="advanced-filters">
+                <div class="filter-group">
+                    <label class="filter-label">Invoice Number</label>
+                    <input type="text" id="filter-invoice-number" placeholder="Search invoice #...">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Date From</label>
+                    <input type="date" id="filter-date-from">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Date To</label>
+                    <input type="date" id="filter-date-to">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Amount Min</label>
+                    <input type="number" id="filter-amount-min" placeholder="0.00" step="0.01">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Amount Max</label>
+                    <input type="number" id="filter-amount-max" placeholder="0.00" step="0.01">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label">Currency</label>
+                    <select id="filter-currency">
+                        <option value="">All Currencies</option>
+                        <option value="USD">USD</option>
+                        <option value="BRL">BRL</option>
+                        <option value="PYG">PYG</option>
+                        <option value="EUR">EUR</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Filter Actions -->
+            <div class="filter-actions">
+                <button class="btn-apply-filters" onclick="applyFilters()">Apply Filters</button>
+                <button class="btn-clear-filters" onclick="clearAllFilters()">Clear All</button>
+            </div>
         </div>
 
         <!-- Invoice Table -->
@@ -853,15 +1052,15 @@
                         <th style="width: 50px;">
                             <input type="checkbox" id="select-all" onchange="toggleSelectAll()">
                         </th>
-                        <th>Invoice #</th>
-                        <th>Action</th>
-                        <th>Due Date</th>
-                        <th>Vendor (From)</th>
-                        <th>Customer (To)</th>
-                        <th>Amount</th>
-                        <th>Currency</th>
-                        <th>Business Unit</th>
-                        <th>Category</th>
+                        <th class="sortable" data-sort="invoice_number" onclick="sortTable('invoice_number')">Invoice #</th>
+                        <th class="sortable" data-sort="date" onclick="sortTable('date')">Date</th>
+                        <th class="sortable" data-sort="due_date" onclick="sortTable('due_date')">Due Date</th>
+                        <th class="sortable" data-sort="vendor_name" onclick="sortTable('vendor_name')">Vendor (From)</th>
+                        <th class="sortable" data-sort="customer_name" onclick="sortTable('customer_name')">Customer (To)</th>
+                        <th class="sortable" data-sort="total_amount" onclick="sortTable('total_amount')">Amount</th>
+                        <th class="sortable" data-sort="currency" onclick="sortTable('currency')">Currency</th>
+                        <th class="sortable" data-sort="business_unit" onclick="sortTable('business_unit')">Business Unit</th>
+                        <th class="sortable" data-sort="category" onclick="sortTable('category')">Category</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -1001,6 +1200,10 @@
         let currentEditingInvoiceId = null;
         let allInvoices = [];
 
+        // Sorting state
+        let currentSortField = null;
+        let currentSortOrder = null; // 'asc' or 'desc'
+
         // Restore active background jobs on page load
         async function restoreActiveJobs() {
             // Check localStorage for active job
@@ -1086,6 +1289,87 @@
             // Refresh data
             loadStats();
             loadInvoices();
+        }
+
+        // ========================================
+        // SORTING FUNCTIONS
+        // ========================================
+
+        function sortTable(field) {
+            if (currentSortField === field) {
+                // Toggle sort order
+                currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                // New field - default to ascending
+                currentSortField = field;
+                currentSortOrder = 'asc';
+            }
+
+            // Update visual indicators
+            updateSortIndicators();
+
+            // Reload with new sort
+            loadInvoices(currentPage);
+        }
+
+        function updateSortIndicators() {
+            // Remove all sort classes
+            document.querySelectorAll('.invoice-table th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+
+            // Add class to active sort column
+            if (currentSortField) {
+                const activeHeader = document.querySelector(`th[data-sort="${currentSortField}"]`);
+                if (activeHeader) {
+                    activeHeader.classList.add(currentSortOrder === 'asc' ? 'sort-asc' : 'sort-desc');
+                }
+            }
+        }
+
+        // ========================================
+        // ADVANCED FILTERS
+        // ========================================
+
+        function toggleAdvancedFilters() {
+            const advancedFilters = document.getElementById('advanced-filters');
+            const toggleText = document.getElementById('toggle-advanced-text');
+
+            if (advancedFilters.classList.contains('active')) {
+                advancedFilters.classList.remove('active');
+                toggleText.textContent = 'Show Advanced Filters';
+            } else {
+                advancedFilters.classList.add('active');
+                toggleText.textContent = 'Hide Advanced Filters';
+            }
+        }
+
+        function applyFilters() {
+            loadInvoices(1); // Reset to page 1 when applying filters
+        }
+
+        function clearAllFilters() {
+            // Clear basic filters
+            document.getElementById('filter-vendor').value = '';
+            document.getElementById('filter-customer').value = '';
+            document.getElementById('filter-business-unit').value = '';
+            document.getElementById('filter-category').value = '';
+
+            // Clear advanced filters
+            document.getElementById('filter-invoice-number').value = '';
+            document.getElementById('filter-date-from').value = '';
+            document.getElementById('filter-date-to').value = '';
+            document.getElementById('filter-amount-min').value = '';
+            document.getElementById('filter-amount-max').value = '';
+            document.getElementById('filter-currency').value = '';
+
+            // Clear sorting
+            currentSortField = null;
+            currentSortOrder = null;
+            updateSortIndicators();
+
+            // Reload with clean slate
+            loadInvoices(1);
         }
 
         // Initialize
@@ -1463,6 +1747,7 @@
         async function loadInvoices(page = 1) {
             currentPage = page;
 
+            // Basic filters
             const filters = {
                 business_unit: document.getElementById('filter-business-unit').value,
                 category: document.getElementById('filter-category').value,
@@ -1470,15 +1755,38 @@
                 customer_name: document.getElementById('filter-customer').value
             };
 
+            // Advanced filters
+            const invoiceNumber = document.getElementById('filter-invoice-number')?.value;
+            const dateFrom = document.getElementById('filter-date-from')?.value;
+            const dateTo = document.getElementById('filter-date-to')?.value;
+            const amountMin = document.getElementById('filter-amount-min')?.value;
+            const amountMax = document.getElementById('filter-amount-max')?.value;
+            const currency = document.getElementById('filter-currency')?.value;
+
             const queryParams = new URLSearchParams();
             queryParams.append('page', page);
             queryParams.append('per_page', 20);
 
+            // Add basic filters
             Object.keys(filters).forEach(key => {
                 if (filters[key]) {
                     queryParams.append(key, filters[key]);
                 }
             });
+
+            // Add advanced filters
+            if (invoiceNumber) queryParams.append('invoice_number', invoiceNumber);
+            if (dateFrom) queryParams.append('date_from', dateFrom);
+            if (dateTo) queryParams.append('date_to', dateTo);
+            if (amountMin) queryParams.append('amount_min', amountMin);
+            if (amountMax) queryParams.append('amount_max', amountMax);
+            if (currency) queryParams.append('currency', currency);
+
+            // Add sorting
+            if (currentSortField) {
+                queryParams.append('sort_by', currentSortField);
+                queryParams.append('sort_order', currentSortOrder);
+            }
 
             try {
                 const response = await fetch('/api/invoices?' + queryParams);
@@ -1530,6 +1838,9 @@
                     // Update pagination
                     totalPages = data.pagination.pages;
                     renderPagination();
+
+                    // Update sort indicators
+                    updateSortIndicators();
                 } else {
                     tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 3rem;">No invoices found</td></tr>';
                 }
