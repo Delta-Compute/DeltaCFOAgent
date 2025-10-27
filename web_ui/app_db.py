@@ -141,9 +141,15 @@ def accept_invitation_page():
 
 @app.route('/cfo/dashboard')
 def cfo_dashboard_page():
-    """Serve the CFO dashboard page"""
+    """Serve the CFO financial reports dashboard page"""
     # TODO: Add authentication check
     return render_template('cfo_dashboard.html')
+
+@app.route('/cfo/home')
+def cfo_home_page():
+    """Serve the CFO home/management dashboard page"""
+    # TODO: Add authentication check
+    return render_template('cfo_home.html')
 
 @app.route('/users')
 def users_page():

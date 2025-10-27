@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Delta CFO</h2>
+                <p id="tenantName">Loading...</p>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="/" class="nav-item">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="/users" class="nav-item active">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    Users
+                </a>
+                <a href="/whitelisted-accounts" class="nav-item">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                    </svg>
+                    Accounts
+                </a>
+                <a href="/transactions" class="nav-item">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    Transactions
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                    <div class="user-details">
+                        <div class="user-name" id="userName">Loading...</div>
+                        <div class="user-role" id="userRole">Loading...</div>
+                    </div>
+                </div>
+                <button class="btn-logout" id="logoutBtn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                    </svg>
+                    Logout
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="content-header">
+                <div>
+                    <h1>User Management</h1>
+                    <p>Manage team members and access permissions</p>
+                </div>
+                <button class="btn-primary" id="inviteUserBtn">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M12 4v16m8-8H4"/>
+                    </svg>
+                    Invite User
+                </button>
+            </header>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button class="tab active" data-tab="team">Team Members</button>
+                <button class="tab" data-tab="invitations">Pending Invitations</button>
+            </div>
+
+            <!-- Team Members Tab -->
+            <div class="tab-content active" id="teamTab">
+                <!-- Search and Filters -->
+                <div class="toolbar">
+                    <div class="search-box">
+                        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" id="searchUsers" placeholder="Search users...">
+                    </div>
+                    <div class="filters">
+                        <select id="roleFilter">
+                            <option value="">All Roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="cfo">CFO</option>
+                            <option value="cfo_assistant">CFO Assistant</option>
+                            <option value="employee">Employee</option>
+                        </select>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="showInactive">
+                            <span>Show Inactive</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Users Table -->
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Last Login</th>
+                                <th>Added</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="6" class="loading-cell">
+                                    <div class="loader"></div>
+                                    <p>Loading users...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Invitations Tab -->
+            <div class="tab-content" id="invitationsTab">
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Invited By</th>
+                                <th>Sent</th>
+                                <th>Expires</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="invitationsTableBody">
+                            <tr>
+                                <td colspan="7" class="loading-cell">
+                                    <div class="loader"></div>
+                                    <p>Loading invitations...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Invite User Modal -->
+    <div class="modal" id="inviteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Invite New User</h2>
+                <button class="modal-close" onclick="closeModal('inviteModal')">&times;</button>
+            </div>
+            <form id="inviteForm">
+                <div class="form-group">
+                    <label for="inviteEmail">Email Address</label>
+                    <input type="email" id="inviteEmail" required placeholder="user@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="inviteUserType">User Type</label>
+                    <select id="inviteUserType" required>
+                        <option value="">Select user type...</option>
+                        <option value="employee">Employee</option>
+                        <option value="fractional_cfo">Fractional CFO</option>
+                        <option value="cfo_assistant">CFO Assistant</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="inviteRole">Role</label>
+                    <select id="inviteRole" required>
+                        <option value="">Select role...</option>
+                        <option value="employee">Employee</option>
+                        <option value="admin">Admin</option>
+                        <option value="cfo">CFO</option>
+                        <option value="cfo_assistant">CFO Assistant</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Permissions (optional)</label>
+                    <div class="permissions-grid">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="transactions.view">
+                            <span>View Transactions</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="transactions.edit">
+                            <span>Edit Transactions</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="invoices.view">
+                            <span>View Invoices</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="invoices.edit">
+                            <span>Edit Invoices</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="users.view">
+                            <span>View Users</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="users.manage">
+                            <span>Manage Users</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="reports.view">
+                            <span>View Reports</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="permission" value="settings.edit">
+                            <span>Edit Settings</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeModal('inviteModal')">Cancel</button>
+                    <button type="submit" class="btn-primary" id="sendInviteBtn">
+                        <span class="btn-text">Send Invitation</span>
+                        <span class="btn-loader" style="display: none;"></span>
+                    </button>
+                </div>
+            </form>
+            <div class="alert alert-error" id="inviteError" style="display: none;"></div>
+            <div class="alert alert-success" id="inviteSuccess" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit User</h2>
+                <button class="modal-close" onclick="closeModal('editModal')">&times;</button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editUserId">
+                <div class="form-group">
+                    <label for="editDisplayName">Display Name</label>
+                    <input type="text" id="editDisplayName" required>
+                </div>
+                <div class="form-group">
+                    <label for="editRole">Role</label>
+                    <select id="editRole" required>
+                        <option value="employee">Employee</option>
+                        <option value="admin">Admin</option>
+                        <option value="cfo">CFO</option>
+                        <option value="cfo_assistant">CFO Assistant</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Permissions</label>
+                    <div class="permissions-grid" id="editPermissions">
+                        <!-- Permissions will be populated dynamically -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" onclick="closeModal('editModal')">Cancel</button>
+                    <button type="submit" class="btn-primary" id="updateUserBtn">
+                        <span class="btn-text">Update User</span>
+                        <span class="btn-loader" style="display: none;"></span>
+                    </button>
+                </div>
+            </form>
+            <div class="alert alert-error" id="editError" style="display: none;"></div>
+            <div class="alert alert-success" id="editSuccess" style="display: none;"></div>
+        </div>
+    </div>
+
+    <!-- Confirm Deactivate Modal -->
+    <div class="modal" id="deactivateModal">
+        <div class="modal-content modal-small">
+            <div class="modal-header">
+                <h2>Deactivate User</h2>
+                <button class="modal-close" onclick="closeModal('deactivateModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to deactivate <strong id="deactivateUserName"></strong>?</p>
+                <p class="text-muted">This user will no longer have access to the system.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn-secondary" onclick="closeModal('deactivateModal')">Cancel</button>
+                <button type="button" class="btn-danger" id="confirmDeactivateBtn">
+                    <span class="btn-text">Deactivate</span>
+                    <span class="btn-loader" style="display: none;"></span>
+                </button>
+            </div>
+            <div class="alert alert-error" id="deactivateError" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script type="module" src="{{ url_for('static', filename='js/user_management.js') }}"></script>
+</body>
+</html>
