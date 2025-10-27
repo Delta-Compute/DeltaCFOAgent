@@ -66,6 +66,11 @@ python-magic>=0.4.27     # File type detection
 py7zr>=0.20.0            # 7z archive support
 
 # ============================================
+# Fuzzy Matching & String Similarity
+# ============================================
+rapidfuzz>=3.0.0         # Fast fuzzy string matching
+
+# ============================================
 # Database Support - Cloud SQL PostgreSQL
 # ============================================
 psycopg2-binary>=2.9.9   # PostgreSQL adapter for Cloud SQL

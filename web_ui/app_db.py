@@ -72,7 +72,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import invoice processing modules
-from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 
 # Import historical currency converter
