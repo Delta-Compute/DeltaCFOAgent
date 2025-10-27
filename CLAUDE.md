@@ -211,6 +211,63 @@ Business entities and rules are defined in `business_knowledge.md`.
 - Homepage content cached per tenant
 - Future-ready for multi-client deployment
 
+### Firebase Authentication & User Management
+
+**Authentication Architecture:**
+- Firebase Admin SDK for server-side authentication (`auth/firebase_config.py`)
+- Firebase Client SDK for frontend authentication (`web_ui/static/js/firebase_client.js`)
+- Session-based authentication with Firebase ID tokens
+- Multi-tenant user access control
+
+**User Types:**
+1. **Fractional CFO** - Creates tenants, manages multiple clients, can create assistants
+2. **CFO Assistant** - Supports CFO for specific tenants, invited via email
+3. **Tenant Admin** - Business owner with full access, can invite employees and CFOs
+4. **Employee** - Internal user with role-based permissions
+
+**Database Tables:**
+- `users`: User accounts with Firebase UID integration
+- `tenant_users`: User-tenant relationships with roles and permissions (JSONB)
+- `user_permissions`: Reference table for available permissions
+- `user_invitations`: Email invitation system with token-based acceptance
+- `audit_log`: Comprehensive audit trail for all user actions
+
+**Authentication Middleware** (`middleware/auth_middleware.py`):
+- `@require_auth`: Requires valid Firebase token
+- `@require_role(['admin', 'owner'])`: Requires specific role(s)
+- `@require_permission('users.manage')`: Requires specific permission
+- `@require_user_type(['fractional_cfo'])`: Requires user type
+- `@require_tenant_access`: Validates tenant access
+- `@optional_auth`: Works with or without authentication
+
+**Permission System:**
+Permissions are stored as JSONB in tenant_users table:
+- Transactions: view, create, edit, delete, export
+- Invoices: view, create, edit, delete, approve
+- Users: view, invite, manage
+- Reports: view, generate, export
+- Settings: view, edit, billing
+- Accounts: view, manage
+
+**Email Service** (`services/email_service.py`):
+- SendGrid integration (primary) and SMTP fallback
+- User invitation emails with expiry
+- Welcome emails for new users
+- Admin transfer notifications
+- HTML and plain text templates
+
+**Key Business Rules:**
+- CFO can create tenants → CFO is initial admin → CFO transfers admin to Tenant Admin
+- Tenant ownership tracked by payment: CFO-paid or Tenant-paid
+- Tenant Admin can remove CFO only if Tenant owns payment
+- If CFO owns payment, Tenant must add payment method before removing CFO
+- All user invitations sent via email with 7-day expiry (configurable)
+
+**Migration:**
+- Database schema: `migrations/add_auth_tables.sql`
+- Migration script: `migrations/apply_auth_migration.py`
+- Run: `python migrations/apply_auth_migration.py` (includes --dry-run and --rollback options)
+
 ## Key Development Patterns
 
 ### Error Handling
