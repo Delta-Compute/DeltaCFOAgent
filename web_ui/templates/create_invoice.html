@@ -271,6 +271,12 @@
                     <input type="text" id="custom_vendor" name="custom_vendor" style="display:none; margin-top: 10px;" placeholder="Enter custom vendor name">
                 </div>
 
+                <div class="form-group">
+                    <label for="vendor_address">Vendor Address</label>
+                    <textarea id="vendor_address" name="vendor_address" rows="2"
+                              placeholder="Vendor's business address"></textarea>
+                </div>
+
                 <!-- FIAT Currency Fields -->
                 <div id="fiatFields" class="form-row">
                     <div class="form-group">
@@ -747,6 +753,7 @@
             const invoiceData = {
                 invoice_number: invoiceNumber,
                 vendor_name: vendor_name,
+                vendor_address: document.getElementById('vendor_address').value,
                 customer_name: document.getElementById('customer_name').value,
                 customer_address: document.getElementById('customer_address').value,
                 invoice_date: document.getElementById('invoice_date').value,

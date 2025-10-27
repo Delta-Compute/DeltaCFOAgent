@@ -11480,12 +11480,28 @@ def api_get_revenue_stats():
         result = db_manager.execute_query(query, fetch_one=True)
         stats['pending_matches'] = result['pending'] if result else 0
 
-        # Total revenue amounts
+        # Total revenue amounts (using USD equivalent for multi-currency support)
+        # Use usd_equivalent_amount if available and > 0, otherwise use total_amount for USD invoices
         query = """
             SELECT
-                COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL THEN total_amount ELSE 0 END), 0) as matched_revenue,
-                COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL THEN total_amount ELSE 0 END), 0) as unmatched_revenue,
-                COALESCE(SUM(total_amount), 0) as total_revenue
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL
+                    THEN CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                              THEN usd_equivalent_amount
+                              ELSE total_amount
+                         END
+                    ELSE 0 END), 0) as matched_revenue,
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL
+                    THEN CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                              THEN usd_equivalent_amount
+                              ELSE total_amount
+                         END
+                    ELSE 0 END), 0) as unmatched_revenue,
+                COALESCE(SUM(
+                    CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                         THEN usd_equivalent_amount
+                         ELSE total_amount
+                    END
+                ), 0) as total_revenue
             FROM invoices
             WHERE tenant_id = %s
         """
