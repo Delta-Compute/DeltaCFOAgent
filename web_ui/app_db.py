@@ -7312,6 +7312,7 @@ def api_create_invoice():
         # Extract data
         invoice_number = data.get('invoice_number')
         vendor_name = data.get('vendor_name', 'DELTA ENERGY')  # Default to DELTA ENERGY
+        vendor_address = data.get('vendor_address', '')  # Get vendor address from form
         customer_name = data.get('customer_name')
         customer_address = data.get('customer_address', '')
         invoice_date = data.get('invoice_date')
@@ -7382,7 +7383,7 @@ def api_create_invoice():
             }
         }
 
-        # Get vendor entity data if available
+        # Get vendor entity data if available, or use custom address from form
         vendor_entity_data = business_entities.get(vendor_name)
 
         # Header section with vendor name (gradient-like effect using rounded corners)
@@ -7398,8 +7399,23 @@ def api_create_invoice():
         ]))
         story.append(header_table)
 
-        # Add vendor entity info if available
-        if vendor_entity_data:
+        # Add vendor entity info - prioritize custom address from form, fallback to predefined entities
+        if vendor_address:
+            # Use custom vendor address from the form
+            vendor_info_data = [[
+                Paragraph(f"<font size='9' color='#64748b'>{vendor_address}</font>", styles['Normal'])
+            ]]
+            vendor_info_table = Table(vendor_info_data, colWidths=[7.5*inch])
+            vendor_info_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 25),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            story.append(vendor_info_table)
+            story.append(Spacer(1, 0.25*inch))
+        elif vendor_entity_data:
+            # Use predefined entity data
             vendor_info_data = [[
                 Paragraph(f"<font size='9' color='#64748b'>{vendor_entity_data['address']}<br/>{vendor_entity_data['tax_id']}<br/>{vendor_entity_data['contact']}</font>", styles['Normal'])
             ]]
