@@ -704,40 +704,40 @@ class RobustRevenueInvoiceMatcher:
         # Amount matching (most important)
         if criteria_scores['amount'] >= 0.95:
             diff = abs(float(invoice['total_amount']) - float(transaction['amount']))
-            explanations.append(f"💰 Valor quase exato (diferença: ${diff:.2f})")
+            explanations.append(f"[AMOUNT] Valor quase exato (diferenca: ${diff:.2f})")
         elif criteria_scores['amount'] >= 0.60:
             invoice_amt = float(invoice['total_amount'])
             trans_amt = float(transaction['amount'])
             diff_pct = abs(invoice_amt - trans_amt) / invoice_amt * 100
-            explanations.append(f"💰 Valores similares (diferença: {diff_pct:.1f}%)")
+            explanations.append(f"[AMOUNT] Valores similares (diferenca: {diff_pct:.1f}%)")
         elif criteria_scores['amount'] >= 0.30:
-            explanations.append(f"💰 Valores na mesma faixa")
+            explanations.append(f"[AMOUNT] Valores na mesma faixa")
 
         # Date matching
         if criteria_scores['date'] >= 0.90:
-            explanations.append(f"📅 Datas muito próximas")
+            explanations.append(f"[DATE] Datas muito proximas")
         elif criteria_scores['date'] >= 0.70:
-            explanations.append(f"📅 Datas compatíveis")
+            explanations.append(f"[DATE] Datas compativeis")
         elif criteria_scores['date'] >= 0.50:
-            explanations.append(f"📅 Datas no mesmo período")
+            explanations.append(f"[DATE] Datas no mesmo periodo")
 
         # Vendor/Description matching
         if criteria_scores['vendor'] >= 0.8:
             vendor = invoice.get('vendor_name', '').split()[0] if invoice.get('vendor_name') else ''
-            explanations.append(f"🏢 Vendor '{vendor}' encontrado na transação")
+            explanations.append(f"[VENDOR] Vendor '{vendor}' encontrado na transacao")
         elif criteria_scores['vendor'] >= 0.4:
-            explanations.append(f"🏢 Possível match de vendor")
+            explanations.append(f"[VENDOR] Possivel match de vendor")
 
         # Entity matching
         if criteria_scores['entity'] >= 0.8:
-            explanations.append(f"🎯 Mesma entidade/business unit")
+            explanations.append(f"[ENTITY] Mesma entidade/business unit")
         elif criteria_scores['entity'] >= 0.5:
-            explanations.append(f"🎯 Entidades relacionadas")
+            explanations.append(f"[ENTITY] Entidades relacionadas")
 
         # Pattern matching
         if criteria_scores['pattern'] >= 0.8:
             inv_num = invoice.get('invoice_number', '')
-            explanations.append(f"🔍 Invoice #{inv_num} na descrição")
+            explanations.append(f"[PATTERN] Invoice #{inv_num} na descricao")
 
         # Generate summary based on match strength - VALOR IDENTICO dominante
         final_score = (
@@ -750,19 +750,19 @@ class RobustRevenueInvoiceMatcher:
 
         if not explanations:
             if final_score >= 0.4:
-                explanations.append("📊 Match baseado em múltiplos critérios combinados")
+                explanations.append("[INFO] Match baseado em multiplos criterios combinados")
             else:
-                explanations.append("⚡ Match de baixa confiança - revisar manualmente")
+                explanations.append("[WARNING] Match de baixa confianca - revisar manualmente")
 
-        explanation_text = " • ".join(explanations)
+        explanation_text = " | ".join(explanations)
 
         # Add confidence indicator
         if final_score >= 0.7:
-            return f"✅ ALTA CONFIANÇA: {explanation_text}"
+            return f"[HIGH] ALTA CONFIANCA: {explanation_text}"
         elif final_score >= 0.4:
-            return f"⚠️ MÉDIA CONFIANÇA: {explanation_text}"
+            return f"[MEDIUM] MEDIA CONFIANCA: {explanation_text}"
         else:
-            return f"❓ BAIXA CONFIANÇA: {explanation_text}"
+            return f"[LOW] BAIXA CONFIANCA: {explanation_text}"
 
     def _enhance_match_with_ai(self, match: MatchResult, invoices: List[Dict],
                              transactions: List[Dict]) -> MatchResult:

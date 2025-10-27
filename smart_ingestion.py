@@ -43,35 +43,35 @@ class SmartDocumentIngestion:
 
     def _init_claude_client(self):
         """Initialize Claude API client"""
-        print("🔧 DEBUG: Initializing Claude API client...")
+        print(" DEBUG: Initializing Claude API client...")
         try:
             # Check environment variable first
             api_key = os.getenv('ANTHROPIC_API_KEY')
             if api_key:
                 api_key = api_key.strip()  # Remove newlines and whitespace
-            print(f"🔧 DEBUG: API key from env: {'Found' if api_key else 'Not found'}")
+            print(f" DEBUG: API key from env: {'Found' if api_key else 'Not found'}")
 
             # Check for .anthropic_api_key file if env var not found
             if not api_key:
                 key_file = '.anthropic_api_key'
-                print(f"🔧 DEBUG: Checking for API key file: {key_file}")
+                print(f" DEBUG: Checking for API key file: {key_file}")
                 if os.path.exists(key_file):
                     with open(key_file, 'r') as f:
                         api_key = f.read().strip()
-                    print("🔧 DEBUG: API key loaded from file")
+                    print(" DEBUG: API key loaded from file")
 
             if not api_key:
-                print("⚠️  No ANTHROPIC_API_KEY found - smart ingestion disabled")
+                print("  No ANTHROPIC_API_KEY found - smart ingestion disabled")
                 return None
 
-            print("🔧 DEBUG: Creating Anthropic client...")
+            print(" DEBUG: Creating Anthropic client...")
             client = anthropic.Anthropic(api_key=api_key)
-            print("✅ DEBUG: Claude API client initialized successfully")
+            print(" DEBUG: Claude API client initialized successfully")
             return client
         except Exception as e:
-            print(f"❌ Error initializing Claude API: {e}")
+            print(f" Error initializing Claude API: {e}")
             import traceback
-            print(f"🔧 DEBUG: Traceback: {traceback.format_exc()}")
+            print(f" DEBUG: Traceback: {traceback.format_exc()}")
             return None
 
     def analyze_document_structure(self, file_path: str) -> Dict[str, Any]:
@@ -79,51 +79,51 @@ class SmartDocumentIngestion:
         Analyze document structure using Claude API
         Returns mapping instructions for processing
         """
-        print(f"🔧 DEBUG: Starting document analysis for {file_path}")
+        print(f" DEBUG: Starting document analysis for {file_path}")
 
         if not self.claude_client:
-            error_msg = "❌ CLAUDE AI REQUIRED: Smart document ingestion requires a valid ANTHROPIC_API_KEY. This ensures accurate processing of any CSV format."
-            print(f"🔧 DEBUG: {error_msg}")
+            error_msg = " CLAUDE AI REQUIRED: Smart document ingestion requires a valid ANTHROPIC_API_KEY. This ensures accurate processing of any CSV format."
+            print(f" DEBUG: {error_msg}")
             raise ValueError(error_msg)
 
         try:
-            print("🔧 DEBUG: Getting document sample...")
+            print(" DEBUG: Getting document sample...")
             # Read sample of the document
             sample_content = self._get_document_sample(file_path)
             if not sample_content:
-                print("🔧 DEBUG: No sample content, using fallback analysis")
+                print(" DEBUG: No sample content, using fallback analysis")
                 return self._fallback_analysis(file_path)
 
-            print(f"🔧 DEBUG: Sample content length: {len(sample_content)}")
+            print(f" DEBUG: Sample content length: {len(sample_content)}")
 
             # Ask Claude to analyze the structure
-            print("🔧 DEBUG: Building analysis prompt...")
+            print(" DEBUG: Building analysis prompt...")
             prompt = self._build_analysis_prompt(sample_content, file_path)
-            print(f"🔧 DEBUG: Prompt length: {len(prompt)}")
+            print(f" DEBUG: Prompt length: {len(prompt)}")
 
-            print("🔧 DEBUG: Calling Claude API...")
+            print(" DEBUG: Calling Claude API...")
             response = self.claude_client.messages.create(
                 model="claude-3-haiku-20240307",  # Fast, cheap model for structure analysis
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
-            print("✅ DEBUG: Claude API call successful")
+            print(" DEBUG: Claude API call successful")
 
             # Parse Claude's response
-            print("🔧 DEBUG: Parsing Claude response...")
+            print(" DEBUG: Parsing Claude response...")
             analysis = self._parse_claude_response(response.content[0].text)
             analysis['claude_analysis'] = True
             analysis['cost_estimate'] = 0.02  # Approximate cost
 
-            print(f"🤖 Claude analyzed document structure: {analysis.get('format', 'unknown')}")
-            print(f"🔧 DEBUG: Analysis result: {analysis}")
+            print(f" Claude analyzed document structure: {analysis.get('format', 'unknown')}")
+            print(f" DEBUG: Analysis result: {analysis}")
             return analysis
 
         except Exception as e:
-            print(f"❌ Claude analysis failed: {e}")
+            print(f" Claude analysis failed: {e}")
             import traceback
-            print(f"🔧 DEBUG: Claude analysis error traceback: {traceback.format_exc()}")
-            raise ValueError(f"❌ CLAUDE AI ANALYSIS FAILED: {e}. Smart document ingestion requires Claude AI for reliable processing.")
+            print(f" DEBUG: Claude analysis error traceback: {traceback.format_exc()}")
+            raise ValueError(f" CLAUDE AI ANALYSIS FAILED: {e}. Smart document ingestion requires Claude AI for reliable processing.")
 
     def _get_document_sample(self, file_path: str) -> Optional[str]:
         """Get sample content from document for analysis"""
@@ -151,7 +151,7 @@ class SmartDocumentIngestion:
                     return f.read(2000)  # First 2000 chars
 
         except Exception as e:
-            print(f"❌ Error reading document sample: {e}")
+            print(f" Error reading document sample: {e}")
             return None
 
     def _build_analysis_prompt(self, sample_content: str, file_path: str) -> str:
@@ -353,14 +353,14 @@ Only respond with the JSON object, no other text.
 
             return result
         except Exception as e:
-            print(f"❌ Error parsing Claude response: {e}")
+            print(f" Error parsing Claude response: {e}")
             print(f"Response text: {response_text[:500]}")
             raise ValueError(f"Failed to parse Claude's analysis: {e}")
 
     def _validate_claude_required(self) -> None:
         """Validate that Claude AI is available - no fallback allowed"""
         if not self.claude_client:
-            raise ValueError("❌ CLAUDE AI REQUIRED: This application requires a valid ANTHROPIC_API_KEY for intelligent document processing. No fallback processing is available to ensure accuracy and reliability.")
+            raise ValueError(" CLAUDE AI REQUIRED: This application requires a valid ANTHROPIC_API_KEY for intelligent document processing. No fallback processing is available to ensure accuracy and reliability.")
 
     def _correct_structure_analysis(self, file_path: str, expected_columns: list, actual_columns: list, original_skiprows: list) -> Dict[str, Any]:
         """
@@ -370,10 +370,10 @@ Only respond with the JSON object, no other text.
         Instead of asking Claude to guess, we try different skiprows values
         and show Claude the ACTUAL columns that result from each attempt.
         """
-        print(f"🤖 Using empirical LLM-based correction approach...")
+        print(f" Using empirical LLM-based correction approach...")
 
         if not self.claude_client:
-            raise ValueError("❌ Claude AI required for structure correction")
+            raise ValueError(" Claude AI required for structure correction")
 
         try:
             file_name = os.path.basename(file_path)
@@ -381,7 +381,7 @@ Only respond with the JSON object, no other text.
             # ===================================================================
             # EMPIRICAL APPROACH: Try different skiprows and collect results
             # ===================================================================
-            print(f"🔬 Testing different skiprows values empirically...")
+            print(f" Testing different skiprows values empirically...")
 
             # First, create cleaned CSV if needed (to handle trailing commas)
             import tempfile
@@ -396,7 +396,7 @@ Only respond with the JSON object, no other text.
 
             test_file_path = file_path
             if needs_cleaning:
-                print(f"🧹 Cleaning trailing commas for empirical testing...")
+                print(f" Cleaning trailing commas for empirical testing...")
                 with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
                     test_file_path = temp_file.name
                     with open(file_path, 'r') as f:
@@ -446,7 +446,7 @@ Only respond with the JSON object, no other text.
                     columns = result['columns']
                     # Check how many expected columns are found
                     matches = [col for col in expected_columns if col in columns]
-                    match_indicator = f" ✓ MATCHES {len(matches)}/{len(expected_columns)} expected columns: {matches}" if matches else " ✗ No matches"
+                    match_indicator = f"  MATCHES {len(matches)}/{len(expected_columns)} expected columns: {matches}" if matches else "  No matches"
                     results_lines.append(f"Option {i+1}: skiprows={result['skiprows']} → Columns: {columns}{match_indicator}")
 
             results_text = "\n".join(results_lines)
@@ -467,13 +467,13 @@ I tested different skiprows values. Here's what ACTUALLY happens when reading th
 {results_text}
 
 CRITICAL INSTRUCTIONS:
-1. Look for the option that has "✓ MATCHES {len(expected_columns)}/{len(expected_columns)}" (100% match)
+1. Look for the option that has " MATCHES {len(expected_columns)}/{len(expected_columns)}" (100% match)
 2. That option has column NAMES like "{expected_columns[0] if expected_columns else 'N/A'}", not data VALUES
 3. Select the skip_rows value from that option
 
 Example logic:
-- If Option 1 shows "✓ MATCHES 3/3" and contains 'Posting Date', 'Description', 'Amount', use skiprows=[]
-- If Option 4 shows "✓ MATCHES 3/3" and contains those headers, use skiprows=[0, 1, 2]
+- If Option 1 shows " MATCHES 3/3" and contains 'Posting Date', 'Description', 'Amount', use skiprows=[]
+- If Option 4 shows " MATCHES 3/3" and contains those headers, use skiprows=[0, 1, 2]
 
 Respond with JSON ONLY (no other text):
 {{
@@ -483,8 +483,8 @@ Respond with JSON ONLY (no other text):
 }}
 """
 
-            print(f"🔧 DEBUG: Correction prompt with empirical results (length: {len(correction_prompt)})")
-            print(f"🔧 DEBUG: Calling Claude API for correction...")
+            print(f" DEBUG: Correction prompt with empirical results (length: {len(correction_prompt)})")
+            print(f" DEBUG: Calling Claude API for correction...")
 
             response = self.claude_client.messages.create(
                 model="claude-3-haiku-20240307",
@@ -492,7 +492,7 @@ Respond with JSON ONLY (no other text):
                 messages=[{"role": "user", "content": correction_prompt}]
             )
 
-            print("✅ DEBUG: Claude correction call successful")
+            print(" DEBUG: Claude correction call successful")
 
             # Parse correction response
             correction_text = response.content[0].text.strip()
@@ -502,15 +502,15 @@ Respond with JSON ONLY (no other text):
             correction_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', correction_text)
             correction = json.loads(correction_text)
 
-            print(f"🤖 Claude's correction: {correction.get('explanation', 'No explanation provided')}")
-            print(f"📋 Corrected skip_rows: {correction.get('skip_rows_before_header', [])}")
+            print(f" Claude's correction: {correction.get('explanation', 'No explanation provided')}")
+            print(f" Corrected skip_rows: {correction.get('skip_rows_before_header', [])}")
 
             return correction
 
         except Exception as e:
-            print(f"❌ Claude correction failed: {e}")
+            print(f" Claude correction failed: {e}")
             import traceback
-            print(f"🔧 DEBUG: Correction error traceback: {traceback.format_exc()}")
+            print(f" DEBUG: Correction error traceback: {traceback.format_exc()}")
             # If Claude correction fails, return empty skiprows as fallback
             return {
                 'skip_rows_before_header': [],
@@ -526,7 +526,7 @@ Respond with JSON ONLY (no other text):
             else:
                 return self._python_process_with_mapping(file_path, structure_info)
         except Exception as e:
-            print(f"❌ Processing failed: {e}")
+            print(f" Processing failed: {e}")
             return None
 
     def _python_process_with_mapping(self, file_path: str, structure_info: Dict[str, Any]) -> Optional[pd.DataFrame]:
@@ -547,9 +547,22 @@ Respond with JSON ONLY (no other text):
 
                 # Log what Claude told us to do
                 if skiprows:
-                    print(f"📋 Claude instructions: Skip rows {skiprows} before header")
+                    print(f" Claude instructions: Skip rows {skiprows} before header")
                 else:
-                    print(f"📋 Claude instructions: Standard CSV with header on row 0")
+                    print(f" Claude instructions: Standard CSV with header on row 0")
+
+                # ===================================================================
+                # VALIDATE SKIPROWS AGAINST ACTUAL FILE LENGTH
+                # ===================================================================
+                # Count total lines in file
+                with open(file_path, 'r') as f:
+                    total_lines = sum(1 for _ in f)
+
+                # If Claude wants to skip rows that don't exist, correct it
+                if skiprows and max(skiprows) >= total_lines:
+                    print(f"  WARNING: File only has {total_lines} lines, but Claude wants to skip rows up to {max(skiprows)}")
+                    print(f"  Assuming file is already clean (no metadata rows) - setting skiprows=[]")
+                    skiprows = []
 
                 # Clean trailing commas if Claude detected them
                 needs_cleaning = has_trailing_commas
@@ -562,14 +575,17 @@ Respond with JSON ONLY (no other text):
                             data_commas = first_two_lines[1].count(',')
                             if data_commas > header_commas:
                                 needs_cleaning = True
-                                print(f"⚠️  Detected trailing commas: header has {header_commas} commas, data has {data_commas}")
+                                print(f"  Detected trailing commas: header has {header_commas} commas, data has {data_commas}")
 
                 if needs_cleaning:
                     # Create a cleaned temporary file
                     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as temp_file:
                         temp_path = temp_file.name
                         with open(file_path, 'r') as f:
-                            for line in f:
+                            for line_num, line in enumerate(f):
+                                # Skip rows that should be removed BEFORE creating temp file
+                                if line_num in skiprows:
+                                    continue
                                 # Remove trailing commas (but keep commas within quoted strings)
                                 cleaned_line = line.rstrip('\n')
                                 # Count trailing commas
@@ -577,8 +593,9 @@ Respond with JSON ONLY (no other text):
                                     cleaned_line = cleaned_line[:-1]
                                 temp_file.write(cleaned_line + '\n')
 
-                    print(f"✅ Cleaned CSV file, reading from temporary file")
-                    df = pd.read_csv(temp_path, skiprows=skiprows)
+                    print(f" Cleaned CSV file (with skiprows applied), reading from temporary file")
+                    # Don't pass skiprows again since we already skipped them when creating temp file
+                    df = pd.read_csv(temp_path)
                     # Clean up temp file (os is already imported at module level)
                     os.unlink(temp_path)
                 else:
@@ -602,9 +619,9 @@ Respond with JSON ONLY (no other text):
                     missing_columns = [col for col in expected_columns if col not in df.columns]
 
                     if missing_columns and skiprows:
-                        print(f"⚠️  VALIDATION FAILED: Expected columns {missing_columns} not found in DataFrame")
-                        print(f"⚠️  DataFrame has columns: {list(df.columns)}")
-                        print(f"⚠️  Claude's skip_rows={skiprows} appears to be incorrect")
+                        print(f"  VALIDATION FAILED: Expected columns {missing_columns} not found in DataFrame")
+                        print(f"  DataFrame has columns: {list(df.columns)}")
+                        print(f"  Claude's skip_rows={skiprows} appears to be incorrect")
 
                         # ===================================================================
                         # SCALABLE LLM-BASED CORRECTION (NOT HARDCODED!)
@@ -618,7 +635,7 @@ Respond with JSON ONLY (no other text):
                         )
 
                         corrected_skiprows = correction.get('skip_rows_before_header', [])
-                        print(f"🔄 RETRYING: Re-reading CSV with Claude's corrected skip_rows={corrected_skiprows}")
+                        print(f" RETRYING: Re-reading CSV with Claude's corrected skip_rows={corrected_skiprows}")
 
                         # Retry with corrected skiprows
                         if needs_cleaning:
@@ -644,20 +661,20 @@ Respond with JSON ONLY (no other text):
                         # Validate again
                         still_missing = [col for col in expected_columns if col not in df.columns]
                         if still_missing:
-                            print(f"⚠️  Even after Claude's correction, columns {still_missing} not found")
-                            print(f"⚠️  Proceeding with available columns: {list(df.columns)}")
+                            print(f"  Even after Claude's correction, columns {still_missing} not found")
+                            print(f"  Proceeding with available columns: {list(df.columns)}")
                         else:
-                            print(f"✅ VALIDATION SUCCESS: All expected columns now found after Claude's correction!")
-                            print(f"✅ Corrected columns: {list(df.columns)}")
+                            print(f" VALIDATION SUCCESS: All expected columns now found after Claude's correction!")
+                            print(f" Corrected columns: {list(df.columns)}")
 
             elif file_ext in ['.xlsx', '.xls']:
                 df = pd.read_excel(file_path)
             else:
-                print(f"❌ Unsupported file type for Python processing: {file_ext}")
+                print(f" Unsupported file type for Python processing: {file_ext}")
                 return None
 
-            print(f"📊 Found {len(df)} transactions in {structure_info.get('format', 'unknown')} format")
-            print(f"🤖 Confidence: {structure_info.get('confidence', 0):.1%}")
+            print(f" Found {len(df)} transactions in {structure_info.get('format', 'unknown')} format")
+            print(f" Confidence: {structure_info.get('confidence', 0):.1%}")
 
             # Create standardized DataFrame
             standardized_df = pd.DataFrame()
@@ -669,7 +686,7 @@ Respond with JSON ONLY (no other text):
             if date_col and date_col in df.columns:
                 standardized_df['Date'] = df[date_col]
                 mapped_columns.append(date_col)
-                print(f"📅 Mapped Date: {date_col}")
+                print(f" Mapped Date: {date_col}")
             else:
                 # Try to find any date-like column
                 date_candidates = [col for col in df.columns if any(keyword in col.lower()
@@ -677,9 +694,9 @@ Respond with JSON ONLY (no other text):
                 if date_candidates:
                     standardized_df['Date'] = df[date_candidates[0]]
                     mapped_columns.append(date_candidates[0])
-                    print(f"📅 Auto-detected Date: {date_candidates[0]}")
+                    print(f" Auto-detected Date: {date_candidates[0]}")
                 else:
-                    print("⚠️  No date column found - using row index")
+                    print("  No date column found - using row index")
                     standardized_df['Date'] = pd.to_datetime('today')
 
             # 2. MAP AMOUNT COLUMN(S)
@@ -739,11 +756,11 @@ Respond with JSON ONLY (no other text):
                     credit_val = pd.to_numeric(df[credit_cols[0]], errors='coerce').fillna(0)
                     standardized_df['Amount'] = credit_val - debit_val  # Credits positive, debits negative
                     mapped_columns.extend([debit_cols[0], credit_cols[0]])
-                    print(f"💰 Mapped Amount from Debit/Credit: {debit_cols[0]}, {credit_cols[0]}")
+                    print(f" Mapped Amount from Debit/Credit: {debit_cols[0]}, {credit_cols[0]}")
                 elif amount_col and amount_col in df.columns:
                     standardized_df['Amount'] = pd.to_numeric(df[amount_col], errors='coerce')
                     mapped_columns.append(amount_col)
-                    print(f"💰 Mapped Amount: {amount_col}")
+                    print(f" Mapped Amount: {amount_col}")
             elif amount_processing == 'calculate_from_quantity_price':
                 # Handle investment/crypto formats
                 qty_cols = [col for col in df.columns if any(k in col.lower() for k in ['quantity', 'amount', 'volume'])]
@@ -754,17 +771,17 @@ Respond with JSON ONLY (no other text):
                     price = pd.to_numeric(df[price_cols[0]], errors='coerce').fillna(0)
                     standardized_df['Amount'] = qty * price
                     mapped_columns.extend([qty_cols[0], price_cols[0]])
-                    print(f"💰 Calculated Amount from: {qty_cols[0]} × {price_cols[0]}")
+                    print(f" Calculated Amount from: {qty_cols[0]} × {price_cols[0]}")
                 elif amount_col and amount_col in df.columns:
                     standardized_df['Amount'] = pd.to_numeric(df[amount_col], errors='coerce')
                     mapped_columns.append(amount_col)
-                    print(f"💰 Mapped Amount: {amount_col}")
+                    print(f" Mapped Amount: {amount_col}")
             else:
                 # Standard single amount column
                 if amount_col and amount_col in df.columns:
                     standardized_df['Amount'] = clean_currency_intelligent(df[amount_col])
                     mapped_columns.append(amount_col)
-                    print(f"💰 Mapped Amount: {amount_col} (using Claude's cleaning rules)")
+                    print(f" Mapped Amount: {amount_col} (using Claude's cleaning rules)")
                 else:
                     # Try to auto-detect amount column
                     amount_candidates = [col for col in df.columns if any(keyword in col.lower()
@@ -772,9 +789,9 @@ Respond with JSON ONLY (no other text):
                     if amount_candidates:
                         standardized_df['Amount'] = clean_currency_intelligent(df[amount_candidates[0]])
                         mapped_columns.append(amount_candidates[0])
-                        print(f"💰 Auto-detected Amount: {amount_candidates[0]} (using Claude's cleaning rules)")
+                        print(f" Auto-detected Amount: {amount_candidates[0]} (using Claude's cleaning rules)")
                     else:
-                        print("⚠️  No amount column found - setting to 0")
+                        print("  No amount column found - setting to 0")
                         standardized_df['Amount'] = 0
 
             # 2b. APPLY TRANSACTION DIRECTION (if direction column exists)
@@ -799,7 +816,7 @@ Respond with JSON ONLY (no other text):
                     standardized_df.loc[should_be_positive, 'Amount'] = standardized_df.loc[should_be_positive, 'Amount'].abs()
 
                 mapped_columns.append(direction_col)
-                print(f"💱 Applied transaction direction from: {direction_col}")
+                print(f" Applied transaction direction from: {direction_col}")
                 print(f"   Positive (Incoming): {should_be_positive.sum()} transactions")
                 print(f"   Negative (Outgoing): {should_be_negative.sum()} transactions")
 
@@ -811,7 +828,7 @@ Respond with JSON ONLY (no other text):
             if desc_col and desc_col in df.columns:
                 standardized_df['Description'] = df[desc_col].astype(str)
                 mapped_columns.append(desc_col)
-                print(f"📝 Mapped Description: {desc_col}")
+                print(f" Mapped Description: {desc_col}")
             else:
                 # Create description using Claude's rule
                 creation_rule = structure_info.get('description_creation_rule', '')
@@ -837,10 +854,10 @@ Respond with JSON ONLY (no other text):
                         for series in desc_parts[1:]:
                             combined_desc = combined_desc + ' - ' + series.astype(str)
                         standardized_df['Description'] = combined_desc.str.replace(' - nan', '').str.replace('nan - ', '')
-                        print(f"📝 Created crypto Description from: Direction + Currency + Hash")
+                        print(f" Created crypto Description from: Direction + Currency + Hash")
                     else:
                         standardized_df['Description'] = 'Crypto Transaction'
-                        print("📝 Default Description: Crypto Transaction")
+                        print(" Default Description: Crypto Transaction")
 
                 elif creation_rule and 'combine' in creation_rule.lower():
                     # Parse the creation rule and combine columns
@@ -859,10 +876,10 @@ Respond with JSON ONLY (no other text):
                         for series in desc_parts[1:]:
                             combined_desc = combined_desc + ' - ' + series.astype(str)
                         standardized_df['Description'] = combined_desc.str.replace(' - nan', '').str.replace('nan - ', '')
-                        print(f"📝 Created Description from: {[col for col in original_columns if col in mapped_columns and col not in [structure_info.get('date_column'), structure_info.get('amount_column')]]}")
+                        print(f" Created Description from: {[col for col in original_columns if col in mapped_columns and col not in [structure_info.get('date_column'), structure_info.get('amount_column')]]}")
                     else:
                         standardized_df['Description'] = 'Transaction'
-                        print("📝 Default Description: Transaction")
+                        print(" Default Description: Transaction")
                 else:
                     # Try to find any descriptive column
                     desc_candidates = [col for col in df.columns if any(keyword in col.lower()
@@ -870,10 +887,10 @@ Respond with JSON ONLY (no other text):
                     if desc_candidates:
                         standardized_df['Description'] = df[desc_candidates[0]].astype(str)
                         mapped_columns.append(desc_candidates[0])
-                        print(f"📝 Auto-detected Description: {desc_candidates[0]}")
+                        print(f" Auto-detected Description: {desc_candidates[0]}")
                     else:
                         standardized_df['Description'] = 'Transaction'
-                        print("📝 Default Description: Transaction")
+                        print(" Default Description: Transaction")
 
             # 4. MAP OPTIONAL COLUMNS
             optional_mappings = {
@@ -888,7 +905,7 @@ Respond with JSON ONLY (no other text):
                 if source_col and source_col in df.columns:
                     standardized_df[std_name] = df[source_col]
                     mapped_columns.append(source_col)
-                    print(f"🔗 Mapped {std_name}: {source_col}")
+                    print(f" Mapped {std_name}: {source_col}")
 
             # 4b. MAP OR DERIVE ORIGIN/DESTINATION FOR CRYPTO EXCHANGES
             origin_col = structure_info.get('origin_column')
@@ -910,22 +927,22 @@ Respond with JSON ONLY (no other text):
                     # Use actual withdrawal address (wallet address)
                     standardized_df['Destination'] = df[destination_col].astype(str)
                     mapped_columns.append(destination_col)
-                    print(f"🔗 Mapped Destination to withdrawal address: {destination_col}")
+                    print(f" Mapped Destination to withdrawal address: {destination_col}")
                 elif network_col and network_col in df.columns:
                     # Fallback to network if no specific destination address
                     standardized_df['Destination'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip() + " Network"
                     mapped_columns.append(network_col)
-                    print(f"🔗 Derived Destination from network: {network_col}")
+                    print(f" Derived Destination from network: {network_col}")
                 else:
                     # Last resort fallback
                     standardized_df['Destination'] = 'External Wallet'
-                    print(f"🔗 Default Destination: External Wallet")
+                    print(f" Default Destination: External Wallet")
 
-                print(f"🔗 Set Origin for withdrawal: {exchange_name} Exchange")
+                print(f" Set Origin for withdrawal: {exchange_name} Exchange")
 
                 # NEGATE AMOUNTS for withdrawals (money leaving = expense)
                 standardized_df['Amount'] = -standardized_df['Amount'].abs()
-                print(f"💰 Negated amounts for withdrawal (expenses)")
+                print(f" Negated amounts for withdrawal (expenses)")
 
             # Apply crypto DEPOSIT logic ONLY if the ENTIRE file is deposits (not mixed with withdrawals)
             elif special_handling.lower() == 'crypto_deposit' or (exchange_name and special_handling.lower() == 'crypto_format'):
@@ -934,17 +951,17 @@ Respond with JSON ONLY (no other text):
                     standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
                     standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
                     mapped_columns.append(network_col)
-                    print(f"🔗 Derived Origin from Network: {network_col}, Destination: {exchange_name} Exchange")
+                    print(f" Derived Origin from Network: {network_col}, Destination: {exchange_name} Exchange")
                 elif origin_col and origin_col in df.columns and destination_col and destination_col in df.columns:
                     standardized_df['Origin'] = df[origin_col]
                     standardized_df['Destination'] = df[destination_col]
                     mapped_columns.extend([origin_col, destination_col])
-                    print(f"🔗 Mapped Origin/Destination: {origin_col}, {destination_col}")
+                    print(f" Mapped Origin/Destination: {origin_col}, {destination_col}")
                 else:
                     # Default for exchange deposits
                     standardized_df['Origin'] = 'Blockchain'
                     standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
-                    print(f"🔗 Default Origin/Destination for crypto deposit")
+                    print(f" Default Origin/Destination for crypto deposit")
 
             # Apply crypto WALLET logic (Ledger Live, etc.) - use Direction to determine flow
             elif 'crypto_format' in special_handling.lower() and direction_col and direction_col in df.columns:
@@ -976,29 +993,29 @@ Respond with JSON ONLY (no other text):
                 standardized_df.loc[is_outgoing, 'Origin'] = wallet_name
                 standardized_df.loc[is_outgoing, 'Destination'] = 'External Destination'
 
-                print(f"🔗 Derived Origin/Destination from Direction: {is_incoming.sum()} incoming, {is_outgoing.sum()} outgoing")
+                print(f" Derived Origin/Destination from Direction: {is_incoming.sum()} incoming, {is_outgoing.sum()} outgoing")
 
             else:
                 # Standard origin/destination mapping
                 if origin_col and origin_col in df.columns:
                     standardized_df['Origin'] = df[origin_col]
                     mapped_columns.append(origin_col)
-                    print(f"🔗 Mapped Origin: {origin_col}")
+                    print(f" Mapped Origin: {origin_col}")
 
                 if destination_col and destination_col in df.columns:
                     standardized_df['Destination'] = df[destination_col]
                     mapped_columns.append(destination_col)
-                    print(f"🔗 Mapped Destination: {destination_col}")
+                    print(f" Mapped Destination: {destination_col}")
 
             # Preserve Network column if present
             if network_col and network_col in df.columns and network_col not in mapped_columns:
                 standardized_df['Network'] = df[network_col]
                 mapped_columns.append(network_col)
-                print(f"🔗 Preserved Network: {network_col}")
+                print(f" Preserved Network: {network_col}")
 
             # Store multi-account metadata for downstream processing
             if structure_info.get('has_multiple_accounts'):
-                print(f"🏦 Multi-account file detected - {structure_info.get('account_identifier_type', 'unknown')} type")
+                print(f" Multi-account file detected - {structure_info.get('account_identifier_type', 'unknown')} type")
                 standardized_df.attrs['has_multiple_accounts'] = True
                 standardized_df.attrs['account_identifier_type'] = structure_info.get('account_identifier_type')
                 standardized_df.attrs['account_identifier_column'] = structure_info.get('account_identifier_column')
@@ -1009,28 +1026,28 @@ Respond with JSON ONLY (no other text):
                 if col not in mapped_columns:
                     # Keep unmapped columns with original names
                     standardized_df[col] = df[col]
-                    print(f"📋 Preserved: {col}")
+                    print(f" Preserved: {col}")
 
             # 6. APPLY SPECIAL HANDLING
             special_handling = structure_info.get('special_handling', 'standard')
             if special_handling == 'misaligned_headers':
-                print("✅ Applied misaligned header correction")
+                print(" Applied misaligned header correction")
             elif 'crypto_withdrawal' in special_handling:
-                print("✅ Applied crypto withdrawal format processing (amounts negated, Origin/Destination reversed)")
+                print(" Applied crypto withdrawal format processing (amounts negated, Origin/Destination reversed)")
             elif 'crypto_deposit' in special_handling:
-                print("✅ Applied crypto deposit format processing")
+                print(" Applied crypto deposit format processing")
             elif special_handling == 'crypto_format':
-                print("✅ Applied crypto exchange format processing")
+                print(" Applied crypto exchange format processing")
             elif special_handling == 'multi_currency':
-                print("✅ Applied multi-currency processing")
+                print(" Applied multi-currency processing")
             else:
-                print("✅ Applied standard processing")
+                print(" Applied standard processing")
 
             # Final validation
             required_columns = ['Date', 'Description', 'Amount']
             for req_col in required_columns:
                 if req_col not in standardized_df.columns:
-                    print(f"⚠️  Missing required column {req_col} - adding default")
+                    print(f"  Missing required column {req_col} - adding default")
                     if req_col == 'Date':
                         standardized_df['Date'] = pd.to_datetime('today')
                     elif req_col == 'Description':
@@ -1038,11 +1055,11 @@ Respond with JSON ONLY (no other text):
                     elif req_col == 'Amount':
                         standardized_df['Amount'] = 0
 
-            print(f"✅ Standardized {len(standardized_df)} transactions with {len(standardized_df.columns)} columns")
+            print(f" Standardized {len(standardized_df)} transactions with {len(standardized_df.columns)} columns")
 
             # DEBUG: Print first row before returning
             if len(standardized_df) > 0:
-                print(f"🔧 DEBUG SMART_INGESTION: First row before return:")
+                print(f" DEBUG SMART_INGESTION: First row before return:")
                 print(f"   Date: {standardized_df.iloc[0]['Date']}")
                 print(f"   Amount: {standardized_df.iloc[0]['Amount']}")
                 print(f"   Description: {standardized_df.iloc[0]['Description']}")
@@ -1051,7 +1068,7 @@ Respond with JSON ONLY (no other text):
             return standardized_df
 
         except Exception as e:
-            print(f"❌ Python processing failed: {e}")
+            print(f" Python processing failed: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -1059,17 +1076,17 @@ Respond with JSON ONLY (no other text):
     def _claude_extract_data(self, file_path: str) -> Optional[pd.DataFrame]:
         """Use Claude to extract data from complex documents (PDFs, etc.)"""
         if not self.claude_client:
-            print("❌ Claude API not available for data extraction")
+            print(" Claude API not available for data extraction")
             return None
 
         try:
             # This would be for PDFs and complex documents
             # Implementation would involve sending document to Claude for full extraction
-            print("🤖 Using Claude for full document extraction (not implemented yet)")
+            print(" Using Claude for full document extraction (not implemented yet)")
             return None
 
         except Exception as e:
-            print(f"❌ Claude extraction failed: {e}")
+            print(f" Claude extraction failed: {e}")
             return None
 
 # Integration function to replace existing column detection logic
@@ -1078,37 +1095,37 @@ def smart_process_file(file_path: str, enhance: bool = True) -> Optional[pd.Data
     Smart file processing using Claude API for structure analysis
     REQUIRES Claude AI - no fallback processing available
     """
-    print(f"🔧 DEBUG: Starting smart_process_file for {file_path}")
+    print(f" DEBUG: Starting smart_process_file for {file_path}")
     try:
-        print("🔧 DEBUG: Creating SmartDocumentIngestion instance...")
+        print(" DEBUG: Creating SmartDocumentIngestion instance...")
         ingestion = SmartDocumentIngestion()
 
         # Validate Claude AI is available
-        print("🔧 DEBUG: Validating Claude AI availability...")
+        print(" DEBUG: Validating Claude AI availability...")
         ingestion._validate_claude_required()
 
         # Step 1: Analyze document structure using Claude AI
-        print(f"🔍 Analyzing document structure with Claude AI: {os.path.basename(file_path)}")
-        print("🔧 DEBUG: Calling analyze_document_structure...")
+        print(f" Analyzing document structure with Claude AI: {os.path.basename(file_path)}")
+        print(" DEBUG: Calling analyze_document_structure...")
         structure_info = ingestion.analyze_document_structure(file_path)
-        print(f"🔧 DEBUG: Structure analysis completed: {structure_info}")
+        print(f" DEBUG: Structure analysis completed: {structure_info}")
 
         # Step 2: Process using Claude's analysis
-        print("🔧 DEBUG: Processing with structure info...")
+        print(" DEBUG: Processing with structure info...")
         df = ingestion.process_with_structure_info(file_path, structure_info)
-        print(f"🔧 DEBUG: Processing result: {'Success' if df is not None else 'Failed'}")
+        print(f" DEBUG: Processing result: {'Success' if df is not None else 'Failed'}")
 
         if df is not None:
-            print(f"✅ Claude AI smart ingestion successful - {len(df)} transactions")
-            print(f"📋 Claude confidence: {structure_info.get('confidence', 0):.1%}")
+            print(f" Claude AI smart ingestion successful - {len(df)} transactions")
+            print(f" Claude confidence: {structure_info.get('confidence', 0):.1%}")
             print(f"PROCESSED_COUNT:{len(df)}")
             return df
         else:
-            raise ValueError("❌ Claude AI processing failed to generate valid DataFrame")
+            raise ValueError(" Claude AI processing failed to generate valid DataFrame")
 
     except Exception as e:
-        print(f"❌ Smart ingestion error: {e}")
+        print(f" Smart ingestion error: {e}")
         import traceback
-        print(f"🔧 DEBUG: Smart ingestion error traceback: {traceback.format_exc()}")
+        print(f" DEBUG: Smart ingestion error traceback: {traceback.format_exc()}")
         # Re-raise the error instead of returning None - no silent failures
         raise e

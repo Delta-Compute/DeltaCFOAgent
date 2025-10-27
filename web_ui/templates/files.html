@@ -31,24 +31,68 @@
                     <h1>File Management</h1>
                 </header>
 
-                <!-- Upload Section -->
-                <div class="filter-section">
-                    <h2>Upload CSV or PDF Files</h2>
-                    <div class="upload-area" id="uploadArea">
-                        <div class="upload-content">
-                            <div class="upload-icon">📁</div>
-                            <h3>Drag & Drop CSV or PDF Files Here</h3>
-                            <p>Or click to select files</p>
-                            <input type="file" id="fileInput" multiple accept=".csv,.pdf" style="display: none;">
-                            <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
-                                Choose Files
-                            </button>
-                        </div>
-                        <div class="upload-progress" id="uploadProgress" style="display: none;">
-                            <div class="progress-bar">
-                                <div class="progress-fill" id="progressFill"></div>
+                <!-- Upload Sections - Side by Side -->
+                <div class="upload-grid">
+                    <!-- Upload Transaction Files Section -->
+                    <div class="upload-section-card">
+                        <h2>Upload Transaction Files (CSV/PDF)</h2>
+                        <div class="upload-area" id="uploadArea">
+                            <div class="upload-content">
+                                <div class="upload-icon">📁</div>
+                                <h3>Drag & Drop CSV or PDF Files Here</h3>
+                                <p>Or click to select files</p>
+                                <input type="file" id="fileInput" multiple accept=".csv,.pdf" style="display: none;">
+                                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                                    Choose Files
+                                </button>
                             </div>
-                            <div class="progress-text" id="progressText">Processing...</div>
+                            <div class="upload-progress" id="uploadProgress" style="display: none;">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <div class="progress-text" id="progressText">Processing...</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upload Invoices Section -->
+                    <div class="upload-section-card">
+                        <h2>Upload Invoices</h2>
+                        <div class="upload-box-invoices" id="upload-box-invoices">
+                            <div class="upload-icon">📤</div>
+                            <div class="upload-text">Drag & drop invoice files here or click to browse</div>
+                            <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, ZIP, 7Z (Max 50MB total)</div>
+                            <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600;">Upload multiple files, a ZIP archive, or a single invoice</div>
+                            <input type="file" id="file-input-invoices" accept=".pdf,.png,.jpg,.jpeg,.tiff,.zip,.7z" multiple style="display: none;">
+                        </div>
+
+                        <!-- Batch Progress for Invoices -->
+                        <div id="batch-progress-invoices" style="display: none; margin-top: 1rem;">
+                            <h4 style="margin-bottom: 0.5rem;">Processing Files...</h4>
+                            <div style="background: #f1f5f9; border-radius: 8px; padding: 1rem;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                                    <span>Progress: <span id="progress-text-invoices">0 / 0</span></span>
+                                    <span id="progress-percent-invoices">0%</span>
+                                </div>
+                                <div style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden;">
+                                    <div id="progress-bar-invoices" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+                                </div>
+                                <div id="current-file-invoices" style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"></div>
+                            </div>
+
+                            <!-- Results Summary -->
+                            <div id="results-summary-invoices" style="display: none; margin-top: 1rem;">
+                                <h4>Processing Complete</h4>
+                                <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                                    <div style="padding: 0.5rem 1rem; background: #dcfce7; border-radius: 6px; color: #166534;">
+                                        <strong id="success-count-invoices">0</strong> Successful
+                                    </div>
+                                    <div style="padding: 0.5rem 1rem; background: #fee2e2; border-radius: 6px; color: #991b1b;">
+                                        <strong id="error-count-invoices">0</strong> Failed
+                                    </div>
+                                </div>
+                                <div id="error-details-invoices" style="margin-top: 1rem;"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -606,7 +650,7 @@
         .upload-area {
             border: 2px dashed #cbd5e0;
             border-radius: 8px;
-            padding: 2rem;
+            padding: 2.5rem 1.5rem;
             text-align: center;
             background: #f7fafc;
             transition: all 0.3s;
@@ -618,18 +662,20 @@
         }
 
         .upload-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
         }
 
         .upload-content h3 {
             margin-bottom: 0.5rem;
             color: #2d3748;
+            font-size: 1rem;
         }
 
         .upload-content p {
             color: #718096;
             margin-bottom: 1rem;
+            font-size: 0.85rem;
         }
 
         .progress-bar {
@@ -683,6 +729,68 @@
         .btn-sm {
             padding: 0.375rem 0.75rem;
             font-size: 0.875rem;
+        }
+
+        /* Upload Grid Layout - Side by Side */
+        .upload-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .upload-section-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .upload-section-card h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1.25rem;
+            color: #2d3748;
+        }
+
+        /* Invoice Upload Box Styles */
+        .upload-box-invoices {
+            border: 2px dashed #cbd5e1;
+            border-radius: 8px;
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            background: #f8fafc;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-box-invoices:hover {
+            border-color: #667eea;
+            background: #ebf8ff;
+        }
+
+        .upload-box-invoices .upload-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .upload-box-invoices .upload-text {
+            font-size: 1rem;
+            color: #2d3748;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-box-invoices .upload-hint {
+            color: #64748b;
+            font-size: 0.85rem;
+        }
+
+        /* Responsive - Stack on smaller screens */
+        @media (max-width: 1024px) {
+            .upload-grid {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
         }
     </style>
 </body>

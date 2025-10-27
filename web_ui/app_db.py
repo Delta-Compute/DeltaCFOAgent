@@ -382,7 +382,7 @@ def ensure_background_jobs_tables():
                 try:
                     # Expand currency field in transactions table
                     cursor.execute("ALTER TABLE transactions ALTER COLUMN currency TYPE VARCHAR(50)")
-                    print("[OK] Migrated transactions.currency VARCHAR(10) → VARCHAR(50)")
+                    print("[OK] Migrated transactions.currency VARCHAR(10) -> VARCHAR(50)")
                 except Exception as e:
                     if "does not exist" not in str(e) and "already exists" not in str(e):
                         print(f"Currency migration info: {e}")
@@ -390,7 +390,7 @@ def ensure_background_jobs_tables():
                 try:
                     # Expand currency field in invoices table
                     cursor.execute("ALTER TABLE invoices ALTER COLUMN currency TYPE VARCHAR(50)")
-                    print("[OK] Migrated invoices.currency VARCHAR(10) → VARCHAR(50)")
+                    print("[OK] Migrated invoices.currency VARCHAR(10) -> VARCHAR(50)")
                 except Exception as e:
                     if "does not exist" not in str(e) and "already exists" not in str(e):
                         print(f"Currency migration info: {e}")
@@ -693,7 +693,7 @@ def process_single_invoice_item(job_id: str, item: dict):
             # Clean up processed file to save storage
             try:
                 os.remove(item_path)
-                print(f"🗑️ Cleaned up file: {item_path}")
+                print(f" Cleaned up file: {item_path}")
             except:
                 pass  # File cleanup failed, but processing succeeded
 
@@ -711,7 +711,7 @@ def process_single_invoice_item(job_id: str, item: dict):
 
 def process_invoice_batch_job(job_id: str):
     """Background worker to process invoice batch job with parallel processing"""
-    print(f"🚀 Starting background job {job_id}")
+    print(f" Starting background job {job_id}")
 
     try:
         # Update job status to processing
@@ -728,11 +728,11 @@ def process_invoice_batch_job(job_id: str):
         successful_count = 0
         failed_count = 0
 
-        print(f"📋 Processing {len(items)} items in job {job_id} with parallel workers")
+        print(f" Processing {len(items)} items in job {job_id} with parallel workers")
 
         # Process items in parallel with ThreadPoolExecutor
         max_workers = min(5, len(items))  # Limit to 5 concurrent workers
-        print(f"🔥 Using {max_workers} parallel workers")
+        print(f" Using {max_workers} parallel workers")
 
         with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix=f"InvoiceWorker-{job_id[:8]}") as executor:
             # Submit all tasks
@@ -787,7 +787,7 @@ def start_background_job(job_id: str, job_type: str = 'invoice_batch'):
             daemon=True  # Thread will not prevent program exit
         )
         worker_thread.start()
-        print(f"🔥 Started background worker thread for job {job_id}")
+        print(f" Started background worker thread for job {job_id}")
         return True
     else:
         print(f"[ERROR] Unknown job type: {job_type}")
@@ -1088,13 +1088,13 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         # Update the field
         update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}"
         cursor.execute(update_query, (value, tenant_id, transaction_id))
-        logger.info(f"📝 Updated field '{field}' to '{value}' for transaction {transaction_id}")
+        logger.info(f" Updated field '{field}' to '{value}' for transaction {transaction_id}")
 
         # If user is manually updating a classification field, boost confidence to indicate manual verification
         classification_fields = ['classified_entity', 'accounting_category', 'subcategory', 'justification', 'description']
         updated_confidence = None
         if field in classification_fields:
-            logger.info(f"🎯 Field '{field}' is a classification field - checking for confidence update")
+            logger.info(f" Field '{field}' is a classification field - checking for confidence update")
             # Check if ALL critical fields are now filled to determine confidence level
             # Critical fields: classified_entity, accounting_category, subcategory, justification
             cursor.execute(
@@ -1116,7 +1116,7 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
                     subcat = check_row[2]
                     justif = check_row[3]
 
-                logger.info(f"🔍 Current field values - Entity: '{entity}', Category: '{acc_cat}', Subcategory: '{subcat}', Justification: '{justif}'")
+                logger.info(f" Current field values - Entity: '{entity}', Category: '{acc_cat}', Subcategory: '{subcat}', Justification: '{justif}'")
 
                 # Check if all critical fields are properly filled (not NULL, empty, or 'N/A')
                 all_filled = all([
@@ -1132,15 +1132,15 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
                 cursor.execute(confidence_update_query, (updated_confidence, tenant_id, transaction_id))
 
                 if all_filled:
-                    logger.info(f"✅ CONFIDENCE: Boosted confidence to 0.95 for transaction {transaction_id} - ALL critical fields filled by manual {field} edit")
+                    logger.info(f" CONFIDENCE: Boosted confidence to 0.95 for transaction {transaction_id} - ALL critical fields filled by manual {field} edit")
                 else:
-                    logger.info(f"⚠️  CONFIDENCE: Set confidence to 0.75 for transaction {transaction_id} - partial completion by manual {field} edit")
+                    logger.info(f"  CONFIDENCE: Set confidence to 0.75 for transaction {transaction_id} - partial completion by manual {field} edit")
 
         # CRITICAL: Commit the UPDATE immediately to ensure it persists
         # In PostgreSQL, if a later query fails, it can rollback the entire transaction
         conn.commit()
 
-        logger.info(f"💾 Transaction {transaction_id} committed: field={field}, value={value}, updated_confidence={updated_confidence}")
+        logger.info(f" Transaction {transaction_id} committed: field={field}, value={value}, updated_confidence={updated_confidence}")
 
         # Record change in history (only if table exists)
         # This is done in a separate transaction so failures don't affect the main update
@@ -1249,7 +1249,7 @@ Return only the JSON object, no additional text.
 
         print(f"SUCCESS: Stored entity patterns for {entity_name}: {pattern_data}")
 
-        # 🔥 NEW: Update aggregated pattern statistics in real-time
+        #  NEW: Update aggregated pattern statistics in real-time
         # This ensures the TF-IDF scores are always current
         try:
             # Update statistics for each pattern type
@@ -1273,11 +1273,11 @@ Return only the JSON object, no additional text.
                 if is_meaningful_pattern(payment_method, entity_name, tenant_id):
                     update_pattern_statistics(entity_name, payment_method, 'payment_method', tenant_id)
 
-            print(f"✅ Real-time TF-IDF statistics updated for {entity_name}")
+            print(f" Real-time TF-IDF statistics updated for {entity_name}")
 
         except Exception as stats_error:
             # Don't fail the whole function if statistics update fails
-            print(f"⚠️  WARNING: Failed to update pattern statistics: {stats_error}")
+            print(f"  WARNING: Failed to update pattern statistics: {stats_error}")
 
         return pattern_data
 
@@ -1292,7 +1292,7 @@ Return only the JSON object, no additional text.
 
 def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant_id: str,  max_results: int = 50) -> List[Dict]:
     """
-    🔥 NEW: TF-IDF-based similar transactions finder (REPLACES old pattern matching)
+     NEW: TF-IDF-based similar transactions finder (REPLACES old pattern matching)
 
     Uses the sophisticated TF-IDF pattern system with:
     - Pre-filtering optimization (5x faster)
@@ -1378,7 +1378,7 @@ def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant
                 tx_entity = tx[5] if len(tx) > 5 else ''
                 tx_suggested = tx[6] if len(tx) > 6 else ''
 
-            # 🔥 Use the sophisticated TF-IDF scoring system
+            #  Use the sophisticated TF-IDF scoring system
             match_result = calculate_entity_match_score(
                 description=tx_desc,
                 entity_name=entity_name,
@@ -1425,7 +1425,7 @@ def get_similar_transactions_tfidf(transaction_id: str, entity_name: str, tenant
 def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: str, tenant_id: str,
                                              wallet_address: str = None, max_results: int = 50) -> List[Dict]:
     """
-    🔥 UPDATED: Simple Match engine for "Apply AI Suggestions" modal
+     UPDATED: Simple Match engine for "Apply AI Suggestions" modal
 
     This replaces the TF-IDF approach with the proven Simple Match engine
     that uses keyword-based Jaccard similarity to prevent false positives.
@@ -1493,13 +1493,13 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] Finding similar transactions for entity='{entity_name}', desc='{ref_desc[:50]}...'")
 
         # Step 2: Query uncategorized or low-confidence transactions
-        # 🔥 NEW: Add detailed logging of query criteria
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🔍 Querying candidates with:")
+        #  NEW: Add detailed logging of query criteria
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  Querying candidates with:")
         logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - tenant_id: {tenant_id}")
         logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - exclude: {transaction_id}")
         logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   - criteria: confidence < 0.8 OR entity NULL/empty/N/A")
 
-        # 🔥 NEW: Extract first significant word from description for filtering
+        #  NEW: Extract first significant word from description for filtering
         # This ensures we prioritize similar transaction types (e.g., all "Ethereum" transactions together)
         ref_desc_words = ref_desc.upper().split()
         ref_first_word = ref_desc_words[0] if ref_desc_words else ''
@@ -1536,13 +1536,13 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
         conn.close()
 
         if not candidate_txs:
-            logging.warning(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ❌ No candidate transactions found in database")
+            logging.warning(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  No candidate transactions found in database")
             return []
 
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ✅ Found {len(candidate_txs)} candidate transactions to score")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  Found {len(candidate_txs)} candidate transactions to score")
 
-        # 🔥 NEW: Log sample of candidate descriptions to understand what we're matching against
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 📋 Sample of first 10 candidates:")
+        #  NEW: Log sample of candidate descriptions to understand what we're matching against
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  Sample of first 10 candidates:")
         for i, tx in enumerate(candidate_txs[:10], 1):
             sample_desc = tx[1] if len(tx) > 1 else '' if isinstance(tx, tuple) else tx.get('description', '')
             sample_entity = tx[4] if len(tx) > 4 else '' if isinstance(tx, tuple) else tx.get('classified_entity', '')
@@ -1571,16 +1571,16 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
         # Step 3: Use Simple Match engine to find similar transactions
         # Use min_confidence=0.3 to match Simple Match engine defaults
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🔍 Running Simple Match engine with min_confidence=0.3...")
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] 🐛 DEBUG MODE ENABLED - Detailed matching logs will follow")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  Running Simple Match engine with min_confidence=0.3...")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  DEBUG MODE ENABLED - Detailed matching logs will follow")
         matches = find_similar_simple(
             target_transaction=ref_tx_dict,
             candidate_transactions=candidate_dicts,
             min_confidence=0.3,
-            debug=True  # 🔥 Enable detailed logging
+            debug=True  #  Enable detailed logging
         )
 
-        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION] ✅ Simple Match found {len(matches)} similar transactions")
+        logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]  Simple Match found {len(matches)} similar transactions")
 
         # Step 4: Apply wallet address boost if applicable
         wallet_exact_matches = 0
@@ -1601,7 +1601,7 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
                     match['wallet_boost'] = 0.2
                     match['has_wallet_match'] = True
                     wallet_exact_matches += 1
-                    logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]   🎯 Wallet match: '{match.get('description', '')[:40]}...' boosted from {original_confidence:.3f} to {match['confidence']:.3f}")
+                    logging.info(f"[SIMPLE_MATCH_AFTER_SUGGESTION]    Wallet match: '{match.get('description', '')[:40]}...' boosted from {original_confidence:.3f} to {match['confidence']:.3f}")
                 else:
                     match['wallet_boost'] = None
                     match['has_wallet_match'] = False
@@ -1665,7 +1665,7 @@ def find_similar_with_tfidf_after_suggestion(transaction_id: str, entity_name: s
 
 def get_claude_analyzed_similar_descriptions(context: Dict, claude_client) -> List[str]:
     """
-    ⚠️  DEPRECATED: Use get_similar_transactions_tfidf() instead
+      DEPRECATED: Use get_similar_transactions_tfidf() instead
 
     Use Claude to intelligently analyze which transactions should have similar descriptions/entities
     """
@@ -2504,7 +2504,7 @@ def get_ai_powered_suggestions(field_type: str, current_value: str = "", context
 
         # Special handling for similar_descriptions, similar_entities, similar_accounting, and similar_subcategory
         if field_type in ['similar_descriptions', 'similar_entities', 'similar_accounting', 'similar_subcategory']:
-            # 🔥 NEW: Use TF-IDF system for similar_entities (more accurate and faster)
+            #  NEW: Use TF-IDF system for similar_entities (more accurate and faster)
             if field_type == 'similar_entities':
                 transaction_id = context.get('transaction_id')
                 entity_name = context.get('value', '')  # The entity user is assigning
@@ -2865,27 +2865,27 @@ def sync_csv_to_database(csv_filename=None):
     """Sync classified CSV files to SQLite database"""
     # Get current tenant_id for multi-tenant isolation
     tenant_id = get_current_tenant_id()
-    print(f"🏢 Syncing to database for tenant: {tenant_id}")
-    print(f"🔧 DEBUG: Starting sync_csv_to_database for {csv_filename}")
+    print(f" Syncing to database for tenant: {tenant_id}")
+    print(f" DEBUG: Starting sync_csv_to_database for {csv_filename}")
     try:
         parent_dir = os.path.dirname(os.path.dirname(__file__))
-        print(f"🔧 DEBUG: Parent directory: {parent_dir}")
+        print(f" DEBUG: Parent directory: {parent_dir}")
 
         if csv_filename:
             # Sync specific classified file
             csv_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{csv_filename}')
-            print(f"🔧 DEBUG: Looking for classified file: {csv_path}")
+            print(f" DEBUG: Looking for classified file: {csv_path}")
         else:
             # Try to sync MASTER_TRANSACTIONS.csv if it exists
             csv_path = os.path.join(parent_dir, 'MASTER_TRANSACTIONS.csv')
-            print(f"🔧 DEBUG: Looking for MASTER_TRANSACTIONS.csv: {csv_path}")
+            print(f" DEBUG: Looking for MASTER_TRANSACTIONS.csv: {csv_path}")
 
         # Check if classified_transactions directory exists
         classified_dir = os.path.join(parent_dir, 'classified_transactions')
-        print(f"🔧 DEBUG: Classified directory exists: {os.path.exists(classified_dir)}")
+        print(f" DEBUG: Classified directory exists: {os.path.exists(classified_dir)}")
         if os.path.exists(classified_dir):
             files_in_dir = os.listdir(classified_dir)
-            print(f"🔧 DEBUG: Files in classified_transactions: {files_in_dir}")
+            print(f" DEBUG: Files in classified_transactions: {files_in_dir}")
 
         if not os.path.exists(csv_path):
             print(f"WARNING: CSV file not found for sync: {csv_path}")
@@ -2897,14 +2897,14 @@ def sync_csv_to_database(csv_filename=None):
             ] if csv_filename else []
 
             for alt_path in alternative_paths:
-                print(f"🔧 DEBUG: Trying alternative path: {alt_path}")
+                print(f" DEBUG: Trying alternative path: {alt_path}")
                 if os.path.exists(alt_path):
                     csv_path = alt_path
-                    print(f"✅ DEBUG: Found file at alternative path: {alt_path}")
+                    print(f" DEBUG: Found file at alternative path: {alt_path}")
                     break
             else:
-                print(f"❌ DEBUG: No classified file found - skipping sync")
-                print(f"❌ The file needs to be processed by main.py first to create a classified file")
+                print(f" DEBUG: No classified file found - skipping sync")
+                print(f" The file needs to be processed by main.py first to create a classified file")
                 return False
 
         # Read the CSV file
@@ -2917,9 +2917,9 @@ def sync_csv_to_database(csv_filename=None):
         missing_columns = [col for col in required_columns if col.lower() not in df_columns_lower]
 
         if missing_columns:
-            print(f"❌ ERROR: CSV file is missing required columns: {missing_columns}")
-            print(f"❌ This appears to be a raw CSV file, not a classified one")
-            print(f"❌ Available columns: {list(df.columns)}")
+            print(f" ERROR: CSV file is missing required columns: {missing_columns}")
+            print(f" This appears to be a raw CSV file, not a classified one")
+            print(f" Available columns: {list(df.columns)}")
             return False
 
         # Standardize column names to lowercase for database compatibility
@@ -2948,7 +2948,7 @@ def sync_csv_to_database(csv_filename=None):
         enriched_count = 0
         skipped_count = 0
 
-        print(f"🔄 SMART RE-UPLOAD MODE: Will merge/enrich existing transactions")
+        print(f" SMART RE-UPLOAD MODE: Will merge/enrich existing transactions")
 
         # Insert all transactions
         for _, row in df.iterrows():
@@ -2972,7 +2972,7 @@ def sync_csv_to_database(csv_filename=None):
 
             # Debug first row
             if _ == 0:
-                print(f"🔧 DEBUG DATE NORMALIZATION: Original='{original_date}' → Normalized='{date_value}'")
+                print(f" DEBUG DATE NORMALIZATION: Original='{original_date}' -> Normalized='{date_value}'")
 
             data = {
                 'transaction_id': transaction_id,
@@ -3123,7 +3123,7 @@ def sync_csv_to_database(csv_filename=None):
                         data['transaction_id']
                     ))
                     enriched_count += 1
-                    print(f"✨ ENRICHED: {data['transaction_id'][:8]}... - {data['description'][:50]}")
+                    print(f" ENRICHED: {data['transaction_id'][:8]}... - {data['description'][:50]}")
                 else:
                     # Transaction doesn't exist - INSERT new
                     cursor.execute("""
@@ -3142,7 +3142,7 @@ def sync_csv_to_database(csv_filename=None):
                         data['crypto_amount'], data['conversion_note']
                     ))
                     new_count += 1
-                    print(f"✅ NEW: {data['transaction_id'][:8]}... - {data['description'][:50]}")
+                    print(f" NEW: {data['transaction_id'][:8]}... - {data['description'][:50]}")
             else:
                 # SQLite - use simple INSERT OR REPLACE for now
                 cursor.execute("""
@@ -3166,8 +3166,8 @@ def sync_csv_to_database(csv_filename=None):
 
         # Print enrichment statistics
         print(f"")
-        print(f"✅ SUCCESS: Smart Re-Upload Complete!")
-        print(f"📊 Statistics:")
+        print(f" SUCCESS: Smart Re-Upload Complete!")
+        print(f" Statistics:")
         print(f"   • Total processed: {len(df)}")
         print(f"   • New transactions: {new_count}")
         print(f"   • Enriched existing: {enriched_count}")
@@ -3584,7 +3584,7 @@ def api_update_transaction():
             success = result
             updated_confidence = None
 
-        # 🔥 ISSUE #4: FEEDBACK LOOP - Detect if user accepted/rejected AI suggestion
+        #  ISSUE #4: FEEDBACK LOOP - Detect if user accepted/rejected AI suggestion
         if success and field == 'classified_entity' and value and value != 'N/A':
             try:
                 # Get current tenant_id for multi-tenant isolation
@@ -3607,7 +3607,7 @@ def api_update_transaction():
                     description = tx_row.get('description', '') if isinstance(tx_row, dict) else tx_row[0]
                     suggested_entity = tx_row.get('suggested_entity', '') if isinstance(tx_row, dict) else tx_row[1]
 
-                    # 🔥 REINFORCEMENT LEARNING: Check if user accepted or rejected AI suggestion
+                    #  REINFORCEMENT LEARNING: Check if user accepted or rejected AI suggestion
                     if suggested_entity and suggested_entity != 'N/A':
                         if suggested_entity == value:
                             # User ACCEPTED the AI suggestion - positive feedback
@@ -3618,7 +3618,7 @@ def api_update_transaction():
                                 tenant_id=tenant_id,
                                 feedback_type='accepted'
                             )
-                            print(f"📈 POSITIVE FEEDBACK: User accepted AI suggestion '{suggested_entity}'")
+                            print(f" POSITIVE FEEDBACK: User accepted AI suggestion '{suggested_entity}'")
                         else:
                             # User REJECTED the AI suggestion - negative feedback
                             handle_classification_feedback(
@@ -3628,7 +3628,7 @@ def api_update_transaction():
                                 tenant_id=tenant_id,
                                 feedback_type='rejected'
                             )
-                            print(f"📉 NEGATIVE FEEDBACK: User rejected '{suggested_entity}', chose '{value}' instead")
+                            print(f" NEGATIVE FEEDBACK: User rejected '{suggested_entity}', chose '{value}' instead")
 
                     # Extract patterns for the actual chosen entity (regardless of whether it was suggested)
                     extract_entity_patterns_with_llm(transaction_id, value, description, claude_client)
@@ -4795,7 +4795,7 @@ def api_ai_get_suggestions():
                 'new_confidence': current_confidence,
                 'similar_count': 0,
                 'patterns_count': 0,
-                'transaction': transaction  # 🔥 FIX: Include transaction details
+                'transaction': transaction  #  FIX: Include transaction details
             })
 
         # Use Claude AI to analyze and suggest improvements
@@ -5012,7 +5012,7 @@ CRITICAL RULES:
         ai_response['similar_count'] = patterns_count
         ai_response['patterns_count'] = patterns_count
 
-        # 🔥 FIX: Include transaction details in the response
+        #  FIX: Include transaction details in the response
         # This avoids relying on fragile HTML attribute passing of transaction object
         ai_response['transaction'] = transaction
 
@@ -5076,9 +5076,9 @@ def api_ai_apply_suggestion():
                         description = row[0]
                         # Extract and store entity patterns for future learning
                         extract_entity_patterns_with_llm(transaction_id, suggested_value, description, claude_client)
-                        print(f"✅ AI suggestion applied and pattern learning triggered for {field} = {suggested_value}")
+                        print(f" AI suggestion applied and pattern learning triggered for {field} = {suggested_value}")
                 except Exception as pattern_error:
-                    print(f"⚠️ Pattern learning failed (non-critical): {pattern_error}")
+                    print(f" Pattern learning failed (non-critical): {pattern_error}")
 
             return jsonify({
                 'success': True,
@@ -5168,7 +5168,7 @@ WALLET MATCH DETECTED:
 - Purpose: {matched_wallet['purpose']}
 - Match Direction: {match_direction}
 
-⚠️  IMPORTANT: This transaction involves a KNOWN WALLET. Use this context to categorize accurately:
+  IMPORTANT: This transaction involves a KNOWN WALLET. Use this context to categorize accurately:
   - If wallet_type is "internal": This is likely an INTERNAL_TRANSFER or INTERCOMPANY_ELIMINATION
   - If wallet_type is "customer": This is likely REVENUE (if incoming) or REFUND (if outgoing)
   - If wallet_type is "vendor": This is likely OPERATING_EXPENSE (if outgoing) or REVENUE (if incoming)
@@ -5323,7 +5323,7 @@ def api_ai_find_similar_after_suggestion():
                 'message': 'No entity classification applied'
             })
 
-        # 🔥 NEW: Use TF-IDF system instead of Claude AI for finding similar transactions
+        #  NEW: Use TF-IDF system instead of Claude AI for finding similar transactions
         # This is 5x faster, more accurate, and uses learned patterns
         logging.info(f"[TFIDF_MODAL] Using TF-IDF system to find similar transactions for entity '{entity_name}'")
 
@@ -5334,7 +5334,7 @@ def api_ai_find_similar_after_suggestion():
         elif original.get('destination') and len(str(original.get('destination', ''))) > 20:
             wallet_address = str(original.get('destination', ''))
 
-        # 🔥 Call our new TF-IDF function to find similar transactions
+        #  Call our new TF-IDF function to find similar transactions
         logging.info(f"[TFIDF_MODAL] Calling find_similar_with_tfidf_after_suggestion for entity '{entity_name}'")
 
         similar_transactions = find_similar_with_tfidf_after_suggestion(
@@ -5954,7 +5954,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
         if tenant_id is None:
             tenant_id = get_current_tenant_id()
 
-        print(f"🏢 Checking duplicates for tenant: {tenant_id}")
+        print(f" Checking duplicates for tenant: {tenant_id}")
 
         # Find the CLASSIFIED CSV file (this has enriched data from smart ingestion)
         # Go up one level from web_ui to DeltaCFOAgentv2 root directory
@@ -5964,28 +5964,39 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
 
         if os.path.exists(classified_file):
             processed_file = classified_file
-            print(f"✅ Using classified file for duplicate check: {classified_file}")
+            print(f" Using classified file for duplicate check: {classified_file}")
         else:
-            print(f"⚠️ Classified file not found: {classified_file}, using original")
+            print(f" Classified file not found: {classified_file}, using original")
             processed_file = processed_filepath
 
         df = pd.read_csv(processed_file)
         original_count = len(df)
-        print(f"🔍 Loaded {original_count} transactions from file")
+        print(f" Loaded {original_count} transactions from file")
+        print(f" CSV columns: {list(df.columns)}")
 
         # Step 1: Deduplicate within the file itself first
         # Keep only the LAST occurrence of each duplicate (most recent data)
-        df_deduplicated = df.drop_duplicates(
-            subset=['Date', 'Description', 'Amount', 'Currency'],
-            keep='last'
-        )
+        # Use only columns that actually exist in the CSV
+        dedup_columns = []
+        for col in ['Date', 'Description', 'Amount', 'Currency']:
+            if col in df.columns:
+                dedup_columns.append(col)
 
-        file_duplicates_removed = original_count - len(df_deduplicated)
-        if file_duplicates_removed > 0:
-            print(f"📋 Removed {file_duplicates_removed} duplicate rows within the file itself (keeping latest)")
-            df = df_deduplicated
+        if dedup_columns:
+            print(f" Using columns for deduplication: {dedup_columns}")
+            df_deduplicated = df.drop_duplicates(
+                subset=dedup_columns,
+                keep='last'
+            )
 
-        print(f"🔍 Checking {len(df)} unique transactions against database for duplicates")
+            file_duplicates_removed = original_count - len(df_deduplicated)
+            if file_duplicates_removed > 0:
+                print(f" Removed {file_duplicates_removed} duplicate rows within the file itself (keeping latest)")
+                df = df_deduplicated
+        else:
+            print(f" Warning: None of the standard deduplication columns found, skipping file-level deduplication")
+
+        print(f" Checking {len(df)} unique transactions against database for duplicates")
 
         from database import db_manager
         with db_manager.get_connection() as conn:
@@ -6003,7 +6014,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
 
                 # Skip if date is missing or invalid
                 if not date_str or date_str == 'nan' or date_str == 'None':
-                    print(f"⚠️ Skipping row {index + 1} - missing date")
+                    print(f" Skipping row {index + 1} - missing date")
                     continue
 
                 # Extract just the date part (YYYY-MM-DD)
@@ -6021,19 +6032,19 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                         date_obj = datetime.strptime(date_str, '%m/%d/%Y')
                         date_str = date_obj.strftime('%Y-%m-%d')
                     except ValueError:
-                        print(f"⚠️ Skipping row {index + 1} - invalid date format: {date_str}")
+                        print(f" Skipping row {index + 1} - invalid date format: {date_str}")
                         continue
 
                 # Validate date format (should be YYYY-MM-DD now)
                 if not date_str or len(date_str) < 8 or '-' not in date_str:
-                    print(f"⚠️ Skipping row {index + 1} - invalid date format: {date_str}")
+                    print(f" Skipping row {index + 1} - invalid date format: {date_str}")
                     continue
 
                 description = str(row.get('Description', ''))
                 try:
                     amount = float(row.get('Amount', 0))
                 except (ValueError, TypeError):
-                    print(f"⚠️ Skipping row {index + 1} - invalid amount")
+                    print(f" Skipping row {index + 1} - invalid amount")
                     continue
 
                 # Determine if this is a crypto transaction
@@ -6047,10 +6058,10 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                 if is_crypto:
                     tolerance_pct = 0.0075  # 0.75% variance allowed
                     amount_tolerance = abs(amount) * tolerance_pct
-                    print(f"🪙 Row {index + 1}: Crypto transaction ({currency}) - allowing {tolerance_pct*100}% variance (±${amount_tolerance:.2f})")
+                    print(f" CRYPTO Row {index + 1}: Crypto transaction ({currency}) - allowing {tolerance_pct*100}% variance (±${amount_tolerance:.2f})")
                 else:
                     amount_tolerance = 0.01  # Exact match for fiat (1 cent tolerance)
-                    print(f"💵 Row {index + 1}: Fiat transaction - requiring exact match (±$0.01)")
+                    print(f" Row {index + 1}: Fiat transaction - requiring exact match (±$0.01)")
 
                 # Check for match: same tenant, same date, similar amount (tolerance based on type), same currency
                 # NOTE: Removed LIMIT 1 to find ALL duplicate instances (e.g., if file uploaded multiple times)
@@ -6083,7 +6094,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
 
                     existing_matches = cursor.fetchall()
                 except Exception as query_error:
-                    print(f"⚠️ Error querying row {index + 1}: {query_error}")
+                    print(f" Error querying row {index + 1}: {query_error}")
                     # Rollback the transaction to clear PostgreSQL error state
                     if db_manager.db_type == 'postgresql':
                         conn.rollback()
@@ -6108,7 +6119,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                     # Found duplicate(s) - create an entry for EACH match
                     # This handles cases where the same file was uploaded multiple times
                     if len(existing_matches) > 1:
-                        print(f"   📋 Found {len(existing_matches)} duplicate instances in database")
+                        print(f"    Found {len(existing_matches)} duplicate instances in database")
 
                     # Track if we found any TRUE duplicates (not inter-company transfers)
                     found_true_duplicate = False
@@ -6149,9 +6160,9 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
 
                         # If either indicator suggests inter-company transfer, skip duplicate detection
                         if is_opposite_signs or is_reversed_flow:
-                            print(f"   🔄 Row {index + 1}: Detected INTER-COMPANY TRANSFER (not duplicate)")
-                            print(f"      Existing: {old_amount:+.2f} {currency} | {old_origin or 'N/A'} → {old_destination or 'N/A'}")
-                            print(f"      New:      {new_amount:+.2f} {currency} | {new_origin or 'N/A'} → {new_destination or 'N/A'}")
+                            print(f"    Row {index + 1}: Detected INTER-COMPANY TRANSFER (not duplicate)")
+                            print(f"      Existing: {old_amount:+.2f} {currency} | {old_origin or 'N/A'} -> {old_destination or 'N/A'}")
+                            print(f"      New:      {new_amount:+.2f} {currency} | {new_origin or 'N/A'} -> {new_destination or 'N/A'}")
                             print(f"      Reason: {'Opposite signs' if is_opposite_signs else 'Reversed flow'}")
                             # Skip this match - don't add to duplicates list
                             # But we need to break out of the existing_matches loop, not continue the outer loop
@@ -6202,7 +6213,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                     # After checking all matches, if none were TRUE duplicates (all were inter-company transfers)
                     # then this transaction is NEW
                     if not found_true_duplicate:
-                        print(f"   ✅ Row {index + 1}: All matches were inter-company transfers - treating as NEW transaction")
+                        print(f"    Row {index + 1}: All matches were inter-company transfers - treating as NEW transaction")
                         transaction_data['is_duplicate'] = False
                         new_transactions.append(transaction_data)
                 else:
@@ -6220,11 +6231,11 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
             'original_file': original_filepath
         }
 
-        print(f"✅ Duplicate check: {len(duplicates)} duplicates, {len(new_transactions)} new transactions")
+        print(f" Duplicate check: {len(duplicates)} duplicates, {len(new_transactions)} new transactions")
         return result
 
     except Exception as e:
-        print(f"❌ Error checking duplicates: {e}")
+        print(f" Error checking duplicates: {e}")
         import traceback
         traceback.print_exc()
         return {
@@ -6268,12 +6279,12 @@ def convert_currency_to_usd(amount: float, from_currency: str) -> tuple:
     rate = EXCHANGE_RATES.get(from_currency.upper())
     if rate is None:
         # Unknown currency - log warning and return original
-        print(f"⚠️  Unknown currency '{from_currency}' - storing in original currency")
+        print(f"  Unknown currency '{from_currency}' - storing in original currency")
         return (amount, from_currency, f"Unknown currency - no conversion applied")
 
     usd_amount = amount * rate
     conversion_note = f"Converted from {from_currency} at rate {rate}"
-    print(f"💱 Currency conversion: {amount} {from_currency} = ${usd_amount:.2f} USD (rate: {rate})")
+    print(f" Currency conversion: {amount} {from_currency} = ${usd_amount:.2f} USD (rate: {rate})")
 
     return (usd_amount, from_currency, conversion_note)
 
@@ -6295,7 +6306,7 @@ def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, An
         from pdf2image import convert_from_path
         from io import BytesIO
 
-        print(f"📄 Processing PDF with Claude Vision: {filename}")
+        print(f" Processing PDF with Claude Vision: {filename}")
 
         # Convert PDF first page to image at 300 DPI (same as invoice system)
         pages = convert_from_path(filepath, first_page=1, last_page=1, dpi=300)
@@ -6309,7 +6320,7 @@ def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, An
         image_bytes = buffer.getvalue()
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
 
-        print(f"✅ PDF converted to image successfully ({len(image_base64)} bytes)")
+        print(f" PDF converted to image successfully ({len(image_base64)} bytes)")
 
         # Get Anthropic API key
         api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -6372,7 +6383,7 @@ Important:
 - The top-level "currency" field should be the default currency for all transactions in the document
 """
 
-        print(f"🤖 Calling Claude Vision API...")
+        print(f" Calling Claude Vision API...")
 
         # Call Claude Vision API
         response = client.messages.create(
@@ -6400,7 +6411,7 @@ Important:
 
         # Parse response
         response_text = response.content[0].text.strip()
-        print(f"📥 Received response from Claude ({len(response_text)} chars)")
+        print(f" Received response from Claude ({len(response_text)} chars)")
 
         # Remove markdown code blocks if present
         if response_text.startswith('```json'):
@@ -6413,27 +6424,27 @@ Important:
 
         # Debug: Show what currency Claude detected
         detected_currency = result.get('currency', 'NOT FOUND')
-        print(f"🔍 DEBUG: Claude detected document currency: '{detected_currency}'")
+        print(f" DEBUG: Claude detected document currency: '{detected_currency}'")
         if result.get('transactions'):
             first_txn_currency = result['transactions'][0].get('currency', 'NOT FOUND')
-            print(f"🔍 DEBUG: First transaction currency: '{first_txn_currency}'")
+            print(f" DEBUG: First transaction currency: '{first_txn_currency}'")
 
-        print(f"✅ Successfully extracted {result.get('total_found', 0)} transactions from PDF")
+        print(f" Successfully extracted {result.get('total_found', 0)} transactions from PDF")
 
         return result
 
     except ImportError as e:
         error_msg = f"PDF processing libraries not available: {e}. Install with: pip install pdf2image Pillow"
-        print(f"❌ {error_msg}")
+        print(f" {error_msg}")
         return {"error": error_msg, "transactions": [], "total_found": 0}
     except json.JSONDecodeError as e:
         error_msg = f"Invalid JSON response from Claude Vision: {e}"
-        print(f"❌ {error_msg}")
+        print(f" {error_msg}")
         print(f"Raw response: {response_text[:500]}...")
         return {"error": error_msg, "transactions": [], "total_found": 0}
     except Exception as e:
         error_msg = f"PDF processing failed: {str(e)}"
-        print(f"❌ {error_msg}")
+        print(f" {error_msg}")
         print(f"Traceback: {traceback.format_exc()}")
         return {"error": error_msg, "transactions": [], "total_found": 0}
 
@@ -6443,42 +6454,54 @@ def upload_file():
     """Handle file upload and processing"""
     import sys
     sys.stderr.write("=" * 80 + "\n")
-    sys.stderr.write("🚀 UPLOAD ENDPOINT HIT - Starting file upload processing\n")
+    sys.stderr.write("UPLOAD ENDPOINT HIT - Starting file upload processing\n")
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.flush()
-    logger.info("🚀 UPLOAD ENDPOINT HIT - Starting file upload processing")
+    logger.info("UPLOAD ENDPOINT HIT - Starting file upload processing")
     try:
+        print("DEBUG: Checking for file in request...")
         if 'file' not in request.files:
-            print("❌ ERROR: No file in request")
+            print("ERROR: No file in request")
             return jsonify({'error': 'No file provided'}), 400
 
+        print("DEBUG: Getting file from request...")
         file = request.files['file']
+        print(f"DEBUG: File received: {file.filename}")
+
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
         # Check file extension - accept CSV and PDF
+        print("DEBUG: Checking file extension...")
         allowed_extensions = ['.csv', '.pdf']
         file_ext = os.path.splitext(file.filename.lower())[1]
+        print(f"DEBUG: File extension: {file_ext}")
+
         if file_ext not in allowed_extensions:
             return jsonify({'error': 'Only CSV and PDF files are allowed'}), 400
 
         # Secure the filename
+        print("DEBUG: Securing filename...")
         filename = secure_filename(file.filename)
+        print(f"DEBUG: Secured filename: {filename}")
 
         # Save to parent directory (same location as other CSV files)
+        print("DEBUG: Getting parent directory...")
         parent_dir = os.path.dirname(os.path.dirname(__file__))
+        print(f"DEBUG: Parent dir: {parent_dir}")
         filepath = os.path.join(parent_dir, filename)
+        print(f"DEBUG: Full filepath: {filepath}")
 
         # Save the uploaded file
         file.save(filepath)
 
         # Debug: Show file extension detection
-        print(f"🔧 DEBUG: File extension detected: '{file_ext}' for file: {filename}")
+        print(f"DEBUG: File extension detected: '{file_ext}' for file: {filename}")
 
         # Check if PDF and process differently
         if file_ext == '.pdf':
-            print(f"📄 PDF file detected: {filename}")
-            print(f"🔧 DEBUG: Processing PDF with Claude Vision...")
+            print(f"PDF file detected: {filename}")
+            print(f"DEBUG: Processing PDF with Claude Vision...")
 
             # Process PDF with Claude Vision
             pdf_result = process_pdf_with_claude_vision(filepath, filename)
@@ -6505,7 +6528,7 @@ def upload_file():
                 }), 400
 
             # Insert transactions into database
-            print(f"💾 Inserting {len(transactions)} transactions into database...")
+            print(f"Inserting {len(transactions)} transactions into database...")
             from database import db_manager
             tenant_id = get_current_tenant_id()
             inserted_count = 0
@@ -6513,7 +6536,7 @@ def upload_file():
             try:
                 # Get document-level currency (fallback if individual transaction doesn't have one)
                 document_currency = pdf_result.get('currency', 'USD')
-                print(f"🔍 DEBUG: Document-level currency from pdf_result: '{document_currency}'")
+                print(f" DEBUG: Document-level currency from pdf_result: '{document_currency}'")
 
                 skipped_duplicates = 0
                 for txn in transactions:
@@ -6523,7 +6546,7 @@ def upload_file():
                     txn_date = txn.get('date')
                     txn_description = txn.get('description')
 
-                    print(f"🔍 DEBUG: About to convert: amount={original_amount}, from_currency={txn_currency}")
+                    print(f" DEBUG: About to convert: amount={original_amount}, from_currency={txn_currency}")
 
                     # Convert currency to USD
                     usd_amount, original_currency, conversion_note = convert_currency_to_usd(
@@ -6542,7 +6565,7 @@ def upload_file():
                     """, (tenant_id, txn_date, txn_description, usd_amount))
 
                     if existing:
-                        print(f"⚠️  DUPLICATE SKIPPED: {txn_date} | {txn_description} | ${usd_amount}")
+                        print(f"DUPLICATE SKIPPED: {txn_date} | {txn_description} | ${usd_amount}")
                         skipped_duplicates += 1
                         continue
 
@@ -6574,10 +6597,10 @@ def upload_file():
                     ))
                     inserted_count += 1
 
-                print(f"✅ Successfully inserted {inserted_count} transactions")
+                print(f" Successfully inserted {inserted_count} transactions")
 
             except Exception as e:
-                print(f"❌ Database insertion error: {e}")
+                print(f" Database insertion error: {e}")
                 logger.error(f"Failed to insert PDF transactions: {e}", exc_info=True)
                 # Clean up uploaded file
                 if os.path.exists(filepath):
@@ -6591,7 +6614,7 @@ def upload_file():
             if os.path.exists(filepath):
                 os.remove(filepath)
 
-            print(f"✅ Successfully processed PDF: {inserted_count} transactions saved to database")
+            print(f" Successfully processed PDF: {inserted_count} transactions saved to database")
             return jsonify({
                 'success': True,
                 'message': f'Successfully extracted and saved {inserted_count} transaction(s) from PDF',
@@ -6605,21 +6628,25 @@ def upload_file():
         shutil.copy2(filepath, backup_path)
 
         # STEP 1: Process file with smart ingestion FIRST (always process to get latest business logic)
-        print(f"🔧 DEBUG: Step 1 - Processing file with smart ingestion: {filename}")
+        print(f" DEBUG: Step 1 - Processing file with smart ingestion: {filename}")
 
         # Process the file to get enriched transactions
         try:
             # Use a subprocess to run the processing in a separate Python instance
+            # Convert Windows backslashes to forward slashes (works on all platforms)
+            parent_dir_safe = parent_dir.replace(chr(92), '/')
+            filename_safe = filename.replace(chr(92), '/')
+            
             processing_script = f"""
 import sys
 import os
-sys.path.append('{parent_dir}')
-os.chdir('{parent_dir}')
+sys.path.append('{parent_dir_safe}')
+os.chdir('{parent_dir_safe}')
 
 from main import DeltaCFOAgent
 
 agent = DeltaCFOAgent()
-result = agent.process_file('{filename}', enhance=True, use_smart_ingestion=True)
+result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
 
 if result is not None:
     print(f'PROCESSED_COUNT:{{len(result)}}')
@@ -6644,10 +6671,10 @@ else:
             if os.getenv('DB_PASSWORD'):
                 env['DB_PASSWORD'] = os.getenv('DB_PASSWORD')
 
-            print(f"🔧 DEBUG: Running subprocess for {filename}")
-            print(f"🔧 DEBUG: API key set: {'Yes' if env.get('ANTHROPIC_API_KEY') else 'No'}")
-            print(f"🔧 DEBUG: Working directory: {parent_dir}")
-            print(f"🔧 DEBUG: Processing script length: {len(processing_script)}")
+            print(f" DEBUG: Running subprocess for {filename}")
+            print(f" DEBUG: API key set: {'Yes' if env.get('ANTHROPIC_API_KEY') else 'No'}")
+            print(f" DEBUG: Working directory: {parent_dir}")
+            print(f" DEBUG: Processing script length: {len(processing_script)}")
 
             process_result = subprocess.run(
                 [sys.executable, '-c', processing_script],
@@ -6658,24 +6685,24 @@ else:
                 env=env
             )
 
-            print(f"🔧 DEBUG: Subprocess return code: {process_result.returncode}")
-            print(f"🔧 DEBUG: Subprocess stdout length: {len(process_result.stdout)}")
-            print(f"🔧 DEBUG: Subprocess stderr length: {len(process_result.stderr)}")
+            print(f" DEBUG: Subprocess return code: {process_result.returncode}")
+            print(f" DEBUG: Subprocess stdout length: {len(process_result.stdout)}")
+            print(f" DEBUG: Subprocess stderr length: {len(process_result.stderr)}")
 
             # Always print subprocess output for debugging
-            print(f"🔧 DEBUG: Subprocess stdout:\n{process_result.stdout}")
+            print(f" DEBUG: Subprocess stdout:\n{process_result.stdout}")
             if process_result.stderr:
-                print(f"🔧 DEBUG: Subprocess stderr:\n{process_result.stderr}")
+                print(f" DEBUG: Subprocess stderr:\n{process_result.stderr}")
 
             # Check for specific error patterns
             if process_result.returncode != 0:
                 print(f"[ERROR] DEBUG: Subprocess failed with return code {process_result.returncode}")
                 if "claude" in process_result.stderr.lower() or "anthropic" in process_result.stderr.lower():
-                    print("🔧 DEBUG: Detected Claude/Anthropic related error")
+                    print(" DEBUG: Detected Claude/Anthropic related error")
                 if "import" in process_result.stderr.lower():
-                    print("🔧 DEBUG: Detected import error")
+                    print(" DEBUG: Detected import error")
                 if "timeout" in process_result.stderr.lower():
-                    print("🔧 DEBUG: Detected timeout error")
+                    print(" DEBUG: Detected timeout error")
 
             # Extract transaction count from output
             transactions_processed = 0
@@ -6683,9 +6710,9 @@ else:
                 count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
                 try:
                     transactions_processed = int(count_str)
-                    print(f"🔧 DEBUG: Extracted transaction count: {transactions_processed}")
+                    print(f" DEBUG: Extracted transaction count: {transactions_processed}")
                 except ValueError as e:
-                    print(f"🔧 DEBUG: Failed to parse transaction count '{count_str}': {e}")
+                    print(f" DEBUG: Failed to parse transaction count '{count_str}': {e}")
 
             # If subprocess failed, return the error immediately
             if process_result.returncode != 0:
@@ -6698,11 +6725,11 @@ else:
                 }), 500
 
             # STEP 2: Check for duplicates in processed file BEFORE syncing to database
-            print(f"🔧 DEBUG: Step 2 - Checking for duplicates in processed file...")
+            print(f" DEBUG: Step 2 - Checking for duplicates in processed file...")
             duplicate_info = check_processed_file_duplicates(filepath, filename)
 
             if duplicate_info['has_duplicates']:
-                print(f"🔍 Found {duplicate_info['duplicate_count']} duplicates, presenting options to user")
+                print(f" Found {duplicate_info['duplicate_count']} duplicates, presenting options to user")
 
                 # Convert numpy/decimal types to native Python types for JSON serialization
                 def sanitize_for_json(obj):
@@ -6742,26 +6769,26 @@ else:
                 })
 
             # STEP 3: No duplicates, proceed with database sync
-            print(f"🔧 DEBUG: No duplicates found, starting database sync for {filename}...")
+            print(f" DEBUG: No duplicates found, starting database sync for {filename}...")
             sync_result = sync_csv_to_database(filename)
-            print(f"🔧 DEBUG: Database sync result: {sync_result}")
+            print(f" DEBUG: Database sync result: {sync_result}")
 
             if sync_result:
                 # Auto-trigger revenue matching after successful transaction upload
                 try:
-                    print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching...")
+                    print(f" AUTO-TRIGGER: Starting automatic revenue matching...")
                     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
                     matcher = RobustRevenueInvoiceMatcher()
                     matches_result = matcher.run_robust_matching(auto_apply=False)
 
                     if matches_result and matches_result.get('matches_found', 0) > 0:
-                        print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                        print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
                     else:
-                        print("ℹ️ AUTO-TRIGGER: No new matches found after transaction upload")
+                        print("ℹ AUTO-TRIGGER: No new matches found after transaction upload")
 
                 except Exception as e:
-                    print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+                    print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
                     # Don't fail the upload if matching fails
 
                 return jsonify({
@@ -6793,6 +6820,13 @@ else:
             }), 500
 
     except Exception as e:
+        import sys
+        error_msg = f"FATAL ERROR in upload_file: {e}"
+        sys.stderr.write("=" * 80 + "\n")
+        sys.stderr.write(error_msg + "\n")
+        sys.stderr.write("=" * 80 + "\n")
+        sys.stderr.write(traceback.format_exc() + "\n")
+        sys.stderr.flush()
         return jsonify({
             'error': str(e),
             'traceback': traceback.format_exc()
@@ -6830,8 +6864,8 @@ def resolve_duplicates():
         processed_file = pending.get('processed_file')
         duplicate_info = pending['duplicate_info']
 
-        print(f"🔧 DEBUG: Resolving duplicates with action: {action}")
-        print(f"🔧 DEBUG: File: {filename}, Duplicates: {duplicate_info['duplicate_count']}")
+        print(f" DEBUG: Resolving duplicates with action: {action}")
+        print(f" DEBUG: File: {filename}, Duplicates: {duplicate_info['duplicate_count']}")
 
         if action == 'overwrite':
             # OVERWRITE: Delete old duplicates and insert new enriched data
@@ -6845,14 +6879,14 @@ def resolve_duplicates():
             duplicate_ids = []
             if selected_indices:
                 # User selected specific transactions - only delete those
-                print(f"✅ User chose to OVERWRITE {len(selected_indices)} selected duplicates")
+                print(f" User chose to OVERWRITE {len(selected_indices)} selected duplicates")
                 all_duplicates = duplicate_info.get('duplicates', [])
                 for idx in selected_indices:
                     if 0 <= idx < len(all_duplicates):
                         duplicate_ids.append(all_duplicates[idx]['existing_id'])
             else:
                 # No selection provided - overwrite ALL duplicates (legacy behavior)
-                print(f"✅ User chose to OVERWRITE ALL {duplicate_info['duplicate_count']} duplicates with latest business knowledge")
+                print(f" User chose to OVERWRITE ALL {duplicate_info['duplicate_count']} duplicates with latest business knowledge")
                 duplicate_ids = [dup['existing_id'] for dup in duplicate_info.get('duplicates', [])]
 
             if duplicate_ids:
@@ -6873,9 +6907,9 @@ def resolve_duplicates():
                 deduped_count = len(all_duplicate_ids)
 
                 if original_count != deduped_count:
-                    print(f"⚠️ Found {original_count} duplicate references but only {deduped_count} unique transaction IDs")
+                    print(f" Found {original_count} duplicate references but only {deduped_count} unique transaction IDs")
 
-                print(f"🗑️ Deleting {len(all_duplicate_ids)} unique duplicate transactions...")
+                print(f" Deleting {len(all_duplicate_ids)} unique duplicate transactions...")
 
                 with db_manager.get_connection() as conn:
                     if db_manager.db_type == 'postgresql':
@@ -6884,30 +6918,30 @@ def resolve_duplicates():
                         # Note: pending_invoice_matches references transactions, so we filter by transaction_id only
                         delete_matches_query = "DELETE FROM pending_invoice_matches WHERE transaction_id = ANY(%s)"
                         cursor.execute(delete_matches_query, (all_duplicate_ids,))
-                        print(f"🗑️ Deleted {cursor.rowcount} invoice match references")
+                        print(f" Deleted {cursor.rowcount} invoice match references")
 
                         # Delete any foreign key references in entity_patterns
                         # Note: entity_patterns references transactions, so we filter by transaction_id only
                         delete_patterns_query = "DELETE FROM entity_patterns WHERE transaction_id = ANY(%s)"
                         cursor.execute(delete_patterns_query, (all_duplicate_ids,))
-                        print(f"🗑️ Deleted {cursor.rowcount} entity pattern references")
+                        print(f" Deleted {cursor.rowcount} entity pattern references")
 
                         # Now delete the transactions - with tenant_id for data isolation
                         delete_query = "DELETE FROM transactions WHERE tenant_id = %s AND transaction_id = ANY(%s)"
                         cursor.execute(delete_query, (tenant_id, all_duplicate_ids))
                         conn.commit()
-                        print(f"✅ Deleted {cursor.rowcount} duplicate transactions")
+                        print(f" Deleted {cursor.rowcount} duplicate transactions")
                     else:
                         cursor = conn.cursor()
                         placeholders = ','.join('?' * len(all_duplicate_ids))
                         delete_query = f"DELETE FROM transactions WHERE tenant_id = ? AND transaction_id IN ({placeholders})"
                         cursor.execute(delete_query, [tenant_id] + all_duplicate_ids)
                         conn.commit()
-                        print(f"✅ Deleted {cursor.rowcount} duplicate transactions")
+                        print(f" Deleted {cursor.rowcount} duplicate transactions")
 
             # Step 1.5: Apply entity modifications to the CSV file before syncing (if any)
             if modifications:
-                print(f"📝 Applying {len(modifications)} entity modifications to CSV before syncing...")
+                print(f" Applying {len(modifications)} entity modifications to CSV before syncing...")
                 try:
                     import pandas as pd
                     import csv
@@ -6954,25 +6988,25 @@ def resolve_duplicates():
                                         matched_count = mask.sum()
                                         if matched_count > 0:
                                             df.loc[mask, 'Classified Entity'] = new_entity
-                                            print(f"   ✅ Updated {matched_count} row(s) at index {idx} -> Entity: {new_entity}")
+                                            print(f"    Updated {matched_count} row(s) at index {idx} -> Entity: {new_entity}")
                                             modifications_applied += 1
 
                         # Write modified DataFrame back to CSV
                         if modifications_applied > 0:
                             df.to_csv(csv_path, index=False, quoting=csv.QUOTE_NONNUMERIC)
-                            print(f"✅ Applied {modifications_applied} entity modifications to CSV file")
+                            print(f" Applied {modifications_applied} entity modifications to CSV file")
                         else:
-                            print(f"⚠️ No modifications were applied (no matching rows found)")
+                            print(f" No modifications were applied (no matching rows found)")
                     else:
-                        print(f"⚠️ Could not find processed CSV file at: {csv_path}")
+                        print(f" Could not find processed CSV file at: {csv_path}")
 
                 except Exception as e:
-                    print(f"⚠️ Error applying modifications to CSV: {e}")
+                    print(f" Error applying modifications to CSV: {e}")
                     import traceback
                     traceback.print_exc()
 
             # Step 2: Sync the new processed file to database
-            print(f"📥 Syncing new enriched transactions to database...")
+            print(f" Syncing new enriched transactions to database...")
             sync_result = sync_csv_to_database(filename)
 
             if sync_result:
@@ -6985,9 +7019,9 @@ def resolve_duplicates():
                     matcher = RobustRevenueInvoiceMatcher()
                     matches_result = matcher.run_robust_matching(auto_apply=False)
                     if matches_result and matches_result.get('matches_found', 0) > 0:
-                        print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches!")
+                        print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches!")
                 except Exception as e:
-                    print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+                    print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
 
                 return jsonify({
                     'success': True,
@@ -7005,17 +7039,17 @@ def resolve_duplicates():
 
         elif action == 'discard':
             # DISCARD: Delete processed files and keep existing database entries
-            print(f"🚫 User chose to DISCARD upload, keeping existing {duplicate_info['duplicate_count']} transactions")
+            print(f" User chose to DISCARD upload, keeping existing {duplicate_info['duplicate_count']} transactions")
 
             # Delete processed CSV file
             if processed_file and os.path.exists(processed_file):
                 os.remove(processed_file)
-                print(f"🗑️ Deleted processed file: {processed_file}")
+                print(f" Deleted processed file: {processed_file}")
 
             # Delete uploaded file
             if os.path.exists(pending['filepath']):
                 os.remove(pending['filepath'])
-                print(f"🗑️ Deleted uploaded file: {pending['filepath']}")
+                print(f" Deleted uploaded file: {pending['filepath']}")
 
             # Clear session
             session.pop('pending_upload', None)
@@ -7074,16 +7108,20 @@ def process_duplicates():
             return jsonify({'error': 'File not found'}), 400
 
         # Use same processing logic as upload_file but force the duplicate handling
+        # Convert Windows backslashes to forward slashes (works on all platforms)
+        parent_dir_safe = parent_dir.replace(chr(92), '/')
+        filename_safe = filename.replace(chr(92), '/')
+        
         processing_script = f"""
 import sys
 import os
-sys.path.append('{parent_dir}')
-os.chdir('{parent_dir}')
+sys.path.append('{parent_dir_safe}')
+os.chdir('{parent_dir_safe}')
 
 from main import DeltaCFOAgent
 
 agent = DeltaCFOAgent()
-result = agent.process_file('{filename}', enhance=True, use_smart_ingestion=True)
+result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
 
 if result is not None:
     print(f'PROCESSED_COUNT:{{len(result)}}')
@@ -7901,7 +7939,7 @@ def api_upload_invoice():
 
         # Auto-trigger revenue matching after successful invoice upload
         try:
-            print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching after invoice upload...")
+            print(f" AUTO-TRIGGER: Starting automatic revenue matching after invoice upload...")
             from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
             matcher = RobustRevenueInvoiceMatcher()
@@ -7909,12 +7947,12 @@ def api_upload_invoice():
             matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
 
             if matches_result and matches_result.get('matches_found', 0) > 0:
-                print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
             else:
-                print("ℹ️ AUTO-TRIGGER: No new matches found after invoice upload")
+                print("ℹ AUTO-TRIGGER: No new matches found after invoice upload")
 
         except Exception as e:
-            print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+            print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
             # Don't fail the upload if matching fails
 
         return jsonify({
@@ -8097,21 +8135,21 @@ def api_upload_batch_invoices():
         # Auto-trigger revenue matching after successful batch invoice upload
         if results['processed'] > 0:
             try:
-                print(f"🔧 AUTO-TRIGGER: Starting automatic revenue matching after batch upload ({results['processed']} invoices)...")
+                print(f" AUTO-TRIGGER: Starting automatic revenue matching after batch upload ({results['processed']} invoices)...")
                 from robust_revenue_matcher import RobustRevenueInvoiceMatcher
 
                 matcher = RobustRevenueInvoiceMatcher()
                 matches_result = matcher.run_robust_matching(auto_apply=False, match_all=True)
 
                 if matches_result and matches_result.get('matches_found', 0) > 0:
-                    print(f"✅ AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                    print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
                     results['auto_matches_found'] = matches_result['matches_found']
                 else:
-                    print("ℹ️ AUTO-TRIGGER: No new matches found after batch upload")
+                    print("ℹ AUTO-TRIGGER: No new matches found after batch upload")
                     results['auto_matches_found'] = 0
 
             except Exception as e:
-                print(f"⚠️ AUTO-TRIGGER: Error during automatic matching: {e}")
+                print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
                 results['auto_trigger_error'] = str(e)
 
         return jsonify(results)
@@ -8957,14 +8995,14 @@ def preprocess_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
         if due_date.upper() in [d.upper() for d in problematic_dates]:
             # Convert to NULL for database
             invoice_data['due_date'] = None
-            print(f"🔧 Cleaned problematic due_date: '{due_date}' → NULL")
+            print(f" Cleaned problematic due_date: '{due_date}' -> NULL")
         elif due_date.upper() == 'NET 30':
             # Smart conversion: NET 30 = invoice_date + 30 days
             try:
                 if invoice_data.get('date'):
                     invoice_date = datetime.strptime(invoice_data['date'], '%Y-%m-%d')
                     invoice_data['due_date'] = (invoice_date + timedelta(days=30)).strftime('%Y-%m-%d')
-                    print(f"🧠 Smart conversion: NET 30 → {invoice_data['due_date']}")
+                    print(f" Smart conversion: NET 30 -> {invoice_data['due_date']}")
                 else:
                     invoice_data['due_date'] = None
             except:
@@ -8983,7 +9021,7 @@ def preprocess_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
             original_value = str(invoice_data[field])
             if len(original_value) > limit:
                 invoice_data[field] = original_value[:limit].strip()
-                print(f"🔧 Truncated {field}: '{original_value[:20]}...' ({len(original_value)} chars → {limit})")
+                print(f" Truncated {field}: '{original_value[:20]}...' ({len(original_value)} chars -> {limit})")
 
     # Layer 2C: Currency normalization
     if 'currency' in invoice_data and invoice_data['currency']:
@@ -8999,14 +9037,14 @@ def preprocess_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
         for pattern, code in currency_patterns.items():
             if re.search(pattern, currency, re.IGNORECASE):
                 if currency != code:
-                    print(f"🔧 Normalized currency: '{currency}' → '{code}'")
+                    print(f" Normalized currency: '{currency}' -> '{code}'")
                     invoice_data['currency'] = code
                 break
         else:
             # If no pattern matches, keep first 3 chars as currency code
             if len(currency) > 3:
                 invoice_data['currency'] = currency[:3].upper()
-                print(f"🔧 Currency code extracted: '{currency}' → '{invoice_data['currency']}'")
+                print(f" Currency code extracted: '{currency}' -> '{invoice_data['currency']}'")
 
     return invoice_data
 
@@ -9163,7 +9201,7 @@ CRITICAL FORMATTING RULES:
 3. JSON: MUST be valid JSON with all commas and quotes correct. Double-check syntax
 4. NUMBERS: Use numeric values only (e.g., 150.50, not "$150.50")
 
-⚡ EXAMPLES:
+ EXAMPLES:
 [ERROR] "due_date": "DUE ON RECEIPT"
 [OK] "due_date": null
 
@@ -9256,7 +9294,7 @@ CRITICAL: Make sure vendor_name is who SENT the invoice and customer_name is who
                 if json_parse_attempts < max_json_attempts:
                     # LAYER 3A: Auto-repair common JSON issues
                     response_text = repair_json_string(response_text)
-                    print(f"🔧 Applied JSON auto-repair, retrying...")
+                    print(f" Applied JSON auto-repair, retrying...")
                 else:
                     # LAYER 3B: If all repairs fail, try regex fallback
                     print(f"[ERROR] JSON parsing failed after {max_json_attempts} attempts, trying fallback extraction...")
@@ -9613,7 +9651,7 @@ def record_negative_pattern(field_type: str, rejected_value: str, transaction_co
         conn.commit()
         cursor.close()
         conn.close()
-        print(f"📝 Recorded negative pattern: {field_type}={rejected_value} (rejected by user)")
+        print(f" Recorded negative pattern: {field_type}={rejected_value} (rejected by user)")
 
     except Exception as e:
         print(f"ERROR: Failed to record negative pattern: {e}")
@@ -9922,10 +9960,10 @@ def update_pattern_statistics(entity_name: str, pattern_term: str, pattern_type:
         conn.commit()
         conn.close()
 
-        print(f"✅ Updated pattern statistics: {entity_name} / {pattern_term} ({pattern_type}) - TF-IDF: {tf_idf_score:.3f}")
+        print(f" Updated pattern statistics: {entity_name} / {pattern_term} ({pattern_type}) - TF-IDF: {tf_idf_score:.3f}")
 
     except Exception as e:
-        print(f"❌ ERROR updating pattern statistics for '{pattern_term}': {e}")
+        print(f" ERROR updating pattern statistics for '{pattern_term}': {e}")
         import traceback
         print(traceback.format_exc())
 
@@ -9955,7 +9993,7 @@ def handle_classification_feedback(transaction_id: str, suggested_entity: str, a
             # Negative feedback: Reduce TF-IDF scores for the wrongly suggested entity
             # This prevents the same bad suggestion from happening again
 
-            print(f"📉 Negative feedback: '{suggested_entity}' was suggested but user chose '{actual_entity}'")
+            print(f" Negative feedback: '{suggested_entity}' was suggested but user chose '{actual_entity}'")
 
             # Apply a 10% penalty to all patterns for the wrongly suggested entity
             cursor.execute("""
@@ -9973,7 +10011,7 @@ def handle_classification_feedback(transaction_id: str, suggested_entity: str, a
         elif feedback_type == 'accepted':
             # Positive feedback: Boost TF-IDF scores for the correctly suggested entity
 
-            print(f"📈 Positive feedback: '{suggested_entity}' was suggested and accepted")
+            print(f" Positive feedback: '{suggested_entity}' was suggested and accepted")
 
             # Apply a 5% boost to all patterns for the correctly suggested entity
             cursor.execute("""
@@ -10001,10 +10039,10 @@ def handle_classification_feedback(transaction_id: str, suggested_entity: str, a
         conn.commit()
         conn.close()
 
-        print(f"✅ Feedback processed successfully for transaction {transaction_id}")
+        print(f" Feedback processed successfully for transaction {transaction_id}")
 
     except Exception as e:
-        print(f"❌ ERROR processing feedback: {e}")
+        print(f" ERROR processing feedback: {e}")
         import traceback
         print(traceback.format_exc())
 
@@ -10060,7 +10098,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
     patterns = cursor.fetchall()
     logging.info(f"[TFIDF_MATCH_SCORE] Entity '{entity_name}' has {len(patterns)} patterns in database")
 
-    # 🔥 NEW: Get historical amount patterns for this entity if amount provided
+    #  NEW: Get historical amount patterns for this entity if amount provided
     amount_match_score = 0.0
     if amount_float is not None and amount_float > 0:
         cursor.execute("""
@@ -10129,7 +10167,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
     # Normalize base score (cap at 1.0)
     base_score = min(total_score / 3.0, 1.0)
 
-    # 🔥 NEW: Combine base score with amount pattern matching
+    #  NEW: Combine base score with amount pattern matching
     if amount is not None and amount_match_score > 0:
         # Weight: 70% pattern matching, 30% amount matching
         normalized_score = (base_score * 0.7) + (amount_match_score * 0.3)
@@ -10142,7 +10180,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
         1.0
     )
 
-    # 🔥 NEW: Boost confidence if amount matches
+    #  NEW: Boost confidence if amount matches
     if amount_match_score > 0.7:
         confidence = min(confidence * 1.1, 1.0)  # 10% boost for good amount match
 
@@ -10153,7 +10191,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
         match_descriptions = [f"{m['term']} (TF-IDF: {m['tf_idf']:.2f}, {m['occurrences']}x)" for m in top_matches]
         reasoning_parts.append(f"Matched {len(matched_patterns)} patterns: {', '.join(match_descriptions)}")
 
-    # 🔥 NEW: Add amount pattern reasoning
+    #  NEW: Add amount pattern reasoning
     if amount is not None and amount_match_score > 0:
         if amount_match_score > 0.8:
             reasoning_parts.append(f"Amount ${amount:.2f} matches typical pattern (score: {amount_match_score:.2f})")
@@ -10176,7 +10214,7 @@ def calculate_entity_match_score(description: str, entity_name: str, tenant_id: 
 
 def get_candidate_entities_optimized(description: str, tenant_id: str, max_candidates: int = 10) -> list:
     """
-    🔥 ISSUE #5: PERFORMANCE OPTIMIZATION WITH PRE-FILTERING
+     ISSUE #5: PERFORMANCE OPTIMIZATION WITH PRE-FILTERING
 
     Fast pre-filtering of candidate entities using database indexes before running expensive scoring.
 
@@ -10508,7 +10546,7 @@ def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: 
         if field_type == 'classified_entity' and context.get('description'):
             current_description = context.get('description', '').upper()
 
-            # 🔥 ISSUE #5: OPTIMIZED PRE-FILTERING
+            #  ISSUE #5: OPTIMIZED PRE-FILTERING
             # Try to extract potential entity names from description and get their patterns
             # This helps AI understand what patterns are associated with different entities
             tenant_id = get_current_tenant_id()
@@ -10527,8 +10565,8 @@ def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: 
                     description=context.get('description', ''),
                     entity_name=entity,
                     tenant_id=tenant_id,
-                    amount=context.get('amount'),  # 🔥 ISSUE #3: Transaction context
-                    account=context.get('account')  # 🔥 ISSUE #3: Account context
+                    amount=context.get('amount'),  #  ISSUE #3: Transaction context
+                    account=context.get('account')  #  ISSUE #3: Account context
                 )
 
                 if match_result['score'] > 0.3:  # Minimum threshold
@@ -10581,24 +10619,24 @@ def enhance_ai_prompt_with_learning(field_type: str, base_prompt: str, context: 
 @app.route('/api/test-sync/<filename>')
 def test_sync(filename):
     """Test endpoint to manually trigger sync for debugging"""
-    print(f"🔧 TEST: Manual sync test for {filename}")
+    print(f" TEST: Manual sync test for {filename}")
 
     # Check if original file exists where upload saves it (parent directory)
     parent_dir = os.path.dirname(os.path.dirname(__file__))
     actual_file_path = os.path.join(parent_dir, filename)  # This is where upload saves files
     uploads_path = os.path.join(parent_dir, 'web_ui', 'uploads', filename)  # This was wrong assumption
 
-    print(f"🔧 TEST: Checking actual upload path: {actual_file_path}")
-    print(f"🔧 TEST: File exists at actual path: {os.path.exists(actual_file_path)}")
-    print(f"🔧 TEST: Also checking uploads path: {uploads_path}")
-    print(f"🔧 TEST: File exists at uploads path: {os.path.exists(uploads_path)}")
+    print(f" TEST: Checking actual upload path: {actual_file_path}")
+    print(f" TEST: File exists at actual path: {os.path.exists(actual_file_path)}")
+    print(f" TEST: Also checking uploads path: {uploads_path}")
+    print(f" TEST: File exists at uploads path: {os.path.exists(uploads_path)}")
 
     # List files in parent directory
     try:
         files_in_parent = [f for f in os.listdir(parent_dir) if f.endswith('.csv')]
-        print(f"🔧 TEST: CSV files in parent dir: {files_in_parent}")
+        print(f" TEST: CSV files in parent dir: {files_in_parent}")
     except Exception as e:
-        print(f"🔧 TEST: Error listing parent dir: {e}")
+        print(f" TEST: Error listing parent dir: {e}")
         files_in_parent = []
 
     if os.path.exists(actual_file_path):
@@ -10658,7 +10696,7 @@ def debug_sync(filename):
 @app.route('/api/revenue/run-matching', methods=['POST'])
 def api_run_revenue_matching():
     """
-    🚀 OTIMIZADO: Executa matching com prevenção de cliques duplos e tracking de progresso
+     OTIMIZADO: Executa matching com prevenção de cliques duplos e tracking de progresso
     Body: {
         "invoice_ids": ["id1", "id2", ...] (opcional - se não fornecido, processa todos),
         "auto_apply": true/false (se deve aplicar matches automáticos)
@@ -10673,7 +10711,7 @@ def api_run_revenue_matching():
                 return jsonify({
                     'success': False,
                     'error': 'Matching process already running',
-                    'message': '🚫 Processo já em execução. Aguarde a conclusão.',
+                    'message': ' Processo já em execução. Aguarde a conclusão.',
                     'progress': active_matcher.get_progress_info() if hasattr(active_matcher, 'get_progress_info') else None
                 }), 409  # Conflict
 
@@ -10684,7 +10722,7 @@ def api_run_revenue_matching():
         invoice_ids = data.get('invoice_ids')
         auto_apply = data.get('auto_apply', False)
 
-        logger.info(f"🚀 Starting OPTIMIZED revenue matching - Invoice IDs: {invoice_ids}, Auto-apply: {auto_apply}")
+        logger.info(f" Starting OPTIMIZED revenue matching - Invoice IDs: {invoice_ids}, Auto-apply: {auto_apply}")
 
         # 3. CRIAR MATCHER E ARMAZENAR GLOBALMENTE PARA TRACKING
         with matcher_lock:
@@ -10705,7 +10743,7 @@ def api_run_revenue_matching():
                 # Save results
                 stats = active_matcher.save_match_results(matches, auto_apply)
 
-                logger.info(f"🚀 OPTIMIZATION SUCCESS: Processed {len(matches)} matches")
+                logger.info(f" OPTIMIZATION SUCCESS: Processed {len(matches)} matches")
 
                 return {
                     'success': True,
@@ -10714,7 +10752,7 @@ def api_run_revenue_matching():
                     'medium_confidence': len([m for m in matches if m.confidence_level == 'MEDIUM']),
                     'auto_applied': stats['auto_applied'],
                     'pending_review': stats['pending_review'],
-                    'optimizations_used': ['🧠 Smart Filtering', '📦 Batch Processing', '⚡ Parallelization', '🧹 Data Sanitization'],
+                    'optimizations_used': [' Smart Filtering', ' Batch Processing', ' Parallelization', ' Data Sanitization'],
                     'matches': [
                         {
                             'invoice_id': m.invoice_id,
@@ -10880,7 +10918,7 @@ def api_run_ultra_fast_revenue_matching():
 @app.route('/api/revenue/matching-progress', methods=['GET'])
 def api_get_matching_progress():
     """
-    🚀 NOVO: Retorna progresso em tempo real do matching process
+     NOVO: Retorna progresso em tempo real do matching process
     """
     global active_matcher
 
@@ -10904,7 +10942,7 @@ def api_get_matching_progress():
                 'eta': progress_info['eta'],
                 'matches_processed': progress_info['matches_processed'],
                 'total': progress_info['total'],
-                'optimizations': ['🧠 Smart Filtering', '📦 Batch Processing', '⚡ Parallelization']
+                'optimizations': [' Smart Filtering', ' Batch Processing', ' Parallelization']
             })
 
     except Exception as e:
@@ -11078,7 +11116,7 @@ def api_confirm_match():
             """
             cursor.execute(update_transaction_query, (justification, transaction_id))
 
-            # 🔗 BIDIRECTIONAL LINKING: Update BOTH tables
+            #  BIDIRECTIONAL LINKING: Update BOTH tables
 
             # 1. Update the invoice to link it to the transaction
             update_invoice_query = f"""
@@ -11116,7 +11154,7 @@ def api_confirm_match():
             except Exception as e:
                 print(f"WARNING: Could not update match status: {e}")
 
-        # 🤖 AUTOMATIC AI ENRICHMENT: Enrich transaction with invoice context
+        #  AUTOMATIC AI ENRICHMENT: Enrich transaction with invoice context
         try:
             # Get invoice data for enrichment
             invoice_data = db_manager.execute_query("""
@@ -11255,7 +11293,7 @@ def api_manual_match():
         if not transaction:
             return jsonify({'success': False, 'error': 'Transaction not found'}), 404
 
-        # 🔗 BIDIRECTIONAL MANUAL MATCH: Update BOTH tables
+        #  BIDIRECTIONAL MANUAL MATCH: Update BOTH tables
 
         # 1. Update the invoice to link it to the transaction
         update_invoice_query = """
@@ -11945,7 +11983,7 @@ def api_sync_revenue_classifications():
         # Get session ID for tracking
         session_id = session.get('user_id', 'anonymous')
 
-        logger.info(f"🔄 Revenue sync triggered by session: {session_id}")
+        logger.info(f" Revenue sync triggered by session: {session_id}")
 
         # Execute sync
         sync_result = sync_revenue_now(session_id)
@@ -11958,14 +11996,14 @@ def api_sync_revenue_classifications():
                     'timestamp': sync_result['timestamp'],
                     'changes': sync_result['changes'][:10]  # Limit to 10 for display
                 }
-                logger.info(f"✅ Revenue sync: {sync_result['transactions_updated']} transactions updated")
+                logger.info(f" Revenue sync: {sync_result['transactions_updated']} transactions updated")
             else:
-                logger.info("✅ Revenue sync: No updates needed")
+                logger.info(" Revenue sync: No updates needed")
 
         return jsonify(sync_result)
 
     except Exception as e:
-        logger.error(f"❌ Error in revenue sync endpoint: {e}")
+        logger.error(f" Error in revenue sync endpoint: {e}")
         return jsonify({
             'success': False,
             'error': str(e),
@@ -12527,7 +12565,7 @@ def api_find_duplicates():
     try:
         tenant_id = session.get('tenant_id', 'delta')
 
-        logger.info(f"🔍 Finding duplicate transactions for tenant: {tenant_id}")
+        logger.info(f" Finding duplicate transactions for tenant: {tenant_id}")
 
         # Use a single PostgreSQL connection for all queries
         conn = db_manager._get_postgresql_connection()
@@ -12624,7 +12662,7 @@ def api_find_duplicates():
 
             total_duplicate_transactions = sum(group['count'] for group in duplicate_groups)
 
-            logger.info(f"✅ Found {len(duplicate_groups)} groups with {total_duplicate_transactions} duplicate transactions")
+            logger.info(f" Found {len(duplicate_groups)} groups with {total_duplicate_transactions} duplicate transactions")
 
             return jsonify({
                 "success": True,

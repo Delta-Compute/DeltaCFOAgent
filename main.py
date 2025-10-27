@@ -136,19 +136,19 @@ class DeltaCFOAgent:
             cursor.close()
             conn.close()
 
-            print(f"✅ Loaded business knowledge: {len(self.account_mapping)} accounts, {patterns_loaded} patterns, {len(self.wallets)} wallets")
-            print(f"   📊 Pattern breakdown: revenue={len(self.patterns['revenue'])}, expense={len(self.patterns['expense'])}, crypto={len(self.patterns['crypto'])}, regional={len(self.patterns['regional'])}")
+            print(f" Loaded business knowledge: {len(self.account_mapping)} accounts, {patterns_loaded} patterns, {len(self.wallets)} wallets")
+            print(f"    Pattern breakdown: revenue={len(self.patterns['revenue'])}, expense={len(self.patterns['expense'])}, crypto={len(self.patterns['crypto'])}, regional={len(self.patterns['regional'])}")
             return
 
         except Exception as e:
-            print(f"⚠️ Could not load from database: {e}")
+            print(f" Could not load from database: {e}")
             print(f"   Falling back to business_knowledge.md file...")
 
             # Fallback to file-based loading if database fails
             import re
 
             if not os.path.exists(self.business_knowledge_file):
-                print(f"⚠️ {self.business_knowledge_file} not found - using basic rules")
+                print(f" {self.business_knowledge_file} not found - using basic rules")
                 return
 
             with open(self.business_knowledge_file, 'r') as f:
@@ -162,7 +162,7 @@ class DeltaCFOAgent:
                     if ending.isdigit():
                         self.account_mapping[ending] = entity.strip()
 
-            print(f"✅ Loaded business knowledge: {len(self.account_mapping)} accounts, {sum(len(p) for p in self.patterns.values())} patterns, {len(self.wallets)} wallets")
+            print(f" Loaded business knowledge: {len(self.account_mapping)} accounts, {sum(len(p) for p in self.patterns.values())} patterns, {len(self.wallets)} wallets")
 
     def enforce_single_master_file(self):
         """Enforce single master file rule - remove any duplicates"""
@@ -185,7 +185,7 @@ class DeltaCFOAgent:
             if duplicate != self.master_file:
                 try:
                     os.remove(duplicate)
-                    print(f"🗑️  Removed duplicate master file: {duplicate}")
+                    print(f"  Removed duplicate master file: {duplicate}")
                 except:
                     pass
 
@@ -200,9 +200,9 @@ class DeltaCFOAgent:
             if os.path.exists(variation) and variation != self.master_file:
                 try:
                     os.remove(variation)
-                    print(f"🗑️  Removed variation: {variation}")
+                    print(f"  Removed variation: {variation}")
                 except:
-                    print(f"⚠️  Found potential duplicate: {variation} - consider consolidating")
+                    print(f"  Found potential duplicate: {variation} - consider consolidating")
 
     def cleanup_temporary_files(self):
         """Auto-cleanup temporary Python files created for one-time tasks"""
@@ -239,9 +239,9 @@ class DeltaCFOAgent:
                     # Check if file is actually temporary (created recently or contains temp patterns)
                     if self.is_temporary_file(temp_file):
                         os.remove(temp_file)
-                        print(f"🧹 Cleaned up temporary file: {temp_file}")
+                        print(f" Cleaned up temporary file: {temp_file}")
                 except Exception as e:
-                    print(f"⚠️  Could not remove {temp_file}: {e}")
+                    print(f"  Could not remove {temp_file}: {e}")
 
         # Clean up empty directories
         empty_dirs = ['temp', 'debug', 'test_files']
@@ -249,7 +249,7 @@ class DeltaCFOAgent:
             if os.path.exists(directory) and not os.listdir(directory):
                 try:
                     os.rmdir(directory)
-                    print(f"🧹 Removed empty directory: {directory}")
+                    print(f" Removed empty directory: {directory}")
                 except:
                     pass
 
@@ -301,7 +301,7 @@ class DeltaCFOAgent:
         try:
             return float(value) if value else 0
         except (ValueError, TypeError):
-            print(f"⚠️  Warning: Could not convert '{value}' to float, using 0")
+            print(f"  Warning: Could not convert '{value}' to float, using 0")
             return 0
 
     def detect_intercompany_transaction(self, description, entity, account, amount):
@@ -412,7 +412,7 @@ class DeltaCFOAgent:
 
     def fetch_crypto_prices(self, start_date=None, end_date=None):
         """Fetch and save crypto prices for BTC and TAO"""
-        print("💰 Fetching crypto prices...")
+        print(" Fetching crypto prices...")
 
         if not start_date or not end_date:
             # Default to last 2 years
@@ -449,13 +449,13 @@ class DeltaCFOAgent:
         if price_df:
             df = pd.DataFrame(price_df)
             df.to_csv('crypto_prices_database.csv', index=False)
-            print(f"✅ Saved {len(price_df)} price records to crypto_prices_database.csv")
+            print(f" Saved {len(price_df)} price records to crypto_prices_database.csv")
 
         return price_data
 
     def fetch_coingecko_prices(self, coin_id, start_date, end_date):
         """Fetch historical prices from CoinGecko API"""
-        print(f"📈 Fetching {coin_id.upper()} prices...")
+        print(f" Fetching {coin_id.upper()} prices...")
 
         start_timestamp = int(datetime.combine(start_date, datetime.min.time()).timestamp())
         end_timestamp = int(datetime.combine(end_date, datetime.min.time()).timestamp())
@@ -479,16 +479,16 @@ class DeltaCFOAgent:
                     date = datetime.fromtimestamp(timestamp / 1000).date()
                     prices[str(date)] = round(price, 2)
 
-            print(f"✅ Fetched {len(prices)} prices for {coin_id.upper()}")
+            print(f" Fetched {len(prices)} prices for {coin_id.upper()}")
             return prices
 
         except Exception as e:
-            print(f"❌ Error fetching {coin_id}: {e}")
+            print(f" Error fetching {coin_id}: {e}")
             return {}
 
     def add_usd_equivalents(self, df):
         """Add USD equivalent columns for crypto transactions"""
-        print("💵 Adding USD equivalents...")
+        print(" Adding USD equivalents...")
 
         # Load price database
         price_db = {}
@@ -575,12 +575,12 @@ class DeltaCFOAgent:
             else:
                 df.at[idx, 'USD_Equivalent'] = amount  # USD transactions
 
-        print(f"✅ Converted {crypto_converted} crypto transactions to USD")
+        print(f" Converted {crypto_converted} crypto transactions to USD")
         return df
 
     def extract_keywords(self, df):
         """Extract keywords into dedicated columns"""
-        print("🔍 Extracting keywords...")
+        print(" Extracting keywords...")
 
         keyword_categories = {
             'action_type': ['RECEIVE', 'SEND', 'WITHDRAW', 'CONVERT', 'PAYMENT', 'TRANSFER', 'DEPOSIT'],
@@ -604,7 +604,7 @@ class DeltaCFOAgent:
                     df.at[idx, f'keywords_{category}'] = ','.join(found_keywords)
                     df.at[idx, f'primary_{category.split("_")[0]}'] = found_keywords[0]
 
-        print("✅ Keywords extracted")
+        print(" Keywords extracted")
         return df
 
     def extract_meaningful_identifier(self, description, source_file=''):
@@ -797,7 +797,7 @@ class DeltaCFOAgent:
 
     def enhance_structure(self, df):
         """Add Origin, Destination, and clean descriptions"""
-        print("🔧 Enhancing transaction structure...")
+        print(" Enhancing transaction structure...")
 
         # Preserve existing Origin/Destination if already populated by smart ingestion
         if 'Origin' not in df.columns:
@@ -912,7 +912,7 @@ class DeltaCFOAgent:
             df.at[idx, 'Identifier'] = identifier
             df.at[idx, 'Description_Minimal'] = minimal_desc
 
-        print("✅ Structure enhanced")
+        print(" Structure enhanced")
         return df
 
     def enhance_description(self, df):
@@ -920,7 +920,7 @@ class DeltaCFOAgent:
         Enhance Description field with rich context while keeping Destination clean.
         Adds crypto conversion details, banking info, foreign currency, etc.
         """
-        print("📝 Enhancing descriptions with contextual information...")
+        print(" Enhancing descriptions with contextual information...")
 
         for idx, row in df.iterrows():
             base_description = str(row.get('Description', ''))
@@ -989,7 +989,7 @@ class DeltaCFOAgent:
                 enhanced = base_description + " | " + " | ".join(context_parts)
                 df.at[idx, 'Description'] = enhanced
 
-        print(f"✅ Enhanced {len([r for r in df.iterrows() if '|' in str(r[1].get('Description', ''))])} descriptions with context")
+        print(f" Enhanced {len([r for r in df.iterrows() if '|' in str(r[1].get('Description', ''))])} descriptions with context")
         return df
 
     def enrich_with_blockchain_data(self, df):
@@ -997,7 +997,7 @@ class DeltaCFOAgent:
         Extract blockchain transaction IDs from descriptions and enrich with wallet addresses.
         Matches wallet addresses against known wallets and applies entity names.
         """
-        print("🔗 Enriching transactions with blockchain data...")
+        print(" Enriching transactions with blockchain data...")
 
         try:
             # Import blockchain tools
@@ -1006,7 +1006,7 @@ class DeltaCFOAgent:
             from blockchain_explorer import explorer
             from database import db_manager
         except ImportError as e:
-            print(f"⚠️ Blockchain enrichment skipped - dependencies not available: {e}")
+            print(f" Blockchain enrichment skipped - dependencies not available: {e}")
             return df
 
         # Regex patterns to extract transaction IDs
@@ -1031,7 +1031,7 @@ class DeltaCFOAgent:
                     }
                 cursor.close()
         except Exception as e:
-            print(f"⚠️ Could not load known wallets: {e}")
+            print(f" Could not load known wallets: {e}")
 
         enriched_count = 0
         matched_count = 0
@@ -1096,22 +1096,22 @@ class DeltaCFOAgent:
                     enriched_count += 1
 
                     if enriched_count <= 3:  # Log first few for visibility
-                        print(f"  🔗 Enriched: {from_address[:10] if from_address else 'N/A'}... → {to_address[:10] if to_address else 'N/A'}...")
+                        print(f"   Enriched: {from_address[:10] if from_address else 'N/A'}... → {to_address[:10] if to_address else 'N/A'}...")
 
             except Exception as e:
                 # Silently skip failed enrichments (API errors, rate limits, etc.)
                 pass
 
         if enriched_count > 0:
-            print(f"✅ Enriched {enriched_count} transactions with blockchain data ({matched_count} matched to known wallets)")
+            print(f" Enriched {enriched_count} transactions with blockchain data ({matched_count} matched to known wallets)")
         else:
-            print("ℹ️ No blockchain transactions found to enrich")
+            print("ℹ No blockchain transactions found to enrich")
 
         return df
 
     def add_usd_conversion(self, df):
         """Add USD conversion for crypto amounts using historic pricing"""
-        print("💰 Converting crypto amounts to USD using historic prices...")
+        print(" Converting crypto amounts to USD using historic prices...")
 
         # Import crypto pricing database
         from crypto_pricing import CryptoPricingDB
@@ -1166,17 +1166,17 @@ class DeltaCFOAgent:
                     df.at[idx, 'Description'] = updated_description
 
                     if abs(original_amount) > 0:  # Only log for non-zero amounts
-                        print(f"  📈 {crypto_detected} on {date_str}: {abs(original_amount)} × ${historic_price:,.2f} = ${amount_usd:,.2f}")
+                        print(f"   {crypto_detected} on {date_str}: {abs(original_amount)} × ${historic_price:,.2f} = ${amount_usd:,.2f}")
                 else:
                     # Price data not available - keep crypto amount as-is and add note
                     df.at[idx, 'Crypto'] = f"{abs(original_amount)} {crypto_detected}"
                     df.at[idx, 'Conversion_Note'] = f"Price data unavailable for {crypto_detected} on {date_str}"
-                    print(f"  ⚠️ No price data for {crypto_detected} on {date_str} - keeping original amount")
+                    print(f"   No price data for {crypto_detected} on {date_str} - keeping original amount")
             else:
                 # For non-crypto transactions, keep original amount and leave Crypto column empty
                 pass
 
-        print("✅ Crypto amounts converted to USD with original amounts stored in Crypto column")
+        print(" Crypto amounts converted to USD with original amounts stored in Crypto column")
         return df
 
     def enhance_crypto_description(self, original_description, crypto_symbol, crypto_amount, usd_price, usd_total, date_str):
@@ -1254,12 +1254,12 @@ class DeltaCFOAgent:
             except ValueError:
                 continue
 
-        print(f"⚠️ Could not parse date: {date_str}")
+        print(f" Could not parse date: {date_str}")
         return None
 
     def fix_account_identifiers(self, df):
         """Fix generic account names to be specific"""
-        print("🏦 Fixing account identifiers...")
+        print(" Fixing account identifiers...")
 
         for idx, row in df.iterrows():
             source_file = str(row.get('source_file', '')).lower()
@@ -1291,7 +1291,7 @@ class DeltaCFOAgent:
                 if destination == 'Current Account' or destination == 'Trading Platform':
                     df.at[idx, 'Destination'] = 'MEXC'
 
-        print("✅ Account identifiers fixed")
+        print(" Account identifiers fixed")
         return df
 
     def create_backup(self):
@@ -1300,7 +1300,7 @@ class DeltaCFOAgent:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             backup_name = f"MASTER_TRANSACTIONS_backup_{timestamp}.csv"
             shutil.copy2(self.master_file, backup_name)
-            print(f"📦 Backup created: {backup_name}")
+            print(f" Backup created: {backup_name}")
             return backup_name
         return None
 
@@ -1308,7 +1308,7 @@ class DeltaCFOAgent:
         """Load existing master transaction file if it exists"""
         if os.path.exists(self.master_file):
             df = pd.read_csv(self.master_file)
-            print(f"📂 Loaded {len(df)} existing transactions from {self.master_file}")
+            print(f" Loaded {len(df)} existing transactions from {self.master_file}")
             return df
         else:
             return pd.DataFrame()
@@ -1602,16 +1602,16 @@ class DeltaCFOAgent:
 
     def _continue_processing_from_dataframe(self, df, file_path, enhance):
         """Continue processing from a DataFrame after smart ingestion handles column mapping"""
-        print(f"🔧 DEBUG: Starting _continue_processing_from_dataframe for {file_path}")
+        print(f" DEBUG: Starting _continue_processing_from_dataframe for {file_path}")
         try:
             # Smart ingestion guarantees standardized columns: Date, Description, Amount
             date_col = 'Date'
             desc_col = 'Description'
             amount_col = 'Amount'
 
-            print(f"✅ Smart ingestion standardized DataFrame with {len(df)} transactions")
-            print(f"📊 Columns: {list(df.columns)}")
-            print(f"🔧 DEBUG: Current working directory: {os.getcwd()}")
+            print(f" Smart ingestion standardized DataFrame with {len(df)} transactions")
+            print(f" Columns: {list(df.columns)}")
+            print(f" DEBUG: Current working directory: {os.getcwd()}")
 
             # Validate required columns exist (smart ingestion should guarantee this)
             required_cols = [date_col, desc_col, amount_col]
@@ -1621,10 +1621,10 @@ class DeltaCFOAgent:
 
             # Sample data for debugging
             if len(df) > 0:
-                print(f"📊 Sample: {df.iloc[0][desc_col]} | ${df.iloc[0][amount_col]}")
+                print(f" Sample: {df.iloc[0][desc_col]} | ${df.iloc[0][amount_col]}")
 
                 # DEBUG: Print detailed first row info
-                print(f"🔧 DEBUG MAIN.PY: First row after receiving from smart ingestion:")
+                print(f" DEBUG MAIN.PY: First row after receiving from smart ingestion:")
                 print(f"   Date column ({date_col}): {df.iloc[0][date_col]}")
                 print(f"   Amount column ({amount_col}): {df.iloc[0][amount_col]}")
                 print(f"   Description column ({desc_col}): {df.iloc[0][desc_col]}")
@@ -1632,14 +1632,14 @@ class DeltaCFOAgent:
                 print(f"   Full first row: {dict(df.iloc[0])}")
 
             # Continue with classification and processing
-            print("🔧 DEBUG: Calling _classify_and_process_dataframe...")
+            print(" DEBUG: Calling _classify_and_process_dataframe...")
             result = self._classify_and_process_dataframe(df, file_path, date_col, desc_col, amount_col, enhance)
-            print(f"🔧 DEBUG: Classification result: {'Success' if result is not None else 'Failed'}")
+            print(f" DEBUG: Classification result: {'Success' if result is not None else 'Failed'}")
 
             return result
 
         except Exception as e:
-            print(f"❌ Error in DataFrame processing: {e}")
+            print(f" Error in DataFrame processing: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -1711,40 +1711,40 @@ class DeltaCFOAgent:
 
         # Run enhanced processing pipeline if requested
         if enhance:
-            print("\n🔄 Running enhanced processing pipeline...")
+            print("\n Running enhanced processing pipeline...")
 
             # Fetch crypto prices
-            print("💰 Fetching crypto prices...")
+            print(" Fetching crypto prices...")
             self.fetch_crypto_prices()
 
             # Add USD equivalents for crypto amounts
-            print("💵 Adding USD equivalents...")
+            print(" Adding USD equivalents...")
             df = self.add_usd_equivalents(df)
 
             # Extract keywords
-            print("🔍 Extracting keywords...")
+            print(" Extracting keywords...")
             df = self.extract_keywords(df)
 
             # Enhance transaction structure (Origin/Destination)
-            print("🔧 Enhancing transaction structure (Origin/Destination)...")
+            print(" Enhancing transaction structure (Origin/Destination)...")
             df = self.enhance_structure(df)
 
             # Enhance descriptions with context
-            print("📝 Enhancing descriptions with context...")
+            print(" Enhancing descriptions with context...")
             df = self.enhance_description(df)
 
             # Add USD conversion using historic crypto prices
-            print("💰 Adding USD conversion using historic crypto prices...")
+            print(" Adding USD conversion using historic crypto prices...")
             df = self.add_usd_conversion(df)
 
             # Fix account identifiers
-            print("🏦 Fixing account identifiers...")
+            print(" Fixing account identifiers...")
             df = self.fix_account_identifiers(df)
 
-            print("✅ Enhanced processing completed")
+            print(" Enhanced processing completed")
 
         # Generate summary and save file
-        print(f"\n   📈 Classification Summary:")
+        print(f"\n    Classification Summary:")
         entity_counts = df['classified_entity'].value_counts()
         for entity, count in entity_counts.head(5).items():
             print(f"      {entity}: {count} transactions")
@@ -1753,7 +1753,7 @@ class DeltaCFOAgent:
         avg_confidence = df['confidence'].mean()
         review_count = len(df[df['needs_review'] == True])
 
-        print(f"\n   📊 Metrics:")
+        print(f"\n    Metrics:")
         print(f"      Average confidence: {avg_confidence:.1%}")
         print(f"      Needs review: {review_count} transactions")
 
@@ -1761,9 +1761,9 @@ class DeltaCFOAgent:
         filename = os.path.basename(file_path)
         output_file = f"classified_transactions/classified_{filename}"
 
-        print(f"🔧 DEBUG: Preparing to save classified file...")
-        print(f"🔧 DEBUG: Output file path: {output_file}")
-        print(f"🔧 DEBUG: Output directory exists: {os.path.exists('classified_transactions')}")
+        print(f" DEBUG: Preparing to save classified file...")
+        print(f" DEBUG: Output file path: {output_file}")
+        print(f" DEBUG: Output directory exists: {os.path.exists('classified_transactions')}")
 
         # Ensure directory exists
         os.makedirs('classified_transactions', exist_ok=True)
@@ -1780,23 +1780,23 @@ class DeltaCFOAgent:
             df['Date'] = df['Date'].str[:10]
 
             sample_date = df['Date'].iloc[0] if len(df) > 0 else 'N/A'
-            print(f"🔧 DEBUG: After normalize_date - sample: '{sample_date}' (len={len(sample_date) if sample_date != 'N/A' else 0})")
+            print(f" DEBUG: After normalize_date - sample: '{sample_date}' (len={len(sample_date) if sample_date != 'N/A' else 0})")
 
             # Double-check all dates are YYYY-MM-DD format (10 chars max)
             if len(df) > 0:
                 max_len = df['Date'].str.len().max()
                 if max_len > 10:
-                    print(f"⚠️ WARNING: Some dates are longer than 10 characters (max={max_len})!")
+                    print(f" WARNING: Some dates are longer than 10 characters (max={max_len})!")
                     long_dates = df[df['Date'].str.len() > 10]['Date'].head(3).tolist()
                     print(f"   Examples: {long_dates}")
 
         try:
             df.to_csv(output_file, index=False)
-            print(f"✅ DEBUG: Successfully saved classified file: {output_file}")
-            print(f"🔧 DEBUG: File size: {os.path.getsize(output_file)} bytes")
-            print(f"🔧 DEBUG: File exists after save: {os.path.exists(output_file)}")
+            print(f" DEBUG: Successfully saved classified file: {output_file}")
+            print(f" DEBUG: File size: {os.path.getsize(output_file)} bytes")
+            print(f" DEBUG: File exists after save: {os.path.exists(output_file)}")
         except Exception as save_error:
-            print(f"❌ DEBUG: Failed to save classified file: {save_error}")
+            print(f" DEBUG: Failed to save classified file: {save_error}")
             raise save_error
 
         return df
@@ -1804,21 +1804,21 @@ class DeltaCFOAgent:
     def process_file(self, file_path, enhance=False, use_smart_ingestion=False):
         """Process any transaction file (CSV, Excel)"""
 
-        print(f"\n📄 Processing: {os.path.basename(file_path)}")
+        print(f"\n Processing: {os.path.basename(file_path)}")
         if enhance:
-            print("🚀 Enhanced processing mode enabled")
+            print(" Enhanced processing mode enabled")
 
         # Use Claude AI smart ingestion (REQUIRED - no fallback)
         if use_smart_ingestion:
             try:
                 from smart_ingestion import smart_process_file
-                print("🤖 Processing with Claude AI smart ingestion...")
+                print(" Processing with Claude AI smart ingestion...")
                 df = smart_process_file(file_path, enhance)
-                print("✅ Claude AI smart ingestion successful")
+                print(" Claude AI smart ingestion successful")
                 # Skip to classification - smart ingestion handles all column mapping
                 return self._continue_processing_from_dataframe(df, file_path, enhance)
             except ImportError:
-                error_msg = "❌ SMART INGESTION MODULE NOT FOUND: Please ensure smart_ingestion.py is available."
+                error_msg = " SMART INGESTION MODULE NOT FOUND: Please ensure smart_ingestion.py is available."
                 print(error_msg)
                 return None
             except ValueError as e:
@@ -1827,7 +1827,7 @@ class DeltaCFOAgent:
                 print(error_msg)
                 return None
             except Exception as e:
-                error_msg = f"❌ CLAUDE AI PROCESSING FAILED: {e}"
+                error_msg = f" CLAUDE AI PROCESSING FAILED: {e}"
                 print(error_msg)
                 return None
 
@@ -1838,29 +1838,29 @@ class DeltaCFOAgent:
             for encoding in ['utf-8', 'latin1', 'iso-8859-1']:
                 try:
                     df = pd.read_csv(file_path, encoding=encoding)
-                    print(f"   ✅ Read with {encoding} encoding")
+                    print(f"    Read with {encoding} encoding")
                     break
                 except:
                     continue
             else:
-                print(f"   ❌ Could not read CSV file")
+                print(f"    Could not read CSV file")
                 return None
         elif file_path.endswith(('.xlsx', '.xls')):
             try:
                 df = pd.read_excel(file_path)
-                print(f"   ✅ Read Excel file")
+                print(f"    Read Excel file")
             except Exception as e:
-                print(f"   ❌ Error reading Excel: {e}")
+                print(f"    Error reading Excel: {e}")
                 return None
         else:
-            print(f"   ❌ Unsupported file type")
+            print(f"    Unsupported file type")
             return None
 
-        print(f"   📊 Found {len(df)} transactions")
+        print(f"    Found {len(df)} transactions")
 
         # DEBUG: Check for misaligned Chase CSV headers
-        print(f"   📋 Columns detected: {list(df.columns)}")
-        print(f"   📋 First row sample: {dict(list(df.iloc[0].items())[:3])}")
+        print(f"    Columns detected: {list(df.columns)}")
+        print(f"    First row sample: {dict(list(df.iloc[0].items())[:3])}")
 
         # Handle misaligned Chase CSV format where headers are shifted
         if 'Details' in df.columns and 'Posting Date' in df.columns and 'Description' in df.columns:
@@ -1868,7 +1868,7 @@ class DeltaCFOAgent:
             date_col = 'Details'       # Actually contains dates like "09/16/2025"
             desc_col = 'Posting Date'  # Actually contains descriptions like "Payment to Chase card..."
             amount_col = 'Description' # Actually contains amounts like "-500.00"
-            print(f"   🔧 Using Chase-specific column mapping for misaligned CSV")
+            print(f"    Using Chase-specific column mapping for misaligned CSV")
         else:
             # Standard column detection
             date_col = next((col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()), df.columns[0])
@@ -1886,13 +1886,13 @@ class DeltaCFOAgent:
             if not amount_col:
                 amount_col = df.columns[3] if len(df.columns) > 3 else df.columns[0]
 
-        print(f"   📋 Using: Date={date_col}, Desc={desc_col}, Amount={amount_col}")
+        print(f"    Using: Date={date_col}, Desc={desc_col}, Amount={amount_col}")
 
         # For Chase CSV files, standardize column names immediately after mapping
-        print(f"   🔍 CHECKING CHASE CONDITION: Details={'Details' in df.columns}, Posting Date={'Posting Date' in df.columns}, Description={'Description' in df.columns}")
+        print(f"    CHECKING CHASE CONDITION: Details={'Details' in df.columns}, Posting Date={'Posting Date' in df.columns}, Description={'Description' in df.columns}")
         if 'Details' in df.columns and 'Posting Date' in df.columns and 'Description' in df.columns:
-            print(f"   🔧 APPLYING CHASE STANDARDIZATION NOW...")
-            print(f"   🔍 BEFORE: {amount_col} contains: {repr(df.iloc[0][amount_col])}")
+            print(f"    APPLYING CHASE STANDARDIZATION NOW...")
+            print(f"    BEFORE: {amount_col} contains: {repr(df.iloc[0][amount_col])}")
 
             # Create a standardized DataFrame with correct data mapping
             standardized_df = pd.DataFrame()
@@ -1900,7 +1900,7 @@ class DeltaCFOAgent:
             standardized_df['Description'] = df[desc_col]
             standardized_df['Amount'] = df[amount_col]
 
-            print(f"   🔍 AFTER MAPPING: Amount contains: {repr(standardized_df.iloc[0]['Amount'])}")
+            print(f"    AFTER MAPPING: Amount contains: {repr(standardized_df.iloc[0]['Amount'])}")
 
             # Copy over other columns except original amount column
             for col in df.columns:
@@ -1908,13 +1908,13 @@ class DeltaCFOAgent:
                     standardized_df[col] = df[col]
 
             df = standardized_df
-            print(f"   🔍 FINAL CHECK: Amount contains: {repr(df.iloc[0]['Amount'])}")
+            print(f"    FINAL CHECK: Amount contains: {repr(df.iloc[0]['Amount'])}")
 
             # Update column references for the rest of the processing
             date_col = 'Date'
             desc_col = 'Description'
             amount_col = 'Amount'
-            print(f"   ✅ Standardized Chase CSV - Amount column now has numeric data")
+            print(f"    Standardized Chase CSV - Amount column now has numeric data")
 
         # Detect account from column names
         account = ''
@@ -1931,10 +1931,10 @@ class DeltaCFOAgent:
 
         # Classify each transaction
         classifications = []
-        print(f"   📊 DEBUG: DataFrame columns at classification: {list(df.columns)}")
-        print(f"   📊 DEBUG: Using column mapping - Date: {date_col}, Desc: {desc_col}, Amount: {amount_col}")
+        print(f"    DEBUG: DataFrame columns at classification: {list(df.columns)}")
+        print(f"    DEBUG: Using column mapping - Date: {date_col}, Desc: {desc_col}, Amount: {amount_col}")
         if len(df) > 0:
-            print(f"   📊 DEBUG: First row amount value: {repr(df.iloc[0][amount_col] if amount_col in df.columns else 'MISSING')}")
+            print(f"    DEBUG: First row amount value: {repr(df.iloc[0][amount_col] if amount_col in df.columns else 'MISSING')}")
 
         for _, row in df.iterrows():
             description = row[desc_col] if desc_col in df.columns else ''
@@ -1987,7 +1987,7 @@ class DeltaCFOAgent:
 
         # Enhanced processing if requested
         if enhance:
-            print("\n🔄 Running enhanced processing pipeline...")
+            print("\n Running enhanced processing pipeline...")
 
             # Step 1: Fetch crypto prices
             self.fetch_crypto_prices()
@@ -2013,14 +2013,14 @@ class DeltaCFOAgent:
             # Step 7: Fix account identifiers
             df = self.fix_account_identifiers(df)
 
-            print("✅ Enhanced processing completed")
+            print(" Enhanced processing completed")
 
         # Save classified file
         output_file = os.path.join(self.classified_dir, f"classified_{os.path.splitext(os.path.basename(file_path))[0]}.csv")
         df.to_csv(output_file, index=False)
 
         # Print summary
-        print(f"\n   📈 Classification Summary:")
+        print(f"\n    Classification Summary:")
         entity_counts = df['classified_entity'].value_counts()
         for entity, count in entity_counts.head(10).items():
             print(f"      {entity}: {count} transactions")
@@ -2028,7 +2028,7 @@ class DeltaCFOAgent:
         confidence_avg = df['confidence'].mean()
         review_count = len(df[df['needs_review']])
 
-        print(f"\n   📊 Metrics:")
+        print(f"\n    Metrics:")
         print(f"      Average confidence: {confidence_avg:.1%}")
         print(f"      Needs review: {review_count} transactions")
         print(f"      Saved to: {output_file}")
@@ -2038,13 +2038,13 @@ class DeltaCFOAgent:
     def consolidate_to_master(self):
         """Consolidate all classified files into MASTER_TRANSACTIONS.csv"""
 
-        print(f"\n🔄 Consolidating to {self.master_file}...")
+        print(f"\n Consolidating to {self.master_file}...")
 
         # Get all classified files
         classified_files = glob.glob(os.path.join(self.classified_dir, 'classified_*.csv'))
 
         if not classified_files:
-            print("   ⚠️ No classified files found")
+            print("    No classified files found")
             return
 
         # Read all classified files
@@ -2053,12 +2053,12 @@ class DeltaCFOAgent:
             try:
                 df = pd.read_csv(file)
                 all_dfs.append(df)
-                print(f"   ✅ Loaded {len(df)} transactions from {os.path.basename(file)}")
+                print(f"    Loaded {len(df)} transactions from {os.path.basename(file)}")
             except Exception as e:
-                print(f"   ❌ Error loading {file}: {e}")
+                print(f"    Error loading {file}: {e}")
 
         if not all_dfs:
-            print("   ❌ No valid classified files found")
+            print("    No valid classified files found")
             return
 
         # Combine all dataframes
@@ -2070,7 +2070,7 @@ class DeltaCFOAgent:
             combined_df = combined_df.drop_duplicates(subset=['transaction_id'], keep='last')
             after_dedup = len(combined_df)
             if before_dedup != after_dedup:
-                print(f"   🔍 Removed {before_dedup - after_dedup} duplicate transactions")
+                print(f"    Removed {before_dedup - after_dedup} duplicate transactions")
 
         # Enhance structure with Origin, Destination, Identifier columns
         combined_df = self.enhance_structure(combined_df)
@@ -2092,7 +2092,7 @@ class DeltaCFOAgent:
                 # If we still have NaT values, try specific formats on original strings
                 if combined_df[date_cols[0]].isna().any():
                     mask_na = combined_df[date_cols[0]].isna()
-                    print(f"   🔧 Fixing {mask_na.sum()} date parsing issues...")
+                    print(f"    Fixing {mask_na.sum()} date parsing issues...")
 
                     # Try parsing remaining NaT values with different formats using original strings
                     for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M:%S UTC']:
@@ -2107,27 +2107,27 @@ class DeltaCFOAgent:
                                     valid_indices = original_indices[valid_parsed]
                                     combined_df.loc[valid_indices, date_cols[0]] = parsed_dates[valid_parsed]
                                     mask_na = combined_df[date_cols[0]].isna()  # Update mask
-                                    print(f"   ✅ Parsed {valid_parsed.sum()} dates with format {fmt}")
+                                    print(f"    Parsed {valid_parsed.sum()} dates with format {fmt}")
                             except Exception as fmt_error:
                                 continue
 
                 if combined_df[date_cols[0]].isna().any():
                     remaining_na = combined_df[date_cols[0]].isna().sum()
-                    print(f"   ⚠️ {remaining_na} dates could not be parsed")
+                    print(f"    {remaining_na} dates could not be parsed")
 
                 combined_df = combined_df.sort_values(date_cols[0], ascending=False)
             except Exception as e:
-                print(f"   ⚠️ Date parsing error: {e}")
+                print(f"    Date parsing error: {e}")
                 pass
 
         # Save master file
         combined_df.to_csv(self.master_file, index=False)
-        print(f"\n✅ Master file saved: {self.master_file}")
+        print(f"\n Master file saved: {self.master_file}")
         print(f"   Total transactions: {len(combined_df)}")
 
         # Print entity summary
         if 'classified_entity' in combined_df.columns:
-            print(f"\n📊 Entity Summary:")
+            print(f"\n Entity Summary:")
             entity_summary = combined_df['classified_entity'].value_counts()
             for entity, count in entity_summary.items():
                 if entity != 'N/A':  # Skip interaccount transfers
@@ -2151,7 +2151,7 @@ class DeltaCFOAgent:
 
     def safe_merge_to_master(self, new_file):
         """Safely merge new transactions to master with duplicate detection"""
-        print(f"\n🔀 Safely merging {new_file} to {self.master_file}...")
+        print(f"\n Safely merging {new_file} to {self.master_file}...")
 
         # Step 1: Create backup
         backup_file = self.create_backup()
@@ -2164,8 +2164,8 @@ class DeltaCFOAgent:
 
         new_df = pd.read_csv(new_file)
 
-        print(f"📊 Master file: {len(master_df)} transactions")
-        print(f"📊 New file: {len(new_df)} transactions")
+        print(f" Master file: {len(master_df)} transactions")
+        print(f" New file: {len(new_df)} transactions")
 
         # Step 3: Check for duplicates using composite key
         if len(master_df) > 0:
@@ -2189,14 +2189,14 @@ class DeltaCFOAgent:
             master_df = master_df.drop('check_key', axis=1)
             unique_new = unique_new.drop('check_key', axis=1)
 
-            print(f"🔍 Found {duplicates} duplicates (skipped)")
-            print(f"✅ Found {len(unique_new)} unique transactions to add")
+            print(f" Found {duplicates} duplicates (skipped)")
+            print(f" Found {len(unique_new)} unique transactions to add")
         else:
             unique_new = new_df
-            print("✅ Master file empty - adding all transactions")
+            print(" Master file empty - adding all transactions")
 
         if len(unique_new) == 0:
-            print("⚠️  No new transactions to add")
+            print("  No new transactions to add")
             return True
 
         # Step 4: Merge and sort
@@ -2210,15 +2210,15 @@ class DeltaCFOAgent:
         # Step 5: Save
         merged_df.to_csv(self.master_file, index=False)
 
-        print(f"✅ Successfully merged {len(unique_new)} new transactions")
-        print(f"📊 Total transactions in master: {len(merged_df)}")
+        print(f" Successfully merged {len(unique_new)} new transactions")
+        print(f" Total transactions in master: {len(merged_df)}")
 
         return True
 
     def reclassify_all_existing(self):
         """LEARNING FROM TEMP FILE: Reclassify all existing classified transaction files with updated business rules"""
 
-        print("🔄 Reclassifying all existing transactions with current business rules...")
+        print(" Reclassifying all existing transactions with current business rules...")
 
         # Search paths for existing classified files
         search_paths = [
@@ -2242,16 +2242,16 @@ class DeltaCFOAgent:
                 transaction_files.append(file)
 
         if not transaction_files:
-            print("⚠️ No existing transaction files found to reclassify")
+            print(" No existing transaction files found to reclassify")
             return
 
-        print(f"📁 Found {len(transaction_files)} existing files to reclassify")
+        print(f" Found {len(transaction_files)} existing files to reclassify")
 
         # Process each file with current business rules
         all_reclassified = []
         for file_path in transaction_files:
             try:
-                print(f"📄 Reclassifying: {os.path.basename(file_path)}")
+                print(f" Reclassifying: {os.path.basename(file_path)}")
                 df = pd.read_csv(file_path)
 
                 # Detect file type and reclassify
@@ -2264,14 +2264,14 @@ class DeltaCFOAgent:
                     all_reclassified.append(reclassified_df)
 
             except Exception as e:
-                print(f"❌ Error processing {file_path}: {e}")
+                print(f" Error processing {file_path}: {e}")
 
         # Consolidate and update master file
         if all_reclassified:
             combined_df = pd.concat(all_reclassified, ignore_index=True)
             combined_df = combined_df.drop_duplicates(subset=['transaction_id'], keep='last')
             combined_df.to_csv(self.master_file, index=False)
-            print(f"✅ Updated {self.master_file} with {len(combined_df)} reclassified transactions")
+            print(f" Updated {self.master_file} with {len(combined_df)} reclassified transactions")
 
     def reclassify_crypto_data(self, df, file_path):
         """Reclassify crypto transaction data with current business rules"""
@@ -2287,7 +2287,7 @@ class DeltaCFOAgent:
         """Process all files in a directory"""
 
         if not os.path.exists(directory):
-            print(f"⚠️ Directory {directory} not found")
+            print(f" Directory {directory} not found")
             return
 
         # Find all CSV and Excel files
@@ -2296,10 +2296,10 @@ class DeltaCFOAgent:
             files.extend(glob.glob(os.path.join(directory, ext)))
 
         if not files:
-            print(f"⚠️ No transaction files found in {directory}")
+            print(f" No transaction files found in {directory}")
             return
 
-        print(f"🚀 Processing {len(files)} files from {directory}")
+        print(f" Processing {len(files)} files from {directory}")
 
         # Process each file
         for file in files:
@@ -2343,7 +2343,7 @@ def main():
                 if result_df is not None:
                     processed_files.append(f"classified_{os.path.splitext(os.path.basename(file_path))[0]}.csv")
             else:
-                print(f"❌ File not found: {file_path}")
+                print(f" File not found: {file_path}")
 
         # Merge to master if requested
         if args.merge and processed_files:
@@ -2379,13 +2379,13 @@ def main():
 
                 agent.consolidate_to_master()
         else:
-            print("\n📁 Create an 'incoming_files' directory and add your transaction files there.")
+            print("\n Create an 'incoming_files' directory and add your transaction files there.")
             print("   Or specify files directly: python main.py file.csv --enhance")
 
-    print("\n✅ Processing complete!")
+    print("\n Processing complete!")
     if os.path.exists(agent.master_file):
         df = pd.read_csv(agent.master_file)
-        print(f"📊 Master file now contains {len(df)} transactions")
+        print(f" Master file now contains {len(df)} transactions")
 
 
 if __name__ == "__main__":

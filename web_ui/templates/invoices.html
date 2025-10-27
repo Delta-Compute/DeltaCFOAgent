@@ -888,50 +888,9 @@
 
         <!-- Create Invoice Button -->
         <div style="margin-bottom: 2rem; text-align: center;">
-            <a href="/invoices/create" class="btn" style="padding: 1rem 2.5rem; text-decoration: none; display: inline-block; font-size: 1.1rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); border-radius: 25px;">
+            <a href="/invoices/create" class="btn" style="padding: 1rem 2.5rem; text-decoration: none; display: inline-block; font-size: 1.1rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); border-radius: 25px; color: white;">
                 ➕ Create New Invoice
             </a>
-        </div>
-
-        <!-- Upload Section -->
-        <div class="upload-section">
-            <h3 style="margin-bottom: 1rem;">Upload Invoices</h3>
-            <div class="upload-box" id="upload-box">
-                <div class="upload-icon">📤</div>
-                <div class="upload-text">Drag & drop invoice files here or click to browse</div>
-                <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, ZIP, 7Z (Max 50MB total)</div>
-                <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600;">Upload multiple files, a ZIP archive, or a single invoice</div>
-                <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tiff,.zip,.7z" multiple style="display: none;">
-            </div>
-
-            <!-- Batch Progress -->
-            <div id="batch-progress" style="display: none; margin-top: 1rem;">
-                <h4 style="margin-bottom: 0.5rem;">Processing Files...</h4>
-                <div style="background: #f1f5f9; border-radius: 8px; padding: 1rem;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                        <span>Progress: <span id="progress-text">0 / 0</span></span>
-                        <span id="progress-percent">0%</span>
-                    </div>
-                    <div style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden;">
-                        <div id="progress-bar" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
-                    </div>
-                    <div id="current-file" style="margin-top: 0.5rem; font-size: 0.9rem; color: #64748b;"></div>
-                </div>
-
-                <!-- Results Summary -->
-                <div id="results-summary" style="display: none; margin-top: 1rem;">
-                    <h4>Processing Complete</h4>
-                    <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-                        <div style="padding: 0.5rem 1rem; background: #dcfce7; border-radius: 6px; color: #166534;">
-                            <strong id="success-count">0</strong> Successful
-                        </div>
-                        <div style="padding: 0.5rem 1rem; background: #fee2e2; border-radius: 6px; color: #991b1b;">
-                            <strong id="error-count">0</strong> Failed
-                        </div>
-                    </div>
-                    <div id="error-details" style="margin-top: 1rem;"></div>
-                </div>
-            </div>
         </div>
 
         <!-- Selection Toolbar -->
