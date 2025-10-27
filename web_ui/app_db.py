@@ -7361,6 +7361,7 @@ def api_create_invoice():
         # Extract data
         invoice_number = data.get('invoice_number')
         vendor_name = data.get('vendor_name', 'DELTA ENERGY')  # Default to DELTA ENERGY
+        vendor_address = data.get('vendor_address', '')  # Get vendor address from form
         customer_name = data.get('customer_name')
         customer_address = data.get('customer_address', '')
         invoice_date = data.get('invoice_date')
@@ -7431,7 +7432,7 @@ def api_create_invoice():
             }
         }
 
-        # Get vendor entity data if available
+        # Get vendor entity data if available, or use custom address from form
         vendor_entity_data = business_entities.get(vendor_name)
 
         # Header section with vendor name (gradient-like effect using rounded corners)
@@ -7447,8 +7448,23 @@ def api_create_invoice():
         ]))
         story.append(header_table)
 
-        # Add vendor entity info if available
-        if vendor_entity_data:
+        # Add vendor entity info - prioritize custom address from form, fallback to predefined entities
+        if vendor_address:
+            # Use custom vendor address from the form
+            vendor_info_data = [[
+                Paragraph(f"<font size='9' color='#64748b'>{vendor_address}</font>", styles['Normal'])
+            ]]
+            vendor_info_table = Table(vendor_info_data, colWidths=[7.5*inch])
+            vendor_info_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 25),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            story.append(vendor_info_table)
+            story.append(Spacer(1, 0.25*inch))
+        elif vendor_entity_data:
+            # Use predefined entity data
             vendor_info_data = [[
                 Paragraph(f"<font size='9' color='#64748b'>{vendor_entity_data['address']}<br/>{vendor_entity_data['tax_id']}<br/>{vendor_entity_data['contact']}</font>", styles['Normal'])
             ]]
@@ -11529,12 +11545,28 @@ def api_get_revenue_stats():
         result = db_manager.execute_query(query, fetch_one=True)
         stats['pending_matches'] = result['pending'] if result else 0
 
-        # Total revenue amounts
+        # Total revenue amounts (using USD equivalent for multi-currency support)
+        # Use usd_equivalent_amount if available and > 0, otherwise use total_amount for USD invoices
         query = """
             SELECT
-                COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL THEN total_amount ELSE 0 END), 0) as matched_revenue,
-                COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL THEN total_amount ELSE 0 END), 0) as unmatched_revenue,
-                COALESCE(SUM(total_amount), 0) as total_revenue
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL
+                    THEN CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                              THEN usd_equivalent_amount
+                              ELSE total_amount
+                         END
+                    ELSE 0 END), 0) as matched_revenue,
+                COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL
+                    THEN CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                              THEN usd_equivalent_amount
+                              ELSE total_amount
+                         END
+                    ELSE 0 END), 0) as unmatched_revenue,
+                COALESCE(SUM(
+                    CASE WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
+                         THEN usd_equivalent_amount
+                         ELSE total_amount
+                    END
+                ), 0) as total_revenue
             FROM invoices
             WHERE tenant_id = %s
         """
