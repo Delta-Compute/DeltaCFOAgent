@@ -73,11 +73,12 @@ from tenant_context import init_tenant_context, get_current_tenant_id, set_tenan
 from reporting_api import register_reporting_routes
 
 # Import authentication blueprints
-sys.path.append(str(Path(__file__).parent.parent / 'api'))
-from api.auth_routes import auth_bp
-from api.user_routes import user_bp
-from api.tenant_routes import tenant_bp
-from api.cfo_routes import cfo_bp
+# TEMPORARY: Commented out due to import errors - need to fix service imports
+# sys.path.append(str(Path(__file__).parent.parent / 'api'))
+# from api.auth_routes import auth_bp
+# from api.user_routes import user_bp
+# from api.tenant_routes import tenant_bp
+# from api.cfo_routes import cfo_bp
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
@@ -98,10 +99,11 @@ init_tenant_context(app)
 register_reporting_routes(app)
 
 # Register authentication and user management blueprints
-app.register_blueprint(auth_bp)
-app.register_blueprint(user_bp)
-app.register_blueprint(tenant_bp)
-app.register_blueprint(cfo_bp)
+# TEMPORARY: Commented out due to import errors
+# app.register_blueprint(auth_bp)
+# app.register_blueprint(user_bp)
+# app.register_blueprint(tenant_bp)
+# app.register_blueprint(cfo_bp)
 
 # ====================================================================
 # Authentication Page Routes
