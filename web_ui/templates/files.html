@@ -433,6 +433,112 @@
                 document.body.removeChild(toast);
             }, 5000);
         }
+
+        // Invoice Upload Functionality
+        const uploadBoxInvoices = document.getElementById('upload-box-invoices');
+        const fileInputInvoices = document.getElementById('file-input-invoices');
+
+        // Click to open file selector
+        uploadBoxInvoices.addEventListener('click', () => {
+            fileInputInvoices.click();
+        });
+
+        // Handle file selection
+        fileInputInvoices.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (files.length > 0) {
+                handleInvoiceUpload(files);
+            }
+        });
+
+        // Handle drag and drop for invoices
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadBoxInvoices.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadBoxInvoices.addEventListener(eventName, () => {
+                uploadBoxInvoices.style.borderColor = '#667eea';
+                uploadBoxInvoices.style.background = '#ebf8ff';
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadBoxInvoices.addEventListener(eventName, () => {
+                uploadBoxInvoices.style.borderColor = '#cbd5e1';
+                uploadBoxInvoices.style.background = '#f8fafc';
+            }, false);
+        });
+
+        uploadBoxInvoices.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleInvoiceUpload(files);
+            }
+        });
+
+        async function handleInvoiceUpload(files) {
+            const batchProgress = document.getElementById('batch-progress-invoices');
+            const progressText = document.getElementById('progress-text-invoices');
+            const progressPercent = document.getElementById('progress-percent-invoices');
+            const successCount = document.getElementById('success-count-invoices');
+            const errorCount = document.getElementById('error-count-invoices');
+            const errorDetails = document.getElementById('error-details-invoices');
+
+            // Show progress
+            batchProgress.style.display = 'block';
+            errorDetails.innerHTML = '';
+
+            let successTotal = 0;
+            let errorTotal = 0;
+            const totalFiles = files.length;
+
+            for (let i = 0; i < totalFiles; i++) {
+                const file = files[i];
+                const currentNum = i + 1;
+
+                progressText.textContent = `${currentNum} / ${totalFiles}`;
+                progressPercent.textContent = `${Math.round((currentNum / totalFiles) * 100)}%`;
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const response = await fetch('/api/invoices/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success || response.ok) {
+                        successTotal++;
+                        successCount.textContent = successTotal;
+                    } else {
+                        throw new Error(result.error || result.message || 'Upload failed');
+                    }
+                } catch (error) {
+                    console.error(`Error uploading ${file.name}:`, error);
+                    errorTotal++;
+                    errorCount.textContent = errorTotal;
+
+                    const errorItem = document.createElement('div');
+                    errorItem.style.cssText = 'padding: 0.5rem; background: white; border-radius: 4px; margin-bottom: 0.5rem;';
+                    errorItem.innerHTML = `<strong>${file.name}:</strong> ${error.message}`;
+                    errorDetails.appendChild(errorItem);
+                }
+            }
+
+            // Show completion message
+            if (errorTotal === 0) {
+                showToast(`Successfully uploaded ${successTotal} invoice(s)`, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showToast(`Completed with ${errorTotal} error(s)`, 'error');
+            }
+        }
     </script>
 
     <style>
