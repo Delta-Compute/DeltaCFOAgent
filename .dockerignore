@@ -60,6 +60,8 @@ run_*.py
 simple_*.py
 test_*.py
 ultra_*.py
+# EXCEPTION: Include ultra_fast_matcher_fixed.py (required for production)
+!ultra_fast_matcher_fixed.py
 
 # Ignore SQL files
 *.sql
