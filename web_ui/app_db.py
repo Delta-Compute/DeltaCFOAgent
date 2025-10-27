@@ -10908,11 +10908,29 @@ def api_run_ultra_fast_revenue_matching():
         with matcher_lock:
             active_matcher = None
 
-        logger.error(f"Error in ultra-fast revenue matching: {e}")
+        error_details = {
+            'error_type': type(e).__name__,
+            'error_message': str(e),
+            'traceback': traceback.format_exc()
+        }
+
+        logger.error(f"Error in ultra-fast revenue matching:")
+        logger.error(f"  Type: {error_details['error_type']}")
+        logger.error(f"  Message: {error_details['error_message']}")
+        logger.error(f"  Traceback:\n{error_details['traceback']}")
+
         return jsonify({
             'success': False,
-            'error': str(e),
-            'traceback': traceback.format_exc()
+            'error': error_details['error_message'],
+            'error_type': error_details['error_type'],
+            'traceback': error_details['traceback'],
+            'debug_info': {
+                'endpoint': '/api/revenue/run-ultra-fast-matching',
+                'pythonpath': os.environ.get('PYTHONPATH'),
+                'cwd': os.getcwd(),
+                'ultra_fast_matcher_exists': os.path.exists('ultra_fast_matcher_fixed.py'),
+                'ultra_fast_matcher_parent_exists': os.path.exists('../ultra_fast_matcher_fixed.py')
+            }
         }), 500
 
 @app.route('/api/revenue/matching-progress', methods=['GET'])
