@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accept Invitation - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>You're Invited!</h1>
+                <p id="invitationInfo">Loading invitation details...</p>
+            </div>
+
+            <div id="loadingState" class="loading-state">
+                <div class="loader"></div>
+                <p>Verifying invitation...</p>
+            </div>
+
+            <div id="invitationDetails" class="invitation-details" style="display: none;">
+                <div class="invitation-card">
+                    <div class="invitation-icon">
+                        <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <h3 id="companyName"></h3>
+                    <p class="invitation-text">
+                        <strong id="inviterName"></strong> has invited you to join as <strong id="userRole"></strong>
+                    </p>
+                    <div class="invitation-meta">
+                        <span id="expiresAt"></span>
+                    </div>
+                </div>
+
+                <form id="acceptInvitationForm" class="auth-form">
+                    <div id="newUserFields">
+                        <div class="form-group">
+                            <label for="displayName">Full Name</label>
+                            <input type="text" id="displayName" name="displayName" required placeholder="John Doe">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="password">Create Password</label>
+                            <input type="password" id="password" name="password" required placeholder="At least 6 characters">
+                            <small class="form-hint">Must be at least 6 characters long</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="confirmPassword">Confirm Password</label>
+                            <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Re-enter password">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn-primary" id="acceptBtn">
+                        <span class="btn-text">Accept Invitation & Create Account</span>
+                        <span class="btn-loader" style="display: none;"></span>
+                    </button>
+
+                    <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
+                    <div class="alert alert-success" id="successAlert" style="display: none;"></div>
+                </form>
+            </div>
+
+            <div id="errorState" class="error-state" style="display: none;">
+                <div class="error-icon">
+                    <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="15" y1="9" x2="9" y2="15"/>
+                        <line x1="9" y1="9" x2="15" y2="15"/>
+                    </svg>
+                </div>
+                <h3>Invitation Invalid</h3>
+                <p id="errorMessage">This invitation link is invalid or has expired.</p>
+                <a href="{{ url_for('login_page') }}" class="btn-secondary">Go to Login</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Client SDK -->
+    <script type="module" src="{{ url_for('static', filename='js/firebase_client.js') }}"></script>
+    <script type="module" src="{{ url_for('static', filename='js/auth.js') }}"></script>
+</body>
+</html>

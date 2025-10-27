@@ -115,6 +115,42 @@ app.register_blueprint(user_bp)
 app.register_blueprint(tenant_bp)
 app.register_blueprint(cfo_bp)
 
+# ====================================================================
+# Authentication Page Routes
+# ====================================================================
+
+@app.route('/auth/login')
+def login_page():
+    """Serve the login page"""
+    return render_template('auth/login.html')
+
+@app.route('/auth/register')
+def register_page():
+    """Serve the registration page"""
+    return render_template('auth/register.html')
+
+@app.route('/auth/forgot-password')
+def forgot_password_page():
+    """Serve the forgot password page"""
+    return render_template('auth/forgot_password.html')
+
+@app.route('/auth/accept-invitation')
+def accept_invitation_page():
+    """Serve the accept invitation page"""
+    return render_template('auth/accept_invitation.html')
+
+@app.route('/cfo/dashboard')
+def cfo_dashboard_page():
+    """Serve the CFO dashboard page"""
+    # TODO: Add authentication check
+    return render_template('cfo_dashboard.html')
+
+@app.route('/users')
+def users_page():
+    """Serve the user management page"""
+    # TODO: Add authentication and permission check
+    return render_template('users.html')
+
 # Database connection - DEPRECATED: Now using database manager (database.py)
 # DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
 
