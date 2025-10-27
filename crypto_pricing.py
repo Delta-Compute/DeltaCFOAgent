@@ -56,10 +56,10 @@ class CryptoPricingDB:
                 """
 
             self.db.execute_query(query)
-            print(f"📊 Crypto pricing database initialized on {self.db.db_type}")
+            print(f"[OK] Crypto pricing database initialized on {self.db.db_type}")
 
         except Exception as e:
-            print(f"❌ Error initializing crypto pricing database: {e}")
+            print(f"[ERROR] Error initializing crypto pricing database: {e}")
             raise
 
 
@@ -81,14 +81,14 @@ class CryptoPricingDB:
         if symbol not in binance_symbols or binance_symbols[symbol] is None:
             # Only insert stable prices for actual stablecoins (USDC, USDT)
             if symbol in ['USDC', 'USDT']:
-                print(f"💵 {symbol} is a stablecoin, inserting fixed $1.00 prices")
+                print(f"[STABLE] {symbol} is a stablecoin, inserting fixed $1.00 prices")
                 self.insert_stable_prices(symbol, start_date, end_date, 1.0)
             else:
-                print(f"❌ {symbol} not available on Binance and not a stablecoin - no price data available")
+                print(f"[ERROR] {symbol} not available on Binance and not a stablecoin - no price data available")
             return
 
         binance_symbol = binance_symbols[symbol]
-        print(f"📈 Fetching {symbol} prices from Binance ({binance_symbol})...")
+        print(f"[FETCH] Fetching {symbol} prices from Binance ({binance_symbol})...")
 
         try:
             # Binance Klines API
@@ -143,18 +143,18 @@ class CryptoPricingDB:
             if insert_operations:
                 batch_result = self.db.execute_batch_operation(insert_operations, batch_size=100)
                 if batch_result['failed_batches'] > 0:
-                    print(f"⚠️ Warning: {batch_result['failed_batches']} batches failed during insert")
+                    print(f"[WARNING] Warning: {batch_result['failed_batches']} batches failed during insert")
                     for error in batch_result['errors']:
                         print(f"   Error: {error}")
 
-            print(f"✅ Inserted {inserted_count} {symbol} price records from Binance")
+            print(f"[OK] Inserted {inserted_count} {symbol} price records from Binance")
 
         except Exception as e:
-            print(f"❌ Error fetching {symbol} prices from Binance: {e}")
+            print(f"[ERROR] Error fetching {symbol} prices from Binance: {e}")
 
     def insert_stable_prices(self, symbol, start_date, end_date, price=1.0):
         """Insert stable prices for stablecoins"""
-        print(f"💵 Inserting stable prices for {symbol} at ${price}")
+        print(f"[STABLE] Inserting stable prices for {symbol} at ${price}")
 
         start = datetime.strptime(start_date, '%Y-%m-%d')
         end = datetime.strptime(end_date, '%Y-%m-%d')
@@ -191,11 +191,11 @@ class CryptoPricingDB:
             inserted_count = batch_result['total_rows_affected']
 
             if batch_result['failed_batches'] > 0:
-                print(f"⚠️ Warning: {batch_result['failed_batches']} batches failed during insert")
+                print(f"[WARNING] Warning: {batch_result['failed_batches']} batches failed during insert")
                 for error in batch_result['errors']:
                     print(f"   Error: {error}")
 
-            print(f"✅ Inserted {inserted_count} {symbol} stable price records")
+            print(f"[OK] Inserted {inserted_count} {symbol} stable price records")
 
     def get_price_on_date(self, symbol, date_str):
         """Get price for a specific date, with fallback logic"""
@@ -232,12 +232,12 @@ class CryptoPricingDB:
                     return float(result['price_usd']) if hasattr(result, 'get') else float(result[0])
 
             # No price data available - return None to signal missing data
-            print(f"❌ No historic price found for {symbol} on {date_str} (checked ±7 days)")
-            print(f"💡 Run 'python crypto_pricing.py' to populate historical price data from Binance")
+            print(f"[ERROR] No historic price found for {symbol} on {date_str} (checked ±7 days)")
+            print(f"[INFO] Run 'python crypto_pricing.py' to populate historical price data from Binance")
             return None
 
         except Exception as e:
-            print(f"❌ Error getting price for {symbol} on {date_str}: {e}")
+            print(f"[ERROR] Error getting price for {symbol} on {date_str}: {e}")
             return None
 
     def populate_all_prices(self, start_date='2024-01-01'):
@@ -245,7 +245,7 @@ class CryptoPricingDB:
         symbols = ['BTC', 'TAO', 'ETH', 'BNB', 'USDC', 'USDT']
 
         for symbol in symbols:
-            print(f"\n🔄 Processing {symbol}...")
+            print(f"\n[PROCESSING] Processing {symbol}...")
             # Use Binance as primary source
             self.fetch_historic_prices_binance(symbol, start_date)
             time.sleep(1)  # Rate limiting
@@ -262,7 +262,7 @@ class CryptoPricingDB:
 
             stats = self.db.execute_query(query, fetch_all=True)
 
-            print(f"📊 Crypto Pricing Database Stats ({self.db.db_type}):")
+            print(f"[STATS] Crypto Pricing Database Stats ({self.db.db_type}):")
             if stats:
                 for row in stats:
                     if hasattr(row, 'get'):
@@ -279,7 +279,7 @@ class CryptoPricingDB:
             return stats
 
         except Exception as e:
-            print(f"❌ Error getting database stats: {e}")
+            print(f"[ERROR] Error getting database stats: {e}")
             return []
 
 def main():
@@ -297,7 +297,7 @@ def main():
     btc_price = db.get_price_on_date('BTC', test_date)
     tao_price = db.get_price_on_date('TAO', test_date)
 
-    print(f"\n🧪 Test Price Lookup for {test_date}:")
+    print(f"\n[TEST] Test Price Lookup for {test_date}:")
     print(f"  BTC: ${btc_price:,.2f}")
     print(f"  TAO: ${tao_price:,.2f}")
 

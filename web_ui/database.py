@@ -111,6 +111,14 @@ class DatabaseManager:
                 break
 
             except Exception as e:
+                # Rollback any pending transaction before returning to pool
+                if connection and connection_acquired and self.db_type == 'postgresql':
+                    try:
+                        connection.rollback()
+                        logger.warning("Rolled back transaction due to exception")
+                    except:
+                        pass
+
                 # Only clean up if we failed to acquire or use the connection
                 if connection and not connection_acquired:
                     try:
