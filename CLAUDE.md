@@ -296,3 +296,5 @@ Claude's Code Rules:
 7. Finally, add a review section to the all.md file with a summary of the changes made and any other relevant information.
 8. DON'T BE LAZY. NEVER BE LAZY. IF THERE IS A BUG, FIND THE ROOT CAUSE AND FIX IT. NO TEMPORARY FIXES. YOU ARE A SENIOR DEVELOPER. NEVER BE LAZY.
 9. MAKE ALL CORRECTIONS AND CODE CHANGES AS SIMPLE AS POSSIBLE. THEY SHOULD ONLY IMPACT THE CODE THAT IS NECESSARY AND RELEVANT TO THE TASK AND NOTHING ELSE. IT SHOULD IMPACT AS LITTLE CODE AS POSSIBLE. YOUR GOAL IS TO NOT INTRODUCE ANY BUGS. IT'S ALL ABOUT SIMPLICITY.
+10. Before making a commit, check that there are proper unit tests for your new code, if not write them, add to the Test Suite and include in your commit
+11. Do not use emojis in the code

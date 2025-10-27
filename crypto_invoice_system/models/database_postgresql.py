@@ -241,14 +241,14 @@ class CryptoInvoiceDatabaseManager:
                 if query.strip():
                     self.db.execute_query(query)
 
-            print(f"✅ Crypto Invoice database schema initialized on {self.db.db_type}")
+            print(f"[OK] Crypto Invoice database schema initialized on {self.db.db_type}")
 
             # Insert default data
             self._insert_default_clients()
             self._insert_default_config()
 
         except Exception as e:
-            print(f"❌ Error initializing crypto invoice database: {e}")
+            print(f"[ERROR] Error initializing crypto invoice database: {e}")
             raise
 
     def _insert_default_clients(self):

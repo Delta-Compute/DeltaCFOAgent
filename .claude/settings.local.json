@@ -46,7 +46,9 @@
       "Bash(git pull:*)",
       "Bash(git stash:*)",
       "Bash(git merge:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Read(//c/**)",
+      "Bash(timeout /t 3)"
     ],
     "deny": [],
     "ask": []
