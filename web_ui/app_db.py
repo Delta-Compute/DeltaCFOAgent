@@ -28,25 +28,13 @@ import zipfile
 import re
 import logging
 from dotenv import load_dotenv
-from pathlib import Path
 
 # Load environment variables from .env file
-# Look for .env in parent directory (project root) since app_db.py is in web_ui/
-env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Import tenant configuration management
-from tenant_config import (
-    get_current_tenant_id,
-    get_tenant_entities,
-    get_tenant_business_context,
-    get_tenant_accounting_categories,
-    format_entities_for_prompt
-)
 
 # Archive handling imports - optional
 try:
@@ -72,6 +60,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import invoice processing modules
+from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
 
 # Import historical currency converter
