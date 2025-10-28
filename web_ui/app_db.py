@@ -35,7 +35,8 @@ from pathlib import Path
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 web_ui_dir = os.path.dirname(os.path.abspath(__file__))
 invoice_dir = str(Path(__file__).parent.parent / 'invoice_processing')
-api_dir = str(Path(__file__).parent.parent / 'api')
+# api_dir removed - no longer needed since we're not importing from /api
+# api_dir = str(Path(__file__).parent.parent / 'api')
 
 # Insert parent_dir FIRST to ensure root/services has priority over web_ui/services
 if parent_dir not in sys.path:
@@ -45,8 +46,9 @@ if web_ui_dir not in sys.path:
     sys.path.append(web_ui_dir)
 if invoice_dir not in sys.path:
     sys.path.append(invoice_dir)
-if api_dir not in sys.path:
-    sys.path.append(api_dir)
+# api_dir path no longer added to avoid import issues
+# if api_dir not in sys.path:
+#     sys.path.append(api_dir)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -81,11 +83,12 @@ from tenant_context import init_tenant_context, get_current_tenant_id, set_tenan
 # Import reporting API
 from reporting_api import register_reporting_routes
 
-# Import authentication blueprints (import path conflicts resolved)
-from api.auth_routes import auth_bp
-from api.user_routes import user_bp
-from api.tenant_routes import tenant_bp
-from api.cfo_routes import cfo_bp
+# Authentication blueprints removed - causing import circular issues and 503 errors on Cloud Run
+# These modules were causing initialization timeouts
+# from api.auth_routes import auth_bp
+# from api.user_routes import user_bp
+# from api.tenant_routes import tenant_bp
+# from api.cfo_routes import cfo_bp
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
@@ -105,15 +108,17 @@ init_tenant_context(app)
 # Register CFO reporting routes
 register_reporting_routes(app)
 
-# Register authentication and user management blueprints
-app.register_blueprint(auth_bp)
-app.register_blueprint(user_bp)
-app.register_blueprint(tenant_bp)
-app.register_blueprint(cfo_bp)
+# Blueprint registrations removed - causing import circular issues and 503 errors on Cloud Run
+# app.register_blueprint(auth_bp)
+# app.register_blueprint(user_bp)
+# app.register_blueprint(tenant_bp)
+# app.register_blueprint(cfo_bp)
 
 # ====================================================================
 # Authentication Page Routes
 # ====================================================================
+# NOTE: These routes are kept for serving static authentication pages
+# The actual API endpoints are in the commented blueprints above
 
 @app.route('/auth/login')
 def login_page():
