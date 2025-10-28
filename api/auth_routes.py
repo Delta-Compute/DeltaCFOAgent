@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from auth.firebase_config import create_firebase_user, verify_firebase_token
 from middleware.auth_middleware import require_auth, get_current_user, get_current_tenant
+# Import from root services module (not web_ui/services)
 from services.email_service import send_invitation_email, send_welcome_email
 from web_ui.database import db_manager
 

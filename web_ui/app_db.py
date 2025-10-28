@@ -28,6 +28,25 @@ import zipfile
 import re
 import logging
 from dotenv import load_dotenv
+from pathlib import Path
+
+# Configure sys.path FIRST before any local imports
+# This ensures all modules can find their dependencies
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+web_ui_dir = os.path.dirname(os.path.abspath(__file__))
+invoice_dir = str(Path(__file__).parent.parent / 'invoice_processing')
+api_dir = str(Path(__file__).parent.parent / 'api')
+
+# Insert parent_dir FIRST to ensure root/services has priority over web_ui/services
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+# web_ui_dir added but after parent for correct module resolution
+if web_ui_dir not in sys.path:
+    sys.path.append(web_ui_dir)
+if invoice_dir not in sys.path:
+    sys.path.append(invoice_dir)
+if api_dir not in sys.path:
+    sys.path.append(api_dir)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -53,16 +72,6 @@ except ImportError:
     POSTGRESQL_AVAILABLE = False
     print("WARNING: psycopg2 not available - PostgreSQL support disabled")
 
-# Add parent directory to path for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Add current web_ui directory to path for local imports (needed for Cloud Run)
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Import invoice processing modules
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent / 'invoice_processing'))
-
 # Import historical currency converter
 from historical_currency_converter import HistoricalCurrencyConverter
 
@@ -73,7 +82,6 @@ from tenant_context import init_tenant_context, get_current_tenant_id, set_tenan
 from reporting_api import register_reporting_routes
 
 # Import authentication blueprints
-sys.path.append(str(Path(__file__).parent.parent / 'api'))
 from api.auth_routes import auth_bp
 from api.user_routes import user_bp
 from api.tenant_routes import tenant_bp
