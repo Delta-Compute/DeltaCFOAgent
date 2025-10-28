@@ -99,7 +99,7 @@ Return ONLY a JSON object with this structure:
 """
 
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20250219",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=1000,
                 messages=[{
                     "role": "user",
@@ -195,7 +195,7 @@ Be precise with numbers and dates. If a field is not clearly visible, use reason
 """
 
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20250219",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=1500,
                 messages=[{
                     "role": "user",

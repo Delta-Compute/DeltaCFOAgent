@@ -152,7 +152,7 @@ class AIConfidenceReassessor:
         try:
             # Call Claude API
             message = self.client.messages.create(
-                model="claude-3-5-sonnet-20250219",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=2000,
                 temperature=0.2,  # Lower temperature for more consistent analysis
                 messages=[{

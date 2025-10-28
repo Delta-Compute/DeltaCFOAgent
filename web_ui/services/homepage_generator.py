@@ -191,7 +191,7 @@ Important guidelines:
             prompt = self._build_generation_prompt(data)
 
             response = self.claude_client.messages.create(
-                model="claude-3-5-sonnet-20250219",
+                model="claude-sonnet-4-5-20250929",
                 max_tokens=2000,
                 temperature=0.7,
                 messages=[{
@@ -341,7 +341,7 @@ Important guidelines:
                 self.tenant_id,
                 json.dumps(content),
                 content.get('generation_prompt'),
-                'claude-3-5-sonnet-20250219'
+                'claude-sonnet-4-5-20250929'
             ))
 
             logger.info(f"Cached homepage content for tenant {self.tenant_id}")
