@@ -135,6 +135,13 @@ def accept_invitation_page():
     """Serve the accept invitation page"""
     return render_template('auth/accept_invitation.html')
 
+
+@app.route('/auth/profile')
+def profile_page():
+    """Serve the user profile page"""
+    return render_template('auth/profile.html')
+
+
 @app.route('/cfo/dashboard')
 def cfo_dashboard_page():
     """Serve the CFO dashboard page"""
@@ -4239,19 +4246,42 @@ def api_get_homepage_data():
     """Get standardized homepage data - exact database fields only"""
     try:
         from database import db_manager
-        from services.homepage_data_service import HomepageDataService
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from data_queries import DataQueryService
 
         tenant_id = get_current_tenant_id()
-        homepage_service = HomepageDataService(db_manager, tenant_id)
+        homepage_service = DataQueryService(db_manager, tenant_id)
 
         # Get complete homepage data with exact database fields
-        data = homepage_service.get_homepage_data()
+        data = homepage_service.get_all_homepage_data()
 
-        return jsonify(data)
+        # Wrap in standardized format expected by frontend
+        return jsonify({
+            'success': True,
+            'company_name': data.get('company', {}).get('company_name'),
+            'company_tagline': data.get('company', {}).get('company_tagline'),
+            'company_description': data.get('company', {}).get('company_description'),
+            'generated_at': data.get('generated_at'),
+            'metrics': {
+                'business_units': data.get('portfolio', {}).get('total_entities', 0),
+                'account_integrations': (
+                    data.get('portfolio', {}).get('wallet_count', 0) +
+                    data.get('portfolio', {}).get('bank_account_count', 0)
+                ),
+                'transaction_value': data.get('kpis', {}).get('total_revenue', 0),
+                'transaction_count': data.get('kpis', {}).get('total_transactions', 0)
+            },
+            'raw_data': data  # Include complete data for debugging
+        })
 
     except Exception as e:
         logger.error(f"Error fetching homepage data: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/homepage/kpis', methods=['GET'])
@@ -4259,7 +4289,13 @@ def api_get_homepage_kpis():
     """Get just the KPIs for homepage display"""
     try:
         from database import db_manager
-        from services.data_queries import DataQueryService
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from data_queries import DataQueryService
 
         tenant_id = get_current_tenant_id()
         data_service = DataQueryService(db_manager, tenant_id)
@@ -4285,7 +4321,13 @@ def api_bot_start_session():
     """Start a new onboarding bot session"""
     try:
         from database import db_manager
-        from services.onboarding_bot import OnboardingBot
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from onboarding_bot import OnboardingBot
 
         tenant_id = get_current_tenant_id()
         bot = OnboardingBot(db_manager, tenant_id)
@@ -4312,7 +4354,13 @@ def api_bot_chat():
     """Send a message to the onboarding bot"""
     try:
         from database import db_manager
-        from services.onboarding_bot import OnboardingBot
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from onboarding_bot import OnboardingBot
 
         data = request.get_json()
         session_id = data.get('session_id')
@@ -4347,7 +4395,13 @@ def api_bot_status():
     """Get current onboarding status"""
     try:
         from database import db_manager
-        from services.onboarding_bot import OnboardingBot
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from onboarding_bot import OnboardingBot
 
         tenant_id = get_current_tenant_id()
         bot = OnboardingBot(db_manager, tenant_id)
@@ -4369,7 +4423,13 @@ def api_bot_history(session_id):
     """Get conversation history for a session"""
     try:
         from database import db_manager
-        from services.onboarding_bot import OnboardingBot
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from onboarding_bot import OnboardingBot
 
         tenant_id = get_current_tenant_id()
         bot = OnboardingBot(db_manager, tenant_id)
@@ -4383,6 +4443,86 @@ def api_bot_history(session_id):
 
     except Exception as e:
         logger.error(f"Error getting bot history: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# USER PROFILE API ENDPOINTS
+# ========================================
+
+@app.route('/api/user/profile', methods=['GET'])
+def api_get_user_profile():
+    """Get current user's profile information including role and permissions"""
+    try:
+        from database import db_manager
+
+        firebase_uid = request.args.get('firebase_uid')
+
+        if not firebase_uid:
+            return jsonify({'error': 'firebase_uid is required'}), 400
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            query = """
+                SELECT
+                    u.id,
+                    u.firebase_uid,
+                    u.email,
+                    u.display_name,
+                    u.user_type,
+                    u.is_active,
+                    u.email_verified,
+                    u.created_at,
+                    u.last_login_at,
+                    json_agg(
+                        json_build_object(
+                            'tenant_id', tu.tenant_id,
+                            'tenant_name', tc.company_name,
+                            'role', tu.role,
+                            'permissions', tu.permissions,
+                            'is_active', tu.is_active,
+                            'added_at', tu.added_at
+                        )
+                    ) FILTER (WHERE tu.id IS NOT NULL) as tenants
+                FROM users u
+                LEFT JOIN tenant_users tu ON u.id = tu.user_id AND tu.is_active = TRUE
+                LEFT JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+                WHERE u.firebase_uid = %s AND u.is_active = TRUE
+                GROUP BY u.id
+            """
+
+            cursor.execute(query, (firebase_uid,))
+            result = cursor.fetchone()
+
+            if not result:
+                cursor.close()
+                return jsonify({'error': 'User not found'}), 404
+
+            user = dict(result)
+
+            # Handle date serialization - check if already string
+            if user.get('created_at'):
+                if hasattr(user['created_at'], 'isoformat'):
+                    user['created_at'] = user['created_at'].isoformat()
+            if user.get('last_login_at'):
+                if hasattr(user['last_login_at'], 'isoformat'):
+                    user['last_login_at'] = user['last_login_at'].isoformat()
+
+            if user['tenants']:
+                for tenant in user['tenants']:
+                    if tenant.get('added_at') and hasattr(tenant['added_at'], 'isoformat'):
+                        tenant['added_at'] = tenant['added_at'].isoformat()
+
+            cursor.close()
+
+        return jsonify({
+            'success': True,
+            'user': user
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting user profile: {e}")
         return jsonify({'error': str(e)}), 500
 
 

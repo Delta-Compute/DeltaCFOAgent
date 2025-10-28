@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+    <style>
+        .profile-container {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 2rem;
+        }
+
+        .profile-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .profile-header h1 {
+            margin: 0 0 0.5rem 0;
+            font-size: 2rem;
+        }
+
+        .profile-header p {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .user-type-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        .profile-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .profile-section h2 {
+            margin: 0 0 1rem 0;
+            color: #1e293b;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .info-item {
+            padding: 0.75rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+
+        .info-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+
+        .info-value {
+            font-size: 1rem;
+            color: #1e293b;
+            font-weight: 600;
+        }
+
+        .tenant-card {
+            background: #f8fafc;
+            padding: 1.25rem;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 1rem;
+        }
+
+        .tenant-card h3 {
+            margin: 0 0 0.75rem 0;
+            color: #1e293b;
+            font-size: 1.1rem;
+        }
+
+        .role-badge {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 16px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .role-owner { background: #dbeafe; color: #1e40af; }
+        .role-admin { background: #fef3c7; color: #92400e; }
+        .role-cfo { background: #d1fae5; color: #065f46; }
+        .role-cfo_assistant { background: #e9d5ff; color: #6b21a8; }
+        .role-employee { background: #e5e7eb; color: #374151; }
+
+        .permissions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+        }
+
+        .permission-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background: white;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        .permission-item svg {
+            flex-shrink: 0;
+            color: #10b981;
+        }
+
+        .loading-state {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .spinner {
+            border: 3px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-state {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 1.5rem;
+            border-radius: 12px;
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: white;
+            text-decoration: none;
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+
+        .back-link:hover {
+            opacity: 1;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.7rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="profile-container">
+        <div id="loadingState" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading profile...</p>
+        </div>
+
+        <div id="errorState" class="error-state" style="display: none;">
+            <h3>Error Loading Profile</h3>
+            <p id="errorMessage"></p>
+            <a href="/" style="color: #991b1b; font-weight: 600; text-decoration: underline;">Return to Dashboard</a>
+        </div>
+
+        <div id="profileContent" style="display: none;">
+            <div class="profile-header">
+                <a href="/" class="back-link">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                    Back to Dashboard
+                </a>
+                <h1 id="profileName">User Profile</h1>
+                <p id="profileEmail"></p>
+                <div>
+                    <span class="user-type-badge" id="userTypeBadge"></span>
+                    <span class="status-badge status-active" id="accountStatus" style="margin-left: 0.5rem;">
+                        <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #059669;"></span>
+                        Active
+                    </span>
+                </div>
+            </div>
+
+            <div class="profile-section">
+                <h2>Account Information</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Email Verified</div>
+                        <div class="info-value" id="emailVerified">No</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Account Created</div>
+                        <div class="info-value" id="accountCreated">N/A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Last Login</div>
+                        <div class="info-value" id="lastLogin">N/A</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">User ID</div>
+                        <div class="info-value" id="userId" style="font-size: 0.85rem; word-break: break-all;">N/A</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="profile-section">
+                <h2>Tenant Access & Roles</h2>
+                <div id="tenantsContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase Client SDK -->
+    <script type="module">
+        import { auth } from '/static/js/firebase_client.js';
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        async function loadUserProfile(user) {
+            try {
+                const response = await fetch(`/api/user/profile?firebase_uid=${encodeURIComponent(user.uid)}`);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (!data.success || !data.user) {
+                    throw new Error(data.error || 'Failed to load profile');
+                }
+
+                displayProfile(data.user);
+
+            } catch (error) {
+                console.error('Error loading profile:', error);
+                showError(error.message);
+            }
+        }
+
+        function displayProfile(user) {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('profileContent').style.display = 'block';
+
+            document.getElementById('profileName').textContent = user.display_name || 'User';
+            document.getElementById('profileEmail').textContent = user.email;
+
+            const userTypeMap = {
+                'fractional_cfo': 'Fractional CFO',
+                'cfo_assistant': 'CFO Assistant',
+                'tenant_admin': 'Tenant Admin',
+                'employee': 'Employee'
+            };
+            document.getElementById('userTypeBadge').textContent = userTypeMap[user.user_type] || user.user_type;
+
+            document.getElementById('emailVerified').textContent = user.email_verified ? 'Yes' : 'No';
+            document.getElementById('emailVerified').style.color = user.email_verified ? '#059669' : '#dc2626';
+
+            if (user.created_at) {
+                const createdDate = new Date(user.created_at);
+                document.getElementById('accountCreated').textContent = createdDate.toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric'
+                });
+            }
+
+            if (user.last_login_at) {
+                const loginDate = new Date(user.last_login_at);
+                document.getElementById('lastLogin').textContent = loginDate.toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+            }
+
+            document.getElementById('userId').textContent = user.id;
+
+            const tenantsContainer = document.getElementById('tenantsContainer');
+            if (user.tenants && user.tenants.length > 0) {
+                tenantsContainer.innerHTML = user.tenants.map(tenant => {
+                    const roleClass = `role-${tenant.role.replace('_', '')}`;
+                    const roleLabel = tenant.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                    let permissionsHtml = '';
+                    if (tenant.permissions && Object.keys(tenant.permissions).length > 0) {
+                        const permissionsList = Object.entries(tenant.permissions)
+                            .filter(([key, value]) => value === true)
+                            .map(([key]) => {
+                                const [category, action] = key.split('.');
+                                return `
+                                    <div class="permission-item">
+                                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                        </svg>
+                                        ${category}: ${action}
+                                    </div>
+                                `;
+                            }).join('');
+
+                        if (permissionsList) {
+                            permissionsHtml = `
+                                <div style="margin-top: 0.75rem;">
+                                    <strong style="font-size: 0.9rem; color: #475569;">Permissions:</strong>
+                                    <div class="permissions-grid">${permissionsList}</div>
+                                </div>
+                            `;
+                        }
+                    }
+
+                    const addedDate = tenant.added_at ? new Date(tenant.added_at).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'short', day: 'numeric'
+                    }) : 'N/A';
+
+                    return `
+                        <div class="tenant-card">
+                            <h3>${tenant.tenant_name || tenant.tenant_id}</h3>
+                            <span class="role-badge ${roleClass}">${roleLabel}</span>
+                            <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.5rem;">
+                                Tenant ID: ${tenant.tenant_id} | Added: ${addedDate}
+                            </div>
+                            ${permissionsHtml}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                tenantsContainer.innerHTML = '<p style="color: #64748b; text-align: center; padding: 2rem;">No tenant access configured.</p>';
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('errorState').style.display = 'block';
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = '/auth/login';
+            } else {
+                loadUserProfile(user);
+            }
+        });
+    </script>
+</body>
+</html>

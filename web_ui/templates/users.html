@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}">
+    <style>
+        .users-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 2rem;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-header h1 {
+            margin: 0 0 0.5rem 0;
+            color: #1e293b;
+        }
+
+        .invite-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .invite-section h2 {
+            margin: 0 0 1.5rem 0;
+            color: #1e293b;
+            font-size: 1.5rem;
+        }
+
+        .invite-form {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .form-group label {
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 0.75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #059669;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #dc2626;
+        }
+
+        .user-type-info {
+            margin-top: 0.5rem;
+            padding: 0.75rem;
+            background: #f8fafc;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .back-link:hover {
+            color: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div class="users-container">
+        <a href="/" class="back-link">
+            <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            Back to Dashboard
+        </a>
+
+        <div class="page-header">
+            <h1>User Management</h1>
+            <p style="color: #64748b;">Invite team members and manage access to your tenant</p>
+        </div>
+
+        <div class="alert alert-success" id="successAlert"></div>
+        <div class="alert alert-error" id="errorAlert"></div>
+
+        <div class="invite-section">
+            <h2>Invite Fractional CFO</h2>
+            <form id="inviteCFOForm" class="invite-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="cfoEmail">Email Address *</label>
+                        <input type="email" id="cfoEmail" required placeholder="cfo@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="cfoName">Display Name *</label>
+                        <input type="text" id="cfoName" required placeholder="John Doe">
+                    </div>
+                </div>
+                <div class="user-type-info">
+                    Fractional CFO will have full access to manage financials, reports, and can invite their own assistants to help manage your tenant.
+                </div>
+                <button type="submit" class="btn btn-primary" id="inviteCFOBtn">
+                    Send Invitation to CFO
+                </button>
+            </form>
+        </div>
+
+        <div class="invite-section">
+            <h2>Invite CFO Assistant</h2>
+            <form id="inviteCFOAssistantForm" class="invite-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="assistantEmail">Email Address *</label>
+                        <input type="email" id="assistantEmail" required placeholder="assistant@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="assistantName">Display Name *</label>
+                        <input type="text" id="assistantName" required placeholder="Alex Johnson">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="assistantPrivilege">Access Level *</label>
+                    <select id="assistantPrivilege" required>
+                        <option value="read_only">Read Only - Can view all data but cannot make changes</option>
+                        <option value="upload">Upload - Can view and upload documents/transactions</option>
+                        <option value="upload_write">Upload and Write - Can view, upload, and modify data</option>
+                    </select>
+                </div>
+                <div class="user-type-info">
+                    CFO assistants support the Fractional CFO with access based on their privilege level.
+                </div>
+                <button type="submit" class="btn btn-primary" id="inviteCFOAssistantBtn">
+                    Send Invitation to CFO Assistant
+                </button>
+            </form>
+        </div>
+
+        <div class="invite-section">
+            <h2>Invite Team Member (Employee)</h2>
+            <form id="inviteEmployeeForm" class="invite-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="employeeEmail">Email Address *</label>
+                        <input type="email" id="employeeEmail" required placeholder="employee@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="employeeName">Display Name *</label>
+                        <input type="text" id="employeeName" required placeholder="Jane Smith">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="employeePrivilege">Access Level *</label>
+                    <select id="employeePrivilege" required>
+                        <option value="read_only">Read Only - Can view all data but cannot make changes</option>
+                        <option value="upload">Upload - Can view and upload documents/transactions</option>
+                        <option value="upload_write">Upload and Write - Can view, upload, and modify data</option>
+                    </select>
+                </div>
+                <div class="user-type-info">
+                    Team members will have access based on their assigned privilege level.
+                </div>
+                <button type="submit" class="btn btn-primary" id="inviteEmployeeBtn">
+                    Send Invitation to Team Member
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase Client SDK -->
+    <script type="module">
+        import { auth } from '/static/js/firebase_client.js';
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        let idToken = null;
+
+        onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                window.location.href = '/auth/login';
+            } else {
+                idToken = await user.getIdToken();
+            }
+        });
+
+        function showSuccess(message) {
+            const alert = document.getElementById('successAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+            document.getElementById('errorAlert').style.display = 'none';
+
+            setTimeout(() => {
+                alert.style.display = 'none';
+            }, 5000);
+        }
+
+        function showError(message) {
+            const alert = document.getElementById('errorAlert');
+            alert.textContent = message;
+            alert.style.display = 'block';
+            document.getElementById('successAlert').style.display = 'none';
+        }
+
+        document.getElementById('inviteCFOForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('inviteCFOBtn');
+            const email = document.getElementById('cfoEmail').value;
+            const displayName = document.getElementById('cfoName').value;
+
+            btn.disabled = true;
+            btn.textContent = 'Sending invitation...';
+
+            try {
+                const response = await fetch('/api/users/invite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        display_name: displayName,
+                        user_type: 'fractional_cfo',
+                        role: 'cfo'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to send invitation');
+                }
+
+                showSuccess(`Invitation sent successfully to ${email}!`);
+                document.getElementById('inviteCFOForm').reset();
+
+            } catch (error) {
+                console.error('Invitation error:', error);
+                showError(error.message || 'Failed to send invitation. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Invitation to CFO';
+            }
+        });
+
+        // Helper function to map privilege level to permissions
+        function getPermissionsForPrivilege(privilegeLevel) {
+            const permissions = {
+                'read_only': {
+                    'transactions.view': true,
+                    'invoices.view': true,
+                    'reports.view': true,
+                    'accounts.view': true
+                },
+                'upload': {
+                    'transactions.view': true,
+                    'transactions.create': true,
+                    'invoices.view': true,
+                    'invoices.create': true,
+                    'reports.view': true,
+                    'accounts.view': true
+                },
+                'upload_write': {
+                    'transactions.view': true,
+                    'transactions.create': true,
+                    'transactions.edit': true,
+                    'invoices.view': true,
+                    'invoices.create': true,
+                    'invoices.edit': true,
+                    'reports.view': true,
+                    'reports.generate': true,
+                    'accounts.view': true,
+                    'accounts.manage': true
+                }
+            };
+            return permissions[privilegeLevel] || permissions['read_only'];
+        }
+
+        document.getElementById('inviteCFOAssistantForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('inviteCFOAssistantBtn');
+            const email = document.getElementById('assistantEmail').value;
+            const displayName = document.getElementById('assistantName').value;
+            const privilege = document.getElementById('assistantPrivilege').value;
+
+            btn.disabled = true;
+            btn.textContent = 'Sending invitation...';
+
+            try {
+                const response = await fetch('/api/users/invite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        display_name: displayName,
+                        user_type: 'cfo_assistant',
+                        role: 'cfo_assistant',
+                        permissions: getPermissionsForPrivilege(privilege)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to send invitation');
+                }
+
+                showSuccess(`Invitation sent successfully to ${email}!`);
+                document.getElementById('inviteCFOAssistantForm').reset();
+
+            } catch (error) {
+                console.error('Invitation error:', error);
+                showError(error.message || 'Failed to send invitation. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Invitation to CFO Assistant';
+            }
+        });
+
+        document.getElementById('inviteEmployeeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const btn = document.getElementById('inviteEmployeeBtn');
+            const email = document.getElementById('employeeEmail').value;
+            const displayName = document.getElementById('employeeName').value;
+            const privilege = document.getElementById('employeePrivilege').value;
+
+            btn.disabled = true;
+            btn.textContent = 'Sending invitation...';
+
+            try {
+                const response = await fetch('/api/users/invite', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify({
+                        email: email,
+                        display_name: displayName,
+                        user_type: 'employee',
+                        role: 'employee',
+                        permissions: getPermissionsForPrivilege(privilege)
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    throw new Error(data.message || 'Failed to send invitation');
+                }
+
+                showSuccess(`Invitation sent successfully to ${email}!`);
+                document.getElementById('inviteEmployeeForm').reset();
+
+            } catch (error) {
+                console.error('Invitation error:', error);
+                showError(error.message || 'Failed to send invitation. Please try again.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Send Invitation to Team Member';
+            }
+        });
+    </script>
+</body>
+</html>

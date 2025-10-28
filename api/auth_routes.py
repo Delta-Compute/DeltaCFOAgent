@@ -174,18 +174,18 @@ def login():
             FROM users
             WHERE firebase_uid = %s
         """
-        result = db_manager.execute_query(query, (firebase_uid,))
+        result = db_manager.execute_query(query, (firebase_uid,), fetch_one=True)
 
-        if not result or len(result) == 0:
+        if not result:
             return jsonify({
                 'success': False,
                 'error': 'user_not_found',
                 'message': 'User not found. Please complete registration.'
             }), 404
 
-        user_data = result[0]
+        user_data = result
 
-        if not user_data[5]:  # is_active check
+        if not user_data['is_active']:
             return jsonify({
                 'success': False,
                 'error': 'user_inactive',
@@ -193,12 +193,12 @@ def login():
             }), 403
 
         user = {
-            'id': user_data[0],
-            'firebase_uid': user_data[1],
-            'email': user_data[2],
-            'display_name': user_data[3],
-            'user_type': user_data[4],
-            'is_active': user_data[5]
+            'id': user_data['id'],
+            'firebase_uid': user_data['firebase_uid'],
+            'email': user_data['email'],
+            'display_name': user_data['display_name'],
+            'user_type': user_data['user_type'],
+            'is_active': user_data['is_active']
         }
 
         # Update last login time
@@ -210,23 +210,23 @@ def login():
             SELECT
                 tc.id,
                 tc.company_name,
-                tc.description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
             JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
-        tenant_results = db_manager.execute_query(tenants_query, (user['id'],))
+        tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
 
         tenants = []
-        for t in tenant_results:
+        for t in (tenant_results or []):
             tenants.append({
-                'id': t[0],
-                'company_name': t[1],
-                'description': t[2],
-                'role': t[3],
-                'permissions': t[4]
+                'id': t['id'],
+                'company_name': t['company_name'],
+                'description': t['company_description'],
+                'role': t['role'],
+                'permissions': t['permissions']
             })
 
         # Set session data
@@ -318,23 +318,23 @@ def get_me():
             SELECT
                 tc.id,
                 tc.company_name,
-                tc.description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
             JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
-        tenant_results = db_manager.execute_query(tenants_query, (user['id'],))
+        tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
 
         tenants = []
-        for t in tenant_results:
+        for t in (tenant_results or []):
             tenants.append({
-                'id': t[0],
-                'company_name': t[1],
-                'description': t[2],
-                'role': t[3],
-                'permissions': t[4]
+                'id': t['id'],
+                'company_name': t['company_name'],
+                'description': t['company_description'],
+                'role': t['role'],
+                'permissions': t['permissions']
             })
 
         return jsonify({
