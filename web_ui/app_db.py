@@ -83,6 +83,18 @@ from tenant_context import init_tenant_context, get_current_tenant_id, set_tenan
 # Import reporting API
 from reporting_api import register_reporting_routes
 
+# Import Firebase authentication
+try:
+    import sys
+    auth_module_path = os.path.join(parent_dir, 'auth')
+    if auth_module_path not in sys.path:
+        sys.path.insert(0, auth_module_path)
+    from firebase_config import verify_firebase_token, get_firebase_user
+    FIREBASE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Firebase authentication not available: {e}")
+    FIREBASE_AVAILABLE = False
+
 # Authentication blueprints removed - causing import circular issues and 503 errors on Cloud Run
 # These modules were causing initialization timeouts
 # from api.auth_routes import auth_bp
@@ -158,6 +170,114 @@ def users_page():
     """Serve the user management page"""
     # TODO: Add authentication and permission check
     return render_template('users.html')
+
+# ====================================================================
+# Firebase Authentication API Routes
+# ====================================================================
+# These are basic authentication endpoints to replace the removed blueprints
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """
+    Authenticate user with Firebase ID token
+    Returns user information and session data
+    """
+    try:
+        if not FIREBASE_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'message': 'Firebase authentication not configured'
+            }), 500
+
+        data = request.get_json()
+        id_token = data.get('id_token')
+
+        if not id_token:
+            return jsonify({
+                'success': False,
+                'message': 'ID token is required'
+            }), 400
+
+        # Verify Firebase token
+        decoded_token = verify_firebase_token(id_token)
+        if not decoded_token:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid or expired token'
+            }), 401
+
+        # Get user information
+        uid = decoded_token.get('uid')
+        email = decoded_token.get('email')
+
+        # Create session
+        session['user_id'] = uid
+        session['email'] = email
+
+        # Return user data (simplified version without database lookup)
+        user_data = {
+            'uid': uid,
+            'email': email,
+            'display_name': decoded_token.get('name', email.split('@')[0]),
+            'user_type': 'user',  # Default type
+            'email_verified': decoded_token.get('email_verified', False)
+        }
+
+        return jsonify({
+            'success': True,
+            'user': user_data,
+            'message': 'Login successful'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    """Logout user and clear session"""
+    try:
+        session.clear()
+        return jsonify({
+            'success': True,
+            'message': 'Logout successful'
+        }), 200
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/auth/me', methods=['GET'])
+def api_get_current_user():
+    """Get current authenticated user"""
+    try:
+        if 'user_id' not in session:
+            return jsonify({
+                'success': False,
+                'message': 'Not authenticated'
+            }), 401
+
+        return jsonify({
+            'success': True,
+            'user': {
+                'uid': session.get('user_id'),
+                'email': session.get('email')
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Get user error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
 
 # Database connection - DEPRECATED: Now using database manager (database.py)
 # DB_PATH = os.path.join(os.path.dirname(__file__), 'delta_transactions.db')
