@@ -183,198 +183,303 @@ class InvoiceGenerator:
         pdf_filename = f"{invoice_data['invoice_number']}.pdf"
         pdf_path = os.path.join(self.output_dir, pdf_filename)
 
-        # Create PDF document
+        # Create PDF document with better margins
         doc = SimpleDocTemplate(pdf_path, pagesize=letter,
-                               rightMargin=0.5*inch, leftMargin=0.5*inch,
-                               topMargin=0.5*inch, bottomMargin=0.5*inch)
+                               rightMargin=0.75*inch, leftMargin=0.75*inch,
+                               topMargin=0.75*inch, bottomMargin=0.75*inch)
 
         # Container for PDF elements
         elements = []
 
-        # Styles
+        # Enhanced styles with better typography
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1a1a1a'),
-            spaceAfter=30,
-            alignment=TA_CENTER
+            fontSize=28,
+            textColor=colors.HexColor('#1a1a2e'),
+            spaceAfter=20,
+            spaceBefore=10,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold',
+            leading=34
         )
 
         heading_style = ParagraphStyle(
             'CustomHeading',
             parent=styles['Heading2'],
-            fontSize=14,
-            textColor=colors.HexColor('#333333'),
-            spaceAfter=12,
-            spaceBefore=12
+            fontSize=12,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=10,
+            spaceBefore=16,
+            fontName='Helvetica-Bold',
+            leading=16
         )
 
-        normal_style = styles['Normal']
+        normal_style = ParagraphStyle(
+            'CustomNormal',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.HexColor('#2c3e50'),
+            leading=14,
+            fontName='Helvetica'
+        )
+
         small_style = ParagraphStyle(
             'Small',
             parent=styles['Normal'],
             fontSize=9,
-            textColor=colors.HexColor('#666666')
+            textColor=colors.HexColor('#7f8c8d'),
+            leading=12,
+            fontName='Helvetica'
         )
 
         # Title
         title = Paragraph("CRYPTO INVOICE", title_style)
         elements.append(title)
-        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Spacer(1, 0.15*inch))
 
-        # Company header
+        # Divider line
+        line_data = [["", ""]]
+        line_table = Table(line_data, colWidths=[6.5*inch])
+        line_table.setStyle(TableStyle([
+            ('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor('#3498db')),
+        ]))
+        elements.append(line_table)
+        elements.append(Spacer(1, 0.25*inch))
+
+        # Company header with improved alignment
         company_info = [
-            ["<b>Delta Energy - Paraguay Operations</b>", f"<b>Invoice #:</b> {invoice_data['invoice_number']}"],
+            ["<font size=13><b>Delta Energy - Paraguay Operations</b></font>", f"<b>Invoice #:</b> {invoice_data['invoice_number']}"],
             ["Asunción, Paraguay", f"<b>Issue Date:</b> {invoice_data['issue_date']}"],
             ["Email: billing@deltaenergy.com", f"<b>Due Date:</b> {invoice_data['due_date']}"]
         ]
 
-        company_table = Table(company_info, colWidths=[3.5*inch, 3.5*inch])
+        company_table = Table(company_info, colWidths=[3.25*inch, 3.25*inch])
         company_table.setStyle(TableStyle([
             ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
-            ('FONT', (0, 0), (0, 0), 'Helvetica-Bold', 12),
+            ('FONT', (0, 0), (0, 0), 'Helvetica-Bold', 13),
+            ('FONT', (1, 0), (1, -1), 'Helvetica', 10),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
             ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]))
         elements.append(company_table)
-        elements.append(Spacer(1, 0.3*inch))
+        elements.append(Spacer(1, 0.35*inch))
 
-        # Bill to section
-        elements.append(Paragraph("<b>BILL TO:</b>", heading_style))
-        bill_to_data = [
-            [invoice_data['client_name']],
+        # Bill to section with better styling
+        elements.append(Paragraph("<b>BILL TO</b>", heading_style))
+
+        bill_to_info = [
+            [f"<font size=11><b>{invoice_data['client_name']}</b></font>"],
             [invoice_data.get('client_contact', '')],
         ]
-        bill_to_table = Table(bill_to_data, colWidths=[7*inch])
+
+        bill_to_table = Table(bill_to_info, colWidths=[6.5*inch])
         bill_to_table.setStyle(TableStyle([
             ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
-            ('FONT', (0, 0), (0, 0), 'Helvetica-Bold', 11),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         elements.append(bill_to_table)
-        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Spacer(1, 0.25*inch))
 
-        # Service description
+        # Service description with better formatting
+        desc_data = []
         if invoice_data.get('billing_period'):
-            desc = Paragraph(f"<b>Billing Period:</b> {invoice_data['billing_period']}", normal_style)
-            elements.append(desc)
-            elements.append(Spacer(1, 0.1*inch))
-
+            desc_data.append(['<b>Billing Period:</b>', invoice_data['billing_period']])
         if invoice_data.get('description'):
-            desc = Paragraph(f"<b>Description:</b> {invoice_data['description']}", normal_style)
-            elements.append(desc)
-            elements.append(Spacer(1, 0.2*inch))
+            desc_data.append(['<b>Description:</b>', invoice_data['description']])
 
-        # Line items table
+        if desc_data:
+            desc_table = Table(desc_data, colWidths=[1.3*inch, 5.2*inch])
+            desc_table.setStyle(TableStyle([
+                ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(desc_table)
+            elements.append(Spacer(1, 0.25*inch))
+
+        # Line items table with enhanced design
         if invoice_data.get('line_items'):
-            elements.append(Paragraph("<b>LINE ITEMS:</b>", heading_style))
+            elements.append(Paragraph("<b>LINE ITEMS</b>", heading_style))
+            elements.append(Spacer(1, 0.05*inch))
 
-            line_items_data = [["Description", "Amount (USD)"]]
+            line_items_data = [["<b>Description</b>", "<b>Amount (USD)</b>"]]
             for item in invoice_data['line_items']:
                 line_items_data.append([
                     item['description'],
                     f"${item['amount']:,.2f}"
                 ])
 
-            # Add total row
-            line_items_data.append(["<b>TOTAL</b>", f"<b>${invoice_data['amount_usd']:,.2f}</b>"])
+            # Add subtotal if there are multiple items
+            if len(invoice_data['line_items']) > 1:
+                line_items_data.append(['', ''])
+                line_items_data.append(['<b>Subtotal</b>', f"<b>${invoice_data['amount_usd']:,.2f}</b>"])
 
-            line_items_table = Table(line_items_data, colWidths=[5*inch, 2*inch])
+            # Add total row
+            line_items_data.append(['', ''])
+            line_items_data.append([
+                '<font size=11><b>TOTAL DUE</b></font>',
+                f'<font size=11><b>${invoice_data["amount_usd"]:,.2f}</b></font>'
+            ])
+
+            line_items_table = Table(line_items_data, colWidths=[4.5*inch, 2*inch])
             line_items_table.setStyle(TableStyle([
                 ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
-                ('FONT', (0, 0), (1, 0), 'Helvetica-Bold', 10),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e0e0e0')),
-                ('GRID', (0, 0), (-1, -2), 1, colors.HexColor('#cccccc')),
-                ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#333333')),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('GRID', (0, 0), (-1, -3), 0.5, colors.HexColor('#bdc3c7')),
+                ('LINEABOVE', (0, -1), (-1, -1), 2, colors.HexColor('#2c3e50')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ecf0f1')),
                 ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
             ]))
             elements.append(line_items_table)
-            elements.append(Spacer(1, 0.3*inch))
+            elements.append(Spacer(1, 0.35*inch))
 
-        # Payment instructions section
-        elements.append(Paragraph("<b>PAYMENT INSTRUCTIONS:</b>", heading_style))
+        # Payment instructions section with enhanced design
+        elements.append(Paragraph("<b>PAYMENT INSTRUCTIONS</b>", heading_style))
+        elements.append(Spacer(1, 0.05*inch))
 
         network_display = invoice_data['crypto_network']
         if invoice_data['crypto_currency'] == "USDT":
             network_display = f"USDT ({invoice_data['crypto_network']})"
 
         payment_info_data = [
-            ["Currency:", f"{network_display}"],
-            ["Amount to Pay:", f"{invoice_data['crypto_amount']} {invoice_data['crypto_currency']}"],
-            ["USD Equivalent:", f"${invoice_data['amount_usd']:,.2f}"],
-            ["Exchange Rate:", f"1 {invoice_data['crypto_currency']} = ${invoice_data['exchange_rate']:.4f}"],
+            ["<b>Currency:</b>", f"{network_display}"],
+            ["<b>Amount to Pay:</b>", f"<font size=11><b>{invoice_data['crypto_amount']} {invoice_data['crypto_currency']}</b></font>"],
+            ["<b>USD Equivalent:</b>", f"${invoice_data['amount_usd']:,.2f}"],
+            ["<b>Exchange Rate:</b>", f"1 {invoice_data['crypto_currency']} = ${invoice_data['exchange_rate']:.4f}"],
         ]
 
-        payment_info_table = Table(payment_info_data, colWidths=[1.5*inch, 5.5*inch])
+        payment_info_table = Table(payment_info_data, colWidths=[1.4*inch, 5.1*inch])
         payment_info_table.setStyle(TableStyle([
             ('FONT', (0, 0), (-1, -1), 'Helvetica', 10),
-            ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 10),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ]))
         elements.append(payment_info_table)
         elements.append(Spacer(1, 0.2*inch))
 
-        # Deposit address box
-        address_para = Paragraph(
-            f"<b>DEPOSIT ADDRESS:</b><br/>"
-            f"<font size=12 face='Courier'>{invoice_data['deposit_address']}</font>",
-            normal_style
-        )
-        elements.append(address_para)
+        # Deposit address box with better styling
+        address_box_data = [[
+            f"<b>DEPOSIT ADDRESS</b><br/>"
+            f"<font size=10 face='Courier' color='#2c3e50'>{invoice_data['deposit_address']}</font>"
+        ]]
+
+        address_box = Table(address_box_data, colWidths=[6.5*inch])
+        address_box.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8f9fa')),
+            ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor('#3498db')),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(address_box)
 
         if invoice_data.get('memo_tag'):
-            memo_para = Paragraph(
-                f"<b>MEMO/TAG:</b> <font face='Courier'>{invoice_data['memo_tag']}</font>",
-                normal_style
-            )
-            elements.append(Spacer(1, 0.1*inch))
-            elements.append(memo_para)
+            elements.append(Spacer(1, 0.15*inch))
+            memo_box_data = [[
+                f"<b>MEMO/TAG:</b> <font face='Courier' color='#2c3e50'>{invoice_data['memo_tag']}</font>"
+            ]]
+            memo_box = Table(memo_box_data, colWidths=[6.5*inch])
+            memo_box.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fff3cd')),
+                ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor('#ffc107')),
+                ('TOPPADDING', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+                ('LEFTPADDING', (0, 0), (-1, -1), 12),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ]))
+            elements.append(memo_box)
 
-        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Spacer(1, 0.25*inch))
 
-        # QR code
+        # QR code with better centering
         if invoice_data.get('qr_code_path') and os.path.exists(invoice_data['qr_code_path']):
-            qr_image = Image(invoice_data['qr_code_path'], width=2*inch, height=2*inch)
-            qr_caption = Paragraph("<i>Scan to pay</i>", small_style)
-            elements.append(qr_image)
-            elements.append(qr_caption)
-            elements.append(Spacer(1, 0.2*inch))
+            qr_container_data = [[Image(invoice_data['qr_code_path'], width=2*inch, height=2*inch)]]
+            qr_container = Table(qr_container_data, colWidths=[6.5*inch])
+            qr_container.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(qr_container)
 
-        # Important notes
+            qr_caption = Paragraph("<i>Scan QR code to pay</i>", small_style)
+            qr_caption_table = Table([[qr_caption]], colWidths=[6.5*inch])
+            qr_caption_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ]))
+            elements.append(qr_caption_table)
+            elements.append(Spacer(1, 0.25*inch))
+
+        # Important notes with better styling
         warning_style = ParagraphStyle(
             'Warning',
             parent=styles['Normal'],
-            fontSize=10,
-            textColor=colors.HexColor('#cc0000'),
+            fontSize=9,
+            textColor=colors.HexColor('#d63031'),
             spaceBefore=6,
-            spaceAfter=6
+            spaceAfter=6,
+            leading=13
         )
 
-        warning = Paragraph(
-            "<b>⚠ IMPORTANT:</b> Payment must be made to the EXACT address shown above. "
-            "Amount should match within 0.5% tolerance. Only send on the specified network. "
-            "Incorrect network or address may result in permanent loss of funds.",
-            warning_style
-        )
-        elements.append(warning)
-        elements.append(Spacer(1, 0.2*inch))
+        warning_data = [[
+            Paragraph(
+                "<b>⚠ IMPORTANT PAYMENT INFORMATION:</b><br/>"
+                "• Payment must be made to the EXACT address shown above<br/>"
+                "• Amount should match within 0.5% tolerance<br/>"
+                "• Only send on the specified network (wrong network = permanent loss)<br/>"
+                "• Double-check the address before sending funds",
+                warning_style
+            )
+        ]]
+
+        warning_box = Table(warning_data, colWidths=[6.5*inch])
+        warning_box.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#ffe5e5')),
+            ('BOX', (0, 0), (-1, -1), 1.5, colors.HexColor('#d63031')),
+            ('TOPPADDING', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 12),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ]))
+        elements.append(warning_box)
+        elements.append(Spacer(1, 0.25*inch))
 
         # Additional notes
         if invoice_data.get('notes'):
-            notes_para = Paragraph(f"<b>Notes:</b><br/>{invoice_data['notes']}", small_style)
+            notes_para = Paragraph(f"<b>Additional Notes:</b><br/>{invoice_data['notes']}", normal_style)
             elements.append(notes_para)
+            elements.append(Spacer(1, 0.2*inch))
 
-        # Footer
-        elements.append(Spacer(1, 0.3*inch))
+        # Footer with divider
+        footer_divider = Table([[""]], colWidths=[6.5*inch])
+        footer_divider.setStyle(TableStyle([
+            ('LINEABOVE', (0, 0), (-1, 0), 1, colors.HexColor('#bdc3c7')),
+        ]))
+        elements.append(Spacer(1, 0.2*inch))
+        elements.append(footer_divider)
+        elements.append(Spacer(1, 0.15*inch))
+
         footer_text = (
-            "For questions or support, please contact billing@deltaenergy.com<br/>"
-            "Thank you for your business!"
+            "<b>Contact Information:</b><br/>"
+            "For questions or support, please contact: billing@deltaenergy.com<br/><br/>"
+            "<i>Thank you for your business!</i>"
         )
         footer = Paragraph(footer_text, small_style)
         elements.append(footer)
