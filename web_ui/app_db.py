@@ -7662,8 +7662,10 @@ def api_create_invoice():
         pdf_filename = f"{invoice_number}_{invoice_date}.pdf"
         pdf_path = os.path.join(issued_dir, pdf_filename)
 
-        # Create PDF with modern design
-        doc = SimpleDocTemplate(pdf_path, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.75*inch)
+        # Create PDF with modern design and better margins
+        doc = SimpleDocTemplate(pdf_path, pagesize=letter,
+                               rightMargin=0.75*inch, leftMargin=0.75*inch,
+                               topMargin=0.75*inch, bottomMargin=0.75*inch)
         story = []
         styles = getSampleStyleSheet()
 
@@ -7709,15 +7711,15 @@ def api_create_invoice():
         # Get vendor entity data if available, or use custom address from form
         vendor_entity_data = business_entities.get(vendor_name)
 
-        # Header section with vendor name (gradient-like effect using rounded corners)
-        header_data = [[Paragraph(f"<b><font size='26' color='white'>{vendor_name.upper()}</font></b>", styles['Normal'])]]
-        header_table = Table(header_data, colWidths=[7.5*inch])
+        # Header section with vendor name - improved alignment
+        header_data = [[Paragraph(f"<b><font size='28' color='white'>{vendor_name.upper()}</font></b>", styles['Normal'])]]
+        header_table = Table(header_data, colWidths=[6.5*inch])
         header_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), delta_header),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 25),
-            ('TOPPADDING', (0, 0), (-1, -1), 22),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 22),
+            ('LEFTPADDING', (0, 0), (-1, -1), 20),
+            ('TOPPADDING', (0, 0), (-1, -1), 25),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 25),
             ('ROUNDEDCORNERS', [8, 8, 0, 0]),  # Rounded top corners
         ]))
         story.append(header_table)
@@ -7728,51 +7730,53 @@ def api_create_invoice():
             vendor_info_data = [[
                 Paragraph(f"<font size='9' color='#64748b'>{vendor_address}</font>", styles['Normal'])
             ]]
-            vendor_info_table = Table(vendor_info_data, colWidths=[7.5*inch])
+            vendor_info_table = Table(vendor_info_data, colWidths=[6.5*inch])
             vendor_info_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 25),
-                ('TOPPADDING', (0, 0), (-1, -1), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('LEFTPADDING', (0, 0), (-1, -1), 20),
+                ('TOPPADDING', (0, 0), (-1, -1), 15),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
             ]))
             story.append(vendor_info_table)
-            story.append(Spacer(1, 0.25*inch))
+            story.append(Spacer(1, 0.3*inch))
         elif vendor_entity_data:
             # Use predefined entity data
             vendor_info_data = [[
                 Paragraph(f"<font size='9' color='#64748b'>{vendor_entity_data['address']}<br/>{vendor_entity_data['tax_id']}<br/>{vendor_entity_data['contact']}</font>", styles['Normal'])
             ]]
-            vendor_info_table = Table(vendor_info_data, colWidths=[7.5*inch])
+            vendor_info_table = Table(vendor_info_data, colWidths=[6.5*inch])
             vendor_info_table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 25),
-                ('TOPPADDING', (0, 0), (-1, -1), 12),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('LEFTPADDING', (0, 0), (-1, -1), 20),
+                ('TOPPADDING', (0, 0), (-1, -1), 15),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
             ]))
             story.append(vendor_info_table)
-            story.append(Spacer(1, 0.25*inch))
+            story.append(Spacer(1, 0.3*inch))
         else:
-            story.append(Spacer(1, 0.35*inch))
+            story.append(Spacer(1, 0.4*inch))
 
-        # Invoice number and type badge with modern styling
+        # Invoice number and type badge with modern styling and better spacing
         invoice_type_color = crypto_gold if currency_type == 'crypto' else delta_blue
         invoice_type_text = 'CRYPTOCURRENCY INVOICE' if currency_type == 'crypto' else 'INVOICE'
         type_color_hex = '#f59e0b' if currency_type == 'crypto' else '#2563eb'
 
         invoice_header_data = [
-            [Paragraph(f"<b><font size='20' color='{type_color_hex}'>{invoice_type_text}</font></b>", styles['Normal']),
-             Paragraph(f"<b><font size='15' color='#475569'>#{invoice_number}</font></b>", styles['Normal'])]
+            [Paragraph(f"<b><font size='22' color='{type_color_hex}'>{invoice_type_text}</font></b>", styles['Normal']),
+             Paragraph(f"<b><font size='16' color='#475569'>#{invoice_number}</font></b>", styles['Normal'])]
         ]
-        invoice_header_table = Table(invoice_header_data, colWidths=[5*inch, 2.5*inch])
+        invoice_header_table = Table(invoice_header_data, colWidths=[4.2*inch, 2.3*inch])
         invoice_header_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (0, 0), 'LEFT'),
             ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(invoice_header_table)
-        story.append(Spacer(1, 0.25*inch))
+        story.append(Spacer(1, 0.3*inch))
 
-        # Two-column info section
+        # Two-column info section with improved layout
         left_col_data = [
             [Paragraph("<b>BILL TO:</b>", styles['Normal'])],
             [Paragraph(f"<font size='11'><b>{customer_name}</b></font>", styles['Normal'])],
@@ -7787,33 +7791,33 @@ def api_create_invoice():
         if description:
             right_col_data.append([Paragraph("<b>Description:</b>", styles['Normal']), Paragraph(description, styles['Normal'])])
 
-        left_table = Table(left_col_data, colWidths=[3.5*inch])
+        left_table = Table(left_col_data, colWidths=[3*inch])
         left_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), light_gray),
-            ('LEFTPADDING', (0, 0), (-1, -1), 18),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 18),
-            ('TOPPADDING', (0, 0), (-1, -1), 15),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+            ('LEFTPADDING', (0, 0), (-1, -1), 16),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 16),
+            ('TOPPADDING', (0, 0), (-1, -1), 16),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 16),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ROUNDEDCORNERS', [6, 6, 6, 6]),  # All corners rounded
             ('LINEABOVE', (0, 0), (-1, 0), 0.5, medium_gray),
         ]))
 
-        right_table = Table(right_col_data, colWidths=[1.3*inch, 2.2*inch])
+        right_table = Table(right_col_data, colWidths=[1.2*inch, 2*inch])
         right_table.setStyle(TableStyle([
-            ('LEFTPADDING', (0, 0), (-1, -1), 5),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
 
-        info_layout = Table([[left_table, right_table]], colWidths=[3.5*inch, 3.5*inch], hAlign='LEFT')
+        info_layout = Table([[left_table, right_table]], colWidths=[3*inch, 3.2*inch], hAlign='LEFT', spaceBefore=0, spaceAfter=0)
         info_layout.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         story.append(info_layout)
-        story.append(Spacer(1, 0.3*inch))
+        story.append(Spacer(1, 0.35*inch))
 
         # Crypto payment info box (if applicable) - with rounded corners and modern style
         if currency_type == 'crypto' and crypto_currency:
@@ -7860,7 +7864,7 @@ def api_create_invoice():
                     '', '', ''
                 ])
 
-        items_table = Table(line_items_data, colWidths=[3.8*inch, 0.8*inch, 1.4*inch, 1.5*inch])
+        items_table = Table(line_items_data, colWidths=[3.3*inch, 0.7*inch, 1.2*inch, 1.3*inch])
         items_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), delta_blue),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -7868,19 +7872,19 @@ def api_create_invoice():
             ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('TOPPADDING', (0, 0), (-1, 0), 14),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 14),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, light_gray]),
             ('GRID', (0, 0), (-1, -1), 0.5, medium_gray),
-            ('TOPPADDING', (0, 1), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
-            ('LEFTPADDING', (0, 0), (-1, -1), 12),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+            ('TOPPADDING', (0, 1), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 12),
+            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
             ('ROUNDEDCORNERS', [6, 6, 6, 6]),  # Rounded corners for table
         ]))
         story.append(items_table)
-        story.append(Spacer(1, 0.25*inch))
+        story.append(Spacer(1, 0.3*inch))
 
         # Summary table
         summary_data = []
