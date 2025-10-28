@@ -1408,7 +1408,7 @@ Return only the JSON object, no additional text.
         print(f"DEBUG: Extracting entity patterns for {entity_name} from transaction {transaction_id}")
 
         response = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-20250219",
             max_tokens=1000,
             temperature=0,
             messages=[{"role": "user", "content": prompt}]
@@ -5290,7 +5290,7 @@ CRITICAL RULES:
 - DO NOT suggest "transaction_keywords" or any other fields not listed above"""
 
         response = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-20250219",
             max_tokens=1000,
             temperature=0.3,
             messages=[{"role": "user", "content": prompt}]
@@ -13454,7 +13454,7 @@ def api_chatbot():
         logger.info(f"Chatbot request for tenant {tenant_id}: {message[:50]}...")
 
         response = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-5-sonnet-20250219",
             max_tokens=1024,
             system=system_prompt,
             messages=messages

@@ -439,7 +439,7 @@ Return ONLY JSON:
 """
 
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-20250219",
                 max_tokens=1500,
                 messages=[{
                     "role": "user",
@@ -496,7 +496,7 @@ Return ONLY JSON:
 """
 
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-3-5-sonnet-20250219",
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
