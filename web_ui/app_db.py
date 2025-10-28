@@ -7653,8 +7653,9 @@ def api_create_invoice():
         crypto_currency = data.get('crypto_currency')
         crypto_network = data.get('crypto_network')
 
-        # Create invoices/issued directory if it doesn't exist
-        issued_dir = os.path.join('invoices', 'issued')
+        # Create invoices/issued directory if it doesn't exist (use absolute path)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        issued_dir = os.path.join(base_dir, 'invoices', 'issued')
         os.makedirs(issued_dir, exist_ok=True)
 
         # Generate PDF filename
@@ -7976,8 +7977,9 @@ def api_download_invoice_pdf(filename):
         from flask import send_file
         import os
 
-        # Construct the full path
-        pdf_path = os.path.join('invoices', 'issued', filename)
+        # Construct the full path (use absolute path)
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        pdf_path = os.path.join(base_dir, 'invoices', 'issued', filename)
 
         # Check if file exists
         if not os.path.exists(pdf_path):
