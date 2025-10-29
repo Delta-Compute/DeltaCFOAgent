@@ -5195,12 +5195,16 @@ def register_reporting_routes(app):
                     'error': 'Start date cannot be after end date'
                 }), 400
 
+            # Get current tenant ID
+            tenant_id = get_current_tenant_id()
+
             # Create DRE report
             dre_report = DREReport(
                 company_name=company_name,
                 start_date=start_date,
                 end_date=end_date,
-                entity_filter=entity_filter if entity_filter else None
+                entity_filter=entity_filter if entity_filter else None,
+                tenant_id=tenant_id
             )
 
             # Generate PDF
@@ -5255,11 +5259,15 @@ def register_reporting_routes(app):
             else:
                 end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
+            # Get current tenant ID
+            tenant_id = get_current_tenant_id()
+
             # Create Balance Sheet report
             balance_sheet_report = BalanceSheetReport(
                 company_name=company_name,
                 end_date=end_date,
-                entity_filter=entity_filter if entity_filter else None
+                entity_filter=entity_filter if entity_filter else None,
+                tenant_id=tenant_id
             )
 
             # Generate PDF
@@ -5329,12 +5337,16 @@ def register_reporting_routes(app):
                     except ValueError:
                         return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD or MM/DD/YYYY'}), 400
 
+            # Get current tenant ID
+            tenant_id = get_current_tenant_id()
+
             # Create Cash Flow report
             cash_flow_report = CashFlowReport(
                 company_name=company_name,
                 start_date=start_date,
                 end_date=end_date,
-                entity_filter=entity_filter if entity_filter else None
+                entity_filter=entity_filter if entity_filter else None,
+                tenant_id=tenant_id
             )
 
             # Generate PDF content
@@ -5412,12 +5424,16 @@ def register_reporting_routes(app):
                     except ValueError:
                         return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD or MM/DD/YYYY'}), 400
 
+            # Get current tenant ID
+            tenant_id = get_current_tenant_id()
+
             # Create DMPL report
             dmpl_report = DMPLReport(
                 company_name=company_name,
                 start_date=start_date,
                 end_date=end_date,
-                entity_filter=entity_filter if entity_filter else None
+                entity_filter=entity_filter if entity_filter else None,
+                tenant_id=tenant_id
             )
 
             # Generate PDF content
