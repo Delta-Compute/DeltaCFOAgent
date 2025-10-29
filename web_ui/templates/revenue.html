@@ -723,12 +723,20 @@
                     <span style="font-size: 0.7rem;">▼</span>
                 </button>
 
-                <div id="userDropdown" style="display: none; position: absolute; top: calc(100% + 0.5rem); right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 200px; z-index: 1000;">
+                <div id="userDropdown" style="display: none; position: absolute; top: calc(100% + 0.5rem); right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 280px; z-index: 1000;">
                     <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0;">
                         <div style="font-weight: 600; color: #1e293b;" id="dropdownUserName">User</div>
                         <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;" id="dropdownUserEmail">email@example.com</div>
                     </div>
-                    <div style="padding: 0.5rem;">
+                    
+                    <!-- Switch Tenant Section -->
+                    <div id="tenantSwitcherSection" style="padding: 0.75rem 0.5rem; border-bottom: 1px solid #e2e8f0; display: none;">
+                        <div style="padding: 0 0.5rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+                            Switch Tenant
+                        </div>
+                        <div id="tenantsList"></div>
+                    </div>
+<div style="padding: 0.5rem;">
                         <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
                             Account Settings
                         </a>
@@ -3484,7 +3492,98 @@
                     alert('Error signing out. Please try again.');
                 }
             });
+
+            // Load user tenants for switcher
+            loadUserTenants();
         });
+
+        // Load and display user's tenants
+        async function loadUserTenants() {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.tenants && data.tenants.length > 1) {
+                    document.getElementById('tenantSwitcherSection').style.display = 'block';
+
+                    const tenantsList = document.getElementById('tenantsList');
+                    tenantsList.innerHTML = '';
+
+                    data.tenants.forEach(tenant => {
+                        const isActive = tenant.id === data.current_tenant?.id;
+                        const tenantItem = document.createElement('button');
+                        tenantItem.style.cssText = `
+                            width: 100%;
+                            text-align: left;
+                            background: ${isActive ? '#e0f2fe' : 'transparent'};
+                            border: none;
+                            padding: 0.75rem 1rem;
+                            cursor: pointer;
+                            border-radius: 6px;
+                            transition: background 0.2s;
+                            margin-bottom: 0.25rem;
+                        `;
+
+                        tenantItem.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: ${isActive ? '600' : '500'}; color: #1e293b; font-size: 0.9rem;">
+                                        ${tenant.company_name}
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.15rem;">
+                                        <span style="background: #f1f5f9; padding: 0.15rem 0.5rem; border-radius: 4px;">${tenant.role}</span>
+                                    </div>
+                                </div>
+                                ${isActive ? '<div style="color: #0ea5e9; font-size: 1rem;">✓</div>' : ''}
+                            </div>
+                        `;
+
+                        if (!isActive) {
+                            tenantItem.onmouseover = () => { tenantItem.style.background = '#f1f5f9'; };
+                            tenantItem.onmouseout = () => { tenantItem.style.background = 'transparent'; };
+                            tenantItem.onclick = () => switchTenant(tenant.id);
+                        }
+
+                        tenantsList.appendChild(tenantItem);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading tenants:', error);
+            }
+        }
+
+        // Switch to a different tenant
+        async function switchTenant(tenantId) {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch(`/api/auth/switch-tenant/${tenantId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert(data.message || 'Failed to switch tenant');
+                }
+            } catch (error) {
+                console.error('Error switching tenant:', error);
+                alert('Error switching tenant. Please try again.');
+            }
+        }
+    </script>
     </script>
 
     <style>

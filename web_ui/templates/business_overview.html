@@ -591,8 +591,12 @@
         // Load and display user's tenants
         async function loadUserTenants() {
             try {
-                const user = window.FirebaseAuth.getCurrentUser();
-                if (!user) return;
+                // Get the current user from Firebase auth
+                const user = auth.currentUser;
+                if (!user) {
+                    console.log('[TenantSwitcher] No user logged in');
+                    return;
+                }
 
                 const idToken = await user.getIdToken();
                 const response = await fetch('/api/auth/me', {
@@ -602,6 +606,11 @@
                 });
 
                 const data = await response.json();
+                console.log('[TenantSwitcher] API response:', data);
+
+                if (data.success && data.tenants) {
+                    console.log('[TenantSwitcher] User has', data.tenants.length, 'tenants');
+                }
 
                 if (data.success && data.tenants && data.tenants.length > 1) {
                     // Show tenant switcher section
@@ -663,7 +672,7 @@
         // Switch to a different tenant
         async function switchTenant(tenantId) {
             try {
-                const user = window.FirebaseAuth.getCurrentUser();
+                const user = auth.currentUser;
                 if (!user) return;
 
                 const idToken = await user.getIdToken();

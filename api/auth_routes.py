@@ -13,6 +13,7 @@ from middleware.auth_middleware import require_auth, get_current_user, get_curre
 # Import from root services module (not web_ui/services)
 from services.email_service import send_invitation_email, send_welcome_email
 from web_ui.database import db_manager
+from web_ui.tenant_context import set_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -558,33 +559,32 @@ def switch_tenant(tenant_id):
             SELECT
                 tc.id,
                 tc.company_name,
-                tc.description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
             JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.tenant_id = %s AND tu.is_active = true
         """
-        result = db_manager.execute_query(query, (user['id'], tenant_id))
+        result = db_manager.execute_query(query, (user['id'], tenant_id), fetch_one=True)
 
-        if not result or len(result) == 0:
+        if not result:
             return jsonify({
                 'success': False,
                 'error': 'access_denied',
                 'message': 'You do not have access to this tenant'
             }), 403
 
-        tenant_data = result[0]
         tenant = {
-            'id': tenant_data[0],
-            'company_name': tenant_data[1],
-            'description': tenant_data[2],
-            'role': tenant_data[3],
-            'permissions': tenant_data[4]
+            'id': result['id'],
+            'company_name': result['company_name'],
+            'description': result['company_description'],
+            'role': result['role'],
+            'permissions': result['permissions']
         }
 
-        # Update session
-        session['current_tenant_id'] = tenant_id
+        # Update session using tenant_context module
+        set_tenant_id(tenant_id)
 
         logger.info(f"User {user['email']} switched to tenant {tenant['company_name']}")
 

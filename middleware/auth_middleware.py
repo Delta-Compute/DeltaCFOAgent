@@ -62,17 +62,16 @@ def get_current_user_from_db(firebase_uid: str) -> Optional[Dict[str, Any]]:
             FROM users
             WHERE firebase_uid = %s AND is_active = true
         """
-        result = db_manager.execute_query(query, (firebase_uid,))
+        result = db_manager.execute_query(query, (firebase_uid,), fetch_one=True)
 
-        if result and len(result) > 0:
-            user_data = result[0]
+        if result:
             return {
-                'id': user_data[0],
-                'firebase_uid': user_data[1],
-                'email': user_data[2],
-                'display_name': user_data[3],
-                'user_type': user_data[4],
-                'is_active': user_data[5]
+                'id': result['id'],
+                'firebase_uid': result['firebase_uid'],
+                'email': result['email'],
+                'display_name': result['display_name'],
+                'user_type': result['user_type'],
+                'is_active': result['is_active']
             }
         return None
 
@@ -98,7 +97,7 @@ def get_user_tenants(user_id: str) -> List[Dict[str, Any]]:
             SELECT
                 tc.id,
                 tc.company_name,
-                tc.description,
+                tc.company_description,
                 tu.role,
                 tu.permissions,
                 tu.is_active
@@ -106,18 +105,19 @@ def get_user_tenants(user_id: str) -> List[Dict[str, Any]]:
             JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
-        results = db_manager.execute_query(query, (user_id,))
+        results = db_manager.execute_query(query, (user_id,), fetch_all=True)
 
         tenants = []
-        for row in results:
-            tenants.append({
-                'id': row[0],
-                'company_name': row[1],
-                'description': row[2],
-                'role': row[3],
-                'permissions': row[4],
-                'is_active': row[5]
-            })
+        if results:
+            for row in results:
+                tenants.append({
+                    'id': row['id'],
+                    'company_name': row['company_name'],
+                    'description': row['company_description'],
+                    'role': row['role'],
+                    'permissions': row['permissions'],
+                    'is_active': row['is_active']
+                })
 
         return tenants
 
