@@ -6,7 +6,7 @@ Provides database queries for company overview, KPIs, entities, and portfolio st
 
 import logging
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from decimal import Decimal
 import psycopg2.extras
 
@@ -52,11 +52,14 @@ class DataQueryService:
                 # execute_query returns dict rows by default, handle date serialization
                 overview = dict(result)
                 if overview.get('founded_date'):
-                    overview['founded_date'] = overview['founded_date'].isoformat()
+                    if isinstance(overview['founded_date'], (date, datetime)):
+                        overview['founded_date'] = overview['founded_date'].isoformat()
                 if overview.get('created_at'):
-                    overview['created_at'] = overview['created_at'].isoformat()
+                    if isinstance(overview['created_at'], (date, datetime)):
+                        overview['created_at'] = overview['created_at'].isoformat()
                 if overview.get('updated_at'):
-                    overview['updated_at'] = overview['updated_at'].isoformat()
+                    if isinstance(overview['updated_at'], (date, datetime)):
+                        overview['updated_at'] = overview['updated_at'].isoformat()
                 return overview
             else:
                 # Return default if no configuration exists
@@ -105,9 +108,11 @@ class DataQueryService:
             for row in results:
                 entity = dict(row)
                 if entity.get('created_at'):
-                    entity['created_at'] = entity['created_at'].isoformat()
+                    if isinstance(entity['created_at'], (date, datetime)):
+                        entity['created_at'] = entity['created_at'].isoformat()
                 if entity.get('updated_at'):
-                    entity['updated_at'] = entity['updated_at'].isoformat()
+                    if isinstance(entity['updated_at'], (date, datetime)):
+                        entity['updated_at'] = entity['updated_at'].isoformat()
                 # Convert Decimal to float for JSON serialization
                 if entity.get('annual_revenue'):
                     entity['annual_revenue'] = float(entity['annual_revenue'])
@@ -170,15 +175,31 @@ class DataQueryService:
                 WHERE tenant_id = %s AND (archived = FALSE OR archived IS NULL)
             """, (self.tenant_id,), fetch_one=True)
             if result and result['min_date']:
-                kpis['date_range'] = {
-                    'min': result['min_date'].isoformat(),
-                    'max': result['max_date'].isoformat()
-                }
-                # Calculate years of data
                 min_date = result['min_date']
                 max_date = result['max_date']
-                years = (max_date - min_date).days / 365.25
-                kpis['years_of_data'] = round(years, 1)
+
+                # Handle date serialization
+                if isinstance(min_date, (date, datetime)):
+                    min_date_str = min_date.isoformat()
+                else:
+                    min_date_str = str(min_date)
+
+                if isinstance(max_date, (date, datetime)):
+                    max_date_str = max_date.isoformat()
+                else:
+                    max_date_str = str(max_date)
+
+                kpis['date_range'] = {
+                    'min': min_date_str,
+                    'max': max_date_str
+                }
+
+                # Calculate years of data (only if dates are date objects)
+                if isinstance(min_date, (date, datetime)) and isinstance(max_date, (date, datetime)):
+                    years = (max_date - min_date).days / 365.25
+                    kpis['years_of_data'] = round(years, 1)
+                else:
+                    kpis['years_of_data'] = 0
             else:
                 kpis['date_range'] = {'min': 'N/A', 'max': 'N/A'}
                 kpis['years_of_data'] = 0
@@ -222,11 +243,12 @@ class DataQueryService:
             result = self.db_manager.execute_query("""
                 SELECT
                     COUNT(*) as total_invoices,
-                    COALESCE(SUM(amount_usd), 0) as total_invoice_value,
+                    COALESCE(SUM(COALESCE(usd_equivalent_amount, total_amount, 0)), 0) as total_invoice_value,
                     COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_invoices,
                     COUNT(CASE WHEN status = 'overdue' THEN 1 END) as overdue_invoices
                 FROM invoices
-            """, (), fetch_one=True)
+                WHERE tenant_id = %s
+            """, (self.tenant_id,), fetch_one=True)
             if result:
                 kpis['total_invoices'] = result['total_invoices']
                 kpis['total_invoice_value'] = float(result['total_invoice_value']) if result['total_invoice_value'] else 0.0
@@ -241,21 +263,21 @@ class DataQueryService:
             # Monthly trends (last 12 months)
             results = self.db_manager.execute_query("""
                 SELECT
-                    DATE_TRUNC('month', date) as month,
+                    DATE_TRUNC('month', date::date) as month,
                     SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
                     SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
                     COUNT(*) as transaction_count
                 FROM transactions
                 WHERE tenant_id = %s
-                AND date >= CURRENT_DATE - INTERVAL '12 months'
+                AND date::date >= CURRENT_DATE - INTERVAL '12 months'
                 AND (archived = FALSE OR archived IS NULL)
-                GROUP BY DATE_TRUNC('month', date)
+                GROUP BY DATE_TRUNC('month', date::date)
                 ORDER BY month DESC
                 LIMIT 12
             """, (self.tenant_id,), fetch_all=True)
             kpis['monthly_trends'] = [
                 {
-                    'month': row['month'].isoformat() if row['month'] else None,
+                    'month': row['month'].isoformat() if row['month'] and isinstance(row['month'], (date, datetime)) else (str(row['month']) if row['month'] else None),
                     'revenue': float(row['revenue']) if row['revenue'] else 0.0,
                     'expenses': float(row['expenses']) if row['expenses'] else 0.0,
                     'transaction_count': row['transaction_count']
