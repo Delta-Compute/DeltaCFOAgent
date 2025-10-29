@@ -314,9 +314,9 @@ class DataQueryService:
                         entity_type,
                         COUNT(*) as count
                     FROM business_entities
-                    WHERE active = TRUE
+                    WHERE active = TRUE AND tenant_id = %s
                     GROUP BY entity_type
-                """, fetch_all=True)
+                """, (self.tenant_id,), fetch_all=True)
 
                 if results:
                     for row in results:

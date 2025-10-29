@@ -430,7 +430,7 @@ class DREReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 26 / NBC TG 26)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         # Format period for display
         if start_date and end_date:
             if start_date.year == end_date.year:
@@ -454,6 +454,7 @@ class DREReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(datetime.now().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize financial data
         self.financial_data = None
@@ -465,6 +466,7 @@ class DREReport(DeltaCFOReportTemplate):
         try:
             # Get P&L data from the monthly-pl endpoint logic
             params = [self.start_date.isoformat(), self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -479,11 +481,12 @@ class DREReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as total_revenue,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_expenses
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
             result = db_manager.execute_query(revenue_query, tuple(all_params), fetch_one=True)
 
             total_revenue = float(result.get('total_revenue', 0) or 0) if result else 0
@@ -497,7 +500,8 @@ class DREReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as revenue,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as expenses
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
                 GROUP BY accounting_category, classified_entity
                 ORDER BY revenue DESC, expenses DESC
@@ -509,7 +513,7 @@ class DREReport(DeltaCFOReportTemplate):
             prev_start = self.start_date - relativedelta(years=1)
             prev_end = self.end_date - relativedelta(years=1)
 
-            prev_params = [prev_start.isoformat(), prev_end.isoformat()] + entity_params
+            prev_params = tenant_params + [prev_start.isoformat(), prev_end.isoformat()] + entity_params
             prev_result = db_manager.execute_query(revenue_query, tuple(prev_params), fetch_one=True)
 
             prev_revenue = float(prev_result.get('total_revenue', 0) or 0) if prev_result else 0
@@ -798,7 +802,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 03 / NBC TG 03)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         # Format period for display
         if start_date and end_date:
             if start_date.year == end_date.year:
@@ -822,6 +826,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(datetime.now().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize cash flow data
         self.cash_flow_data = None
@@ -833,6 +838,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         try:
             # Get cash flow data
             params = [self.start_date.isoformat(), self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -847,7 +853,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
@@ -857,7 +864,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as investing_inflows,
                     SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as investing_outflows
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
@@ -867,11 +875,12 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as financing_inflows,
                     SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as financing_outflows
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
 
             operating_result = db_manager.execute_query(operating_query, tuple(all_params), fetch_one=True)
             investing_result = db_manager.execute_query(investing_query, tuple(all_params), fetch_one=True)
@@ -895,12 +904,13 @@ class CashFlowReport(DeltaCFOReportTemplate):
             beginning_cash_query = f"""
                 SELECT SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as beginning_cash
                 FROM transactions
-                WHERE date::date < %s
+                WHERE tenant_id = %s
+                AND date::date < %s
                 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%cash%', '%bank%', '%deposit%'])
                 {entity_filter_condition}
             """
 
-            beginning_params = [self.start_date.isoformat()] + entity_params
+            beginning_params = tenant_params + [self.start_date.isoformat()] + entity_params
             beginning_result = db_manager.execute_query(beginning_cash_query, tuple(beginning_params), fetch_one=True)
             beginning_cash = float(beginning_result.get('beginning_cash', 0) or 0) if beginning_result else 0
 
@@ -909,7 +919,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Previous period comparison
             prev_start = self.start_date - relativedelta(years=1)
             prev_end = self.end_date - relativedelta(years=1)
-            prev_params = [prev_start.isoformat(), prev_end.isoformat()] + entity_params
+            prev_params = tenant_params + [prev_start.isoformat(), prev_end.isoformat()] + entity_params
 
             prev_operating_result = db_manager.execute_query(operating_query, tuple(prev_params), fetch_one=True)
             prev_cash_receipts = float(prev_operating_result.get('cash_receipts', 0) or 0) if prev_operating_result else 0
@@ -1146,7 +1156,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 26 / NBC TG 26)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         # Format period for display
         if end_date:
             period = f"Posição em {end_date.strftime('%d/%m/%Y')}"
@@ -1162,6 +1172,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(datetime.now().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize financial data
         self.financial_data = None
@@ -1173,6 +1184,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
         try:
             # Get balance sheet data
             params = [self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -1186,7 +1198,8 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
                 SELECT
                     SUM(CASE WHEN usd_equivalent > 0 THEN usd_equivalent ELSE 0 END) as total_assets
                 FROM transactions
-                WHERE date::date <= %s
+                WHERE tenant_id = %s
+                AND date::date <= %s
                 {entity_filter_condition}
             """
 
@@ -1195,11 +1208,12 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
                 SELECT
                     SUM(CASE WHEN usd_equivalent < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_liabilities
                 FROM transactions
-                WHERE date::date <= %s
+                WHERE tenant_id = %s
+                AND date::date <= %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
             assets_result = db_manager.execute_query(assets_query, tuple(all_params), fetch_one=True)
             liabilities_result = db_manager.execute_query(liabilities_query, tuple(all_params), fetch_one=True)
 
@@ -1211,7 +1225,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
 
             # Previous period comparison (1 year ago)
             prev_end = self.end_date - relativedelta(years=1)
-            prev_params = [prev_end.isoformat()] + entity_params
+            prev_params = tenant_params + [prev_end.isoformat()] + entity_params
 
             prev_assets_result = db_manager.execute_query(assets_query, tuple(prev_params), fetch_one=True)
             prev_liabilities_result = db_manager.execute_query(liabilities_query, tuple(prev_params), fetch_one=True)
@@ -1452,7 +1466,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 03 / NBC TG 03)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         # Format period for display
         if start_date and end_date:
             if start_date.year == end_date.year:
@@ -1476,6 +1490,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(datetime.now().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize cash flow data
         self.cash_flow_data = None
@@ -1487,6 +1502,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         try:
             # Get cash flow data
             params = [self.start_date.isoformat(), self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -1501,7 +1517,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
@@ -1511,7 +1528,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as investing_inflows,
                     SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as investing_outflows
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
@@ -1521,11 +1539,12 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN 0 ELSE 0 END) as financing_inflows,
                     SUM(CASE WHEN amount < 0 THEN 0 ELSE 0 END) as financing_outflows
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
 
             operating_result = db_manager.execute_query(operating_query, tuple(all_params), fetch_one=True)
             investing_result = db_manager.execute_query(investing_query, tuple(all_params), fetch_one=True)
@@ -1549,12 +1568,13 @@ class CashFlowReport(DeltaCFOReportTemplate):
             beginning_cash_query = f"""
                 SELECT SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as beginning_cash
                 FROM transactions
-                WHERE date::date < %s
+                WHERE tenant_id = %s
+                AND date::date < %s
                 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%cash%', '%bank%', '%deposit%'])
                 {entity_filter_condition}
             """
 
-            beginning_params = [self.start_date.isoformat()] + entity_params
+            beginning_params = tenant_params + [self.start_date.isoformat()] + entity_params
             beginning_result = db_manager.execute_query(beginning_cash_query, tuple(beginning_params), fetch_one=True)
             beginning_cash = float(beginning_result.get('beginning_cash', 0) or 0) if beginning_result else 0
 
@@ -1563,7 +1583,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Previous period comparison
             prev_start = self.start_date - relativedelta(years=1)
             prev_end = self.end_date - relativedelta(years=1)
-            prev_params = [prev_start.isoformat(), prev_end.isoformat()] + entity_params
+            prev_params = tenant_params + [prev_start.isoformat(), prev_end.isoformat()] + entity_params
 
             prev_operating_result = db_manager.execute_query(operating_query, tuple(prev_params), fetch_one=True)
             prev_cash_receipts = float(prev_operating_result.get('cash_receipts', 0) or 0) if prev_operating_result else 0

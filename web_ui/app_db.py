@@ -3752,6 +3752,49 @@ def reports():
     except Exception as e:
         return f"Error loading CFO dashboard: {str(e)}", 500
 
+@app.route('/api/auth/switch-tenant/<tenant_id>', methods=['POST'])
+def api_switch_tenant(tenant_id):
+    """API endpoint to switch active tenant for current user session"""
+    try:
+        print(f"[TENANT SWITCH] Request to switch to tenant: {tenant_id}", flush=True)
+
+        # TODO: Add validation that user has access to this tenant
+        # For now, allow switching to 'delta' or 'nascimento'
+        valid_tenants = ['delta', 'nascimento']
+
+        if tenant_id not in valid_tenants:
+            print(f"[TENANT SWITCH] Invalid tenant_id: {tenant_id}", flush=True)
+            return jsonify({
+                'success': False,
+                'message': f'Invalid tenant ID. Valid tenants: {", ".join(valid_tenants)}'
+            }), 400
+
+        # Set tenant in BOTH session contexts:
+        # 1. tenant_context.py uses session['tenant_id'] (string)
+        set_tenant_id(tenant_id)
+
+        # 2. auth_middleware.py uses session['current_tenant_id'] (same string for now)
+        session['current_tenant_id'] = tenant_id
+
+        print(f"[TENANT SWITCH] Successfully switched to tenant: {tenant_id}", flush=True)
+        print(f"[TENANT SWITCH] session['tenant_id'] = {session.get('tenant_id')}", flush=True)
+        print(f"[TENANT SWITCH] session['current_tenant_id'] = {session.get('current_tenant_id')}", flush=True)
+
+        return jsonify({
+            'success': True,
+            'tenant_id': tenant_id,
+            'message': f'Successfully switched to tenant: {tenant_id}'
+        })
+
+    except Exception as e:
+        print(f"[TENANT SWITCH] Error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error switching tenant: {str(e)}'
+        }), 500
+
 @app.route('/api/transactions')
 def api_transactions():
     """API endpoint to get filtered transactions with pagination"""
@@ -5920,6 +5963,7 @@ def api_ai_find_similar_after_suggestion():
 def api_get_accounting_categories():
     """API endpoint to fetch distinct accounting categories from database"""
     try:
+        tenant_id = get_current_tenant_id()
         from database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
@@ -5929,13 +5973,14 @@ def api_get_accounting_categories():
         query = """
             SELECT DISTINCT accounting_category
             FROM transactions
-            WHERE accounting_category IS NOT NULL
+            WHERE tenant_id = %s
+            AND accounting_category IS NOT NULL
             AND accounting_category != 'N/A'
             AND accounting_category != ''
             ORDER BY accounting_category
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (tenant_id,))
         rows = cursor.fetchall()
         conn.close()
 
@@ -5955,6 +6000,7 @@ def api_get_accounting_categories():
 def api_get_subcategories():
     """API endpoint to fetch distinct subcategories from database"""
     try:
+        tenant_id = get_current_tenant_id()
         from database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
@@ -5964,13 +6010,14 @@ def api_get_subcategories():
         query = """
             SELECT DISTINCT subcategory
             FROM transactions
-            WHERE subcategory IS NOT NULL
+            WHERE tenant_id = %s
+            AND subcategory IS NOT NULL
             AND subcategory != 'N/A'
             AND subcategory != ''
             ORDER BY subcategory
         """
 
-        cursor.execute(query)
+        cursor.execute(query, (tenant_id,))
         rows = cursor.fetchall()
         conn.close()
 
@@ -7826,6 +7873,7 @@ def api_get_next_invoice_number():
 def api_get_vendors():
     """API endpoint to get unique vendors from invoices"""
     try:
+        tenant_id = get_current_tenant_id()
         conn = db_manager.get_connection()
         cursor = conn.cursor()
 
@@ -7833,10 +7881,11 @@ def api_get_vendors():
         cursor.execute("""
             SELECT DISTINCT vendor_name
             FROM invoices
-            WHERE vendor_name IS NOT NULL
+            WHERE tenant_id = %s
+            AND vendor_name IS NOT NULL
             AND vendor_name != ''
             ORDER BY vendor_name
-        """)
+        """, (tenant_id,))
 
         vendors = [row[0] for row in cursor.fetchall()]
         cursor.close()
@@ -11551,6 +11600,7 @@ def api_get_matching_progress():
 def api_get_pending_matches():
     """Retorna matches pendentes de revisão"""
     try:
+        tenant_id = get_current_tenant_id()
         from database import db_manager
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 20)), 100)
@@ -11584,19 +11634,25 @@ def api_get_pending_matches():
             JOIN invoices i ON pm.invoice_id = i.id
             JOIN transactions t ON pm.transaction_id = t.transaction_id
             WHERE pm.status = 'pending'
+            AND i.tenant_id = %s
+            AND t.tenant_id = %s
             ORDER BY pm.score DESC, pm.created_at DESC
             LIMIT %s OFFSET %s
         """
 
-        matches = db_manager.execute_query(query, (per_page, offset), fetch_all=True)
+        matches = db_manager.execute_query(query, (tenant_id, tenant_id, per_page, offset), fetch_all=True)
 
         # Get total count
         count_query = """
             SELECT COUNT(*) as total
-            FROM pending_invoice_matches
-            WHERE status = 'pending'
+            FROM pending_invoice_matches pm
+            JOIN invoices i ON pm.invoice_id = i.id
+            JOIN transactions t ON pm.transaction_id = t.transaction_id
+            WHERE pm.status = 'pending'
+            AND i.tenant_id = %s
+            AND t.tenant_id = %s
         """
-        total_result = db_manager.execute_query(count_query, fetch_one=True)
+        total_result = db_manager.execute_query(count_query, (tenant_id, tenant_id), fetch_one=True)
         total = total_result['total'] if total_result else 0
 
         # Format matches for frontend
@@ -11931,6 +11987,7 @@ def api_manual_match():
 def api_get_matched_pairs():
     """Retorna invoices que já foram matchados com transações"""
     try:
+        tenant_id = get_current_tenant_id()
         from database import db_manager
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 20)), 100)
@@ -11960,19 +12017,24 @@ def api_get_matched_pairs():
             JOIN transactions t ON i.linked_transaction_id = t.transaction_id
             LEFT JOIN invoice_match_log log ON i.id = log.invoice_id AND t.transaction_id = log.transaction_id
             WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+            AND i.tenant_id = %s
+            AND t.tenant_id = %s
             ORDER BY COALESCE(log.created_at, i.created_at) DESC
             LIMIT %s OFFSET %s
         """
 
-        pairs = db_manager.execute_query(query, (per_page, offset), fetch_all=True)
+        pairs = db_manager.execute_query(query, (tenant_id, tenant_id, per_page, offset), fetch_all=True)
 
         # Get total count
         count_query = """
             SELECT COUNT(*) as total
-            FROM invoices
-            WHERE linked_transaction_id IS NOT NULL AND linked_transaction_id != ''
+            FROM invoices i
+            JOIN transactions t ON i.linked_transaction_id = t.transaction_id
+            WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+            AND i.tenant_id = %s
+            AND t.tenant_id = %s
         """
-        total_result = db_manager.execute_query(count_query, fetch_one=True)
+        total_result = db_manager.execute_query(count_query, (tenant_id, tenant_id), fetch_one=True)
         total = total_result['total'] if total_result else 0
 
         # Format pairs for frontend
@@ -12051,10 +12113,11 @@ def api_get_revenue_stats():
         # Pending matches for review
         query = """
             SELECT COUNT(*) as pending
-            FROM pending_invoice_matches
-            WHERE status = 'pending'
+            FROM pending_invoice_matches pm
+            JOIN invoices i ON pm.invoice_id = i.id
+            WHERE pm.status = 'pending' AND i.tenant_id = %s
         """
-        result = db_manager.execute_query(query, fetch_one=True)
+        result = db_manager.execute_query(query, (tenant_id,), fetch_one=True)
         stats['pending_matches'] = result['pending'] if result else 0
 
         # Total revenue amounts (using USD equivalent for multi-currency support)
@@ -12101,29 +12164,33 @@ def api_get_revenue_stats():
         # Recent matching activity (last 30 days)
         query = """
             SELECT COUNT(*) as recent_matches
-            FROM invoice_match_log
-            WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+            FROM invoice_match_log iml
+            JOIN invoices i ON iml.invoice_id = i.id
+            WHERE iml.created_at >= CURRENT_DATE - INTERVAL '30 days'
+            AND i.tenant_id = %s
         """
-        result = db_manager.execute_query(query, fetch_one=True)
+        result = db_manager.execute_query(query, (tenant_id,), fetch_one=True)
         stats['recent_matches'] = result['recent_matches'] if result else 0
 
         # Match types breakdown
         query = """
             SELECT
-                match_type,
+                iml.match_type,
                 COUNT(*) as count
-            FROM invoice_match_log
-            WHERE action IN ('AUTO_APPLIED', 'MANUAL_CONFIRMED', 'MANUAL_MATCH')
-            GROUP BY match_type
+            FROM invoice_match_log iml
+            JOIN invoices i ON iml.invoice_id = i.id
+            WHERE iml.action IN ('AUTO_APPLIED', 'MANUAL_CONFIRMED', 'MANUAL_MATCH')
+            AND i.tenant_id = %s
+            GROUP BY iml.match_type
             ORDER BY count DESC
         """
-        result = db_manager.execute_query(query, fetch_all=True)
+        result = db_manager.execute_query(query, (tenant_id,), fetch_all=True)
         stats['match_types'] = {row['match_type']: row['count'] for row in result} if result else {}
 
         # Transaction statistics (opposite side of matching)
         # Total transactions
-        query = "SELECT COUNT(*) as total FROM transactions"
-        result = db_manager.execute_query(query, fetch_one=True)
+        query = "SELECT COUNT(*) as total FROM transactions WHERE tenant_id = %s"
+        result = db_manager.execute_query(query, (tenant_id,), fetch_one=True)
         stats['total_transactions'] = result['total'] if result else 0
 
         # Linked transactions (transactions that are already linked to invoices)
@@ -12132,8 +12199,9 @@ def api_get_revenue_stats():
             FROM transactions t
             JOIN invoices i ON i.linked_transaction_id = t.transaction_id
             WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+            AND t.tenant_id = %s AND i.tenant_id = %s
         """
-        result = db_manager.execute_query(query, fetch_one=True)
+        result = db_manager.execute_query(query, (tenant_id, tenant_id), fetch_one=True)
         stats['linked_transactions'] = result['linked'] if result else 0
 
         # Unlinked transactions (transactions not linked to any invoice)
@@ -12143,9 +12211,9 @@ def api_get_revenue_stats():
         query = """
             SELECT COUNT(*) as revenue_transactions
             FROM transactions
-            WHERE amount > 0
+            WHERE amount > 0 AND tenant_id = %s
         """
-        result = db_manager.execute_query(query, fetch_one=True)
+        result = db_manager.execute_query(query, (tenant_id,), fetch_one=True)
         stats['revenue_transactions'] = result['revenue_transactions'] if result else 0
 
         # Unlinked revenue transactions (positive transactions not linked to invoices)
@@ -12153,13 +12221,15 @@ def api_get_revenue_stats():
             SELECT COUNT(*) as unlinked_revenue_transactions
             FROM transactions t
             WHERE t.amount > 0
+            AND t.tenant_id = %s
             AND t.transaction_id NOT IN (
                 SELECT DISTINCT i.linked_transaction_id
                 FROM invoices i
                 WHERE i.linked_transaction_id IS NOT NULL AND i.linked_transaction_id != ''
+                AND i.tenant_id = %s
             )
         """
-        result = db_manager.execute_query(query, fetch_one=True)
+        result = db_manager.execute_query(query, (tenant_id, tenant_id), fetch_one=True)
         stats['unlinked_revenue_transactions'] = result['unlinked_revenue_transactions'] if result else 0
 
         return jsonify({

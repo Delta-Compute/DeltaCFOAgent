@@ -29,6 +29,7 @@ from database import db_manager
 from pdf_reports import DREReport, BalanceSheetReport
 from cash_flow_report_new import CashFlowReport
 from dmpl_report_new import DMPLReport
+from tenant_context import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -902,6 +903,9 @@ def register_reporting_routes(app):
         try:
             start_time = datetime.now()
 
+            # Get current tenant ID
+            tenant_id = get_current_tenant_id()
+
             # Parse parameters
             period = request.args.get('period', 'all_time')
             start_date_str = request.args.get('start_date')
@@ -995,6 +999,7 @@ def register_reporting_routes(app):
                         CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END as expenses
                     FROM transactions
                     WHERE amount::text != 'NaN' AND amount IS NOT NULL
+                    AND tenant_id = %s
                     {date_filter}
                     {entity_filter_clause}
 
@@ -1014,6 +1019,7 @@ def register_reporting_routes(app):
                     WHERE total_amount IS NOT NULL
                         AND total_amount::text != 'NaN'
                         AND total_amount::text != ''
+                        AND tenant_id = %s
                         {date_filter}
                         {entity_filter_clause.replace('classified_entity', 'vendor_name').replace('accounting_category', 'vendor_name') if entity_filter_clause else ''}
                 )
@@ -1021,7 +1027,7 @@ def register_reporting_routes(app):
                 UNION ALL
                 SELECT 'Expenses' as type, COALESCE(SUM(expenses), 0) as amount FROM combined_data
             """
-            revenue_expenses_params = date_params + entity_params + date_params + entity_params
+            revenue_expenses_params = [tenant_id] + date_params + entity_params + [tenant_id] + date_params + entity_params
             revenue_expenses_data = safe_query(revenue_expenses_query, revenue_expenses_params, fetch_all=True)
 
             # Top revenue categories - consolidating transactions + invoices
@@ -1034,6 +1040,7 @@ def register_reporting_routes(app):
                         1 as count
                     FROM transactions
                     WHERE amount > 0 AND amount::text != 'NaN' AND amount IS NOT NULL
+                    AND tenant_id = %s
                     {date_filter}
                     {entity_filter_clause}
 
@@ -1054,6 +1061,7 @@ def register_reporting_routes(app):
                     WHERE total_amount IS NOT NULL
                         AND total_amount::text != 'NaN'
                         AND total_amount::text != ''
+                        AND tenant_id = %s
                         {date_filter}
                         {entity_filter_clause.replace('classified_entity', 'vendor_name').replace('accounting_category', 'vendor_name') if entity_filter_clause else ''}
                 )
@@ -1067,7 +1075,7 @@ def register_reporting_routes(app):
                 ORDER BY amount DESC
                 LIMIT 8
             """
-            categories_params = date_params + entity_params + date_params + entity_params
+            categories_params = [tenant_id] + date_params + entity_params + [tenant_id] + date_params + entity_params
             categories_data = safe_query(categories_query, categories_params, fetch_all=True)
 
             # Monthly trend data - with dynamic filters
@@ -1092,13 +1100,13 @@ def register_reporting_routes(app):
                 monthly_params = entity_params
             else:
                 # PostgreSQL version with proper date filtering
-                base_where = "amount::text != 'NaN' AND amount IS NOT NULL"
+                base_where = "amount::text != 'NaN' AND amount IS NOT NULL AND tenant_id = %s"
                 if start_date_str and end_date_str:
                     base_where += " AND date::date >= %s::date AND date::date <= %s::date"
-                    monthly_params = [start_date_str, end_date_str] + entity_params + [start_date_str, end_date_str] + entity_params
+                    monthly_params = [tenant_id, start_date_str, end_date_str] + entity_params + [tenant_id] + [start_date_str, end_date_str] + entity_params
                 else:
                     base_where += " AND date::date >= CURRENT_DATE - INTERVAL '6 months'"
-                    monthly_params = entity_params + entity_params
+                    monthly_params = [tenant_id] + entity_params + [tenant_id] + entity_params
 
                 monthly_trend_query = f"""
                     WITH combined_monthly AS (
@@ -1128,6 +1136,7 @@ def register_reporting_routes(app):
                         WHERE total_amount IS NOT NULL
                             AND total_amount::text != 'NaN'
                             AND total_amount::text != ''
+                            AND tenant_id = %s
                             {date_filter}
                             {entity_filter_clause.replace('classified_entity', 'vendor_name').replace('accounting_category', 'vendor_name') if entity_filter_clause else ''}
                     )

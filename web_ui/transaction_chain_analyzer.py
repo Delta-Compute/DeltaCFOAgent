@@ -350,20 +350,23 @@ class TransactionChainAnalyzer:
     # Helper methods for database queries
     def _get_transaction_by_id(self, transaction_id: str) -> Optional[Dict]:
         """Get transaction by ID"""
-        query = "SELECT * FROM transactions WHERE transaction_id = %s"
-        result = db_manager.execute_query(query, (transaction_id,), fetch_one=True)
+        tenant_id = get_current_tenant_id()
+        query = "SELECT * FROM transactions WHERE transaction_id = %s AND tenant_id = %s"
+        result = db_manager.execute_query(query, (transaction_id, tenant_id), fetch_one=True)
         return dict(result) if result else None
 
     def _find_similar_crypto_transactions(self, crypto_type: str, crypto_amount: Optional[str],
                                         start_date: datetime, end_date: datetime,
                                         exclude_id: str) -> List[Dict]:
         """Find similar cryptocurrency transactions"""
+        tenant_id = get_current_tenant_id()
         query = """
             SELECT transaction_id, description, amount, date, classified_entity
             FROM transactions
             WHERE UPPER(description) LIKE %s
             AND transaction_id != %s
             AND STR_TO_DATE(date, '%%m/%%d/%%Y') BETWEEN %s AND %s
+            AND tenant_id = %s
             ORDER BY date DESC
             LIMIT 10
         """
@@ -371,7 +374,7 @@ class TransactionChainAnalyzer:
         pattern = f"%{crypto_type}%"
         results = db_manager.execute_query(
             query,
-            (pattern, exclude_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')),
+            (pattern, exclude_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), tenant_id),
             fetch_all=True
         )
 
@@ -380,12 +383,14 @@ class TransactionChainAnalyzer:
     def _find_vendor_transactions(self, vendor_name: str, start_date: datetime,
                                 end_date: datetime, exclude_id: str) -> List[Dict]:
         """Find transactions from same vendor"""
+        tenant_id = get_current_tenant_id()
         query = """
             SELECT transaction_id, description, amount, date, classified_entity
             FROM transactions
             WHERE UPPER(description) LIKE %s
             AND transaction_id != %s
             AND STR_TO_DATE(date, '%%m/%%d/%%Y') BETWEEN %s AND %s
+            AND tenant_id = %s
             ORDER BY date DESC
             LIMIT 15
         """
@@ -393,7 +398,7 @@ class TransactionChainAnalyzer:
         pattern = f"%{vendor_name}%"
         results = db_manager.execute_query(
             query,
-            (pattern, exclude_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')),
+            (pattern, exclude_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), tenant_id),
             fetch_all=True
         )
 

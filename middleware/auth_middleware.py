@@ -226,11 +226,26 @@ def require_auth(f):
             # Find tenant in user's tenants
             current_tenant = next((t for t in tenants if t['id'] == current_tenant_id), None)
             if current_tenant:
+                # User has access to session tenant - use it
                 set_current_tenant(current_tenant)
+                # Also sync tenant_context.py session key
+                from web_ui.tenant_context import set_tenant_id
+                set_tenant_id(current_tenant_id)
+            else:
+                # Session tenant not in user's list - reset to first tenant
+                if tenants:
+                    set_current_tenant(tenants[0])
+                    session['current_tenant_id'] = tenants[0]['id']
+                    # Also sync tenant_context.py session key
+                    from web_ui.tenant_context import set_tenant_id
+                    set_tenant_id(tenants[0]['id'])
         elif tenants:
-            # Default to first tenant
+            # No session tenant - default to first tenant
             set_current_tenant(tenants[0])
             session['current_tenant_id'] = tenants[0]['id']
+            # Also sync tenant_context.py session key
+            from web_ui.tenant_context import set_tenant_id
+            set_tenant_id(tenants[0]['id'])
 
         return f(*args, **kwargs)
 

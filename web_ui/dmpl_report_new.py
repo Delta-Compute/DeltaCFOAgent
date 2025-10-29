@@ -28,7 +28,7 @@ class DMPLReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 26 / NBC TG 26)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         title = f"Demonstração das Mutações do Patrimônio Líquido (DMPL)"
         period = f"{start_date.strftime('%d/%m/%Y')} a {end_date.strftime('%d/%m/%Y')}" if start_date and end_date else self._get_current_period()
         super().__init__(title, company_name, period)
@@ -36,6 +36,7 @@ class DMPLReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(date.today().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize data
         self.dmpl_data = None
@@ -48,6 +49,7 @@ class DMPLReport(DeltaCFOReportTemplate):
         try:
             # Use exact same pattern as DRE
             params = [self.start_date.isoformat(), self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -62,11 +64,12 @@ class DMPLReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as total_revenue,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_expenses
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
             result = db_manager.execute_query(revenue_query, tuple(all_params), fetch_one=True)
 
             total_revenue = float(result.get('total_revenue', 0) or 0) if result else 0
@@ -80,11 +83,12 @@ class DMPLReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) -
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cumulative_equity
                 FROM transactions
-                WHERE date::date <= %s
+                WHERE tenant_id = %s
+                AND date::date <= %s
                 {entity_filter_condition}
             """
 
-            beginning_params = [prev_year_end.isoformat()] + entity_params
+            beginning_params = tenant_params + [prev_year_end.isoformat()] + entity_params
             beginning_result = db_manager.execute_query(beginning_query, tuple(beginning_params), fetch_one=True)
             beginning_equity = float(beginning_result.get('cumulative_equity', 0) or 0) if beginning_result else 0
 

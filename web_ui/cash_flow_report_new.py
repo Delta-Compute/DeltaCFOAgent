@@ -28,7 +28,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
     Following Brazilian accounting standards (CPC 03 / NBC TG 03)
     """
 
-    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None):
+    def __init__(self, company_name: str = "Delta Mining", start_date: date = None, end_date: date = None, entity_filter: str = None, tenant_id: str = 'delta'):
         title = f"Demonstração de Fluxo de Caixa (DFC)"
         period = f"{start_date.strftime('%d/%m/%Y')} a {end_date.strftime('%d/%m/%Y')}" if start_date and end_date else self._get_current_period()
         super().__init__(title, company_name, period)
@@ -36,6 +36,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         self.start_date = start_date or date(date.today().year, 1, 1)
         self.end_date = end_date or date.today()
         self.entity_filter = entity_filter
+        self.tenant_id = tenant_id
 
         # Initialize data
         self.cash_flow_data = None
@@ -48,6 +49,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
         try:
             # Use exact same pattern as DRE
             params = [self.start_date.isoformat(), self.end_date.isoformat()]
+            tenant_params = [self.tenant_id]
             entity_params = []
 
             if self.entity_filter:
@@ -62,11 +64,12 @@ class CashFlowReport(DeltaCFOReportTemplate):
                     SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
                     SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
                 FROM transactions
-                WHERE date::date BETWEEN %s AND %s
+                WHERE tenant_id = %s
+                AND date::date BETWEEN %s AND %s
                 {entity_filter_condition}
             """
 
-            all_params = params + entity_params
+            all_params = tenant_params + params + entity_params
             result = db_manager.execute_query(revenue_query, tuple(all_params), fetch_one=True)
 
             cash_receipts = float(result.get('cash_receipts', 0) or 0) if result else 0
