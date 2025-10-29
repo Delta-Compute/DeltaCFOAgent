@@ -95,12 +95,8 @@ except ImportError as e:
     logger.warning(f"Firebase authentication not available: {e}")
     FIREBASE_AVAILABLE = False
 
-# Authentication blueprints removed - causing import circular issues and 503 errors on Cloud Run
-# These modules were causing initialization timeouts
-# from api.auth_routes import auth_bp
-# from api.user_routes import user_bp
-# from api.tenant_routes import tenant_bp
-# from api.cfo_routes import cfo_bp
+# Authentication blueprints - using lazy loading to avoid circular imports
+# These blueprints are registered AFTER app initialization to prevent timeout issues
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB max file size for batch uploads
@@ -120,11 +116,33 @@ init_tenant_context(app)
 # Register CFO reporting routes
 register_reporting_routes(app)
 
-# Blueprint registrations removed - causing import circular issues and 503 errors on Cloud Run
-# app.register_blueprint(auth_bp)
-# app.register_blueprint(user_bp)
-# app.register_blueprint(tenant_bp)
-# app.register_blueprint(cfo_bp)
+# Lazy blueprint registration function to avoid circular imports
+def register_auth_blueprints():
+    """
+    Register authentication blueprints using lazy loading.
+    This function is called after app initialization to avoid circular imports.
+    """
+    try:
+        # Import blueprints only when needed
+        from api.auth_routes import auth_bp
+        from api.user_routes import user_bp
+
+        # Register blueprints
+        app.register_blueprint(auth_bp)
+        app.register_blueprint(user_bp)
+
+        logger.info("Authentication blueprints registered successfully")
+        return True
+    except ImportError as e:
+        logger.warning(f"Could not import authentication blueprints: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error registering authentication blueprints: {e}")
+        return False
+
+# Register blueprints after app is fully initialized
+# This happens after all database and other services are ready
+auth_blueprints_registered = False
 
 # ====================================================================
 # Authentication Page Routes
@@ -171,14 +189,58 @@ def users_page():
     # TODO: Add authentication and permission check
     return render_template('users.html')
 
-# ====================================================================
-# Firebase Authentication API Routes
-# ====================================================================
-# These are basic authentication endpoints to replace the removed blueprints
+# TEMPORARY: Admin endpoint to delete Firebase user
+@app.route('/admin/get-firebase-user-by-email/<email>', methods=['GET'])
+def admin_get_firebase_user_by_email(email):
+    """TEMPORARY: Find Firebase user by email"""
+    try:
+        from auth.firebase_config import initialize_firebase
+        from firebase_admin import auth
 
-@app.route('/api/auth/login', methods=['POST'])
-def api_login():
-    """
+        initialize_firebase()
+        user = auth.get_user_by_email(email)
+
+        return jsonify({
+            'success': True,
+            'user': {
+                'uid': user.uid,
+                'email': user.email,
+                'display_name': user.display_name,
+                'email_verified': user.email_verified,
+                'disabled': user.disabled
+            }
+        }), 200
+    except auth.UserNotFoundError:
+        return jsonify({'success': False, 'message': 'User not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/admin/delete-firebase-user/<firebase_uid>', methods=['DELETE'])
+def admin_delete_firebase_user(firebase_uid):
+    """TEMPORARY: Delete Firebase user by UID"""
+    try:
+        from auth.firebase_config import initialize_firebase, delete_firebase_user
+        initialize_firebase()
+        result = delete_firebase_user(firebase_uid)
+        if result:
+            return jsonify({'success': True, 'message': f'User {firebase_uid} deleted'}), 200
+        else:
+            return jsonify({'success': False, 'message': 'Failed to delete user'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ====================================================================
+# Firebase Authentication API Routes - DEPRECATED
+# ====================================================================
+# These mock endpoints have been replaced by the authentication blueprints
+# from api/auth_routes.py and api/user_routes.py
+# The blueprints are now registered via lazy loading (register_auth_blueprints)
+#
+# These endpoints are kept here for reference but are NOT registered (no @app.route)
+# The blueprints now provide the real implementation with full database integration
+
+def _deprecated_api_login():
+    """DEPRECATED - Use api/auth_routes.py instead
     Authenticate user with Firebase ID token
     Returns user information and session data
     """
@@ -237,8 +299,8 @@ def api_login():
         }), 500
 
 
-@app.route('/api/auth/logout', methods=['POST'])
-def api_logout():
+# @app.route('/api/auth/logout', methods=['POST'])  # DEPRECATED - using blueprint
+def _deprecated_api_logout():
     """Logout user and clear session"""
     try:
         session.clear()
@@ -254,8 +316,122 @@ def api_logout():
         }), 500
 
 
-@app.route('/api/auth/me', methods=['GET'])
-def api_get_current_user():
+# @app.route('/api/auth/register', methods=['POST'])  # DEPRECATED - using blueprint
+def _deprecated_api_register():
+    """
+    Register a new user (Firebase user should already be created)
+    This endpoint is called after Firebase signup to store user in database
+    """
+    try:
+        if not FIREBASE_AVAILABLE:
+            return jsonify({
+                'success': False,
+                'message': 'Firebase authentication not configured'
+            }), 500
+
+        data = request.get_json()
+        email = data.get('email')
+        display_name = data.get('display_name')
+        user_type = data.get('user_type', 'tenant_admin')
+
+        if not email or not display_name:
+            return jsonify({
+                'success': False,
+                'message': 'Email and display name are required'
+            }), 400
+
+        # For now, return success with user data
+        # In a full implementation, you would store this in the database
+        user_data = {
+            'email': email,
+            'display_name': display_name,
+            'user_type': user_type,
+            'email_verified': False
+        }
+
+        return jsonify({
+            'success': True,
+            'user': user_data,
+            'message': 'Registration successful'
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# @app.route('/api/auth/verify-invitation/<token>', methods=['GET'])  # DEPRECATED - using blueprint
+def _deprecated_api_verify_invitation(token):
+    """
+    Verify invitation token and return invitation details
+    """
+    try:
+        # For now, return mock data
+        # In full implementation, query database for invitation
+        return jsonify({
+            'success': True,
+            'invitation': {
+                'token': token,
+                'email': 'user@example.com',
+                'company_name': 'Delta Capital Holdings',
+                'invited_by_name': 'Admin User',
+                'role': 'cfo_assistant',
+                'status': 'pending',
+                'is_expired': False,
+                'expires_at': '2025-12-31T23:59:59Z'
+            }
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Verify invitation error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# @app.route('/api/auth/accept-invitation/<token>', methods=['POST'])  # DEPRECATED - using blueprint
+def _deprecated_api_accept_invitation(token):
+    """
+    Accept invitation and create user account
+    """
+    try:
+        data = request.get_json()
+        display_name = data.get('display_name')
+        password = data.get('password')
+
+        if not display_name or not password:
+            return jsonify({
+                'success': False,
+                'message': 'Display name and password are required'
+            }), 400
+
+        # For now, return success
+        # In full implementation:
+        # 1. Verify token exists and is valid
+        # 2. Create Firebase user
+        # 3. Create database user record
+        # 4. Link user to tenant with role
+        # 5. Mark invitation as accepted
+
+        return jsonify({
+            'success': True,
+            'message': 'Invitation accepted successfully'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Accept invitation error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# @app.route('/api/auth/me', methods=['GET'])  # DEPRECATED - using blueprint
+def _deprecated_api_get_current_user():
     """Get current authenticated user"""
     try:
         if 'user_id' not in session:
@@ -274,6 +450,63 @@ def api_get_current_user():
 
     except Exception as e:
         logger.error(f"Get user error: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+# ====================================================================
+# USER MANAGEMENT ENDPOINTS
+# ====================================================================
+
+# @app.route('/api/users/invite', methods=['POST'])  # DEPRECATED - using blueprint
+def _deprecated_api_invite_user():
+    """
+    Invite a user (CFO, Assistant, or Employee) to the tenant
+    """
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        display_name = data.get('display_name')
+        user_type = data.get('user_type')
+        role = data.get('role')
+        permissions = data.get('permissions', {})
+
+        if not email or not display_name or not user_type:
+            return jsonify({
+                'success': False,
+                'message': 'Email, display name, and user type are required'
+            }), 400
+
+        # For now, return success with invitation details
+        # In full implementation:
+        # 1. Check if user is already in system
+        # 2. Generate unique invitation token
+        # 3. Store invitation in user_invitations table
+        # 4. Send invitation email via email service
+        # 5. Set expiration date (default 7 days)
+
+        invitation_data = {
+            'email': email,
+            'display_name': display_name,
+            'user_type': user_type,
+            'role': role,
+            'permissions': permissions,
+            'status': 'pending',
+            'expires_in_days': 7
+        }
+
+        logger.info(f"Invitation created for {email} as {user_type}")
+
+        return jsonify({
+            'success': True,
+            'invitation': invitation_data,
+            'message': f'Invitation sent successfully to {email}'
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Invite user error: {e}")
         return jsonify({
             'success': False,
             'message': str(e)
@@ -13500,6 +13733,14 @@ if __name__ == '__main__':
     # Ensure background jobs tables exist
     ensure_background_jobs_tables()
 
+    # Register authentication blueprints (lazy loading)
+    if not auth_blueprints_registered:
+        if register_auth_blueprints():
+            auth_blueprints_registered = True
+            print("[OK] Authentication blueprints registered")
+        else:
+            print("[WARNING] Authentication blueprints not available")
+
     # Get port from environment (Cloud Run sets PORT automatically)
     port = int(os.environ.get('PORT', 5001))
 
@@ -13514,6 +13755,13 @@ if __name__ == '__main__':
 try:
     if not claude_client:
         init_claude_client()
+
+    # Register authentication blueprints in production mode
+    if not auth_blueprints_registered:
+        if register_auth_blueprints():
+            auth_blueprints_registered = True
+            print("[OK] Authentication blueprints registered for production")
+
     # Defer heavy database operations to first request to avoid startup timeout
     print("[OK] Basic production initialization completed - database ops deferred")
 except Exception as e:

@@ -121,8 +121,9 @@ def verify_firebase_token(id_token: str) -> Optional[Dict[str, Any]]:
         # Ensure Firebase is initialized
         get_firebase_app()
 
-        # Verify the token
-        decoded_token = auth.verify_id_token(id_token)
+        # Verify the token with clock skew tolerance (5 seconds)
+        # This helps with minor time synchronization issues
+        decoded_token = auth.verify_id_token(id_token, check_revoked=False, clock_skew_seconds=5)
         logger.info(f"Token verified successfully for user: {decoded_token.get('uid')}")
         return decoded_token
 

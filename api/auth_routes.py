@@ -82,26 +82,41 @@ def register():
             VALUES (%s, %s, %s, %s, %s, true, false)
             RETURNING id, firebase_uid, email, display_name, user_type, is_active
         """
-        result = db_manager.execute_query(
-            query,
-            (user_id, firebase_user['uid'], email, display_name, user_type)
-        )
 
-        if not result or len(result) == 0:
+        try:
+            result = db_manager.execute_query(
+                query,
+                (user_id, firebase_user['uid'], email, display_name, user_type),
+                fetch_one=True
+            )
+
+            if not result:
+                # Rollback Firebase user if database insert fails
+                from auth.firebase_config import delete_firebase_user
+                delete_firebase_user(firebase_user['uid'])
+                return jsonify({
+                    'success': False,
+                    'error': 'database_error',
+                    'message': 'Failed to create user in database'
+                }), 500
+        except Exception as db_error:
+            # Rollback Firebase user if database error occurs
+            from auth.firebase_config import delete_firebase_user
+            logger.error(f"Database error during registration: {db_error}")
+            delete_firebase_user(firebase_user['uid'])
             return jsonify({
                 'success': False,
                 'error': 'database_error',
-                'message': 'Failed to create user in database'
+                'message': f'Failed to create user in database: {str(db_error)}'
             }), 500
 
-        user_data = result[0]
         user = {
-            'id': user_data[0],
-            'firebase_uid': user_data[1],
-            'email': user_data[2],
-            'display_name': user_data[3],
-            'user_type': user_data[4],
-            'is_active': user_data[5]
+            'id': result['id'],
+            'firebase_uid': result['firebase_uid'],
+            'email': result['email'],
+            'display_name': result['display_name'],
+            'user_type': result['user_type'],
+            'is_active': result['is_active']
         }
 
         logger.info(f"User registered successfully: {email} ({user_type})")
