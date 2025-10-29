@@ -715,6 +715,32 @@
                 <a href="/whitelisted-accounts" class="nav-link">Accounts</a>
                 <a href="/files" class="nav-link">File Manager</a>
             </div>
+
+            <!-- User Account Menu -->
+            <div id="userAccountMenu" style="margin-left: auto; display: flex; align-items: center;">
+                <button id="userMenuButton" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                    <span id="userDisplayName">Loading...</span>
+                    <span style="font-size: 0.7rem;">▼</span>
+                </button>
+
+                <div id="userDropdown" style="display: none; position: absolute; top: calc(100% + 0.5rem); right: 1rem; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 200px; z-index: 1000;">
+                    <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0;">
+                        <div style="font-weight: 600; color: #1e293b;" id="dropdownUserName">User</div>
+                        <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;" id="dropdownUserEmail">email@example.com</div>
+                    </div>
+                    <div style="padding: 0.5rem;">
+                        <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            Account Settings
+                        </a>
+                        <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            Manage Users
+                        </a>
+                        <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
+                            Sign Out
+                        </button>
+                    </div>
+                </div>
+            </div>
         </nav>
 
         <div class="main-layout">
@@ -3413,6 +3439,52 @@
                 showNotification('Failed to reject matches', 'error');
             }
         }
+    </script>
+
+    <!-- Firebase Authentication -->
+    <script type="module">
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { auth } from '/static/js/firebase_client.js';
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = '/auth/login';
+            } else {
+                const displayName = user.displayName || user.email?.split('@')[0] || 'User';
+                const email = user.email || '';
+
+                document.getElementById('userDisplayName').textContent = displayName;
+                document.getElementById('dropdownUserName').textContent = displayName;
+                document.getElementById('dropdownUserEmail').textContent = email;
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const menuButton = document.getElementById('userMenuButton');
+            const dropdown = document.getElementById('userDropdown');
+            const logoutButton = document.getElementById('logoutButton');
+
+            menuButton?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('userAccountMenu')?.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            logoutButton?.addEventListener('click', async () => {
+                try {
+                    await window.FirebaseAuth.signOutUser();
+                    window.location.href = '/auth/login';
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    alert('Error signing out. Please try again.');
+                }
+            });
+        });
     </script>
 
     <style>
