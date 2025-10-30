@@ -260,15 +260,21 @@
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${idToken}`
-                        }
+                        },
+                        credentials: 'include'  // Ensure cookies are sent and received
                     });
 
                     if (switchResponse.ok) {
+                        const switchData = await switchResponse.json();
+                        console.log('[OnboardingBot] Switch successful:', switchData);
                         addBotMessage('All set! Reloading the page...');
                         setTimeout(() => {
-                            window.location.reload();
+                            // Force full page navigation to ensure session cookie is sent
+                            window.location.href = '/';
                         }, 1500);
                     } else {
+                        const errorData = await switchResponse.json();
+                        console.error('[OnboardingBot] Switch failed:', errorData);
                         addBotMessage('Tenant created successfully! Please refresh the page to see it in your account menu.');
                     }
                 }, 2000);
