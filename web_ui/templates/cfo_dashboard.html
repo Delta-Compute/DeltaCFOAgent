@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delta CFO Agent - Financial Reports</title>
+    <title>{{ company_name|default("Delta CFO Agent") }} - Financial Reports</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -14,8 +14,8 @@
         <!-- Navigation Bar -->
         <nav class="top-nav">
             <div class="nav-brand">
-                <h2>Delta CFO Agent</h2>
-                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
+                <h2>{{ company_name|default("Delta CFO Agent") }}</h2>
+                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">{{ company_description|default("Financial Management Platform") }}</p>
             </div>
             <div class="nav-links">
                 <a href="/" class="nav-link">Home</a>
@@ -234,21 +234,6 @@
                             </button>
                         </div>
 
-                    </div>
-
-                    <!-- Report Options -->
-                    <div style="padding: 1rem 2rem; background: #f8f9fa; margin: 0 2rem; border-radius: 8px;">
-                        <h4 style="margin-bottom: 1rem; color: #2d3748;">📋 Report Options</h4>
-                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                            <label style="display: flex; align-items: center; gap: 0.5rem;">
-                                <span>Company Name:</span>
-                                <input type="text" id="reportCompanyName" placeholder="Delta Mining" value="Delta Mining"
-                                       style="padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; width: 150px;">
-                            </label>
-                            <span style="color: #666; font-size: 0.9rem;">
-                                Reports will use the current dashboard filters (period, entity, dates)
-                            </span>
-                        </div>
                     </div>
                 </div>
 
@@ -515,6 +500,9 @@
                 document.getElementById('userDisplayName').textContent = displayName;
                 document.getElementById('dropdownUserName').textContent = displayName;
                 document.getElementById('dropdownUserEmail').textContent = email;
+
+                // Load user tenants after authentication is confirmed
+                loadUserTenants();
             }
         });
 
@@ -543,9 +531,6 @@
                     alert('Error signing out. Please try again.');
                 }
             });
-
-            // Load user tenants for switcher
-            loadUserTenants();
         });
 
         // Load and display user's tenants

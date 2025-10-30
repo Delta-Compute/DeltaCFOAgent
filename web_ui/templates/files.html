@@ -949,6 +949,9 @@
                 document.getElementById('userDisplayName').textContent = displayName;
                 document.getElementById('dropdownUserName').textContent = displayName;
                 document.getElementById('dropdownUserEmail').textContent = email;
+
+                // Load user tenants after authentication is confirmed
+                loadUserTenants();
             }
         });
 
@@ -977,9 +980,6 @@
                     alert('Error signing out. Please try again.');
                 }
             });
-
-            // Load user tenants for switcher
-            loadUserTenants();
         });
 
         // Load and display user's tenants

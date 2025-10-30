@@ -3747,8 +3747,29 @@ def expenses():
 def reports():
     """Financial Reports Dashboard with charts and analytics"""
     try:
+        # Get tenant configuration for company name
+        tenant_id = get_current_tenant_id()
+        company_name = "CFO Agent"  # Default fallback
+        company_description = "Financial Management Platform"
+
+        try:
+            config_query = """
+                SELECT company_name, company_description
+                FROM tenant_configuration
+                WHERE id = %s
+            """
+            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
+            if config:
+                company_name = config.get('company_name', company_name)
+                company_description = config.get('company_description', company_description)
+        except Exception as config_error:
+            logger.warning(f"Could not fetch tenant configuration: {config_error}")
+
         cache_buster = str(random.randint(1000, 9999))
-        return render_template('cfo_dashboard.html', cache_buster=cache_buster)
+        return render_template('cfo_dashboard.html',
+                             cache_buster=cache_buster,
+                             company_name=company_name,
+                             company_description=company_description)
     except Exception as e:
         return f"Error loading CFO dashboard: {str(e)}", 500
 
@@ -6311,10 +6332,14 @@ def files_page():
         from collections import defaultdict
         import re
 
+        # Get current tenant ID
+        from tenant_context import get_current_tenant_id
+        tenant_id = get_current_tenant_id()
+
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
 
-        # Get uploaded files with transaction counts (including archived)
+        # Get uploaded files with transaction counts (including archived) - filtered by tenant
         cursor.execute("""
             SELECT
                 source_file,
@@ -6325,10 +6350,10 @@ def files_page():
                 MAX(date) as latest_date,
                 MAX(CASE WHEN archived = false THEN date ELSE NULL END) as latest_active_date
             FROM transactions
-            WHERE source_file IS NOT NULL AND source_file != ''
+            WHERE source_file IS NOT NULL AND source_file != '' AND tenant_id = %s
             GROUP BY source_file
             ORDER BY MAX(date) DESC
-        """)
+        """, (tenant_id,))
 
         files_data = cursor.fetchall()
         conn.close()

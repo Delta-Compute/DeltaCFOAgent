@@ -61,8 +61,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Revenue query exactly like DRE
             revenue_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s

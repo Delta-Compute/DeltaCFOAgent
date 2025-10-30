@@ -121,6 +121,9 @@ def register_reporting_routes(app):
         try:
             start_time = datetime.now()
 
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
             # Revenue: All positive amounts
             revenue_query = """
                 SELECT
@@ -128,11 +131,12 @@ def register_reporting_routes(app):
                     SUM(COALESCE(usd_equivalent, amount, 0)) as total,
                     COUNT(*) as count
                 FROM transactions
-                WHERE amount > 0
+                WHERE tenant_id = %s
+                AND amount > 0
                 GROUP BY COALESCE(accounting_category, classified_entity, 'Uncategorized Revenue')
                 ORDER BY total DESC
             """
-            revenue_data = db_manager.execute_query(revenue_query, fetch_all=True)
+            revenue_data = db_manager.execute_query(revenue_query, (tenant_id,), fetch_all=True)
 
             total_revenue = Decimal('0')
             revenue_categories = []
@@ -153,16 +157,17 @@ def register_reporting_routes(app):
                     SUM(ABS(COALESCE(usd_equivalent, amount, 0))) as total,
                     COUNT(*) as count
                 FROM transactions
-                WHERE amount < 0
-                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%material%'
-                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%inventory%'
-                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%manufacturing%'
-                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%production%'
-                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%supplier%'
+                WHERE tenant_id = %s
+                AND amount < 0
+                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%material%%'
+                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%inventory%%'
+                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%manufacturing%%'
+                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%production%%'
+                AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%supplier%%'
                 GROUP BY COALESCE(accounting_category, classified_entity, 'General & Administrative')
                 ORDER BY total DESC
             """
-            opex_data = db_manager.execute_query(opex_query, fetch_all=True)
+            opex_data = db_manager.execute_query(opex_query, (tenant_id,), fetch_all=True)
 
             total_opex = Decimal('0')
             opex_categories = []
@@ -264,39 +269,43 @@ def register_reporting_routes(app):
         try:
             start_time = datetime.now()
 
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
             # Assets: All positive balances in balance sheet accounts or cash-related transactions
             assets_query = """
                 SELECT
                     CASE
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%cash%' THEN 'Caixa e Equivalentes'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%receivable%' THEN 'Contas a Receber'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%inventory%' THEN 'Estoque'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%equipment%' THEN 'Equipamentos'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%asset%' THEN 'Outros Ativos'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%cash%%' THEN 'Caixa e Equivalentes'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%receivable%%' THEN 'Contas a Receber'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%inventory%%' THEN 'Estoque'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%equipment%%' THEN 'Equipamentos'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%asset%%' THEN 'Outros Ativos'
                         ELSE 'Ativos Circulantes'
                     END as category,
                     SUM(COALESCE(usd_equivalent, amount, 0)) as total,
                     COUNT(*) as count
                 FROM transactions
-                WHERE (
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%cash%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%asset%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%receivable%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%inventory%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%equipment%' OR
-                    (amount > 0 AND LOWER(COALESCE(description, '')) LIKE '%deposit%')
+                WHERE tenant_id = %s
+                AND (
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%cash%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%asset%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%receivable%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%inventory%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%equipment%%' OR
+                    (amount > 0 AND LOWER(COALESCE(description, '')) LIKE '%%deposit%%')
                 )
                 GROUP BY CASE
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%cash%' THEN 'Caixa e Equivalentes'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%receivable%' THEN 'Contas a Receber'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%inventory%' THEN 'Estoque'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%equipment%' THEN 'Equipamentos'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%asset%' THEN 'Outros Ativos'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%cash%%' THEN 'Caixa e Equivalentes'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%receivable%%' THEN 'Contas a Receber'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%inventory%%' THEN 'Estoque'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%equipment%%' THEN 'Equipamentos'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%asset%%' THEN 'Outros Ativos'
                     ELSE 'Ativos Circulantes'
                 END
                 ORDER BY total DESC
             """
-            assets_data = db_manager.execute_query(assets_query, fetch_all=True)
+            assets_data = db_manager.execute_query(assets_query, (tenant_id,), fetch_all=True)
 
             total_assets = Decimal('0')
             assets_categories = []
@@ -316,9 +325,10 @@ def register_reporting_routes(app):
                 revenue_query = """
                     SELECT SUM(COALESCE(usd_equivalent, amount, 0)) as total_revenue
                     FROM transactions
-                    WHERE amount > 0
+                    WHERE tenant_id = %s
+                    AND amount > 0
                 """
-                revenue_result = db_manager.execute_query(revenue_query, fetch_one=True)
+                revenue_result = db_manager.execute_query(revenue_query, (tenant_id,), fetch_one=True)
                 estimated_assets = Decimal(str(revenue_result['total_revenue'] or 0)) * Decimal('0.3')  # Estimate 30% of revenue as assets
 
                 if estimated_assets > 0:
@@ -333,35 +343,36 @@ def register_reporting_routes(app):
             liabilities_query = """
                 SELECT
                     CASE
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%payable%' THEN 'Contas a Pagar'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%loan%' THEN 'Empréstimos'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%debt%' THEN 'Dívidas'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%liability%' THEN 'Outros Passivos'
-                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%tax%' THEN 'Impostos a Pagar'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%payable%%' THEN 'Contas a Pagar'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%loan%%' THEN 'Empréstimos'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%debt%%' THEN 'Dívidas'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%liability%%' THEN 'Outros Passivos'
+                        WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%tax%%' THEN 'Impostos a Pagar'
                         ELSE 'Passivos Circulantes'
                     END as category,
                     SUM(ABS(COALESCE(usd_equivalent, amount, 0))) as total,
                     COUNT(*) as count
                 FROM transactions
-                WHERE (
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%payable%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%loan%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%debt%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%liability%' OR
-                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%tax%' OR
-                    (amount < 0 AND LOWER(COALESCE(description, '')) LIKE '%payment%')
+                WHERE tenant_id = %s
+                AND (
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%payable%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%loan%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%debt%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%liability%%' OR
+                    LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%tax%%' OR
+                    (amount < 0 AND LOWER(COALESCE(description, '')) LIKE '%%payment%%')
                 ) AND amount < 0
                 GROUP BY CASE
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%payable%' THEN 'Contas a Pagar'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%loan%' THEN 'Empréstimos'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%debt%' THEN 'Dívidas'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%liability%' THEN 'Outros Passivos'
-                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%tax%' THEN 'Impostos a Pagar'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%payable%%' THEN 'Contas a Pagar'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%loan%%' THEN 'Empréstimos'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%debt%%' THEN 'Dívidas'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%liability%%' THEN 'Outros Passivos'
+                    WHEN LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%tax%%' THEN 'Impostos a Pagar'
                     ELSE 'Passivos Circulantes'
                 END
                 ORDER BY total DESC
             """
-            liabilities_data = db_manager.execute_query(liabilities_query, fetch_all=True)
+            liabilities_data = db_manager.execute_query(liabilities_query, (tenant_id,), fetch_all=True)
 
             total_liabilities = Decimal('0')
             liabilities_categories = []
@@ -461,14 +472,18 @@ def register_reporting_routes(app):
         try:
             start_time = datetime.now()
 
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
             # Operating Cash Flow: All transactions (simplified)
             operating_query = """
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cash_payments
                 FROM transactions
+                WHERE tenant_id = %s
             """
-            operating_result = db_manager.execute_query(operating_query, fetch_one=True)
+            operating_result = db_manager.execute_query(operating_query, (tenant_id,), fetch_one=True)
 
             cash_receipts = Decimal(str(operating_result.get('cash_receipts', 0) or 0))
             cash_payments = Decimal(str(operating_result.get('cash_payments', 0) or 0))
@@ -562,14 +577,18 @@ def register_reporting_routes(app):
         try:
             start_time = datetime.now()
 
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
             # Net income calculation (same as DRE)
             income_query = """
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as total_revenue,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_expenses
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as total_revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as total_expenses
                 FROM transactions
+                WHERE tenant_id = %s
             """
-            income_result = db_manager.execute_query(income_query, fetch_one=True)
+            income_result = db_manager.execute_query(income_query, (tenant_id,), fetch_one=True)
 
             total_revenue = Decimal(str(income_result.get('total_revenue', 0) or 0))
             total_expenses = Decimal(str(income_result.get('total_expenses', 0) or 0))
@@ -2299,8 +2318,11 @@ def register_reporting_routes(app):
                 except ValueError:
                     return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD'}), 400
 
-            # Initialize Cash Dashboard
-            cash_dashboard = CashDashboard()
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
+            # Initialize Cash Dashboard with tenant
+            cash_dashboard = CashDashboard(tenant_id=tenant_id)
 
             # Get current cash position
             cash_position = cash_dashboard.get_current_cash_position(
@@ -2378,8 +2400,11 @@ def register_reporting_routes(app):
             if granularity not in ['daily', 'weekly', 'monthly']:
                 return jsonify({'error': 'Granularity must be daily, weekly, or monthly'}), 400
 
-            # Initialize Cash Dashboard
-            cash_dashboard = CashDashboard()
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
+            # Initialize Cash Dashboard with tenant
+            cash_dashboard = CashDashboard(tenant_id=tenant_id)
 
             # Get trend data
             trend_data = cash_dashboard.get_cash_trend(
@@ -2481,8 +2506,11 @@ def register_reporting_routes(app):
             if top_n < 1 or top_n > 50:
                 return jsonify({'error': 'Top N must be between 1 and 50'}), 400
 
-            # Initialize Cash Dashboard
-            cash_dashboard = CashDashboard()
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
+            # Initialize Cash Dashboard with tenant
+            cash_dashboard = CashDashboard(tenant_id=tenant_id)
 
             # Get entity comparison
             entity_data = cash_dashboard.get_entity_cash_comparison()
@@ -2592,18 +2620,21 @@ def register_reporting_routes(app):
                 start_date = datetime.strptime(start_date_param, '%Y-%m-%d').date()
                 end_date = datetime.strptime(end_date_param, '%Y-%m-%d').date()
             elif months_back_param == 'all':
+                # Get current tenant for date range query
+                temp_tenant_id = get_current_tenant_id()
+
                 # Use all available data - find min/max dates
                 date_range_query = """
                     SELECT
                         MIN(date::date) as min_date,
                         MAX(date::date) as max_date
                     FROM (
-                        SELECT date::date as date FROM transactions WHERE date IS NOT NULL
+                        SELECT date::date as date FROM transactions WHERE tenant_id = %s AND date IS NOT NULL
                         UNION ALL
-                        SELECT date::date as date FROM invoices WHERE date IS NOT NULL
+                        SELECT date::date as date FROM invoices WHERE tenant_id = %s AND date IS NOT NULL
                     ) combined_dates
                 """
-                date_range_result = db_manager.execute_query(date_range_query, fetch_one=True)
+                date_range_result = db_manager.execute_query(date_range_query, (temp_tenant_id, temp_tenant_id), fetch_one=True)
                 if date_range_result and date_range_result.get('min_date'):
                     start_date = date_range_result['min_date']
                     end_date = date_range_result['max_date'] or date.today()
@@ -2619,6 +2650,9 @@ def register_reporting_routes(app):
 
                 end_date = date.today()
                 start_date = end_date - timedelta(days=months_back * 30)
+
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
 
             # Build internal transaction filter
             internal_filter = ""
@@ -2637,7 +2671,8 @@ def register_reporting_routes(app):
                         CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END as expenses,
                         'transaction' as source_type
                     FROM transactions
-                    WHERE date::date >= %s AND date::date <= %s
+                    WHERE tenant_id = %s
+                        AND date::date >= %s AND date::date <= %s
                         AND amount::text != 'NaN' AND amount IS NOT NULL
                         {internal_filter}
 
@@ -2656,7 +2691,8 @@ def register_reporting_routes(app):
                         0 as expenses,
                         'invoice' as source_type
                     FROM invoices
-                    WHERE date::date >= %s AND date::date <= %s
+                    WHERE tenant_id = %s
+                        AND date::date >= %s AND date::date <= %s
                         AND total_amount IS NOT NULL
                         AND total_amount::text != 'NaN'
                         AND total_amount::text != ''
@@ -2673,7 +2709,7 @@ def register_reporting_routes(app):
                 ORDER BY year, month_number
             """
 
-            monthly_data = db_manager.execute_query(monthly_pl_query, (start_date, end_date, start_date, end_date), fetch_all=True)
+            monthly_data = db_manager.execute_query(monthly_pl_query, (tenant_id, start_date, end_date, tenant_id, start_date, end_date), fetch_all=True)
 
             # Process monthly data - simplified
             monthly_pl = []
@@ -2825,6 +2861,9 @@ def register_reporting_routes(app):
             elif is_internal_param == 'false':
                 internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
 
+            # Get current tenant
+            tenant_id = get_current_tenant_id()
+
             # Entity performance query - comprehensive analysis
             entity_query = f"""
                 SELECT
@@ -2842,7 +2881,7 @@ def register_reporting_routes(app):
                     MIN(CASE WHEN amount < 0 THEN ABS(amount) END) as min_expense_transaction,
                     MAX(CASE WHEN amount < 0 THEN ABS(amount) END) as max_expense_transaction
                 FROM transactions
-                WHERE 1=1
+                WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount::text != 'NaN' AND amount IS NOT NULL
                 {date_filter}
                 {internal_filter}
@@ -2851,7 +2890,7 @@ def register_reporting_routes(app):
                 ORDER BY SUM(amount) DESC
             """
 
-            entity_params = params + [min_transactions]
+            entity_params = [tenant_id] + params + [min_transactions]
             entity_data = db_manager.execute_query(entity_query, tuple(entity_params), fetch_all=True)
 
             # Process entity data
@@ -5175,7 +5214,6 @@ def register_reporting_routes(app):
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
             entity_filter = request.args.get('entity', '').strip()
-            company_name = request.args.get('company_name', 'Delta Mining')
 
             # Default date range (current year)
             if not start_date_str:
@@ -5197,6 +5235,15 @@ def register_reporting_routes(app):
 
             # Get current tenant ID
             tenant_id = get_current_tenant_id()
+
+            # Get company name from tenant configuration
+            config_query = """
+                SELECT company_name
+                FROM tenant_configuration
+                WHERE id = %s
+            """
+            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
+            company_name = config.get('company_name', 'CFO Agent') if config else 'CFO Agent'
 
             # Create DRE report
             dre_report = DREReport(
@@ -5251,7 +5298,6 @@ def register_reporting_routes(app):
             # Parse parameters
             end_date_str = request.args.get('end_date')
             entity_filter = request.args.get('entity', '').strip()
-            company_name = request.args.get('company_name', 'Delta Mining')
 
             # Default date (today)
             if not end_date_str:
@@ -5261,6 +5307,15 @@ def register_reporting_routes(app):
 
             # Get current tenant ID
             tenant_id = get_current_tenant_id()
+
+            # Get company name from tenant configuration
+            config_query = """
+                SELECT company_name
+                FROM tenant_configuration
+                WHERE id = %s
+            """
+            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
+            company_name = config.get('company_name', 'CFO Agent') if config else 'CFO Agent'
 
             # Create Balance Sheet report
             balance_sheet_report = BalanceSheetReport(
@@ -5313,7 +5368,6 @@ def register_reporting_routes(app):
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
             entity_filter = request.args.get('entity', '').strip()
-            company_name = request.args.get('company_name', 'Delta Mining')
 
             # Parse dates
             start_date = None
@@ -5339,6 +5393,15 @@ def register_reporting_routes(app):
 
             # Get current tenant ID
             tenant_id = get_current_tenant_id()
+
+            # Get company name from tenant configuration
+            config_query = """
+                SELECT company_name
+                FROM tenant_configuration
+                WHERE id = %s
+            """
+            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
+            company_name = config.get('company_name', 'CFO Agent') if config else 'CFO Agent'
 
             # Create Cash Flow report
             cash_flow_report = CashFlowReport(
@@ -5400,7 +5463,6 @@ def register_reporting_routes(app):
             start_date_str = request.args.get('start_date')
             end_date_str = request.args.get('end_date')
             entity_filter = request.args.get('entity', '').strip()
-            company_name = request.args.get('company_name', 'Delta Mining')
 
             # Parse dates
             start_date = None
@@ -5426,6 +5488,15 @@ def register_reporting_routes(app):
 
             # Get current tenant ID
             tenant_id = get_current_tenant_id()
+
+            # Get company name from tenant configuration
+            config_query = """
+                SELECT company_name
+                FROM tenant_configuration
+                WHERE id = %s
+            """
+            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
+            company_name = config.get('company_name', 'CFO Agent') if config else 'CFO Agent'
 
             # Create DMPL report
             dmpl_report = DMPLReport(

@@ -61,8 +61,8 @@ class DMPLReport(DeltaCFOReportTemplate):
             # Revenue query exactly like DRE
             revenue_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as total_revenue,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_expenses
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as total_revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as total_expenses
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
@@ -80,8 +80,8 @@ class DMPLReport(DeltaCFOReportTemplate):
             prev_year_end = date(self.start_date.year - 1, 12, 31)
             beginning_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) -
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cumulative_equity
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) -
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cumulative_equity
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date <= %s

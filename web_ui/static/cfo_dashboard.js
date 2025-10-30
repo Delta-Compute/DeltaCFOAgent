@@ -701,10 +701,6 @@ async function loadDREPreviewData() {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
 
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
-
         // Fetch DRE data from simple JSON endpoint (same as PDF)
         const response = await fetch(`/api/reports/income-statement/simple?${params.toString()}`);
 
@@ -1059,10 +1055,6 @@ function downloadDREPDF() {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
 
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
-
         // Build URL
         const url = `/api/reports/dre-pdf?${params.toString()}`;
 
@@ -1146,10 +1138,6 @@ async function loadBalanceSheetPreviewData() {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
 
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
-
         // Fetch Balance Sheet data from simple JSON endpoint
         const response = await fetch(`/api/reports/balance-sheet/simple?${params.toString()}`);
 
@@ -1205,10 +1193,6 @@ async function loadCashFlowPreviewData() {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
 
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
-
         // Fetch Cash Flow data from simple JSON endpoint
         const response = await fetch(`/api/reports/cash-flow/simple?${params.toString()}`);
 
@@ -1263,10 +1247,6 @@ async function loadDMPLPreviewData() {
     try {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
-
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
 
         // Fetch DMPL data from simple JSON endpoint
         const response = await fetch(`/api/reports/dmpl/simple?${params.toString()}`);
@@ -1618,10 +1598,6 @@ function downloadBalanceSheetPDF() {
 
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
-
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
 
         // Build URL
         const url = `/api/reports/balance-sheet-pdf?${params.toString()}`;
@@ -2009,10 +1985,6 @@ function downloadCashFlowPDF() {
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
 
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
-
         // Build URL
         const url = `/api/reports/cash-flow-pdf?${params.toString()}`;
 
@@ -2387,10 +2359,6 @@ function downloadDMPLPDF() {
 
         // Get current filters
         const params = new URLSearchParams(getAPIParams());
-
-        // Add company name
-        const companyName = document.getElementById('reportCompanyName')?.value || 'Delta Mining';
-        params.set('company_name', companyName);
 
         // Build URL
         const url = `/api/reports/dmpl-pdf?${params.toString()}`;

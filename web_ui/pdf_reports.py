@@ -478,8 +478,8 @@ class DREReport(DeltaCFOReportTemplate):
             # Revenue query
             revenue_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as total_revenue,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_expenses
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as total_revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as total_expenses
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
@@ -497,8 +497,8 @@ class DREReport(DeltaCFOReportTemplate):
                 SELECT
                     accounting_category,
                     classified_entity,
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as revenue,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as expenses
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as expenses
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
@@ -850,8 +850,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from operating activities
             operating_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
@@ -902,7 +902,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
 
             # Get beginning cash balance (simplified as total cash up to start date)
             beginning_cash_query = f"""
-                SELECT SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as beginning_cash
+                SELECT SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as beginning_cash
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date < %s
@@ -1196,7 +1196,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
             # Total assets (simplified - based on positive USD equivalent)
             assets_query = f"""
                 SELECT
-                    SUM(CASE WHEN usd_equivalent > 0 THEN usd_equivalent ELSE 0 END) as total_assets
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as total_assets
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date <= %s
@@ -1206,7 +1206,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
             # Total liabilities (simplified - based on negative USD equivalent)
             liabilities_query = f"""
                 SELECT
-                    SUM(CASE WHEN usd_equivalent < 0 THEN ABS(usd_equivalent) ELSE 0 END) as total_liabilities
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as total_liabilities
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date <= %s
@@ -1514,8 +1514,8 @@ class CashFlowReport(DeltaCFOReportTemplate):
             # Cash flows from operating activities
             operating_query = f"""
                 SELECT
-                    SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as cash_receipts,
-                    SUM(CASE WHEN amount < 0 THEN ABS(usd_equivalent) ELSE 0 END) as cash_payments
+                    SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as cash_receipts,
+                    SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
@@ -1566,7 +1566,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
 
             # Get beginning cash balance (simplified as total cash up to start date)
             beginning_cash_query = f"""
-                SELECT SUM(CASE WHEN amount > 0 THEN usd_equivalent ELSE 0 END) as beginning_cash
+                SELECT SUM(CASE WHEN amount > 0 THEN COALESCE(usd_equivalent, amount, 0) ELSE 0 END) as beginning_cash
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date < %s
