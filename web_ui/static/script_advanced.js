@@ -35,6 +35,19 @@ let undoStack = [];
 let redoStack = [];
 const MAX_UNDO_HISTORY = 50;
 
+// Utility: Debounce function for performance optimization
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 function createUndoSnapshot(type, data) {
     return {
         type: type,  // 'single', 'bulk', 'drag-fill'
@@ -733,6 +746,83 @@ function buildFilterQuery() {
     return params.toString();
 }
 
+// Export all transactions to CSV
+async function exportAllTransactions() {
+    try {
+        showToast('Preparing export... This may take a moment.', 'info');
+
+        // Build filter query (without pagination parameters)
+        const params = new URLSearchParams();
+
+        const entity = document.getElementById('entityFilter').value;
+        if (entity) params.append('entity', entity);
+
+        const transactionType = document.getElementById('transactionType').value;
+        if (transactionType) params.append('transaction_type', transactionType);
+
+        const sourceFile = document.getElementById('sourceFile').value;
+        if (sourceFile) params.append('source_file', sourceFile);
+
+        const needsReview = document.getElementById('needsReview').value;
+        if (needsReview) params.append('needs_review', needsReview);
+
+        const minAmount = document.getElementById('minAmount').value;
+        if (minAmount) params.append('min_amount', minAmount);
+
+        const maxAmount = document.getElementById('maxAmount').value;
+        if (maxAmount) params.append('max_amount', maxAmount);
+
+        const startDate = document.getElementById('startDate').value;
+        if (startDate) params.append('start_date', startDate);
+
+        const endDate = document.getElementById('endDate').value;
+        if (endDate) params.append('end_date', endDate);
+
+        const origin = document.getElementById('originFilter')?.value;
+        if (origin) params.append('origin', origin);
+
+        const destination = document.getElementById('destinationFilter')?.value;
+        if (destination) params.append('destination', destination);
+
+        const keyword = document.getElementById('keywordFilter')?.value;
+        if (keyword) params.append('keyword', keyword);
+
+        if (showingArchived) {
+            params.append('show_archived', 'true');
+        }
+
+        if (excludeInternalTransfers) {
+            params.append('exclude_internal', 'true');
+        }
+
+        const url = `/api/transactions/export?${params.toString()}`;
+
+        // Fetch the CSV file
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error('Export failed');
+        }
+
+        const blob = await response.blob();
+
+        // Download automatically
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `transactions_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast('Export completed successfully!', 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed: ' + error.message, 'error');
+    }
+}
+
 function updateURLParameters() {
     const query = buildFilterQuery();
     const newUrl = `${window.location.pathname}?${query}`;
@@ -925,7 +1015,16 @@ function renderTransactionTable(transactions) {
         return;
     }
 
-    tbody.innerHTML = transactions.map(transaction => {
+    // Batch rendering for better performance with large datasets
+    const BATCH_SIZE = 100;
+    let currentBatch = 0;
+
+    function renderBatch() {
+        const start = currentBatch * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, transactions.length);
+        const batchTransactions = transactions.slice(start, end);
+
+        const html = batchTransactions.map(transaction => {
         const amount = parseFloat(transaction.amount || 0);
         const amountClass = amount > 0 ? 'amount-positive' : amount < 0 ? 'amount-negative' : '';
         const formattedAmount = Math.abs(amount).toLocaleString('en-US', {
@@ -992,27 +1091,35 @@ function renderTransactionTable(transactions) {
                 </td>
             </tr>
         `;
-    }).join('');
+        }).join('');
 
-    // Set up inline editing
-    setupInlineEditing();
+        if (currentBatch === 0) {
+            tbody.innerHTML = html;
+        } else {
+            tbody.insertAdjacentHTML('beforeend', html);
+        }
 
-    // Set up clickable Origin/Destination cells
-    setupOriginDestinationClickHandlers();
+        currentBatch++;
 
-    // Set up checkbox change listeners for archive button visibility and bulk edit
-    document.querySelectorAll('.transaction-select-cb').forEach(cb => {
-        cb.addEventListener('change', function() {
-            const txId = this.dataset.transactionId;
-            if (this.checked) {
-                selectedTransactionIds.add(txId);
-            } else {
-                selectedTransactionIds.delete(txId);
+        if (end < transactions.length) {
+            // Use requestAnimationFrame to avoid blocking the UI
+            requestAnimationFrame(renderBatch);
+        } else {
+            // Finalize setup after all rows are rendered
+            setupInlineEditing();
+            setupOriginDestinationClickHandlers();
+            setupCheckboxDelegation();
+            setTimeout(() => setupDragDownHandles(), 100);
+
+            // Update amount filter indicators if active
+            if (activeMinAmountFilter !== null) {
+                updateAmountFilterIndicators();
             }
-            updateArchiveButtonVisibility();
-            updateBulkEditButtonVisibility();
-        });
-    });
+        }
+    }
+
+    // Start batch rendering
+    renderBatch();
 
     // Set up Select All checkbox listener (must be done after table is rendered)
     const selectAllCheckbox = document.getElementById('selectAll');
@@ -1053,8 +1160,36 @@ function renderTransactionTable(transactions) {
     }
 }
 
-// Track if we've already set up the delegated event listener
+// Track if we've already set up the delegated event listeners
 let inlineEditingSetup = false;
+let checkboxDelegationSetup = false;
+
+// Event delegation for checkboxes - dramatically reduces listeners
+function setupCheckboxDelegation() {
+    if (checkboxDelegationSetup) {
+        return; // Already set up, don't duplicate
+    }
+
+    const tbody = document.getElementById('transactionTableBody');
+    if (!tbody) return;
+
+    // Single change listener for all checkboxes via event delegation
+    tbody.addEventListener('change', function(e) {
+        if (e.target.classList.contains('transaction-select-cb')) {
+            const txId = e.target.dataset.transactionId;
+            if (e.target.checked) {
+                selectedTransactionIds.add(txId);
+            } else {
+                selectedTransactionIds.delete(txId);
+            }
+            updateArchiveButtonVisibility();
+            updateBulkEditButtonVisibility();
+        }
+    });
+
+    checkboxDelegationSetup = true;
+    console.log('✅ Checkbox event delegation setup complete (1 listener for all checkboxes)');
+}
 
 function setupInlineEditing() {
     // Use event delegation instead of attaching to each field
