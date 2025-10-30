@@ -208,10 +208,10 @@ SPECIAL CASES TO HANDLE:
 - Crypto exchange DEPOSITS (MEXC, Coinbase, Binance):
   * May have "Crypto", "Network", "Status", "Progress", "Deposit Amount", "TxID", "Deposit Address"
   * For deposits TO exchange:
-    - Origin = Network/blockchain (from "Network" column, e.g., "Ethereum(ERC20)" → "Ethereum")
-    - Destination = Exchange name (derive from filename like "MEXC_Deposits" → "MEXC Exchange")
+    - Origin = Network/blockchain (from "Network" column, e.g., "Ethereum(ERC20)" -> "Ethereum")
+    - Destination = Exchange name (derive from filename like "MEXC_Deposits" -> "MEXC Exchange")
   * Network column often contains blockchain info like "Bitcoin(BTC)", "Tron(TRC20)", "Ethereum(ERC20)"
-  * Map "Crypto" → currency_column, "TxID" → reference_column
+  * Map "Crypto" -> currency_column, "TxID" -> reference_column
   * Amounts should be POSITIVE (money coming in)
 
 - Crypto exchange WITHDRAWALS (MEXC, Coinbase, Binance):
@@ -224,7 +224,7 @@ SPECIAL CASES TO HANDLE:
     - network_column = "Network" (e.g., "Ethereum(ERC20)", "Tron(TRC20)", "Bittensor(TAO)")
     - amount_column = "Settlement Amount" preferred over "Request Amount" (actual amount after fees)
   * For withdrawals FROM exchange:
-    - Origin = Exchange name (derive from filename, e.g., "MEXC" from "MEXC_withdraws..." → "MEXC Exchange")
+    - Origin = Exchange name (derive from filename, e.g., "MEXC" from "MEXC_withdraws..." -> "MEXC Exchange")
     - Destination = Actual withdrawal address from "Withdrawal Address" column (preserve full address)
   * Amounts should be NEGATIVE (money leaving = expenses)
   * Status often contains "Withdrawal Successful" or similar
@@ -238,7 +238,7 @@ SPECIAL CASES TO HANDLE:
 FILENAME ANALYSIS:
 - Extract exchange name from filename patterns like "MEXC_withdraws", "Coinbase_deposits", "Binance_transactions"
 - Use filename context to determine transaction direction (deposits vs withdrawals)
-- Example: "MEXC_withdraws_sep_-_oct_2025_-_Sheet1.csv" → exchange_name = "MEXC", special_handling = "crypto_withdrawal"
+- Example: "MEXC_withdraws_sep_-_oct_2025_-_Sheet1.csv" -> exchange_name = "MEXC", special_handling = "crypto_withdrawal"
 
 CREATE DESCRIPTION RULES:
 If no clear description column exists, provide rules to create one from available columns.
@@ -309,7 +309,7 @@ CRITICAL RULES:
 3. The file_structure section should tell me EXACTLY how to use pandas.read_csv()
 4. The column_cleaning_rules should tell me EXACTLY how to clean each column
 5. If you see rows before the actual header (like metadata, titles, blank rows), put them in skip_rows_before_header
-6. Example: Coinbase CSVs have 3 rows before headers → skip_rows_before_header: [0, 1, 2], header_row_index: 3
+6. Example: Coinbase CSVs have 3 rows before headers -> skip_rows_before_header: [0, 1, 2], header_row_index: 3
 7. For standard CSVs with header on row 0, use: skip_rows_before_header: [], header_row_index: 0
 
 Only respond with the JSON object, no other text.
@@ -425,7 +425,7 @@ Only respond with the JSON object, no other text.
                         'columns': columns_found,
                         'success': True
                     })
-                    print(f"  Option skiprows={skiprows_test} → {columns_found[:3]}...")  # Show first 3 columns
+                    print(f"  Option skiprows={skiprows_test} -> {columns_found[:3]}...")  # Show first 3 columns
                 except Exception as e:
                     empirical_results.append({
                         'skiprows': skiprows_test,
@@ -433,7 +433,7 @@ Only respond with the JSON object, no other text.
                         'success': False,
                         'error': str(e)
                     })
-                    print(f"  Option skiprows={skiprows_test} → ERROR")
+                    print(f"  Option skiprows={skiprows_test} -> ERROR")
 
             # Clean up temp file if created
             if needs_cleaning and test_file_path != file_path:
@@ -447,7 +447,7 @@ Only respond with the JSON object, no other text.
                     # Check how many expected columns are found
                     matches = [col for col in expected_columns if col in columns]
                     match_indicator = f"  MATCHES {len(matches)}/{len(expected_columns)} expected columns: {matches}" if matches else "  No matches"
-                    results_lines.append(f"Option {i+1}: skiprows={result['skiprows']} → Columns: {columns}{match_indicator}")
+                    results_lines.append(f"Option {i+1}: skiprows={result['skiprows']} -> Columns: {columns}{match_indicator}")
 
             results_text = "\n".join(results_lines)
 
