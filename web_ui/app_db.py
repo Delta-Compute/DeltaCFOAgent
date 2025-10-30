@@ -3747,23 +3747,9 @@ def expenses():
 def reports():
     """Financial Reports Dashboard with charts and analytics"""
     try:
-        # Get tenant configuration for company name
-        tenant_id = get_current_tenant_id()
-        company_name = "CFO Agent"  # Default fallback
-        company_description = "Financial Management Platform"
-
-        try:
-            config_query = """
-                SELECT company_name, company_description
-                FROM tenant_configuration
-                WHERE id = %s
-            """
-            config = db_manager.execute_query(config_query, (tenant_id,), fetch_one=True)
-            if config:
-                company_name = config.get('company_name', company_name)
-                company_description = config.get('company_description', company_description)
-        except Exception as config_error:
-            logger.warning(f"Could not fetch tenant configuration: {config_error}")
+        # Fixed branding for Delta CFO Agent product (not tenant-specific)
+        company_name = "Delta CFO Agent"
+        company_description = "Delta's proprietary self improving AI CFO Agent"
 
         cache_buster = str(random.randint(1000, 9999))
         return render_template('cfo_dashboard.html',
