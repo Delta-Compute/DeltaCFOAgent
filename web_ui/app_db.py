@@ -13,7 +13,7 @@ import time
 import threading
 import traceback
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, send_file, session
+from flask import Flask, render_template, request, jsonify, send_file, session, make_response
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import anthropic
@@ -3817,9 +3817,10 @@ def api_transactions():
         # Remove None values
         filters = {k: v for k, v in filters.items() if v}
 
-        # Pagination parameters
+        # Pagination parameters with maximum limit for performance
+        MAX_PER_PAGE = 500
         page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 50))
+        per_page = min(int(request.args.get('per_page', 50)), MAX_PER_PAGE)
 
         print(f"API: About to call load_transactions_from_db with filters={filters}")
         transactions, total_count = load_transactions_from_db(filters, page, per_page)
@@ -3834,6 +3835,72 @@ def api_transactions():
                 'pages': (total_count + per_page - 1) // per_page
             }
         })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/transactions/export')
+def api_transactions_export():
+    """Export all transactions matching filters to CSV"""
+    try:
+        import csv
+        from io import StringIO
+
+        # Get filter parameters (same as api_transactions)
+        filters = {
+            'entity': request.args.get('entity'),
+            'transaction_type': request.args.get('transaction_type'),
+            'source_file': request.args.get('source_file'),
+            'needs_review': request.args.get('needs_review'),
+            'min_amount': request.args.get('min_amount'),
+            'max_amount': request.args.get('max_amount'),
+            'start_date': request.args.get('start_date'),
+            'end_date': request.args.get('end_date'),
+            'keyword': request.args.get('keyword'),
+            'show_archived': request.args.get('show_archived'),
+            'is_internal': request.args.get('is_internal')
+        }
+
+        # Remove None values
+        filters = {k: v for k, v in filters.items() if v}
+
+        # Load ALL transactions matching filters (with reasonable maximum)
+        MAX_EXPORT_ROWS = 50000
+        transactions, total_count = load_transactions_from_db(filters, page=1, per_page=MAX_EXPORT_ROWS)
+
+        # Create CSV in memory
+        output = StringIO()
+        fieldnames = [
+            'transaction_id', 'date', 'description', 'amount', 'currency',
+            'origin', 'destination', 'classified_entity', 'accounting_category',
+            'subcategory', 'justification', 'confidence', 'source_file'
+        ]
+        writer = csv.DictWriter(output, fieldnames=fieldnames)
+
+        writer.writeheader()
+        for tx in transactions:
+            writer.writerow({
+                'transaction_id': tx.get('transaction_id', ''),
+                'date': tx.get('date', ''),
+                'description': tx.get('description', ''),
+                'amount': tx.get('amount', ''),
+                'currency': tx.get('currency', 'USD'),
+                'origin': tx.get('origin', ''),
+                'destination': tx.get('destination', ''),
+                'classified_entity': tx.get('classified_entity', ''),
+                'accounting_category': tx.get('accounting_category', ''),
+                'subcategory': tx.get('subcategory', ''),
+                'justification': tx.get('justification', ''),
+                'confidence': tx.get('confidence', ''),
+                'source_file': tx.get('source_file', '')
+            })
+
+        # Return CSV as download
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=transactions_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+
+        return response
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

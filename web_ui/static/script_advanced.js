@@ -128,6 +128,49 @@ async function performUndo() {
     }
 }
 
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+async function exportAllTransactions() {
+    try {
+        showToast('Preparing export... This may take a moment.', 'info');
+
+        const query = buildFilterQuery();
+        const url = `/api/transactions/export?${query}`;
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`Export failed: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = `transactions_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+
+        showToast('Export completed successfully!', 'success');
+    } catch (error) {
+        console.error('Export error:', error);
+        showToast('Export failed: ' + error.message, 'error');
+    }
+}
+
 async function performRedo() {
     if (redoStack.length === 0) {
         showToast('Nothing to redo', 'info');
@@ -925,7 +968,15 @@ function renderTransactionTable(transactions) {
         return;
     }
 
-    tbody.innerHTML = transactions.map(transaction => {
+    const BATCH_SIZE = 100;
+    let currentBatch = 0;
+
+    function renderBatch() {
+        const start = currentBatch * BATCH_SIZE;
+        const end = Math.min(start + BATCH_SIZE, transactions.length);
+        const batchTransactions = transactions.slice(start, end);
+
+        const html = batchTransactions.map(transaction => {
         const amount = parseFloat(transaction.amount || 0);
         const amountClass = amount > 0 ? 'amount-positive' : amount < 0 ? 'amount-negative' : '';
         const formattedAmount = Math.abs(amount).toLocaleString('en-US', {
@@ -992,64 +1043,81 @@ function renderTransactionTable(transactions) {
                 </td>
             </tr>
         `;
-    }).join('');
+        }).join('');
 
-    // Set up inline editing
-    setupInlineEditing();
+        if (currentBatch === 0) {
+            tbody.innerHTML = html;
+        } else {
+            tbody.insertAdjacentHTML('beforeend', html);
+        }
 
-    // Set up clickable Origin/Destination cells
-    setupOriginDestinationClickHandlers();
+        currentBatch++;
 
-    // Set up checkbox change listeners for archive button visibility and bulk edit
-    document.querySelectorAll('.transaction-select-cb').forEach(cb => {
-        cb.addEventListener('change', function() {
-            const txId = this.dataset.transactionId;
-            if (this.checked) {
+        if (end < transactions.length) {
+            requestAnimationFrame(renderBatch);
+        } else {
+            setupInlineEditing();
+            setupOriginDestinationClickHandlers();
+            setupCheckboxEventDelegation();
+            setupSelectAllCheckbox();
+            setTimeout(() => setupDragDownHandles(), 100);
+            if (activeMinAmountFilter !== null) {
+                updateAmountFilterIndicators();
+            }
+        }
+    }
+
+    renderBatch();
+}
+
+function setupCheckboxEventDelegation() {
+    const tbody = document.getElementById('transactionTableBody');
+
+    const existingListener = tbody._checkboxListener;
+    if (existingListener) {
+        tbody.removeEventListener('change', existingListener);
+    }
+
+    const listener = function(e) {
+        if (e.target.classList.contains('transaction-select-cb')) {
+            const txId = e.target.dataset.transactionId;
+            if (e.target.checked) {
                 selectedTransactionIds.add(txId);
             } else {
                 selectedTransactionIds.delete(txId);
             }
             updateArchiveButtonVisibility();
             updateBulkEditButtonVisibility();
-        });
-    });
+        }
+    };
 
-    // Set up Select All checkbox listener (must be done after table is rendered)
+    tbody._checkboxListener = listener;
+    tbody.addEventListener('change', listener);
+}
+
+function setupSelectAllCheckbox() {
     const selectAllCheckbox = document.getElementById('selectAll');
     if (selectAllCheckbox) {
-        // Remove any existing listeners to prevent duplicates
         selectAllCheckbox.replaceWith(selectAllCheckbox.cloneNode(true));
         const newSelectAll = document.getElementById('selectAll');
 
         newSelectAll.addEventListener('change', function() {
-            console.log('🔵 Select All checkbox changed! Checked:', this.checked);
+            console.log('Select All checkbox changed! Checked:', this.checked);
             const checkboxes = document.querySelectorAll('.transaction-select-cb');
-            console.log('🔵 Found transaction checkboxes:', checkboxes.length);
+            console.log('Found transaction checkboxes:', checkboxes.length);
 
-            // Clear the selected IDs set
             selectedTransactionIds.clear();
 
-            checkboxes.forEach((cb, index) => {
+            checkboxes.forEach((cb) => {
                 cb.checked = this.checked;
                 if (this.checked) {
                     selectedTransactionIds.add(cb.dataset.transactionId);
                 }
-                console.log(`🔵 Set checkbox ${index} to:`, cb.checked);
             });
             updateArchiveButtonVisibility();
             updateBulkEditButtonVisibility();
         });
-        console.log('✅ Select All checkbox event listener attached (from renderTransactionTable)');
-    }
-
-    // Set up drag-down handles for Excel-like fill
-    setTimeout(() => {
-        setupDragDownHandles();
-    }, 100);
-
-    // Update amount filter indicators if active
-    if (activeMinAmountFilter !== null) {
-        updateAmountFilterIndicators();
+        console.log('Select All checkbox event listener attached');
     }
 }
 
