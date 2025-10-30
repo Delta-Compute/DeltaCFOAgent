@@ -7123,7 +7123,18 @@ Important:
         print(f"Raw response: {response_text[:500]}...")
         return {"error": error_msg, "transactions": [], "total_found": 0}
     except Exception as e:
-        error_msg = f"PDF processing failed: {str(e)}"
+        error_str = str(e)
+        # Check if this is a poppler-related error
+        if "poppler" in error_str.lower() or "Unable to get page count" in error_str:
+            error_msg = (
+                "Poppler is not installed or not in PATH. "
+                "PDF upload requires Poppler to convert PDF to images. "
+                "Download from: https://github.com/oschwartz10612/poppler-windows/releases/ "
+                "and add the bin folder to your PATH environment variable. "
+                "CSV uploads will continue to work normally."
+            )
+        else:
+            error_msg = f"PDF processing failed: {error_str}"
         print(f" {error_msg}")
         print(f"Traceback: {traceback.format_exc()}")
         return {"error": error_msg, "transactions": [], "total_found": 0}
