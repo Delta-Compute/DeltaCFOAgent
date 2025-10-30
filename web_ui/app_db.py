@@ -108,7 +108,9 @@ if debug_mode:
     app.jinja_env.auto_reload = True
 
 # Configure Flask secret key for sessions
-app.secret_key = os.getenv('FLASK_SECRET_KEY', os.urandom(24).hex())
+# Use a fixed key in development for session persistence across restarts
+# In production, set FLASK_SECRET_KEY environment variable
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-delta-cfo-agent-2024')
 
 # Initialize multi-tenant context
 init_tenant_context(app)
@@ -126,12 +128,14 @@ def register_auth_blueprints():
         # Import blueprints only when needed
         from api.auth_routes import auth_bp
         from api.user_routes import user_bp
+        from api.tenant_routes import tenant_bp
 
         # Register blueprints
         app.register_blueprint(auth_bp)
         app.register_blueprint(user_bp)
+        app.register_blueprint(tenant_bp)
 
-        logger.info("Authentication blueprints registered successfully")
+        logger.info("Authentication and tenant blueprints registered successfully")
         return True
     except ImportError as e:
         logger.warning(f"Could not import authentication blueprints: {e}")
@@ -3759,9 +3763,16 @@ def reports():
     except Exception as e:
         return f"Error loading CFO dashboard: {str(e)}", 500
 
-@app.route('/api/auth/switch-tenant/<tenant_id>', methods=['POST'])
-def api_switch_tenant(tenant_id):
-    """API endpoint to switch active tenant for current user session"""
+# DEPRECATED: This route is now handled by auth_routes.py blueprint
+# @app.route('/api/auth/switch-tenant/<tenant_id>', methods=['POST'])
+# def api_switch_tenant(tenant_id):
+#     """API endpoint to switch active tenant for current user session"""
+#     # This function has been moved to api/auth_routes.py with proper authentication
+#     # and dynamic tenant validation from the database
+
+# Keeping the old function commented for reference during migration
+def _deprecated_api_switch_tenant(tenant_id):
+    """DEPRECATED - Use auth_routes.py instead"""
     try:
         print(f"[TENANT SWITCH] Request to switch to tenant: {tenant_id}", flush=True)
 
@@ -6972,7 +6983,7 @@ def convert_currency_to_usd(amount: float, from_currency: str) -> tuple:
 def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, Any]:
     """
     Process PDF using Claude Vision to extract transaction data
-    Reuses existing invoice processing framework from invoice_processing module
+    Uses PyMuPDF (same as invoice processing) for PDF conversion
 
     Args:
         filepath: Full path to the PDF file
@@ -6982,23 +6993,33 @@ def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, An
         Dict containing extracted transactions or error information
     """
     try:
-        # Import PDF processing libraries
-        from pdf2image import convert_from_path
-        from io import BytesIO
-
         print(f" Processing PDF with Claude Vision: {filename}")
 
-        # Convert PDF first page to image at 300 DPI (same as invoice system)
-        pages = convert_from_path(filepath, first_page=1, last_page=1, dpi=300)
-        if not pages:
-            raise ValueError("Could not convert PDF to image")
+        # Convert PDF to image using PyMuPDF (same method as invoices)
+        try:
+            import fitz  # PyMuPDF
 
-        # Convert to base64 PNG
-        img = pages[0]
-        buffer = BytesIO()
-        img.save(buffer, format='PNG')
-        image_bytes = buffer.getvalue()
-        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            # Open PDF and get first page
+            doc = fitz.open(filepath)
+            if doc.page_count == 0:
+                raise ValueError("PDF has no pages")
+
+            # Get first page as image with 2x zoom for better quality
+            page = doc.load_page(0)
+            mat = fitz.Matrix(2, 2)
+            pix = page.get_pixmap(matrix=mat)
+
+            # Convert to PNG bytes
+            image_bytes = pix.pil_tobytes(format="PNG")
+            doc.close()
+
+            # Encode to base64
+            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        except ImportError:
+            raise ValueError("PyMuPDF not installed. Run: pip install PyMuPDF")
+        except Exception as e:
+            raise ValueError(f"PDF conversion failed: {str(e)}")
 
         print(f" PDF converted to image successfully ({len(image_base64)} bytes)")
 

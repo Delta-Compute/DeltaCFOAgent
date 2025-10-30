@@ -360,7 +360,10 @@
                         <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
                             Manage Users
                         </a>
-                        <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
+                        <button id="createTenantButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #3b82f6; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; font-weight: 600; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">
+                            + Create New Tenant
+                        </button>
+                        <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
                             Sign Out
                         </button>
                     </div>
@@ -570,6 +573,9 @@
         import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
         import { auth } from '/static/js/firebase_client.js';
 
+        // Expose auth to window for onboarding bot
+        window.auth = auth;
+
         onAuthStateChanged(auth, (user) => {
             if (!user) {
                 // User not logged in - redirect to login page
@@ -713,6 +719,19 @@
             document.addEventListener('click', (e) => {
                 if (!document.getElementById('userAccountMenu')?.contains(e.target)) {
                     dropdown.style.display = 'none';
+                }
+            });
+
+            // Handle create tenant button
+            const createTenantButton = document.getElementById('createTenantButton');
+            createTenantButton?.addEventListener('click', () => {
+                // Close dropdown
+                dropdown.style.display = 'none';
+
+                // Open onboarding bot
+                const onboardingBotToggle = document.getElementById('onboardingBotToggle');
+                if (onboardingBotToggle) {
+                    onboardingBotToggle.click();
                 }
             });
 

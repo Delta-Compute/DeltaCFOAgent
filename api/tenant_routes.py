@@ -40,9 +40,9 @@ def list_tenants():
 
         query = """
             SELECT
-                tc.id,
+                tc.tenant_id,
                 tc.company_name,
-                tc.description,
+                tc.company_description,
                 tc.payment_owner,
                 tc.subscription_status,
                 tu.role,
@@ -50,7 +50,7 @@ def list_tenants():
                 u_created.display_name as created_by_name,
                 u_admin.display_name as admin_name
             FROM tenant_configuration tc
-            JOIN tenant_users tu ON tc.id = tu.tenant_id
+            JOIN tenant_users tu ON tc.tenant_id = tu.tenant_id
             LEFT JOIN users u_created ON tc.created_by_user_id = u_created.id
             LEFT JOIN users u_admin ON tc.current_admin_user_id = u_admin.id
             WHERE tu.user_id = %s AND tu.is_active = true
@@ -89,10 +89,10 @@ def list_tenants():
 
 @tenant_bp.route('', methods=['POST'])
 @require_auth
-@require_user_type(['fractional_cfo'])
+@require_user_type(['fractional_cfo', 'tenant_admin'])
 def create_tenant():
     """
-    Create a new tenant (Fractional CFO only).
+    Create a new tenant (Fractional CFO or Tenant Admin).
 
     Request Body:
         {
@@ -129,24 +129,38 @@ def create_tenant():
         # Create tenant
         create_tenant_query = """
             INSERT INTO tenant_configuration
-            (id, company_name, description, created_by_user_id, current_admin_user_id, payment_owner, subscription_status)
+            (tenant_id, company_name, company_description, created_by_user_id, current_admin_user_id, payment_owner, subscription_status)
             VALUES (%s, %s, %s, %s, %s, 'cfo', 'trial')
-            RETURNING id, company_name, description
+            RETURNING tenant_id, company_name, company_description
         """
 
-        result = db_manager.execute_query(
-            create_tenant_query,
-            (tenant_id, company_name, description, user['id'], user['id'])
-        )
+        # Use direct connection to get RETURNING values
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    create_tenant_query,
+                    (tenant_id, company_name, description, user['id'], user['id'])
+                )
+                tenant_data = cursor.fetchone()
+                conn.commit()
 
-        if not result or len(result) == 0:
-            return jsonify({
-                'success': False,
-                'error': 'database_error',
-                'message': 'Failed to create tenant'
-            }), 500
-
-        tenant_data = result[0]
+                if not tenant_data:
+                    return jsonify({
+                        'success': False,
+                        'error': 'database_error',
+                        'message': 'Failed to create tenant'
+                    }), 500
+            except Exception as e:
+                conn.rollback()
+                logger.error(f"Create tenant error: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': 'database_error',
+                    'message': str(e)
+                }), 500
+            finally:
+                cursor.close()
 
         # Add CFO as owner in tenant_users
         tenant_user_id = str(uuid.uuid4())

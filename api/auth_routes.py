@@ -224,13 +224,13 @@ def login():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.id,
+                tc.tenant_id,
                 tc.company_name,
                 tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -238,7 +238,7 @@ def login():
         tenants = []
         for t in (tenant_results or []):
             tenants.append({
-                'id': t['id'],
+                'id': t['tenant_id'],
                 'company_name': t['company_name'],
                 'description': t['company_description'],
                 'role': t['role'],
@@ -332,13 +332,13 @@ def get_me():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.id,
+                tc.tenant_id,
                 tc.company_name,
                 tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -346,7 +346,7 @@ def get_me():
         tenants = []
         for t in (tenant_results or []):
             tenants.append({
-                'id': t['id'],
+                'id': t['tenant_id'],
                 'company_name': t['company_name'],
                 'description': t['company_description'],
                 'role': t['role'],
@@ -557,13 +557,13 @@ def switch_tenant(tenant_id):
         # Check if user has access to this tenant
         query = """
             SELECT
-                tc.id,
+                tc.tenant_id,
                 tc.company_name,
                 tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.tenant_id = %s AND tu.is_active = true
         """
         result = db_manager.execute_query(query, (user['id'], tenant_id), fetch_one=True)
@@ -576,7 +576,7 @@ def switch_tenant(tenant_id):
             }), 403
 
         tenant = {
-            'id': result['id'],
+            'id': result['tenant_id'],
             'company_name': result['company_name'],
             'description': result['company_description'],
             'role': result['role'],
