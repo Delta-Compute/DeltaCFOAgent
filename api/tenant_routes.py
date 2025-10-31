@@ -6,7 +6,7 @@ Provides REST API endpoints for managing tenants, admin transfers, and payment s
 
 import logging
 import uuid
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 from middleware.auth_middleware import (
     require_auth,
     require_role,
@@ -17,6 +17,7 @@ from middleware.auth_middleware import (
 from services.email_service import send_admin_transfer_notification, send_invitation_email
 from datetime import timedelta
 from web_ui.database import db_manager
+from web_ui.tenant_context import set_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -210,6 +211,11 @@ def create_tenant():
                 )
             except Exception as e:
                 logger.warning(f"Failed to send admin invitation: {e}")
+
+        # Automatically switch to the new tenant
+        # This ensures both session keys are synchronized
+        set_tenant_id(tenant_id)
+        session['current_tenant_id'] = tenant_id
 
         logger.info(f"Tenant created: {company_name} by {user['email']}")
 
