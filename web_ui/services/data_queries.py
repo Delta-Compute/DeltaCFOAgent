@@ -5,12 +5,34 @@ Provides database queries for company overview, KPIs, entities, and portfolio st
 """
 
 import logging
+import math
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta, date
 from decimal import Decimal
 import psycopg2.extras
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_numeric(value):
+    """
+    Sanitize numeric values to ensure JSON serialization compatibility.
+    Replaces NaN, Infinity, and -Infinity with None.
+
+    Args:
+        value: Value to sanitize (can be any type)
+
+    Returns:
+        Sanitized value safe for JSON serialization
+    """
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+    elif isinstance(value, dict):
+        return {k: sanitize_numeric(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [sanitize_numeric(item) for item in value]
+    return value
 
 
 class DataQueryService:
@@ -366,13 +388,15 @@ class DataQueryService:
         Returns:
             Dictionary with company overview, KPIs, entities, and portfolio stats
         """
-        return {
+        data = {
             'company': self.get_company_overview(),
             'kpis': self.get_company_kpis(),
             'entities': self.get_business_entities(),
             'portfolio': self.get_portfolio_stats(),
             'generated_at': datetime.now().isoformat()
         }
+        # Sanitize all numeric values to ensure JSON compatibility
+        return sanitize_numeric(data)
 
 
 # Convenience function for backward compatibility

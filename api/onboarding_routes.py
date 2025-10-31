@@ -195,9 +195,10 @@ def complete_tenant_setup():
         for entity in entities:
             db_manager.execute_query("""
                 INSERT INTO business_entities
-                (name, description, entity_type, active)
-                VALUES (%s, %s, %s, true)
+                (tenant_id, name, description, entity_type, active)
+                VALUES (%s, %s, %s, %s, true)
             """, (
+                tenant_id,
                 entity.get('name'),
                 entity.get('description', ''),
                 entity.get('entity_type', 'subsidiary')
@@ -303,7 +304,7 @@ def complete_tenant_setup():
 @require_auth
 def get_entities():
     """
-    Get all business entities.
+    Get all business entities for current tenant.
 
     Returns:
         {
@@ -314,12 +315,14 @@ def get_entities():
         }
     """
     try:
+        tenant_id = get_current_tenant_id()
+
         entities = db_manager.execute_query("""
-            SELECT id, name, description, entity_type, active, created_at
+            SELECT id, tenant_id, name, description, entity_type, active, created_at
             FROM business_entities
-            WHERE active = true
+            WHERE tenant_id = %s AND active = true
             ORDER BY name
-        """, fetch_all=True)
+        """, (tenant_id,), fetch_all=True)
 
         return jsonify({
             'success': True,
@@ -339,7 +342,7 @@ def get_entities():
 @require_auth
 def create_entity():
     """
-    Create a new business entity.
+    Create a new business entity for current tenant.
 
     Request Body:
         {
@@ -355,6 +358,7 @@ def create_entity():
         }
     """
     try:
+        tenant_id = get_current_tenant_id()
         data = request.get_json()
 
         if not data.get('name'):
@@ -364,19 +368,20 @@ def create_entity():
                 'message': 'name is required'
             }), 400
 
-        # Insert entity
+        # Insert entity with tenant_id
         result = db_manager.execute_query("""
             INSERT INTO business_entities
-            (name, description, entity_type, active)
-            VALUES (%s, %s, %s, true)
-            RETURNING id, name, description, entity_type, active, created_at
+            (tenant_id, name, description, entity_type, active)
+            VALUES (%s, %s, %s, %s, true)
+            RETURNING id, tenant_id, name, description, entity_type, active, created_at
         """, (
+            tenant_id,
             data['name'],
             data.get('description', ''),
             data.get('entity_type', 'subsidiary')
         ), fetch_one=True)
 
-        logger.info(f"Created business entity: {data['name']}")
+        logger.info(f"Created business entity: {data['name']} for tenant: {tenant_id}")
 
         return jsonify({
             'success': True,
@@ -688,4 +693,168 @@ def get_tenant_knowledge():
             'success': False,
             'error': 'server_error',
             'message': 'An error occurred'
+        }), 500
+
+
+@onboarding_bp.route('/chat', methods=['POST'])
+@require_auth
+def chat():
+    """
+    AI conversational chat to extract business knowledge from user conversations.
+
+    Allows users to freely describe their business and automatically extracts
+    knowledge for improving transaction classification.
+    """
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '').strip()
+        conversation_history = data.get('conversation_history', [])
+
+        if not user_message:
+            return jsonify({
+                'success': False,
+                'error': 'validation_error',
+                'message': 'Message is required'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+
+        # Get tenant context for personalized responses
+        tenant = db_manager.execute_query("""
+            SELECT company_name, description, industry
+            FROM tenant_configuration
+            WHERE tenant_id = %s
+        """, (tenant_id,), fetch_one=True)
+
+        company_name = tenant.get('company_name', 'your company') if tenant else 'your company'
+        industry = tenant.get('industry', 'general') if tenant else 'general'
+
+        # Build conversation prompt
+        system_prompt = f"""You are an AI assistant helping {company_name} set up their financial management system.
+
+Your goals:
+1. Have a natural, friendly conversation about their business
+2. Ask relevant follow-up questions to understand their operations
+3. Extract useful information about vendors, transaction patterns, business rules, and entity relationships
+
+Keep responses concise (2-3 sentences) and conversational.
+Focus on understanding:
+- Key vendors and service providers they work with
+- Typical transaction patterns (frequencies, amounts, purposes)
+- Business rules for expense categorization
+- Relationships between different business entities
+- Industry-specific financial patterns
+
+Be helpful and encouraging. Make the user feel comfortable sharing details about their business."""
+
+        # Build messages array with history
+        messages = []
+
+        # Add conversation history
+        for msg in conversation_history[-6:]:  # Keep last 6 messages for context
+            messages.append({
+                'role': msg.get('role', 'user'),
+                'content': msg.get('content', '')
+            })
+
+        # Add current user message
+        messages.append({
+            'role': 'user',
+            'content': user_message
+        })
+
+        # Call Claude AI
+        client = get_claude_client()
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=500,
+            system=system_prompt,
+            messages=messages
+        )
+
+        ai_response = response.content[0].text
+
+        # Extract knowledge from the conversation
+        knowledge_extracted = []
+        if len(conversation_history) >= 2:  # Only extract after some conversation
+            try:
+                knowledge_extraction_prompt = f"""Analyze this conversation and extract any useful business knowledge.
+
+Conversation:
+User: {user_message}
+Assistant: {ai_response}
+
+Recent context:
+{chr(10).join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-4:]])}
+
+Extract structured knowledge in JSON format for each insight:
+{{
+  "knowledge_type": "vendor_info" | "transaction_pattern" | "business_rule" | "entity_relationship" | "general",
+  "title": "Brief summary (max 50 chars)",
+  "content": "Detailed description",
+  "confidence": 0.0-1.0
+}}
+
+ONLY return insights that are factual business information (vendors, rules, patterns).
+DO NOT extract greetings, questions, or non-factual statements.
+Return JSON array or empty array [] if no extractable knowledge."""
+
+                extraction_response = client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=1000,
+                    messages=[{
+                        'role': 'user',
+                        'content': knowledge_extraction_prompt
+                    }]
+                )
+
+                # Parse extracted knowledge
+                extraction_text = extraction_response.content[0].text.strip()
+
+                # Try to extract JSON from the response
+                import re
+                json_match = re.search(r'\[.*\]', extraction_text, re.DOTALL)
+                if json_match:
+                    import json
+                    knowledge_items = json.loads(json_match.group())
+
+                    # Save each knowledge item to database
+                    for item in knowledge_items:
+                        if isinstance(item, dict) and item.get('title') and item.get('content'):
+                            db_manager.execute_query("""
+                                INSERT INTO tenant_knowledge
+                                (tenant_id, knowledge_type, title, content, confidence_score, is_active)
+                                VALUES (%s, %s, %s, %s, %s, true)
+                            """, (
+                                tenant_id,
+                                item.get('knowledge_type', 'general'),
+                                item.get('title', ''),
+                                item.get('content', ''),
+                                item.get('confidence', 0.8)
+                            ))
+
+                            knowledge_extracted.append({
+                                'type': item.get('knowledge_type'),
+                                'title': item.get('title')
+                            })
+
+            except Exception as e:
+                logger.warning(f"Knowledge extraction error: {e}")
+                # Don't fail the request if extraction fails
+
+        return jsonify({
+            'success': True,
+            'response': ai_response,
+            'knowledge_extracted': knowledge_extracted
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': 'server_error',
+            'message': 'An error occurred processing your message'
         }), 500

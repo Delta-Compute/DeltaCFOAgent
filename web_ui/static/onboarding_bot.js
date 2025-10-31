@@ -13,7 +13,14 @@
         userData: {},
         isProcessing: false,
         mode: null, // 'create_tenant' or 'configure_tenant'
-        currentTenant: null
+        currentTenant: null,
+        awaitingDocumentResponse: false, // Tracking if waiting for yes/no after document upload
+        awaitingEntityResponse: false, // Tracking if waiting for yes/no after entity creation
+        creatingEntity: false, // Tracking if in entity creation flow
+        entityData: {}, // Temporary entity data being collected
+        entityStep: 0, // Current step in entity creation (0: name, 1: description, 2: type)
+        conversationMode: false, // Tracking if in AI conversation mode
+        conversationHistory: [] // Chat history for AI context
     };
 
     // Steps for creating a NEW tenant
@@ -75,7 +82,7 @@
     ];
 
     // DOM elements
-    let toggleBtn, closeBtn, botWindow, messagesContainer, inputField, sendBtn, loadingIndicator, progressBar, progressText;
+    let toggleBtn, closeBtn, botWindow, messagesContainer, inputField, sendBtn, loadingIndicator, progressBar, progressText, progressContainer;
 
     // Initialize bot when DOM is ready
     function init() {
@@ -89,6 +96,7 @@
         loadingIndicator = document.getElementById('onboardingBotLoading');
         progressBar = document.getElementById('onboardingProgress');
         progressText = document.getElementById('onboardingProgressText');
+        progressContainer = document.getElementById('onboardingProgressContainer');
 
         if (!toggleBtn || !botWindow) {
             console.warn('[OnboardingBot] Required elements not found');
@@ -214,7 +222,8 @@
                             { value: '1', icon: '🏢', label: 'Add Business Entities' },
                             { value: '2', icon: '🏦', label: 'Add Bank Accounts' },
                             { value: '3', icon: '📄', label: 'Upload Documents' },
-                            { value: '4', icon: '✖️', label: 'Exit' }
+                            { value: '4', icon: '💬', label: 'Talk About Business' },
+                            { value: '5', icon: '✅', label: 'Exit' }
                         ];
                         addOptionButtons(options);
                         updateProgress();
@@ -336,6 +345,30 @@
         botState.isProcessing = true;
         showLoading(true);
 
+        // Handle AI conversation mode
+        if (botState.conversationMode) {
+            await handleConversationInput(input);
+            return;
+        }
+
+        // Handle document upload yes/no response
+        if (botState.awaitingDocumentResponse) {
+            await handleDocumentUploadResponse(input);
+            return;
+        }
+
+        // Handle entity creation yes/no response
+        if (botState.awaitingEntityResponse) {
+            await handleEntityCreationResponse(input);
+            return;
+        }
+
+        // Handle entity creation flow
+        if (botState.creatingEntity) {
+            await handleEntityCreationInput(input);
+            return;
+        }
+
         // Get the appropriate steps array based on mode
         const steps = botState.mode === 'configure_tenant' ? configureTenantSteps : createTenantSteps;
         const currentStep = steps[botState.currentStep];
@@ -387,6 +420,276 @@
         }
     }
 
+    // Handle document upload yes/no response
+    async function handleDocumentUploadResponse(input) {
+        const normalizedInput = input.trim().toLowerCase();
+        showLoading(false);
+
+        if (normalizedInput === 'yes' || normalizedInput === 'y' || normalizedInput === 'sim' || normalizedInput === 's') {
+            // User wants to upload another document
+            botState.awaitingDocumentResponse = false;
+            addBotMessage('Great! Please upload your next document.');
+            setTimeout(() => {
+                showDocumentUploadInterface();
+            }, 800);
+        } else if (normalizedInput === 'no' || normalizedInput === 'n' || normalizedInput === 'não' || normalizedInput === 'nao') {
+            // User is done uploading
+            botState.awaitingDocumentResponse = false;
+            addBotMessage('Perfect! What else would you like to configure?');
+            setTimeout(() => {
+                addBotMessage('Choose an option:');
+                const options = [
+                    { value: '1', icon: '🏢', label: 'Add Business Entities' },
+                    { value: '2', icon: '🏦', label: 'Add Bank Accounts' },
+                    { value: '3', icon: '📄', label: 'Upload Documents' },
+                    { value: '4', icon: '💬', label: 'Talk About Business' },
+                    { value: '5', icon: '✅', label: 'Exit' }
+                ];
+                addOptionButtons(options);
+                botState.isProcessing = false;
+            }, 1000);
+        } else {
+            // Invalid response
+            addBotMessage('I didn\'t understand that. Please answer "yes" or "no".');
+            addBotMessage('Would you like to upload another document? (yes/no)');
+            botState.isProcessing = false;
+        }
+    }
+
+    // Handle entity creation yes/no response
+    async function handleEntityCreationResponse(input) {
+        const normalizedInput = input.trim().toLowerCase();
+        showLoading(false);
+
+        if (normalizedInput === 'yes' || normalizedInput === 'y' || normalizedInput === 'sim' || normalizedInput === 's') {
+            // User wants to add another entity
+            botState.awaitingEntityResponse = false;
+            addBotMessage('Great! Let\'s add another entity.');
+            setTimeout(() => {
+                addBotMessage('What is the name of the entity?');
+                botState.creatingEntity = true;
+                botState.entityStep = 0;
+                botState.entityData = {};
+                botState.isProcessing = false;
+            }, 800);
+        } else if (normalizedInput === 'no' || normalizedInput === 'n' || normalizedInput === 'não' || normalizedInput === 'nao') {
+            // User is done creating entities
+            botState.awaitingEntityResponse = false;
+            addBotMessage('Perfect! What else would you like to configure?');
+            setTimeout(() => {
+                addBotMessage('Choose an option:');
+                const options = [
+                    { value: '1', icon: '🏢', label: 'Add Business Entities' },
+                    { value: '2', icon: '🏦', label: 'Add Bank Accounts' },
+                    { value: '3', icon: '📄', label: 'Upload Documents' },
+                    { value: '4', icon: '✅', label: 'Exit' }
+                ];
+                addOptionButtons(options);
+                botState.isProcessing = false;
+            }, 1000);
+        } else {
+            // Invalid response
+            addBotMessage('I didn\'t understand that. Please answer "yes" or "no".');
+            addBotMessage('Would you like to add another entity? (yes/no)');
+            botState.isProcessing = false;
+        }
+    }
+
+    // Handle entity creation input
+    async function handleEntityCreationInput(input) {
+        showLoading(false);
+
+        if (botState.entityStep === 0) {
+            // Collecting name
+            botState.entityData.name = input.trim();
+            botState.entityStep = 1;
+            addBotMessage(`Perfect! Entity name: "${botState.entityData.name}"`);
+            setTimeout(() => {
+                addBotMessage('Please provide a brief description for this entity (or type "skip"):');
+                botState.isProcessing = false;
+            }, 800);
+        } else if (botState.entityStep === 1) {
+            // Collecting description
+            if (input.trim().toLowerCase() === 'skip') {
+                botState.entityData.description = '';
+            } else {
+                botState.entityData.description = input.trim();
+            }
+            botState.entityStep = 2;
+            addBotMessage('Great! Now, what type of entity is this?');
+            setTimeout(() => {
+                const typeOptions = [
+                    { value: 'subsidiary', icon: '🏢', label: 'Subsidiary' },
+                    { value: 'division', icon: '🏭', label: 'Division' },
+                    { value: 'branch', icon: '🌳', label: 'Branch' },
+                    { value: 'other', icon: '📋', label: 'Other' }
+                ];
+                addOptionButtons(typeOptions);
+                botState.isProcessing = false;
+            }, 800);
+        } else if (botState.entityStep === 2) {
+            // Collecting type and creating entity
+            botState.entityData.entity_type = input.trim().toLowerCase();
+
+            // Validate type
+            const validTypes = ['subsidiary', 'division', 'branch', 'other'];
+            if (!validTypes.includes(botState.entityData.entity_type)) {
+                botState.entityData.entity_type = 'other';
+            }
+
+            showLoading(true);
+            addBotMessage('Creating entity...');
+
+            try {
+                // Get auth token
+                const auth = window.auth;
+                if (!auth || !auth.currentUser) {
+                    throw new Error('Not authenticated');
+                }
+
+                const idToken = await auth.currentUser.getIdToken();
+
+                // Create entity via API
+                const response = await fetch('/api/onboarding/entities', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
+                    body: JSON.stringify(botState.entityData)
+                });
+
+                const data = await response.json();
+                showLoading(false);
+
+                if (data.success) {
+                    addBotMessage(`Success! Entity "${botState.entityData.name}" created and will now appear in your filters and classifications.`);
+
+                    // Reset entity creation state
+                    botState.creatingEntity = false;
+                    botState.entityStep = 0;
+                    botState.entityData = {};
+
+                    // Ask if they want to add another
+                    setTimeout(() => {
+                        addBotMessage('Would you like to add another entity? (yes/no)');
+                        botState.awaitingEntityResponse = true;
+                        botState.isProcessing = false;
+                    }, 1500);
+                } else {
+                    addBotMessage(`Error: ${data.message || 'Failed to create entity'}`);
+                    botState.creatingEntity = false;
+                    botState.entityStep = 0;
+                    botState.entityData = {};
+                    botState.isProcessing = false;
+                }
+            } catch (error) {
+                showLoading(false);
+                console.error('Create entity error:', error);
+                addBotMessage('Sorry, there was an error creating the entity. Please try again.');
+                botState.creatingEntity = false;
+                botState.entityStep = 0;
+                botState.entityData = {};
+                botState.isProcessing = false;
+            }
+        }
+    }
+
+    // Handle AI conversation input
+    async function handleConversationInput(input) {
+        const normalizedInput = input.trim().toLowerCase();
+
+        // Check if user wants to exit conversation mode
+        if (normalizedInput === 'exit' || normalizedInput === 'done' || normalizedInput === 'stop' || normalizedInput === 'menu') {
+            botState.conversationMode = false;
+            botState.conversationHistory = [];
+            showLoading(false);
+            addBotMessage('Thanks for sharing! The information you provided will help improve transaction classification.');
+            setTimeout(() => {
+                addBotMessage('What else would you like to configure?');
+                const options = [
+                    { value: '1', icon: '🏢', label: 'Add Business Entities' },
+                    { value: '2', icon: '🏦', label: 'Add Bank Accounts' },
+                    { value: '3', icon: '📄', label: 'Upload Documents' },
+                    { value: '4', icon: '💬', label: 'Talk About Business' },
+                    { value: '5', icon: '✅', label: 'Exit' }
+                ];
+                addOptionButtons(options);
+                botState.isProcessing = false;
+            }, 1000);
+            return;
+        }
+
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                throw new Error('Not authenticated');
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+
+            // Add user message to history
+            botState.conversationHistory.push({
+                role: 'user',
+                content: input
+            });
+
+            // Call chat API
+            const response = await fetch('/api/onboarding/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({
+                    message: input,
+                    conversation_history: botState.conversationHistory.slice(-6) // Send last 6 messages
+                })
+            });
+
+            const data = await response.json();
+            showLoading(false);
+
+            if (data.success) {
+                // Add AI response to history
+                botState.conversationHistory.push({
+                    role: 'assistant',
+                    content: data.response
+                });
+
+                // Display AI response
+                addBotMessage(data.response);
+
+                // If knowledge was extracted, show notification
+                if (data.knowledge_extracted && data.knowledge_extracted.length > 0) {
+                    setTimeout(() => {
+                        const knowledgeMsg = `I extracted ${data.knowledge_extracted.length} insight(s) from our conversation that will help improve your transaction classification.`;
+                        addBotMessage(knowledgeMsg);
+                    }, 1000);
+                }
+
+                // After 5 messages, remind user they can exit
+                if (botState.conversationHistory.length >= 10) {
+                    setTimeout(() => {
+                        addBotMessage('(Type "exit" anytime to return to the main menu)');
+                    }, 1500);
+                }
+
+                botState.isProcessing = false;
+
+            } else {
+                addBotMessage(`Error: ${data.message || 'Failed to process message'}`);
+                botState.isProcessing = false;
+            }
+
+        } catch (error) {
+            showLoading(false);
+            console.error('Chat error:', error);
+            addBotMessage('Sorry, there was an error processing your message. Please try again.');
+            botState.isProcessing = false;
+        }
+    }
+
     // Handle configuration options for existing tenant
     async function handleConfigureOption(option) {
         const normalizedOption = option.trim().toLowerCase();
@@ -394,10 +697,14 @@
         showLoading(false);
 
         if (normalizedOption === '1' || normalizedOption.includes('entit')) {
-            addBotMessage('Great! Let me redirect you to the Business Entities page where you can add and manage your entities.');
+            addBotMessage('Perfect! Let\'s add a new business entity.');
             setTimeout(() => {
-                window.location.href = '/whitelisted-accounts'; // Adjust URL to actual entities page
-            }, 1500);
+                addBotMessage('What is the name of the entity?');
+                botState.creatingEntity = true;
+                botState.entityStep = 0;
+                botState.entityData = {};
+                botState.isProcessing = false;
+            }, 800);
         } else if (normalizedOption === '2' || normalizedOption.includes('bank') || normalizedOption.includes('account')) {
             addBotMessage('Perfect! Let me take you to the Bank Accounts page.');
             setTimeout(() => {
@@ -409,14 +716,26 @@
             setTimeout(() => {
                 showDocumentUploadInterface();
             }, 1000);
-        } else if (normalizedOption === '4' || normalizedOption.includes('exit') || normalizedOption.includes('cancel')) {
+        } else if (normalizedOption === '4' || normalizedOption.includes('talk') || normalizedOption.includes('conversation') || normalizedOption.includes('chat')) {
+            // Start AI conversation mode
+            botState.conversationMode = true;
+            botState.conversationHistory = [];
+            addBotMessage('Great! I\'d love to learn more about your business.');
+            setTimeout(() => {
+                addBotMessage('Tell me about your company, your vendors, typical expenses, or any financial patterns I should know about.');
+                setTimeout(() => {
+                    addBotMessage('(Type "exit" anytime to return to the main menu)');
+                    botState.isProcessing = false;
+                }, 800);
+            }, 1000);
+        } else if (normalizedOption === '5' || normalizedOption.includes('exit') || normalizedOption.includes('cancel')) {
             addBotMessage('No problem! Feel free to reach out anytime you need help.');
             botState.isProcessing = false;
             setTimeout(() => {
                 closeBot();
             }, 1500);
         } else {
-            addBotMessage('I didn\'t understand that. Please type 1, 2, 3, or 4.');
+            addBotMessage('I didn\'t understand that. Please type 1, 2, 3, 4, or 5.');
             botState.isProcessing = false;
         }
     }
@@ -523,6 +842,7 @@
                 // Ask if they want to upload more
                 setTimeout(() => {
                     addBotMessage('Would you like to upload another document? (yes/no)');
+                    botState.awaitingDocumentResponse = true;
                     botState.isProcessing = false;
                 }, 1500);
             } else {
@@ -676,6 +996,19 @@
 
     // Update progress bar
     function updateProgress(customPercent) {
+        // Only show progress bar during tenant creation, not in configure mode
+        if (botState.mode === 'configure_tenant') {
+            if (progressContainer) {
+                progressContainer.style.display = 'none';
+            }
+            return;
+        }
+
+        // Show progress bar in create_tenant mode
+        if (progressContainer) {
+            progressContainer.style.display = 'block';
+        }
+
         const steps = botState.mode === 'configure_tenant' ? configureTenantSteps : createTenantSteps;
         const percent = customPercent !== undefined ? customPercent :
             Math.round((botState.currentStep / steps.length) * 100);

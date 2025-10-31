@@ -11,7 +11,11 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import anthropic
 
-from .data_queries import DataQueryService
+try:
+    from .data_queries import DataQueryService, sanitize_numeric
+except ImportError:
+    # Fallback for when imported directly (services folder added to sys.path)
+    from data_queries import DataQueryService, sanitize_numeric
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +225,9 @@ Important guidelines:
                 'generation_prompt': prompt
             }
 
+            # Sanitize numeric values to ensure JSON compatibility
+            result = sanitize_numeric(result)
+
             # Cache the generated content
             self._cache_content(result)
 
@@ -251,7 +258,7 @@ Important guidelines:
         company = data.get('company', {})
         kpis = data.get('kpis', {})
 
-        return {
+        result = {
             'company_name': company.get('company_name', 'Company'),
             'tagline': company.get('company_tagline', 'Financial Intelligence Platform'),
             'description': company.get('company_description', 'AI-powered financial management and analytics.'),
@@ -272,6 +279,9 @@ Important guidelines:
             'generated_at': datetime.now().isoformat(),
             'generation_method': 'fallback'
         }
+
+        # Sanitize numeric values to ensure JSON compatibility
+        return sanitize_numeric(result)
 
     def _get_cached_content(self) -> Optional[Dict[str, Any]]:
         """

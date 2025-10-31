@@ -129,13 +129,15 @@ def register_auth_blueprints():
         from api.auth_routes import auth_bp
         from api.user_routes import user_bp
         from api.tenant_routes import tenant_bp
+        from api.onboarding_routes import onboarding_bp
 
         # Register blueprints
         app.register_blueprint(auth_bp)
         app.register_blueprint(user_bp)
         app.register_blueprint(tenant_bp)
+        app.register_blueprint(onboarding_bp)
 
-        logger.info("Authentication and tenant blueprints registered successfully")
+        logger.info("Authentication, tenant, and onboarding blueprints registered successfully")
         return True
     except ImportError as e:
         logger.warning(f"Could not import authentication blueprints: {e}")
@@ -2781,6 +2783,157 @@ def get_similar_descriptions_from_db(context: Dict) -> List[str]:
         print(f"ERROR: Error finding similar descriptions: {e}")
         return []
 
+def get_tenant_entities(tenant_id: str) -> List[Dict]:
+    """Get all active business entities for a tenant"""
+    try:
+        entities = db_manager.execute_query("""
+            SELECT id, name, description, entity_type
+            FROM business_entities
+            WHERE tenant_id = %s AND active = true
+            ORDER BY name
+        """, (tenant_id,), fetch_all=True)
+        return entities or []
+    except Exception as e:
+        logging.error(f"Error getting tenant entities: {e}")
+        return []
+
+
+def get_tenant_business_context(tenant_id: str) -> Dict:
+    """Get business context information for a tenant"""
+    try:
+        tenant = db_manager.execute_query("""
+            SELECT company_name, description, industry, metadata
+            FROM tenant_configuration
+            WHERE tenant_id = %s
+        """, (tenant_id,), fetch_one=True)
+
+        if tenant:
+            return {
+                'company_name': tenant.get('company_name', ''),
+                'description': tenant.get('description', ''),
+                'industry': tenant.get('industry', 'general'),
+                'metadata': tenant.get('metadata', {})
+            }
+        return {'industry': 'general'}
+    except Exception as e:
+        logging.error(f"Error getting tenant business context: {e}")
+        return {'industry': 'general'}
+
+
+def format_entities_for_prompt(entities: List[Dict]) -> str:
+    """Format business entities into a readable prompt section"""
+    if not entities:
+        return "No business entities configured yet."
+
+    entity_lines = []
+    for entity in entities:
+        entity_type = entity.get('entity_type', 'other').capitalize()
+        description = entity.get('description', '')
+        if description:
+            entity_lines.append(f"- {entity['name']} ({entity_type}): {description}")
+        else:
+            entity_lines.append(f"- {entity['name']} ({entity_type})")
+
+    return '\n            '.join(entity_lines)
+
+
+def get_tenant_knowledge(tenant_id: str, knowledge_types: List[str] = None) -> List[Dict]:
+    """
+    Get AI-extracted knowledge for a tenant to improve classification
+
+    Args:
+        tenant_id: Tenant identifier
+        knowledge_types: Optional filter for specific knowledge types
+                        (vendor_info, transaction_pattern, business_rule, entity_relationship, general)
+
+    Returns:
+        List of knowledge entries
+    """
+    try:
+        if knowledge_types:
+            placeholders = ','.join(['%s'] * len(knowledge_types))
+            query = f"""
+                SELECT knowledge_type, title, content, structured_data, confidence_score
+                FROM tenant_knowledge
+                WHERE tenant_id = %s
+                  AND is_active = true
+                  AND knowledge_type IN ({placeholders})
+                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
+                LIMIT 50
+            """
+            params = (tenant_id, *knowledge_types)
+        else:
+            query = """
+                SELECT knowledge_type, title, content, structured_data, confidence_score
+                FROM tenant_knowledge
+                WHERE tenant_id = %s AND is_active = true
+                ORDER BY confidence_score DESC NULLS LAST, created_at DESC
+                LIMIT 50
+            """
+            params = (tenant_id,)
+
+        knowledge = db_manager.execute_query(query, params, fetch_all=True)
+        return knowledge or []
+    except Exception as e:
+        logging.error(f"Error getting tenant knowledge: {e}")
+        return []
+
+
+def format_knowledge_for_prompt(knowledge: List[Dict]) -> str:
+    """Format tenant knowledge into a readable prompt section"""
+    if not knowledge:
+        return ""
+
+    # Group knowledge by type
+    grouped = {}
+    for item in knowledge:
+        k_type = item.get('knowledge_type', 'general')
+        if k_type not in grouped:
+            grouped[k_type] = []
+        grouped[k_type].append(item)
+
+    sections = []
+
+    # Vendor information
+    if 'vendor_info' in grouped:
+        vendor_lines = []
+        for item in grouped['vendor_info']:
+            title = item.get('title', 'Vendor')
+            content = item.get('content', '')
+            vendor_lines.append(f"- {title}: {content}")
+        if vendor_lines:
+            sections.append(f"KNOWN VENDORS:\n            " + '\n            '.join(vendor_lines))
+
+    # Transaction patterns
+    if 'transaction_pattern' in grouped:
+        pattern_lines = []
+        for item in grouped['transaction_pattern']:
+            content = item.get('content', '')
+            pattern_lines.append(f"- {content}")
+        if pattern_lines:
+            sections.append(f"TRANSACTION PATTERNS:\n            " + '\n            '.join(pattern_lines))
+
+    # Business rules
+    if 'business_rule' in grouped:
+        rule_lines = []
+        for item in grouped['business_rule']:
+            content = item.get('content', '')
+            rule_lines.append(f"- {content}")
+        if rule_lines:
+            sections.append(f"BUSINESS RULES:\n            " + '\n            '.join(rule_lines))
+
+    # Entity relationships
+    if 'entity_relationship' in grouped:
+        rel_lines = []
+        for item in grouped['entity_relationship']:
+            content = item.get('content', '')
+            rel_lines.append(f"- {content}")
+        if rel_lines:
+            sections.append(f"ENTITY RELATIONSHIPS:\n            " + '\n            '.join(rel_lines))
+
+    return '\n\n            '.join(sections) if sections else ""
+
+
 def build_entity_classification_prompt(context: Dict, tenant_id: str = None) -> str:
     """
     Build dynamic entity classification prompt based on tenant configuration.
@@ -2801,6 +2954,13 @@ def build_entity_classification_prompt(context: Dict, tenant_id: str = None) -> 
 
     # Format entities for prompt
     entity_rules = format_entities_for_prompt(entities)
+
+    # Load and format tenant knowledge for classification
+    knowledge = get_tenant_knowledge(
+        tenant_id,
+        knowledge_types=['vendor_info', 'transaction_pattern', 'business_rule', 'entity_relationship']
+    )
+    knowledge_section = format_knowledge_for_prompt(knowledge)
 
     # Build industry-specific context hints
     industry = business_context.get('industry', 'general')
@@ -2844,6 +3004,10 @@ def build_entity_classification_prompt(context: Dict, tenant_id: str = None) -> 
     context_clues_str = '\n            - '.join(context_clues)
 
     # Build the prompt
+    knowledge_prompt_section = ""
+    if knowledge_section:
+        knowledge_prompt_section = f"\n\n            BUSINESS KNOWLEDGE:\n            {knowledge_section}\n"
+
     prompt = f"""
             You are a financial analyst specializing in entity classification for {industry.replace('_', ' ')} businesses.
 
@@ -2854,17 +3018,17 @@ def build_entity_classification_prompt(context: Dict, tenant_id: str = None) -> 
             - Date: {context.get('date', '')}
 
             ENTITY CLASSIFICATION RULES:
-            {entity_rules}
-
+            {entity_rules}{knowledge_prompt_section}
             CONTEXT CLUES:
             - {context_clues_str}
 
             Based on the transaction description and amount, suggest 3-5 most likely entities.
             Prioritize based on:
-            1. Specific merchant/institution mentioned
-            2. Transaction type (ACH, WIRE, etc.)
-            3. Industry-specific patterns
-            4. Amount patterns
+            1. Specific merchant/institution mentioned in BUSINESS KNOWLEDGE (highest priority)
+            2. Transaction patterns from BUSINESS KNOWLEDGE
+            3. Transaction type (ACH, WIRE, etc.)
+            4. Industry-specific patterns
+            5. Amount patterns
 
             Return only the entity names, one per line, ranked by confidence.
             """
@@ -4679,7 +4843,13 @@ def api_get_homepage_content():
     """Get current homepage content (cached or fresh)"""
     try:
         from database import db_manager
-        from services.homepage_generator import HomepageContentGenerator
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from homepage_generator import HomepageContentGenerator
 
         tenant_id = get_current_tenant_id()
         generator = HomepageContentGenerator(db_manager, tenant_id)
@@ -4705,7 +4875,13 @@ def api_regenerate_homepage():
     """Force regenerate homepage content with Claude AI"""
     try:
         from database import db_manager
-        from services.homepage_generator import HomepageContentGenerator
+        # Import from web_ui local services (not root services/)
+        import sys
+        import os
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from homepage_generator import HomepageContentGenerator
 
         tenant_id = get_current_tenant_id()
         generator = HomepageContentGenerator(db_manager, tenant_id)
