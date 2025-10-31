@@ -7267,14 +7267,14 @@ def upload_file():
                     )
 
                     # Check for duplicates: same date, description, and amount
-                    existing = db_manager.fetch_one("""
+                    existing = db_manager.execute_query("""
                         SELECT transaction_id FROM transactions
                         WHERE tenant_id = %s
                           AND date = %s
                           AND description = %s
                           AND ABS(amount - %s) < 0.01
                         LIMIT 1
-                    """, (tenant_id, txn_date, txn_description, usd_amount))
+                    """, (tenant_id, txn_date, txn_description, usd_amount), fetch_one=True)
 
                     if existing:
                         print(f"DUPLICATE SKIPPED: {txn_date} | {txn_description} | ${usd_amount}")
