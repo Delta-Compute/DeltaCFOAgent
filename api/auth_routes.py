@@ -259,6 +259,10 @@ def login():
                 current_tenant = tenants[0]
                 session['current_tenant_id'] = current_tenant['id']
 
+            # Sync with tenant_context.py session key
+            from web_ui.tenant_context import set_tenant_id
+            set_tenant_id(current_tenant['id'])
+
         logger.info(f"User logged in successfully: {user['email']}")
 
         return jsonify({
@@ -583,8 +587,10 @@ def switch_tenant(tenant_id):
             'permissions': result['permissions']
         }
 
-        # Update session using tenant_context module
+        # Update session using both tenant_context module and session key
+        # This ensures compatibility with both tenant_context.py and auth_middleware.py
         set_tenant_id(tenant_id)
+        session['current_tenant_id'] = tenant_id
 
         logger.info(f"User {user['email']} switched to tenant {tenant['company_name']}")
 
