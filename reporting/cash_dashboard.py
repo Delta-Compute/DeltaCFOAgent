@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 class CashDashboard:
     """Generates comprehensive cash position analytics for executive decision making"""
 
-    def __init__(self):
+    def __init__(self, tenant_id: str = 'delta'):
         self.db = db_manager
+        self.tenant_id = tenant_id
 
     def get_current_cash_position(self, entity: Optional[str] = None,
                                  as_of_date: Optional[date] = None,
@@ -65,7 +66,7 @@ class CashDashboard:
 
             # Build query based on filters
             entity_filter = ""
-            params = [as_of_date_str]
+            params = [self.tenant_id, as_of_date_str]
 
             if entity:
                 if self.db.db_type == 'postgresql':
@@ -96,7 +97,8 @@ class CashDashboard:
                         origin,
                         destination
                     FROM transactions
-                    WHERE date <= %s
+                    WHERE tenant_id = %s
+                    AND date <= %s
                     AND amount::text != 'NaN' AND amount IS NOT NULL
                     {entity_filter}
                     {internal_filter}
@@ -116,7 +118,8 @@ class CashDashboard:
                         origin,
                         destination
                     FROM transactions
-                    WHERE date <= ?
+                    WHERE tenant_id = ?
+                    AND date <= ?
                     AND amount IS NOT NULL
                     {entity_filter}
                     {internal_filter}
@@ -240,7 +243,7 @@ class CashDashboard:
 
             # OPTIMIZATION: Get ALL transactions once and process efficiently
             entity_filter = ""
-            params = []
+            params = [self.tenant_id]
 
             if entity:
                 if self.db.db_type == 'postgresql':
@@ -266,7 +269,8 @@ class CashDashboard:
                         classified_entity,
                         currency
                     FROM transactions
-                    WHERE amount::text != 'NaN' AND amount IS NOT NULL
+                    WHERE tenant_id = %s
+                    AND amount::text != 'NaN' AND amount IS NOT NULL
                     {entity_filter}
                     {internal_filter}
                     ORDER BY date
@@ -280,7 +284,8 @@ class CashDashboard:
                         classified_entity,
                         currency
                     FROM transactions
-                    WHERE amount IS NOT NULL
+                    WHERE tenant_id = ?
+                    AND amount IS NOT NULL
                     {entity_filter}
                     {internal_filter}
                     ORDER BY date
@@ -426,7 +431,7 @@ class CashDashboard:
 
             # Build entity filter
             entity_filter = ""
-            params = [start_date_str, end_date_str]
+            params = [self.tenant_id, start_date_str, end_date_str]
 
             if entity:
                 if self.db.db_type == 'postgresql':
@@ -446,7 +451,8 @@ class CashDashboard:
                         accounting_category,
                         description
                     FROM transactions
-                    WHERE date >= %s AND date <= %s
+                    WHERE tenant_id = %s
+                    AND date >= %s AND date <= %s
                     {entity_filter}
                     ORDER BY date
                 """
@@ -460,7 +466,8 @@ class CashDashboard:
                         accounting_category,
                         description
                     FROM transactions
-                    WHERE date >= ? AND date <= ?
+                    WHERE tenant_id = ?
+                    AND date >= ? AND date <= ?
                     {entity_filter}
                     ORDER BY date
                 """
@@ -595,13 +602,14 @@ class CashDashboard:
                     amount,
                     usd_equivalent
                 FROM transactions
-                WHERE classified_entity IS NOT NULL
+                WHERE tenant_id = %s
+                    AND classified_entity IS NOT NULL
                     AND classified_entity != ''
                     AND amount::text != 'NaN' AND amount IS NOT NULL
                 ORDER BY classified_entity, date
             """
 
-            all_transactions = self.db.execute_query(query, fetch_all=True)
+            all_transactions = self.db.execute_query(query, (self.tenant_id,), fetch_all=True)
 
             # Process all entities efficiently
             entity_data = defaultdict(list)
