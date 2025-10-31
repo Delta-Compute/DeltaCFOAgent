@@ -4973,7 +4973,7 @@ def api_get_user_profile():
                     ) FILTER (WHERE tu.id IS NOT NULL) as tenants
                 FROM users u
                 LEFT JOIN tenant_users tu ON u.id = tu.user_id AND tu.is_active = TRUE
-                LEFT JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+                LEFT JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
                 WHERE u.firebase_uid = %s AND u.is_active = TRUE
                 GROUP BY u.id
             """

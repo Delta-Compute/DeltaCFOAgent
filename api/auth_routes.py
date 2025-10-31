@@ -631,7 +631,7 @@ def verify_invitation(invitation_token):
                 tc.company_name,
                 u.display_name as invited_by_name
             FROM user_invitations ui
-            JOIN tenant_configuration tc ON ui.tenant_id = tc.id
+            JOIN tenant_configuration tc ON ui.tenant_id = tc.tenant_id
             JOIN users u ON ui.invited_by_user_id = u.id
             WHERE ui.invitation_token = %s
         """
