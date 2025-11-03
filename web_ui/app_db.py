@@ -1370,12 +1370,18 @@ def get_dashboard_stats():
             result = cursor.fetchone()
             total_transactions = result['total'] if is_postgresql else result[0]
 
-            # Revenue and expenses (exclude archived)
-            cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE tenant_id = {placeholder} AND amount > 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            # Revenue and expenses (exclude archived and NaN values)
+            if is_postgresql:
+                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE tenant_id = {placeholder} AND amount > 0 AND amount::text != 'NaN' AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            else:
+                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE tenant_id = {placeholder} AND amount > 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
             result = cursor.fetchone()
             revenue = result['revenue'] if is_postgresql else result[0]
 
-            cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE tenant_id = {placeholder} AND amount < 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            if is_postgresql:
+                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE tenant_id = {placeholder} AND amount < 0 AND amount::text != 'NaN' AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            else:
+                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE tenant_id = {placeholder} AND amount < 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
             result = cursor.fetchone()
             expenses = result['expenses'] if is_postgresql else result[0]
 

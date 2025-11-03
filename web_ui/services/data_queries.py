@@ -165,25 +165,29 @@ class DataQueryService:
             """, (self.tenant_id,), fetch_one=True)
             kpis['total_transactions'] = result['total'] if result else 0
 
-            # Revenue (positive amounts)
+            # Revenue (positive amounts) - exclude NaN values
             result = self.db_manager.execute_query("""
                 SELECT COALESCE(SUM(amount), 0) as revenue
                 FROM transactions
                 WHERE tenant_id = %s
                 AND amount > 0
+                AND amount::text != 'NaN'
                 AND (archived = FALSE OR archived IS NULL)
             """, (self.tenant_id,), fetch_one=True)
-            kpis['total_revenue'] = float(result['revenue']) if result else 0.0
+            revenue_value = float(result['revenue']) if result and result['revenue'] is not None else 0.0
+            kpis['total_revenue'] = 0.0 if (revenue_value != revenue_value) else revenue_value  # Check for NaN
 
-            # Expenses (negative amounts)
+            # Expenses (negative amounts) - exclude NaN values
             result = self.db_manager.execute_query("""
                 SELECT COALESCE(SUM(ABS(amount)), 0) as expenses
                 FROM transactions
                 WHERE tenant_id = %s
                 AND amount < 0
+                AND amount::text != 'NaN'
                 AND (archived = FALSE OR archived IS NULL)
             """, (self.tenant_id,), fetch_one=True)
-            kpis['total_expenses'] = float(result['expenses']) if result else 0.0
+            expenses_value = float(result['expenses']) if result and result['expenses'] is not None else 0.0
+            kpis['total_expenses'] = 0.0 if (expenses_value != expenses_value) else expenses_value  # Check for NaN
 
             # Net profit
             kpis['net_profit'] = kpis['total_revenue'] - kpis['total_expenses']
