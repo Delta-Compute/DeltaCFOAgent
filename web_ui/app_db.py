@@ -7511,6 +7511,14 @@ Important:
         return {"error": error_msg, "transactions": [], "total_found": 0}
     except Exception as e:
         error_str = str(e)
+        error_type = type(e).__name__
+        # Enhanced logging for debugging
+        print(f" EXCEPTION TYPE: {error_type}")
+        print(f" EXCEPTION MESSAGE: {error_str}")
+        print(f" FULL TRACEBACK:")
+        import traceback
+        traceback.print_exc()
+
         # Check if this is a poppler-related error
         if "poppler" in error_str.lower() or "Unable to get page count" in error_str:
             error_msg = (
@@ -7521,9 +7529,8 @@ Important:
                 "CSV uploads will continue to work normally."
             )
         else:
-            error_msg = f"PDF processing failed: {error_str}"
+            error_msg = f"PDF processing failed ({error_type}): {error_str}"
         print(f" {error_msg}")
-        print(f"Traceback: {traceback.format_exc()}")
         return {"error": error_msg, "transactions": [], "total_found": 0}
 
 
