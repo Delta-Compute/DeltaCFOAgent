@@ -1263,6 +1263,74 @@ class DeltaCFOAgent:
         print(f" Could not parse date: {date_str}")
         return None
 
+    def calculate_crypto_usd_equivalent(self, crypto_amount, crypto_symbol, transaction_date):
+        """
+        Calculate USD equivalent for crypto transaction using historical prices from database.
+
+        Args:
+            crypto_amount (float): Amount of cryptocurrency
+            crypto_symbol (str): Cryptocurrency symbol (BTC, ETH, USDT, etc.)
+            transaction_date (str or datetime): Date of transaction
+
+        Returns:
+            tuple: (usd_equivalent, conversion_note) or (None, None) if price not found
+        """
+        try:
+            import psycopg2
+            import os as os_module
+
+            # Parse the date to YYYY-MM-DD format
+            date_str = self.extract_date_for_pricing(transaction_date)
+            if not date_str:
+                return None, None
+
+            # Handle stablecoins with fixed $1.00 rate
+            if crypto_symbol.upper() in ['USDC', 'USDT']:
+                usd_equivalent = float(crypto_amount)
+                conversion_note = f"{crypto_symbol} is a stablecoin (fixed at $1.00)"
+                return usd_equivalent, conversion_note
+
+            # Get database credentials from environment
+            db_host = os_module.environ.get('DB_HOST', '34.39.143.82')
+            db_port = os_module.environ.get('DB_PORT', '5432')
+            db_name = os_module.environ.get('DB_NAME', 'delta_cfo')
+            db_user = os_module.environ.get('DB_USER', 'delta_user')
+            db_password = os_module.environ.get('DB_PASSWORD', 'nWr0Y8bU51ypLjMIfx8bTe+V/1iOV59r90T8wJEsSGo=')
+
+            # Connect to PostgreSQL
+            conn = psycopg2.connect(
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_password
+            )
+            cursor = conn.cursor()
+
+            # Query historical price from crypto_historic_prices table
+            cursor.execute("""
+                SELECT price_usd
+                FROM crypto_historic_prices
+                WHERE symbol = %s AND date = %s
+            """, (crypto_symbol.upper(), date_str))
+
+            price_result = cursor.fetchone()
+            cursor.close()
+            conn.close()
+
+            if price_result:
+                usd_price = float(price_result[0])
+                usd_equivalent = float(crypto_amount) * usd_price
+                conversion_note = f"Converted using historical {crypto_symbol} price from Binance"
+                return usd_equivalent, conversion_note
+            else:
+                # No price found
+                return None, None
+
+        except Exception as e:
+            print(f" Error calculating USD equivalent for {crypto_symbol} on {transaction_date}: {e}")
+            return None, None
+
     def fix_account_identifiers(self, df):
         """Fix generic account names to be specific"""
         print(" Fixing account identifiers...")

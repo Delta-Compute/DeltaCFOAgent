@@ -3766,6 +3766,34 @@ def sync_csv_to_database(csv_filename=None):
                 'conversion_note': str(row.get('Conversion_Note', '')) if pd.notna(row.get('Conversion_Note')) else None
             }
 
+            # AUTOMATIC CRYPTO USD CALCULATION
+            # If this is a crypto transaction with crypto_amount but no usd_equivalent, calculate it automatically
+            if data['crypto_amount'] is not None and data['crypto_amount'] != 0 and data['currency'] not in ['USD', 'BRL', 'EUR', 'GBP']:
+                # Only calculate if usd_equivalent wasn't already provided or is same as amount (fallback case)
+                if data['usd_equivalent'] == data['amount'] or data['usd_equivalent'] == 0:
+                    try:
+                        # Import DeltaCFOAgent for crypto USD calculation
+                        from main import DeltaCFOAgent
+                        agent = DeltaCFOAgent(tenant_id=tenant_id)
+
+                        # Calculate USD equivalent using historical prices
+                        usd_eq, conv_note = agent.calculate_crypto_usd_equivalent(
+                            crypto_amount=abs(data['crypto_amount']),
+                            crypto_symbol=data['currency'],
+                            transaction_date=data['date']
+                        )
+
+                        if usd_eq is not None:
+                            # Apply sign from original amount (negative for withdrawals, positive for deposits)
+                            if data['amount'] < 0:
+                                data['usd_equivalent'] = -abs(usd_eq)
+                            else:
+                                data['usd_equivalent'] = abs(usd_eq)
+                            data['conversion_note'] = conv_note
+                            print(f"   AUTO-CALCULATED USD: {data['currency']} {data['crypto_amount']} -> ${data['usd_equivalent']:.2f}")
+                    except Exception as e:
+                        print(f"   WARNING: Could not auto-calculate USD for crypto transaction: {e}")
+
             # SMART ENRICHMENT: Insert transaction or enrich existing one
             if is_postgresql:
                 # First, check if transaction exists
@@ -6842,20 +6870,64 @@ def files_page():
                     account_category = 'Checking'
                 return account_id, account_type, account_category
 
-            # Crypto wallet patterns (Coinbase, Binance, Kraken, etc.)
+            # Crypto exchanges and wallets
             crypto_patterns = [
-                (r'coinbase', 'Coinbase Wallet'),
-                (r'binance', 'Binance Account'),
-                (r'kraken', 'Kraken Account'),
-                (r'crypto', 'Crypto Wallet'),
-                (r'btc|bitcoin', 'Bitcoin Wallet'),
-                (r'eth|ethereum', 'Ethereum Wallet'),
+                # Exchanges
+                (r'mexc', 'MEXC Exchange', 'Crypto Exchange'),
+                (r'binance', 'Binance Exchange', 'Crypto Exchange'),
+                (r'coinbase', 'Coinbase', 'Crypto Exchange'),
+                (r'kraken', 'Kraken Exchange', 'Crypto Exchange'),
+                (r'kucoin', 'KuCoin Exchange', 'Crypto Exchange'),
+                (r'bybit', 'Bybit Exchange', 'Crypto Exchange'),
+                (r'okx|okex', 'OKX Exchange', 'Crypto Exchange'),
+                # Hardware/Software Wallets
+                (r'ledger.*?live|ledgerlive', 'Ledger Live', 'Crypto Wallet'),
+                (r'ledger', 'Ledger Wallet', 'Crypto Wallet'),
+                (r'metamask', 'MetaMask', 'Crypto Wallet'),
+                (r'trust.*?wallet', 'Trust Wallet', 'Crypto Wallet'),
+                # Generic crypto
+                (r'crypto', 'Crypto Wallet', 'Crypto Wallet'),
+                (r'btc|bitcoin', 'Bitcoin Wallet', 'Crypto Wallet'),
+                (r'eth|ethereum', 'Ethereum Wallet', 'Crypto Wallet'),
             ]
-            for pattern, name in crypto_patterns:
+            for pattern, name, category in crypto_patterns:
                 if re.search(pattern, filename, re.IGNORECASE):
                     account_id = name.replace(' ', '-')
                     account_type = name
-                    account_category = 'Crypto Wallet'
+                    account_category = category
+                    return account_id, account_type, account_category
+
+            # Brazilian banks
+            brazilian_banks = [
+                (r'itau|ita[uú]', 'Itaú', 'Checking'),
+                (r'bradesco', 'Bradesco', 'Checking'),
+                (r'santander', 'Santander', 'Checking'),
+                (r'bb|banco.*?do.*?brasil', 'Banco do Brasil', 'Checking'),
+                (r'caixa', 'Caixa Econômica', 'Checking'),
+                (r'nubank|nu\s*bank', 'Nubank', 'Credit Card'),
+                (r'inter', 'Banco Inter', 'Checking'),
+                (r'c6\s*bank|c6bank', 'C6 Bank', 'Checking'),
+            ]
+            for pattern, name, category in brazilian_banks:
+                if re.search(pattern, filename, re.IGNORECASE):
+                    account_id = name.replace(' ', '-')
+                    account_type = name
+                    account_category = category
+                    return account_id, account_type, account_category
+
+            # US banks (besides Chase)
+            us_banks = [
+                (r'wells.*?fargo', 'Wells Fargo', 'Checking'),
+                (r'bank.*?of.*?america|bofa', 'Bank of America', 'Checking'),
+                (r'citi.*?bank', 'Citibank', 'Checking'),
+                (r'capital.*?one', 'Capital One', 'Credit Card'),
+                (r'american.*?express|amex', 'American Express', 'Credit Card'),
+            ]
+            for pattern, name, category in us_banks:
+                if re.search(pattern, filename, re.IGNORECASE):
+                    account_id = name.replace(' ', '-')
+                    account_type = name
+                    account_category = category
                     return account_id, account_type, account_category
 
             # Generic credit card patterns
@@ -7017,7 +7089,7 @@ def files_page():
             })
 
         # Sort account groups by category then name
-        category_order = {'Checking': 1, 'Credit Card': 2, 'Crypto Wallet': 3, 'Other': 4}
+        category_order = {'Checking': 1, 'Credit Card': 2, 'Crypto Exchange': 3, 'Crypto Wallet': 4, 'Other': 5}
         account_groups.sort(key=lambda g: (category_order.get(g['category'], 99), g['name']))
 
         return render_template('files.html', account_groups=account_groups)
