@@ -80,6 +80,9 @@ from historical_currency_converter import HistoricalCurrencyConverter
 # Import tenant context manager
 from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
 
+# Import DeltaCFOAgent for transaction classification
+from main import DeltaCFOAgent
+
 # Import reporting API
 from reporting_api import register_reporting_routes
 
@@ -118,6 +121,9 @@ init_tenant_context(app)
 # Register CFO reporting routes
 register_reporting_routes(app)
 
+# Initialize CFO Agent for transaction classification
+cfo_agent = DeltaCFOAgent()
+
 # Lazy blueprint registration function to avoid circular imports
 def register_auth_blueprints():
     """
@@ -125,25 +131,42 @@ def register_auth_blueprints():
     This function is called after app initialization to avoid circular imports.
     """
     try:
+        print("[DEBUG] Starting blueprint registration...")
+
         # Import blueprints only when needed
+        print("[DEBUG] Importing auth_bp from api.auth_routes...")
         from api.auth_routes import auth_bp
+        print("[DEBUG] Importing user_bp from api.user_routes...")
         from api.user_routes import user_bp
+        print("[DEBUG] Importing tenant_bp from api.tenant_routes...")
         from api.tenant_routes import tenant_bp
+        print("[DEBUG] Importing onboarding_bp from api.onboarding_routes...")
         from api.onboarding_routes import onboarding_bp
 
         # Register blueprints
+        print(f"[DEBUG] Registering auth_bp with url_prefix: {auth_bp.url_prefix}")
         app.register_blueprint(auth_bp)
+        print(f"[DEBUG] Registering user_bp with url_prefix: {user_bp.url_prefix}")
         app.register_blueprint(user_bp)
+        print(f"[DEBUG] Registering tenant_bp with url_prefix: {tenant_bp.url_prefix}")
         app.register_blueprint(tenant_bp)
+        print(f"[DEBUG] Registering onboarding_bp with url_prefix: {onboarding_bp.url_prefix}")
         app.register_blueprint(onboarding_bp)
 
         logger.info("Authentication, tenant, and onboarding blueprints registered successfully")
+        print("[OK] All blueprints registered successfully")
         return True
     except ImportError as e:
         logger.warning(f"Could not import authentication blueprints: {e}")
+        print(f"[ERROR] Import error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
     except Exception as e:
         logger.error(f"Error registering authentication blueprints: {e}")
+        print(f"[ERROR] Registration error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 # Register blueprints after app is fully initialized
@@ -6300,6 +6323,45 @@ def api_get_subcategories():
         logging.error(f"Failed to fetch subcategories: {e}")
         return jsonify({'error': str(e), 'subcategories': []}), 500
 
+@app.route('/api/entities', methods=['GET'])
+def api_get_entities():
+    """API endpoint to fetch distinct business entities from database"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+        is_postgresql = hasattr(cursor, 'mogrify')
+
+        # Get distinct classified_entity values that are not NULL, 'N/A', 'nan', or empty
+        query = """
+            SELECT DISTINCT classified_entity
+            FROM transactions
+            WHERE tenant_id = %s
+            AND classified_entity IS NOT NULL
+            AND classified_entity != 'N/A'
+            AND classified_entity != 'nan'
+            AND classified_entity != ''
+            AND classified_entity != 'Unknown'
+            ORDER BY classified_entity
+        """
+
+        cursor.execute(query, (tenant_id,))
+        rows = cursor.fetchall()
+        conn.close()
+
+        # Extract entities from rows
+        if is_postgresql:
+            entities = [row['classified_entity'] if isinstance(row, dict) else row[0] for row in rows]
+        else:
+            entities = [row[0] for row in rows]
+
+        return jsonify({'entities': entities})
+
+    except Exception as e:
+        logging.error(f"Failed to fetch entities: {e}")
+        return jsonify({'error': str(e), 'entities': []}), 500
+
 @app.route('/api/bulk_update_transactions', methods=['POST'])
 def api_bulk_update_transactions():
     """
@@ -7236,8 +7298,6 @@ For EACH transaction, extract:
 - description (transaction description, required)
 - amount (numeric value - use negative for expenses/debits, positive for income/credits, required)
 - currency (ISO currency code like BRL, USD, EUR - required)
-- category (expense category if mentioned, optional)
-- entity (business unit or entity name if mentioned, optional)
 
 Return ONLY valid JSON in this exact format:
 {
@@ -7247,9 +7307,7 @@ Return ONLY valid JSON in this exact format:
             "date": "2024-01-15",
             "description": "Office supplies purchase",
             "amount": -150.50,
-            "currency": "BRL",
-            "category": "Technology",
-            "entity": "Delta LLC"
+            "currency": "BRL"
         }
     ],
     "total_found": 1,
@@ -7258,6 +7316,8 @@ Return ONLY valid JSON in this exact format:
 
 Important:
 - Extract ALL transactions from the document
+- ONLY extract: date, description, amount, currency
+- DO NOT try to categorize or classify transactions - this will be done separately
 - ALWAYS specify the currency for each transaction
 - Use negative amounts for expenses/debits
 - Use positive amounts for income/credits
@@ -7463,17 +7523,35 @@ def upload_file():
                         skipped_duplicates += 1
                         continue
 
+                    # Classify transaction using DeltaCFOAgent with business knowledge
+                    print(f" Classifying transaction: {txn_description}")
+                    try:
+                        classified_entity, confidence, reason, accounting_category, subcategory = cfo_agent.classify_transaction(
+                            description=txn_description,
+                            amount=usd_amount,
+                            currency=original_currency
+                        )
+                        print(f" Classification: entity={classified_entity}, category={accounting_category}, subcategory={subcategory}, confidence={confidence}")
+                    except Exception as e:
+                        print(f" Classification failed: {e}")
+                        # Fallback to basic classification
+                        classified_entity = 'Unclassified'
+                        accounting_category = 'OPERATING_EXPENSE' if usd_amount < 0 else 'REVENUE'
+                        subcategory = None
+                        confidence = 0.3
+                        reason = f"Classification error: {str(e)}"
+
                     # Generate transaction ID
                     transaction_id = str(uuid.uuid4())
 
-                    # Insert into database
+                    # Insert into database with proper classification
                     db_manager.execute_query("""
                         INSERT INTO transactions (
                             transaction_id, tenant_id, date, description, amount,
                             currency, usd_equivalent, conversion_note,
                             classified_entity, accounting_category, subcategory,
-                            confidence, source_file
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            confidence, justification, source_file
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         transaction_id,
                         tenant_id,
@@ -7483,10 +7561,11 @@ def upload_file():
                         original_currency,  # Original currency
                         usd_amount if original_currency != 'USD' else None,  # USD equivalent (only if converted)
                         conversion_note,  # Conversion details
-                        txn.get('entity', 'Unknown'),
-                        txn.get('category', 'Uncategorized'),
-                        None,  # subcategory
-                        0.8,  # High confidence from Claude Vision
+                        classified_entity,  # Classified by DeltaCFOAgent
+                        accounting_category,  # Classified by DeltaCFOAgent
+                        subcategory,  # Classified by DeltaCFOAgent
+                        confidence,  # Confidence from classification
+                        reason,  # Classification justification
                         f'PDF Upload: {filename}'
                     ))
                     inserted_count += 1
@@ -14120,12 +14199,19 @@ try:
 
     # Register authentication blueprints in production mode
     if not auth_blueprints_registered:
+        print("[INFO] Attempting to register authentication blueprints for production...")
         if register_auth_blueprints():
             auth_blueprints_registered = True
             print("[OK] Authentication blueprints registered for production")
+        else:
+            print("[ERROR] Failed to register authentication blueprints - check imports")
+            import traceback
+            traceback.print_exc()
 
     # Defer heavy database operations to first request to avoid startup timeout
     print("[OK] Basic production initialization completed - database ops deferred")
 except Exception as e:
-    print(f"WARNING: Production initialization warning: {e}")
+    print(f"ERROR: Production initialization failed: {e}")
+    import traceback
+    traceback.print_exc()
 

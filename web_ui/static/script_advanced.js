@@ -11,6 +11,7 @@ let isLoading = false;
 // Cache for dynamically loaded dropdown options
 let cachedAccountingCategories = [];
 let cachedSubcategories = [];
+let cachedEntities = [];
 
 // Drag-down fill state (now supports horizontal and vertical)
 let dragFillState = {
@@ -325,6 +326,18 @@ function initializeFiltersFromURL() {
 }
 
 async function loadDropdownOptions() {
+    // Load entities from API
+    try {
+        const entitiesResponse = await fetch('/api/entities');
+        const entitiesData = await entitiesResponse.json();
+        cachedEntities = entitiesData.entities || [];
+        console.log(`✅ Loaded ${cachedEntities.length} business entities from API`);
+    } catch (error) {
+        console.error('Failed to load entities:', error);
+        // Use empty fallback if API fails - entities should come from database
+        cachedEntities = [];
+    }
+
     // Load accounting categories from API
     try {
         const categoriesResponse = await fetch('/api/accounting_categories');
@@ -1305,15 +1318,7 @@ async function createSmartDropdown(field, currentValue, fieldName) {
     // Define options for different field types
     // Use cached API data for accounting_category and subcategory
     const fieldOptions = {
-        'classified_entity': [
-            'Delta LLC',
-            'Delta Prop Shop LLC',
-            'Infinity Validator',
-            'Delta Mining Paraguay S.A.',
-            'Delta Brazil Operations',
-            'Internal Transfer',
-            'Personal'
-        ],
+        'classified_entity': cachedEntities.length > 0 ? cachedEntities : [],
         'accounting_category': cachedAccountingCategories.length > 0 ? cachedAccountingCategories : [
             'REVENUE',
             'COGS',
