@@ -498,6 +498,7 @@ function setupEventListeners() {
 
     document.getElementById('filter2024').addEventListener('click', function() {
         const isActive = this.classList.contains('active');
+        console.log('🗓️ 2024 filter clicked, isActive:', isActive);
 
         // Remove active state from all date filters
         document.getElementById('filter2025').classList.remove('active');
@@ -505,16 +506,19 @@ function setupEventListeners() {
 
         if (isActive) {
             // Deactivate filter
+            console.log('❌ Deactivating 2024 filter - clearing dates');
             this.classList.remove('active');
             document.getElementById('startDate').value = '';
             document.getElementById('endDate').value = '';
         } else {
             // Activate filter
+            console.log('✅ Activating 2024 filter - setting dates to 2024-01-01 / 2024-12-31');
             this.classList.add('active');
             document.getElementById('startDate').value = '2024-01-01';
             document.getElementById('endDate').value = '2024-12-31';
         }
 
+        console.log('📅 Final values - startDate:', document.getElementById('startDate').value, 'endDate:', document.getElementById('endDate').value);
         currentPage = 1;
         loadTransactions();
     });
