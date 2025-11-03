@@ -115,15 +115,6 @@ if debug_mode:
 # In production, set FLASK_SECRET_KEY environment variable
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-delta-cfo-agent-2024')
 
-# Initialize multi-tenant context
-init_tenant_context(app)
-
-# Register CFO reporting routes
-register_reporting_routes(app)
-
-# Initialize CFO Agent for transaction classification
-cfo_agent = DeltaCFOAgent()
-
 # Lazy blueprint registration function to avoid circular imports
 def register_auth_blueprints():
     """
@@ -169,9 +160,21 @@ def register_auth_blueprints():
         traceback.print_exc()
         return False
 
-# Register blueprints after app is fully initialized
-# This happens after all database and other services are ready
+# Register blueprints immediately after app creation
+# This ensures they are available in both dev and production
 auth_blueprints_registered = False
+if register_auth_blueprints():
+    auth_blueprints_registered = True
+    print("[STARTUP] Authentication blueprints registered at module level")
+
+# Initialize multi-tenant context
+init_tenant_context(app)
+
+# Register CFO reporting routes
+register_reporting_routes(app)
+
+# Initialize CFO Agent for transaction classification
+cfo_agent = DeltaCFOAgent()
 
 # ====================================================================
 # Diagnostic Routes
