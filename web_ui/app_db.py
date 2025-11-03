@@ -776,8 +776,8 @@ def init_invoice_tables():
                 ''')
                 print("Added crypto_currency column to invoices table")
             except Exception as e:
-                # Column already exists
-                pass
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
             try:
                 cursor.execute('''
@@ -785,8 +785,8 @@ def init_invoice_tables():
                 ''')
                 print("Added crypto_network column to invoices table")
             except Exception as e:
-                # Column already exists
-                pass
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
             try:
                 cursor.execute('''
@@ -794,8 +794,8 @@ def init_invoice_tables():
                 ''')
                 print("Added payment_terms column to invoices table")
             except Exception as e:
-                # Column already exists
-                pass
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
             # Email processing log
             if is_postgresql:
@@ -889,25 +889,33 @@ def init_invoice_tables():
                 cursor.execute('ALTER TABLE invoices ADD COLUMN customer_name TEXT')
                 print("Added customer_name column to invoices table")
             except:
-                pass  # Column already exists
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
             try:
                 cursor.execute('ALTER TABLE invoices ADD COLUMN customer_address TEXT')
                 print("Added customer_address column to invoices table")
             except:
-                pass  # Column already exists
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
             try:
                 cursor.execute('ALTER TABLE invoices ADD COLUMN customer_tax_id TEXT')
                 print("Added customer_tax_id column to invoices table")
             except:
-                pass  # Column already exists
+                # Column already exists - rollback failed transaction (PostgreSQL requirement)
+                conn.rollback()
 
+            # Close cursor before commit (required for PostgreSQL)
+            cursor.close()
             conn.commit()
             print("Invoice tables initialized successfully")
             return True
     except Exception as e:
+        import traceback
         print(f"ERROR: Failed to initialize invoice tables: {e}")
+        print("FULL TRACEBACK:")
+        traceback.print_exc()
         return False
 
 def init_database():
@@ -1011,6 +1019,8 @@ def ensure_background_jobs_tables():
                     )
                 ''')
 
+            # Close cursor before commit (required for PostgreSQL)
+            cursor.close()
             conn.commit()
             print("[OK] Background jobs tables ensured")
             return True
@@ -1416,14 +1426,16 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
             if filters.get('start_date'):
                 if is_postgresql:
-                    where_conditions.append("date >= %s::date")
+                    # Cast TEXT column to DATE for comparison (date column is TEXT, not DATE type)
+                    where_conditions.append("date::date >= %s::date")
                 else:
                     where_conditions.append("date >= ?")
                 params.append(filters['start_date'])
 
             if filters.get('end_date'):
                 if is_postgresql:
-                    where_conditions.append("date <= %s::date")
+                    # Cast TEXT column to DATE for comparison (date column is TEXT, not DATE type)
+                    where_conditions.append("date::date <= %s::date")
                 else:
                     where_conditions.append("date <= ?")
                 params.append(filters['end_date'])
@@ -1459,7 +1471,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         # Debug logging for date filters
         if filters and (filters.get('start_date') or filters.get('end_date')):
-            print(f"📅 DATE FILTER DEBUG:")
+            print(f"[DATE FILTER DEBUG]")
             print(f"   start_date filter: {filters.get('start_date')}")
             print(f"   end_date filter: {filters.get('end_date')}")
             print(f"   WHERE clause: {where_clause}")
@@ -1480,7 +1492,7 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         # Debug logging for the actual query
         if filters and (filters.get('start_date') or filters.get('end_date')):
-            print(f"🔍 QUERY DEBUG:")
+            print(f"[QUERY DEBUG]")
             print(f"   Query: {query}")
             print(f"   Total count found: {total_count}")
 
