@@ -1374,8 +1374,8 @@ def get_db_connection():
         print(f"[ERROR] Failed to get database connection: {e}")
         raise
 
-def load_transactions_from_db(filters=None, page=1, per_page=50):
-    """Load transactions from database with filtering and pagination"""
+def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='date', sort_direction='desc'):
+    """Load transactions from database with filtering, sorting, and pagination"""
     from database import db_manager
     tenant_id = get_current_tenant_id()
 
@@ -1486,9 +1486,19 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         count_result = cursor.fetchone()
         total_count = count_result['total'] if is_postgresql else count_result[0]
 
-        # Get transactions with filters and pagination
+        # Validate sort parameters to prevent SQL injection
+        allowed_sort_fields = ['date', 'description', 'amount', 'classified_entity', 'accounting_category',
+                              'subcategory', 'confidence', 'source_file', 'origin', 'destination', 'currency']
+        if sort_field not in allowed_sort_fields:
+            sort_field = 'date'
+
+        sort_direction_upper = sort_direction.upper()
+        if sort_direction_upper not in ['ASC', 'DESC']:
+            sort_direction_upper = 'DESC'
+
+        # Get transactions with filters, sorting, and pagination
         offset = (page - 1) * per_page if page > 0 else 0
-        query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
+        query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY {sort_field} {sort_direction_upper} LIMIT {per_page} OFFSET {offset}"
 
         # Debug logging for the actual query
         if filters and (filters.get('start_date') or filters.get('end_date')):
@@ -1582,7 +1592,7 @@ def get_dashboard_stats():
             """, (tenant_id,))
             entities = cursor.fetchall()
 
-            # Top source files (exclude archived)
+            # All source files (exclude archived) - no limit for dropdown filter
             cursor.execute(f"""
                 SELECT source_file, COUNT(*) as count
                 FROM transactions
@@ -1591,7 +1601,6 @@ def get_dashboard_stats():
                 AND (archived = FALSE OR archived IS NULL)
                 GROUP BY source_file
                 ORDER BY count DESC
-                LIMIT 10
             """, (tenant_id,))
             source_files = cursor.fetchall()
 
@@ -4175,8 +4184,12 @@ def api_transactions():
         page = int(request.args.get('page', 1))
         per_page = min(int(request.args.get('per_page', 50)), MAX_PER_PAGE)
 
-        print(f"API: About to call load_transactions_from_db with filters={filters}")
-        transactions, total_count = load_transactions_from_db(filters, page, per_page)
+        # Sorting parameters
+        sort_field = request.args.get('sort_field', 'date')
+        sort_direction = request.args.get('sort_direction', 'desc')
+
+        print(f"API: About to call load_transactions_from_db with filters={filters}, sort={sort_field} {sort_direction}")
+        transactions, total_count = load_transactions_from_db(filters, page, per_page, sort_field, sort_direction)
         print(f"API: Got result - transactions count={len(transactions)}, total_count={total_count}")
 
         return jsonify({

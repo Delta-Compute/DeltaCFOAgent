@@ -760,6 +760,12 @@ function buildFilterQuery() {
     params.append('page', currentPage);
     params.append('per_page', perPageSize);
 
+    // Add sorting parameters to preserve sort state
+    if (currentSortField) {
+        params.append('sort_field', currentSortField);
+        params.append('sort_direction', currentSortDirection);
+    }
+
     return params.toString();
 }
 
@@ -1020,6 +1026,24 @@ function updateSummaryStatsDisplay(stats) {
             const needsReview = stats.needs_review || 0;
             reviewElement.textContent = needsReview;
             reviewElement.className = needsReview > 0 ? 'stat-number warning' : 'stat-number';
+        }
+    }
+
+    // Update source file dropdown with latest files from backend
+    if (stats.source_files && stats.source_files.length > 0) {
+        const sourceFileSelect = document.getElementById('sourceFile');
+        if (sourceFileSelect) {
+            const currentValue = sourceFileSelect.value;
+            sourceFileSelect.innerHTML = '<option value="">All Sources</option>';
+            stats.source_files.forEach(([source, count]) => {
+                const option = document.createElement('option');
+                option.value = source;
+                const truncatedSource = source.length > 30 ? source.substring(0, 30) + '...' : source;
+                option.textContent = `${truncatedSource} (${count})`;
+                sourceFileSelect.appendChild(option);
+            });
+            // Restore previous selection if it still exists
+            if (currentValue) sourceFileSelect.value = currentValue;
         }
     }
 }
