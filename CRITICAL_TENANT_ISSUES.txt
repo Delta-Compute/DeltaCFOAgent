@@ -1,0 +1,188 @@
+================================================================================
+CRITICAL TENANT ISOLATION SECURITY AUDIT - EXECUTIVE SUMMARY
+================================================================================
+Date: 2025-10-29
+Status: CRITICAL - DATA LEAKAGE CONFIRMED
+Impact: Multiple tenants seeing each other's data
+
+================================================================================
+CONFIRMED USER REPORTS
+================================================================================
+✓ Reports showing mixed tenant data          - CONFIRMED
+✓ Revenue recognition showing mixed data     - CONFIRMED  
+✓ Charts/graphs mixing tenant data          - CONFIRMED
+
+================================================================================
+ROOT CAUSE ANALYSIS
+================================================================================
+
+The following systems are missing tenant_id filters in their SQL queries:
+
+1. REPORTING API (reporting_api.py)
+   - /api/reports/charts-data endpoint
+   - NEVER calls get_current_tenant_id()
+   - ALL queries pull from ALL tenants
+   
+2. REVENUE STATS (app_db.py)
+   - /api/revenue/stats endpoint
+   - 7 different queries missing tenant filters:
+     * Pending matches count
+     * Match activity log
+     * Match types breakdown
+     * Total transactions
+     * Linked transactions
+     * Revenue transactions
+     * Unlinked revenue transactions
+
+3. PDF REPORTS (3 files)
+   - DREReport, CashFlowReport, DMPLReport, BalanceSheetReport
+   - Classes don't accept tenant_id parameter
+   - ALL SQL queries missing tenant_id filters
+   - Reports show data from ALL tenants
+
+4. DATA QUERIES (services/data_queries.py)
+   - Business entities portfolio stats
+   - Missing tenant_id filter
+
+5. TRANSACTION ANALYZER (transaction_chain_analyzer.py)
+   - Find transaction by ID
+   - Find similar transactions
+   - Find vendor transactions
+   - All missing tenant_id filters
+
+================================================================================
+CRITICAL QUERIES WITHOUT TENANT ISOLATION (18+)
+================================================================================
+
+File: reporting_api.py (Line 888-1220)
+----------------------------------------
+❌ Revenue vs Expenses query - transactions (NO tenant_id)
+❌ Revenue vs Expenses query - invoices (NO tenant_id)
+❌ Categories query - transactions (NO tenant_id)
+❌ Categories query - invoices (NO tenant_id)
+❌ Monthly trend - transactions (NO tenant_id)
+❌ Monthly trend - invoices (NO tenant_id)
+❌ Date range query (Line 2592-2594) - transactions (NO tenant_id)
+❌ Date range query - invoices (NO tenant_id)
+
+File: app_db.py (Lines 12113-12225)
+----------------------------------------
+❌ Pending matches count (Line 12115-12118)
+❌ Recent matches count (Line 12165-12168)
+❌ Match types breakdown (Line 12174-12181)
+❌ Total transactions count (Line 12187)
+❌ Linked transactions count (Line 12193-12197)
+❌ Revenue transactions count (Line 12206-12208)
+❌ Unlinked revenue transactions (Line 12215-12223)
+
+File: pdf_reports.py, dmpl_report_new.py, cash_flow_report_new.py
+----------------------------------------
+❌ DREReport - revenue query (Line 477-484)
+❌ DREReport - category query (Line 493-504)
+❌ CashFlowReport - operating query (Line 845-852)
+❌ CashFlowReport - investing query (Line 855-862)
+❌ CashFlowReport - financing query (Line 865-872)
+❌ DMPLReport - revenue query (Line 60-67)
+❌ DMPLReport - equity query (Line 78-85)
+
+File: services/data_queries.py (Line 312-319)
+----------------------------------------
+❌ Portfolio stats - business_entities (NO tenant_id)
+
+File: transaction_chain_analyzer.py
+----------------------------------------
+❌ Get transaction by ID (Line 353)
+❌ Find similar crypto transactions (Line 361-368)
+❌ Find vendor transactions (Line 383-391)
+
+================================================================================
+SEVERITY BREAKDOWN
+================================================================================
+
+CRITICAL (Data Leakage):     15 issues
+HIGH (Potential Leakage):     3 issues
+---------------------------------------
+TOTAL:                       18+ issues
+
+================================================================================
+IMMEDIATE ACTION REQUIRED
+================================================================================
+
+Priority 1 - STOP PRODUCTION USE:
+----------------------------------
+⚠️  DO NOT USE MULTI-TENANT MODE IN PRODUCTION
+⚠️  All tenants are seeing mixed data
+⚠️  Privacy violation - not compliant with GDPR/SOC2
+
+Priority 2 - FIX CRITICAL QUERIES:
+----------------------------------
+1. reporting_api.py - Add get_current_tenant_id() and filter ALL queries
+2. app_db.py - Fix all 7 revenue stats queries  
+3. PDF Reports - Add tenant_id to constructors and ALL queries
+4. data_queries.py - Fix business_entities query
+5. transaction_chain_analyzer.py - Add tenant_id to all queries
+
+Priority 3 - TESTING:
+---------------------
+1. Create multiple test tenants with different data
+2. Test every endpoint with different tenant contexts
+3. Verify complete isolation
+4. Add automated regression tests
+
+================================================================================
+FILES REQUIRING CHANGES
+================================================================================
+
+1. web_ui/reporting_api.py
+2. web_ui/app_db.py  
+3. web_ui/pdf_reports.py
+4. web_ui/dmpl_report_new.py
+5. web_ui/cash_flow_report_new.py
+6. web_ui/services/data_queries.py
+7. web_ui/transaction_chain_analyzer.py
+
+================================================================================
+EXAMPLE FIX (what needs to be done):
+================================================================================
+
+BEFORE (BROKEN):
+---------------
+SELECT COUNT(*) as total FROM transactions
+
+AFTER (FIXED):
+--------------
+tenant_id = get_current_tenant_id()
+SELECT COUNT(*) as total FROM transactions WHERE tenant_id = %s
+
+BEFORE (BROKEN - Report Class):
+-------------------------------
+def __init__(self, company_name, start_date, end_date):
+    SELECT ... FROM transactions WHERE date BETWEEN %s AND %s
+
+AFTER (FIXED - Report Class):
+-----------------------------
+def __init__(self, company_name, start_date, end_date, tenant_id):
+    self.tenant_id = tenant_id
+    SELECT ... FROM transactions 
+    WHERE date BETWEEN %s AND %s AND tenant_id = %s
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. ✓ Audit completed
+2. ⏳ Review this report with team
+3. ⏳ Create detailed fix plan for each file
+4. ⏳ Implement fixes systematically  
+5. ⏳ Test thoroughly
+6. ⏳ Deploy with confidence
+
+================================================================================
+CONTACT
+================================================================================
+
+For detailed analysis, see: TENANT_ISOLATION_AUDIT_REPORT.md
+For task tracking, see: tasks/tenant_isolation_audit.md
+
+Report generated by: Claude Code
+Date: 2025-10-29
