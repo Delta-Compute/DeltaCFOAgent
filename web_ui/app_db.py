@@ -7438,29 +7438,43 @@ Important:
 
         print(f" Calling Claude Vision API...")
 
-        # Call Claude Vision API
-        response = client.messages.create(
-            model="claude-3-haiku-20240307",  # Fast model for vision tasks
-            max_tokens=4000,
-            temperature=0.1,  # Low temperature for structured data
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": image_base64
+        # Call Claude Vision API with explicit error handling
+        try:
+            response = client.messages.create(
+                model="claude-3-haiku-20240307",  # Fast model for vision tasks
+                max_tokens=4000,
+                temperature=0.1,  # Low temperature for structured data
+                timeout=180.0,  # 3 minute timeout for API call
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": image_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
                         }
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }]
-        )
+                    ]
+                }]
+            )
+        except anthropic.APIConnectionError as e:
+            error_msg = f"Failed to connect to Claude API: {str(e)}. Check network connectivity and API key."
+            print(f" ERROR: {error_msg}")
+            return {"error": error_msg, "transactions": [], "total_found": 0}
+        except anthropic.APITimeoutError as e:
+            error_msg = f"Claude API request timed out: {str(e)}. The PDF may be too large or complex."
+            print(f" ERROR: {error_msg}")
+            return {"error": error_msg, "transactions": [], "total_found": 0}
+        except anthropic.APIError as e:
+            error_msg = f"Claude API error: {str(e)}"
+            print(f" ERROR: {error_msg}")
+            return {"error": error_msg, "transactions": [], "total_found": 0}
 
         # Parse response
         response_text = response.content[0].text.strip()
