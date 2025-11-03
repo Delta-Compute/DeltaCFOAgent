@@ -590,6 +590,18 @@
                 }
             });
 
+            
+            // Handle create tenant button - redirect to homepage with bot in create mode
+            const createTenantButton = document.getElementById('createTenantButton');
+            createTenantButton?.addEventListener('click', () => {
+                // Close dropdown
+                dropdown.style.display = 'none';
+
+                // Redirect to homepage with openBot=createTenant parameter
+                window.location.href = '/?openBot=createTenant';
+            });
+
+            // Handle logout
             logoutButton?.addEventListener('click', async () => {
                 try {
                     await window.FirebaseAuth.signOutUser();

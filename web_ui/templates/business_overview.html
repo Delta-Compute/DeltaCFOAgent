@@ -827,10 +827,15 @@
                 // Close dropdown
                 dropdown.style.display = 'none';
 
-                // Open onboarding bot
-                const onboardingBotToggle = document.getElementById('onboardingBotToggle');
-                if (onboardingBotToggle) {
-                    onboardingBotToggle.click();
+                // Open onboarding bot in CREATE mode (force new tenant creation)
+                if (window.OnboardingBot) {
+                    window.OnboardingBot.openCreateTenant();
+                } else {
+                    // Fallback if OnboardingBot not loaded yet
+                    const onboardingBotToggle = document.getElementById('onboardingBotToggle');
+                    if (onboardingBotToggle) {
+                        onboardingBotToggle.click();
+                    }
                 }
             });
 

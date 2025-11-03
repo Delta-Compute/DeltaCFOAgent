@@ -128,13 +128,13 @@
     }
 
     // Open bot
-    function openBot() {
+    function openBot(forceMode = null) {
         botState.isOpen = true;
         botWindow.style.display = 'flex';
 
         // Start onboarding if first time
         if (botState.currentStep === 0 && messagesContainer.children.length === 0) {
-            startOnboarding();
+            startOnboarding(forceMode);
         }
     }
 
@@ -201,10 +201,23 @@
     }
 
     // Start onboarding flow
-    async function startOnboarding() {
+    async function startOnboarding(forceMode = null) {
         try {
             // Check if user is already in a tenant
             const tenant = await getCurrentTenant();
+
+            // Force create_tenant mode if explicitly requested (from "Create New Tenant" button)
+            if (forceMode === 'create_tenant') {
+                botState.mode = 'create_tenant';
+                console.log('[OnboardingBot] Forced create tenant mode');
+
+                addBotMessage(createTenantSteps[0].message);
+                setTimeout(() => {
+                    addBotMessage(createTenantSteps[0].question);
+                    updateProgress();
+                }, 1000);
+                return;
+            }
 
             if (tenant && tenant.id) {
                 // User is in an existing tenant - configure mode
@@ -1038,20 +1051,50 @@
         return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
-    // Check URL for ?openBot=true parameter
+    // Check URL for ?openBot parameter
     function checkAutoOpen() {
         const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('openBot') === 'true') {
+        const openBotParam = urlParams.get('openBot');
+
+        if (openBotParam === 'true' || openBotParam === 'createTenant') {
             // Remove parameter from URL
             const newUrl = window.location.pathname + window.location.hash;
             window.history.replaceState({}, document.title, newUrl);
 
             // Open bot after a short delay
             setTimeout(() => {
-                openBot();
+                if (openBotParam === 'createTenant') {
+                    // Force create tenant mode
+                    window.OnboardingBot.openCreateTenant();
+                } else {
+                    // Normal open (will detect tenant automatically)
+                    openBot();
+                }
             }, 500);
         }
     }
+
+    // Expose public API for external scripts to open bot in create mode
+    window.OnboardingBot = {
+        openCreateTenant: function() {
+            // Reset bot state to force new session
+            botState.currentStep = 0;
+            messagesContainer.innerHTML = '';
+
+            // Open bot in create_tenant mode
+            botState.isOpen = true;
+            botWindow.style.display = 'flex';
+            startOnboarding('create_tenant');
+        },
+        openConfigureTenant: function() {
+            // Reset bot state
+            botState.currentStep = 0;
+            messagesContainer.innerHTML = '';
+
+            // Open bot normally (will detect tenant automatically)
+            openBot();
+        }
+    };
 
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
