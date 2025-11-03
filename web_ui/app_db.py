@@ -1415,11 +1415,17 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
                 params.append(float(filters['max_amount']))
 
             if filters.get('start_date'):
-                where_conditions.append("date >= %s" if is_postgresql else "date >= ?")
+                if is_postgresql:
+                    where_conditions.append("date >= %s::date")
+                else:
+                    where_conditions.append("date >= ?")
                 params.append(filters['start_date'])
 
             if filters.get('end_date'):
-                where_conditions.append("date <= %s" if is_postgresql else "date <= ?")
+                if is_postgresql:
+                    where_conditions.append("date <= %s::date")
+                else:
+                    where_conditions.append("date <= ?")
                 params.append(filters['end_date'])
 
             if filters.get('keyword'):
@@ -1451,6 +1457,14 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
 
         where_clause = " AND ".join(where_conditions)
 
+        # Debug logging for date filters
+        if filters and (filters.get('start_date') or filters.get('end_date')):
+            print(f"📅 DATE FILTER DEBUG:")
+            print(f"   start_date filter: {filters.get('start_date')}")
+            print(f"   end_date filter: {filters.get('end_date')}")
+            print(f"   WHERE clause: {where_clause}")
+            print(f"   Params: {params}")
+
         # Get total count with filters
         count_query = f"SELECT COUNT(*) as total FROM transactions WHERE {where_clause}"
         if params:
@@ -1463,6 +1477,12 @@ def load_transactions_from_db(filters=None, page=1, per_page=50):
         # Get transactions with filters and pagination
         offset = (page - 1) * per_page if page > 0 else 0
         query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY date DESC LIMIT {per_page} OFFSET {offset}"
+
+        # Debug logging for the actual query
+        if filters and (filters.get('start_date') or filters.get('end_date')):
+            print(f"🔍 QUERY DEBUG:")
+            print(f"   Query: {query}")
+            print(f"   Total count found: {total_count}")
 
         if params:
             cursor.execute(query, tuple(params))
