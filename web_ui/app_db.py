@@ -204,6 +204,63 @@ cfo_agent = DeltaCFOAgent()
 # Diagnostic Routes
 # ====================================================================
 
+@app.route('/api/debug/test-imports')
+def debug_test_imports():
+    """Test importing auth blueprints manually to see error"""
+    import sys
+    from io import StringIO
+
+    # Capture stdout/stderr
+    old_stderr = sys.stderr
+    sys.stderr = StringIO()
+
+    results = {
+        'imports_tested': [],
+        'errors': []
+    }
+
+    # Test each import individually
+    test_imports = [
+        ('auth.firebase_config', 'verify_firebase_token'),
+        ('middleware.auth_middleware', 'require_auth'),
+        ('services.email_service', 'send_invitation_email'),
+        ('web_ui.database', 'db_manager'),
+        ('web_ui.tenant_context', 'set_tenant_id'),
+        ('api.auth_routes', 'auth_bp'),
+        ('api.user_routes', 'user_bp'),
+        ('api.tenant_routes', 'tenant_bp'),
+        ('api.onboarding_routes', 'onboarding_bp')
+    ]
+
+    for module_name, obj_name in test_imports:
+        try:
+            module = __import__(module_name, fromlist=[obj_name])
+            obj = getattr(module, obj_name)
+            results['imports_tested'].append({
+                'module': module_name,
+                'object': obj_name,
+                'success': True,
+                'type': str(type(obj))
+            })
+        except Exception as e:
+            results['imports_tested'].append({
+                'module': module_name,
+                'object': obj_name,
+                'success': False,
+                'error': str(e),
+                'error_type': type(e).__name__
+            })
+            results['errors'].append(f"{module_name}.{obj_name}: {str(e)}")
+
+    # Get captured stderr
+    stderr_output = sys.stderr.getvalue()
+    sys.stderr = old_stderr
+
+    results['stderr_output'] = stderr_output
+    results['auth_blueprints_registered'] = auth_blueprints_registered
+
+    return jsonify(results)
+
 @app.route('/api/debug/routes')
 def debug_routes():
     """Debug endpoint to list all registered routes"""
