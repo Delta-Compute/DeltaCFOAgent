@@ -7634,9 +7634,11 @@ def upload_file():
                         continue
 
                     # Classify transaction using DeltaCFOAgent with business knowledge
+                    # Create tenant-specific agent instance for proper multi-tenant classification
                     print(f" Classifying transaction: {txn_description}")
                     try:
-                        classified_entity, confidence, reason, accounting_category, subcategory = cfo_agent.classify_transaction(
+                        tenant_agent = DeltaCFOAgent(tenant_id=tenant_id)
+                        classified_entity, confidence, reason, accounting_category, subcategory = tenant_agent.classify_transaction(
                             description=txn_description,
                             amount=usd_amount,
                             currency=original_currency

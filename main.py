@@ -20,8 +20,14 @@ import argparse
 import re
 
 class DeltaCFOAgent:
-    def __init__(self):
-        """Initialize the CFO Agent with business knowledge"""
+    def __init__(self, tenant_id='delta'):
+        """
+        Initialize the CFO Agent with business knowledge
+
+        Args:
+            tenant_id (str): Tenant identifier for multi-tenant support (default: 'delta')
+        """
+        self.tenant_id = tenant_id
         self.business_knowledge_file = 'business_knowledge.md'
         self.master_file = 'MASTER_TRANSACTIONS.csv'  # SINGLE SOURCE OF TRUTH - NEVER CREATE DUPLICATES
         self.classified_dir = 'classified_transactions'
@@ -74,8 +80,8 @@ class DeltaCFOAgent:
             db_user = os_module.environ.get('DB_USER', 'delta_user')
             db_password = os_module.environ.get('DB_PASSWORD', 'nWr0Y8bU51ypLjMIfx8bTe+V/1iOV59r90T8wJEsSGo=')
 
-            # Hardcoded tenant for now (Delta)
-            tenant_id = 'delta'
+            # Use tenant_id from constructor
+            tenant_id = self.tenant_id
 
             # Connect to PostgreSQL
             conn = psycopg2.connect(
