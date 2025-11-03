@@ -42,7 +42,7 @@ steps:
       - '--set-cloudsql-instances'
       - '$PROJECT_ID:southamerica-east1:delta-cfo-db'
       - '--set-secrets'
-      - 'DB_PASSWORD=db_password_sa:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
+      - 'DB_PASSWORD=db_password_sa:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,FIREBASE_SERVICE_ACCOUNT_KEY=firebase-service-account:latest'
 
 images:
   - 'southamerica-east1-docker.pkg.dev/$PROJECT_ID/deltacfoagent/deltacfoagent:latest'
