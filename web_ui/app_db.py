@@ -174,6 +174,32 @@ def register_auth_blueprints():
 auth_blueprints_registered = False
 
 # ====================================================================
+# Diagnostic Routes
+# ====================================================================
+
+@app.route('/api/debug/routes')
+def debug_routes():
+    """Debug endpoint to list all registered routes"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': list(rule.methods),
+            'path': str(rule)
+        })
+
+    # Check if auth blueprints are registered
+    auth_routes = [r for r in routes if '/api/auth/' in r['path']]
+
+    return jsonify({
+        'total_routes': len(routes),
+        'auth_routes_count': len(auth_routes),
+        'auth_routes': auth_routes,
+        'auth_blueprints_registered': auth_blueprints_registered,
+        'sample_routes': routes[:10]
+    })
+
+# ====================================================================
 # Authentication Page Routes
 # ====================================================================
 # NOTE: These routes are kept for serving static authentication pages
