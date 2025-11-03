@@ -121,43 +121,67 @@ def register_auth_blueprints():
     Register authentication blueprints using lazy loading.
     This function is called after app initialization to avoid circular imports.
     """
+    import sys
     try:
-        print("[DEBUG] Starting blueprint registration...")
+        sys.stderr.write("\n" + "="*80 + "\n")
+        sys.stderr.write("[DEBUG] Starting blueprint registration...\n")
+        sys.stderr.write("="*80 + "\n")
+        sys.stderr.flush()
 
         # Import blueprints only when needed
-        print("[DEBUG] Importing auth_bp from api.auth_routes...")
+        sys.stderr.write("[DEBUG] Importing auth_bp from api.auth_routes...\n")
+        sys.stderr.flush()
         from api.auth_routes import auth_bp
-        print("[DEBUG] Importing user_bp from api.user_routes...")
+
+        sys.stderr.write("[DEBUG] Importing user_bp from api.user_routes...\n")
+        sys.stderr.flush()
         from api.user_routes import user_bp
-        print("[DEBUG] Importing tenant_bp from api.tenant_routes...")
+
+        sys.stderr.write("[DEBUG] Importing tenant_bp from api.tenant_routes...\n")
+        sys.stderr.flush()
         from api.tenant_routes import tenant_bp
-        print("[DEBUG] Importing onboarding_bp from api.onboarding_routes...")
+
+        sys.stderr.write("[DEBUG] Importing onboarding_bp from api.onboarding_routes...\n")
+        sys.stderr.flush()
         from api.onboarding_routes import onboarding_bp
 
         # Register blueprints
-        print(f"[DEBUG] Registering auth_bp with url_prefix: {auth_bp.url_prefix}")
+        sys.stderr.write(f"[DEBUG] Registering auth_bp with url_prefix: {auth_bp.url_prefix}\n")
+        sys.stderr.flush()
         app.register_blueprint(auth_bp)
-        print(f"[DEBUG] Registering user_bp with url_prefix: {user_bp.url_prefix}")
+
+        sys.stderr.write(f"[DEBUG] Registering user_bp with url_prefix: {user_bp.url_prefix}\n")
+        sys.stderr.flush()
         app.register_blueprint(user_bp)
-        print(f"[DEBUG] Registering tenant_bp with url_prefix: {tenant_bp.url_prefix}")
+
+        sys.stderr.write(f"[DEBUG] Registering tenant_bp with url_prefix: {tenant_bp.url_prefix}\n")
+        sys.stderr.flush()
         app.register_blueprint(tenant_bp)
-        print(f"[DEBUG] Registering onboarding_bp with url_prefix: {onboarding_bp.url_prefix}")
+
+        sys.stderr.write(f"[DEBUG] Registering onboarding_bp with url_prefix: {onboarding_bp.url_prefix}\n")
+        sys.stderr.flush()
         app.register_blueprint(onboarding_bp)
 
         logger.info("Authentication, tenant, and onboarding blueprints registered successfully")
-        print("[OK] All blueprints registered successfully")
+        sys.stderr.write("[OK] All blueprints registered successfully\n")
+        sys.stderr.write("="*80 + "\n\n")
+        sys.stderr.flush()
         return True
     except ImportError as e:
         logger.warning(f"Could not import authentication blueprints: {e}")
-        print(f"[ERROR] Import error: {e}")
+        sys.stderr.write(f"\n[ERROR] Import error: {e}\n")
+        sys.stderr.flush()
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
         return False
     except Exception as e:
         logger.error(f"Error registering authentication blueprints: {e}")
-        print(f"[ERROR] Registration error: {e}")
+        sys.stderr.write(f"\n[ERROR] Registration error: {e}\n")
+        sys.stderr.flush()
         import traceback
-        traceback.print_exc()
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
         return False
 
 # Register blueprints immediately after app creation
