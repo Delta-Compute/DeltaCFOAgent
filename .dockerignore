@@ -25,7 +25,9 @@ dist/
 
 # Ignore Vercel deployment files
 .vercel/
-api/
+# NOTE: api/ directory is needed for Flask blueprints (auth, user, tenant routes)
+# Only exclude Vercel-specific file
+api/index.py
 
 # Ignore test files
 test_*.csv
