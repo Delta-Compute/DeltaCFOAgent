@@ -906,10 +906,110 @@ def init_invoice_tables():
                 # Column already exists - rollback failed transaction (PostgreSQL requirement)
                 conn.rollback()
 
+            # Create invoice_attachments table for multiple file attachments per invoice
+            if is_postgresql:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_attachments (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        invoice_id TEXT NOT NULL,
+                        tenant_id VARCHAR(100) NOT NULL,
+                        attachment_type VARCHAR(50) DEFAULT 'other',
+                        file_name VARCHAR(255) NOT NULL,
+                        file_path TEXT NOT NULL,
+                        file_size INTEGER,
+                        mime_type VARCHAR(100),
+                        description TEXT,
+                        ai_extracted_data JSONB,
+                        ai_analysis_status VARCHAR(20) DEFAULT 'pending',
+                        uploaded_by VARCHAR(100),
+                        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        analyzed_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_invoice_attachments_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_attachments_invoice ON invoice_attachments(invoice_id, tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_attachments_tenant ON invoice_attachments(tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_attachments_type ON invoice_attachments(invoice_id, attachment_type)')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_attachments (
+                        id TEXT PRIMARY KEY,
+                        invoice_id TEXT NOT NULL,
+                        tenant_id VARCHAR(100) NOT NULL,
+                        attachment_type VARCHAR(50) DEFAULT 'other',
+                        file_name VARCHAR(255) NOT NULL,
+                        file_path TEXT NOT NULL,
+                        file_size INTEGER,
+                        mime_type VARCHAR(100),
+                        description TEXT,
+                        ai_extracted_data TEXT,
+                        ai_analysis_status VARCHAR(20) DEFAULT 'pending',
+                        uploaded_by VARCHAR(100),
+                        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        analyzed_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_attachments_invoice ON invoice_attachments(invoice_id, tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_attachments_tenant ON invoice_attachments(tenant_id)')
+
+            # Create invoice_payments table for tracking multiple partial payments
+            if is_postgresql:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_payments (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        invoice_id TEXT NOT NULL,
+                        tenant_id VARCHAR(100) NOT NULL,
+                        payment_date DATE NOT NULL,
+                        payment_amount DECIMAL(15,2) NOT NULL,
+                        payment_currency VARCHAR(10) DEFAULT 'USD',
+                        payment_method VARCHAR(50),
+                        payment_reference VARCHAR(200),
+                        payment_notes TEXT,
+                        attachment_id UUID,
+                        recorded_by VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        CONSTRAINT fk_invoice_payments_invoice FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+                        CONSTRAINT fk_invoice_payments_attachment FOREIGN KEY (attachment_id) REFERENCES invoice_attachments(id) ON DELETE SET NULL
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id, tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_tenant ON invoice_payments(tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_date ON invoice_payments(payment_date)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_attachment ON invoice_payments(attachment_id)')
+            else:
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS invoice_payments (
+                        id TEXT PRIMARY KEY,
+                        invoice_id TEXT NOT NULL,
+                        tenant_id VARCHAR(100) NOT NULL,
+                        payment_date DATE NOT NULL,
+                        payment_amount DECIMAL(15,2) NOT NULL,
+                        payment_currency VARCHAR(10) DEFAULT 'USD',
+                        payment_method VARCHAR(50),
+                        payment_reference VARCHAR(200),
+                        payment_notes TEXT,
+                        attachment_id TEXT,
+                        recorded_by VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (invoice_id) REFERENCES invoices(id) ON DELETE CASCADE,
+                        FOREIGN KEY (attachment_id) REFERENCES invoice_attachments(id) ON DELETE SET NULL
+                    )
+                ''')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments(invoice_id, tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_tenant ON invoice_payments(tenant_id)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_invoice_payments_date ON invoice_payments(payment_date)')
+
             # Close cursor before commit (required for PostgreSQL)
             cursor.close()
             conn.commit()
             print("Invoice tables initialized successfully")
+            print("[OK] invoice_attachments table created")
+            print("[OK] invoice_payments table created")
             return True
     except Exception as e:
         import traceback
@@ -9851,6 +9951,179 @@ def api_invoice_stats():
 # PAYMENT PROOF UPLOAD API ENDPOINTS
 # ============================================================================
 
+@app.route('/api/payment-proof/upload', methods=['POST'])
+def api_upload_payment_proof_auto_match():
+    """
+    Upload payment proof and automatically match to invoice
+
+    Accepts: PDF, images, Excel, CSV
+    Extracts: date, amount, method, confirmation number
+    Matches: Automatically finds matching invoice
+    Updates: invoice payment status and stores receipt
+    """
+    try:
+        import os
+        import sys
+        from werkzeug.utils import secure_filename
+        from datetime import datetime
+        from database import db_manager
+
+        # Import from web_ui local services
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_proof_processor import PaymentProofProcessor, store_payment_proof
+        from payment_validator import PaymentValidator
+        from receipt_invoice_matcher import ReceiptInvoiceMatcher
+
+        # Get current tenant
+        tenant_id = get_current_tenant_id()
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Save temporarily
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join('/tmp' if os.name != 'nt' else os.environ.get('TEMP', 'C:\\temp'), filename)
+        file.save(temp_path)
+
+        try:
+            # Step 1: Extract payment data with Claude AI
+            processor = PaymentProofProcessor()
+            payment_data = processor.process_payment_proof(temp_path, invoice_data=None)
+
+            if not payment_data.get('success'):
+                return jsonify({
+                    'success': False,
+                    'error': payment_data.get('error', 'Failed to extract payment data'),
+                    'payment_data': payment_data
+                }), 400
+
+            # Step 2: Find matching invoice
+            matcher = ReceiptInvoiceMatcher(db_manager)
+            best_match = matcher.get_best_match(payment_data, tenant_id)
+
+            if not best_match:
+                # No match found - return extracted data for manual selection
+                return jsonify({
+                    'success': False,
+                    'error': 'No matching invoice found',
+                    'payment_data': {
+                        'date': payment_data.get('payment_date'),
+                        'amount': payment_data.get('payment_amount'),
+                        'currency': payment_data.get('payment_currency'),
+                        'method': payment_data.get('payment_method'),
+                        'confirmation_number': payment_data.get('confirmation_number'),
+                        'confidence': payment_data.get('confidence')
+                    },
+                    'message': 'Please select invoice manually or check payment details'
+                }), 404
+
+            invoice = best_match['invoice']
+            invoice_id = invoice['id']
+            match_confidence = best_match['confidence']
+            match_score = best_match['score']
+
+            # Step 3: Validate against matched invoice
+            validator = PaymentValidator()
+            is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
+
+            # Step 4: Store payment proof file
+            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
+
+            # Step 5: Update invoice with payment information
+            payment_status = 'paid' if is_valid and match_confidence in ['very_high', 'high'] else 'pending_review'
+
+            update_query = """
+                UPDATE invoices
+                SET
+                    payment_date = %s,
+                    payment_proof_path = %s,
+                    payment_method = %s,
+                    payment_confirmation_number = %s,
+                    payment_notes = %s,
+                    payment_proof_uploaded_at = NOW(),
+                    payment_proof_uploaded_by = %s,
+                    payment_status = %s
+                WHERE id = %s AND tenant_id = %s
+            """
+
+            payment_notes = f"Auto-matched with {match_confidence} confidence (score: {match_score}/100)"
+            if warnings:
+                payment_notes += f"\nWarnings: {', '.join(warnings)}"
+
+            db_manager.execute_query(
+                update_query,
+                (
+                    payment_data.get('payment_date'),
+                    stored_path,
+                    payment_data.get('payment_method'),
+                    payment_data.get('confirmation_number'),
+                    payment_notes,
+                    'system_auto_match',  # uploaded_by
+                    payment_status,
+                    invoice_id,
+                    tenant_id
+                )
+            )
+
+            # Format validation report
+            validation_report = validator.format_validation_report(is_valid, errors, warnings)
+
+            return jsonify({
+                'success': True,
+                'message': f'Payment proof uploaded and matched to invoice (confidence: {match_confidence})',
+                'matched_invoice': {
+                    'id': invoice_id,
+                    'invoice_number': invoice.get('invoice_number'),
+                    'customer_name': invoice.get('customer_name') or invoice.get('vendor_name'),
+                    'amount': float(invoice.get('total_amount', 0)),
+                    'currency': invoice.get('currency')
+                },
+                'match_info': {
+                    'confidence': match_confidence,
+                    'score': match_score,
+                    'score_breakdown': best_match['score_breakdown']
+                },
+                'payment_data': {
+                    'date': payment_data.get('payment_date'),
+                    'amount': payment_data.get('payment_amount'),
+                    'currency': payment_data.get('payment_currency'),
+                    'method': payment_data.get('payment_method'),
+                    'confirmation_number': payment_data.get('confirmation_number'),
+                    'confidence': payment_data.get('confidence')
+                },
+                'payment_status': payment_status,
+                'stored_path': stored_path,
+                'validation': {
+                    'is_valid': is_valid,
+                    'errors': errors,
+                    'warnings': warnings,
+                    'report': validation_report
+                }
+            }), 200
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
 @app.route('/api/invoices/<invoice_id>/payment-proof', methods=['POST'])
 def api_upload_payment_proof(invoice_id):
     """
@@ -9862,12 +10135,18 @@ def api_upload_payment_proof(invoice_id):
     Updates: invoice payment status and stores receipt
     """
     try:
-        from services.payment_proof_processor import PaymentProofProcessor, store_payment_proof
-        from services.payment_validator import PaymentValidator
-        from database import db_manager
         import os
+        import sys
         from werkzeug.utils import secure_filename
         from datetime import datetime
+        from database import db_manager
+
+        # Import from web_ui local services (not root services/)
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_proof_processor import PaymentProofProcessor, store_payment_proof
+        from payment_validator import PaymentValidator
 
         # Get current tenant
         tenant_id = get_current_tenant_id()
@@ -10253,6 +10532,501 @@ def api_get_transaction_related_invoice(transaction_id):
     except Exception as e:
         logger.error(f"Error getting related invoice for transaction {transaction_id}: {e}")
         return jsonify({'error': str(e)}), 500
+
+# ============================================================================
+# INVOICE ATTACHMENTS API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/invoices/<invoice_id>/attachments', methods=['POST'])
+def api_upload_attachment(invoice_id):
+    """
+    Upload attachment for an invoice
+    Supports any file type with optional AI analysis
+    """
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        # Validate invoice exists
+        invoice = db_manager.execute_query(
+            "SELECT id FROM invoices WHERE id = %s AND tenant_id = %s",
+            (invoice_id, tenant_id),
+            fetch_one=True
+        )
+
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        # Check for file
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file_obj = request.files['file']
+        if not file_obj.filename:
+            return jsonify({'success': False, 'error': 'Empty filename'}), 400
+
+        # Get optional parameters
+        attachment_type = request.form.get('attachment_type', 'other')
+        description = request.form.get('description')
+        uploaded_by = request.form.get('uploaded_by', 'system')
+        analyze_with_ai = request.form.get('analyze_with_ai', 'true').lower() == 'true'
+
+        # Upload attachment
+        manager = AttachmentManager(db_manager)
+        success, message, attachment_data = manager.upload_attachment(
+            file_obj=file_obj,
+            invoice_id=invoice_id,
+            tenant_id=tenant_id,
+            attachment_type=attachment_type,
+            description=description,
+            uploaded_by=uploaded_by,
+            analyze_with_ai=analyze_with_ai
+        )
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'attachment': attachment_data
+            })
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error uploading attachment for invoice {invoice_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/attachments', methods=['GET'])
+def api_list_attachments(invoice_id):
+    """
+    List all attachments for an invoice
+    Optional filter by attachment_type
+    """
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+        attachment_type = request.args.get('attachment_type')
+
+        manager = AttachmentManager(db_manager)
+        attachments = manager.list_attachments(invoice_id, tenant_id, attachment_type)
+
+        return jsonify({
+            'success': True,
+            'attachments': attachments,
+            'count': len(attachments)
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing attachments for invoice {invoice_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/attachments/<attachment_id>', methods=['GET'])
+def api_get_attachment(attachment_id):
+    """Get single attachment details"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = AttachmentManager(db_manager)
+        attachment = manager.get_attachment(attachment_id, tenant_id)
+
+        if attachment:
+            return jsonify({
+                'success': True,
+                'attachment': attachment
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Attachment not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting attachment {attachment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/attachments/<attachment_id>', methods=['DELETE'])
+def api_delete_attachment(attachment_id):
+    """Delete an attachment"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = AttachmentManager(db_manager)
+        success, message = manager.delete_attachment(attachment_id, tenant_id)
+
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error deleting attachment {attachment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/attachments/<attachment_id>/analyze', methods=['POST'])
+def api_analyze_attachment(attachment_id):
+    """Trigger AI analysis for an attachment"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = AttachmentManager(db_manager)
+        success, extracted_data = manager.analyze_attachment(attachment_id, tenant_id)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Analysis completed',
+                'extracted_data': extracted_data
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Analysis failed'}), 500
+
+    except Exception as e:
+        logger.error(f"Error analyzing attachment {attachment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/attachments/<attachment_id>/download')
+def api_download_attachment(attachment_id):
+    """Download attachment file"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = AttachmentManager(db_manager)
+        attachment = manager.get_attachment(attachment_id, tenant_id)
+
+        if not attachment:
+            return jsonify({'error': 'Attachment not found'}), 404
+
+        file_path = attachment['file_path']
+
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'File not found on disk'}), 404
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=attachment['file_name']
+        )
+
+    except Exception as e:
+        logger.error(f"Error downloading attachment {attachment_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/attachment-stats')
+def api_get_attachment_stats(invoice_id):
+    """Get attachment statistics for an invoice"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from attachment_manager import AttachmentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = AttachmentManager(db_manager)
+        stats = manager.get_attachment_stats(invoice_id, tenant_id)
+
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting attachment stats for invoice {invoice_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# INVOICE PAYMENTS API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/invoices/<invoice_id>/payments', methods=['POST'])
+def api_add_payment(invoice_id):
+    """Add a payment record for an invoice"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Validate required fields
+        if not data.get('payment_amount'):
+            return jsonify({'success': False, 'error': 'payment_amount is required'}), 400
+
+        manager = PaymentManager(db_manager)
+        success, message, payment_data = manager.add_payment(
+            invoice_id=invoice_id,
+            tenant_id=tenant_id,
+            payment_amount=float(data['payment_amount']),
+            payment_date=data.get('payment_date'),
+            payment_currency=data.get('payment_currency', 'USD'),
+            payment_method=data.get('payment_method'),
+            payment_reference=data.get('payment_reference'),
+            payment_notes=data.get('payment_notes'),
+            attachment_id=data.get('attachment_id'),
+            recorded_by=data.get('recorded_by', 'system')
+        )
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'payment': payment_data
+            })
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error adding payment for invoice {invoice_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/payments', methods=['GET'])
+def api_list_payments(invoice_id):
+    """List all payments for an invoice"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = PaymentManager(db_manager)
+        payments = manager.get_payments(invoice_id, tenant_id)
+
+        return jsonify({
+            'success': True,
+            'payments': payments,
+            'count': len(payments)
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing payments for invoice {invoice_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/payment-summary')
+def api_get_payment_summary(invoice_id):
+    """Get payment summary (total paid, remaining, percentage, status)"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = PaymentManager(db_manager)
+        summary = manager.calculate_payment_summary(invoice_id, tenant_id)
+
+        return jsonify({
+            'success': True,
+            'summary': summary
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting payment summary for invoice {invoice_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payments/<payment_id>', methods=['GET'])
+def api_get_payment(payment_id):
+    """Get single payment details"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = PaymentManager(db_manager)
+        payment = manager.get_payment(payment_id, tenant_id)
+
+        if payment:
+            return jsonify({
+                'success': True,
+                'payment': payment
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Payment not found'}), 404
+
+    except Exception as e:
+        logger.error(f"Error getting payment {payment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payments/<payment_id>', methods=['PUT'])
+def api_update_payment(payment_id):
+    """Update payment details"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        manager = PaymentManager(db_manager)
+        success, message, updated_payment = manager.update_payment(
+            payment_id=payment_id,
+            tenant_id=tenant_id,
+            payment_amount=data.get('payment_amount'),
+            payment_date=data.get('payment_date'),
+            payment_method=data.get('payment_method'),
+            payment_reference=data.get('payment_reference'),
+            payment_notes=data.get('payment_notes'),
+            attachment_id=data.get('attachment_id')
+        )
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': message,
+                'payment': updated_payment
+            })
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error updating payment {payment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payments/<payment_id>', methods=['DELETE'])
+def api_delete_payment(payment_id):
+    """Delete a payment"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+
+        manager = PaymentManager(db_manager)
+        success, message = manager.delete_payment(payment_id, tenant_id)
+
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error deleting payment {payment_id}: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payments/<payment_id>/link-attachment', methods=['POST'])
+def api_link_payment_attachment(payment_id):
+    """Link a payment to an attachment (payment proof)"""
+    try:
+        from database import db_manager
+
+        # Add services path to sys.path for imports
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_manager import PaymentManager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        if not data.get('attachment_id'):
+            return jsonify({'success': False, 'error': 'attachment_id is required'}), 400
+
+        manager = PaymentManager(db_manager)
+        success, message = manager.link_payment_to_attachment(
+            payment_id=payment_id,
+            attachment_id=data['attachment_id'],
+            tenant_id=tenant_id
+        )
+
+        if success:
+            return jsonify({'success': True, 'message': message})
+        else:
+            return jsonify({'success': False, 'error': message}), 400
+
+    except Exception as e:
+        logger.error(f"Error linking payment {payment_id} to attachment: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # ============================================================================
 # BACKGROUND JOBS API ENDPOINTS

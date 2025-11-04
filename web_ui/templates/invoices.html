@@ -512,6 +512,97 @@
             border: none;
         }
 
+        /* Invoice Tabs Styles */
+        .invoice-tabs {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab-btn {
+            padding: 0.75rem 1.5rem;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: #64748b;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .tab-btn:hover {
+            color: #3b82f6;
+            background: #f1f5f9;
+        }
+
+        .tab-btn.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+
+        .tab-badge {
+            display: inline-block;
+            background: #cbd5e1;
+            color: #475569;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.15rem 0.5rem;
+            border-radius: 10px;
+            margin-left: 0.5rem;
+        }
+
+        .tab-btn.active .tab-badge {
+            background: #3b82f6;
+            color: white;
+        }
+
+        /* Status badges for invoice payment status */
+        .status-badge {
+            display: inline-block;
+            padding: 0.35rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-partial {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-paid {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-overdue {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-cancelled {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .invoice-detail {
             display: grid;
             gap: 1rem;
@@ -1042,6 +1133,7 @@
                         <th class="sortable" data-sort="vendor_name" onclick="sortTable('vendor_name')">Vendor (From)</th>
                         <th class="sortable" data-sort="customer_name" onclick="sortTable('customer_name')">Customer (To)</th>
                         <th class="sortable" data-sort="total_amount" onclick="sortTable('total_amount')">Amount</th>
+                        <th class="sortable" data-sort="payment_status" onclick="sortTable('payment_status')">Status</th>
                         <th class="sortable" data-sort="currency" onclick="sortTable('currency')">Currency</th>
                         <th class="sortable" data-sort="business_unit" onclick="sortTable('business_unit')">Business Unit</th>
                         <th class="sortable" data-sort="category" onclick="sortTable('category')">Category</th>
@@ -1050,7 +1142,7 @@
                 </thead>
                 <tbody id="invoice-tbody">
                     <tr>
-                        <td colspan="11" style="text-align: center; padding: 3rem;">Loading invoices...</td>
+                        <td colspan="12" style="text-align: center; padding: 3rem;">Loading invoices...</td>
                     </tr>
                 </tbody>
             </table>
@@ -1076,8 +1168,37 @@
                 <div class="modal-title">Invoice Details</div>
                 <button class="close-modal" onclick="closeModal('invoice-modal')">&times;</button>
             </div>
-            <div class="invoice-detail" id="invoice-detail">
-                <!-- Invoice details will be loaded here -->
+
+            <!-- Tabs Navigation -->
+            <div class="invoice-tabs">
+                <button class="tab-btn active" onclick="switchInvoiceTab('overview')">Overview</button>
+                <button class="tab-btn" onclick="switchInvoiceTab('payments')">
+                    Payments
+                    <span class="tab-badge" id="payments-count-badge">0</span>
+                </button>
+                <button class="tab-btn" onclick="switchInvoiceTab('attachments')">
+                    Attachments
+                    <span class="tab-badge" id="attachments-count-badge">0</span>
+                </button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="tab-content active" id="tab-overview">
+                <div class="invoice-detail" id="invoice-detail">
+                    <!-- Invoice details will be loaded here -->
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-payments">
+                <div id="payments-section">
+                    <!-- Payments content loaded by invoice_payments.js -->
+                </div>
+            </div>
+
+            <div class="tab-content" id="tab-attachments">
+                <div id="attachments-section">
+                    <!-- Attachments content loaded by invoice_attachments.js -->
+                </div>
             </div>
         </div>
     </div>
@@ -1183,10 +1304,29 @@
         let selectedInvoices = new Set();
         let currentEditingInvoiceId = null;
         let allInvoices = [];
+        let currentInvoiceId = null; // Store current invoice ID for tabs
 
         // Sorting state
         let currentSortField = null;
         let currentSortOrder = null; // 'asc' or 'desc'
+
+        // Tab Switching Function
+        function switchInvoiceTab(tabName) {
+            // Remove active class from all tabs and content
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            // Add active class to selected tab and content
+            event.target.classList.add('active');
+            document.getElementById(`tab-${tabName}`).classList.add('active');
+
+            // Load tab content if needed
+            if (tabName === 'payments' && currentInvoiceId) {
+                window.InvoicePayments.loadPayments(currentInvoiceId);
+            } else if (tabName === 'attachments' && currentInvoiceId) {
+                window.InvoiceAttachments.loadAttachments(currentInvoiceId);
+            }
+        }
 
         // Restore active background jobs on page load
         async function restoreActiveJobs() {
@@ -1734,6 +1874,20 @@
             }
         }
 
+        // Get status badge HTML
+        function getStatusBadge(status) {
+            const statusMap = {
+                'pending': { text: 'Pending', class: 'status-pending' },
+                'partially_paid': { text: 'Partially Paid', class: 'status-partial' },
+                'paid': { text: 'Paid', class: 'status-paid' },
+                'overdue': { text: 'Overdue', class: 'status-overdue' },
+                'cancelled': { text: 'Cancelled', class: 'status-cancelled' }
+            };
+
+            const statusInfo = statusMap[status] || statusMap['pending'];
+            return `<span class="status-badge ${statusInfo.class}">${statusInfo.text}</span>`;
+        }
+
         // Load invoices
         async function loadInvoices(page = 1) {
             currentPage = page;
@@ -1811,6 +1965,9 @@
                             <td class="editable-cell" data-field="vendor_name" data-invoice-id="${invoice.id}">${invoice.vendor_name || 'N/A'}</td>
                             <td class="editable-cell" data-field="customer_name" data-invoice-id="${invoice.id}">${invoice.customer_name || 'N/A'}</td>
                             <td class="editable-cell" data-field="total_amount" data-invoice-id="${invoice.id}">${invoice.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                            <td>
+                                ${getStatusBadge(invoice.payment_status || 'pending')}
+                            </td>
                             <td class="editable-cell" data-field="currency" data-invoice-id="${invoice.id}">
                                 ${invoice.currency_type === 'crypto' && invoice.crypto_currency ?
                                     `${invoice.crypto_currency}${invoice.crypto_network ? ' (' + invoice.crypto_network + ')' : ''}` :
@@ -1839,11 +1996,11 @@
                     // Update sort indicators
                     updateSortIndicators();
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 3rem;">No invoices found</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 3rem;">No invoices found</td></tr>';
                 }
             } catch (error) {
                 console.error('Error loading invoices:', error);
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; padding: 3rem; color: red;">Error loading invoices</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="12" style="text-align: center; padding: 3rem; color: red;">Error loading invoices</td></tr>';
             }
         }
 
@@ -1886,6 +2043,9 @@
         // View invoice details
         async function viewInvoice(invoiceId) {
             try {
+                // Store current invoice ID for tabs
+                currentInvoiceId = invoiceId;
+
                 const response = await fetch(`/api/invoices/${invoiceId}`);
                 const invoice = await response.json();
 
@@ -1991,9 +2151,35 @@
                     detailDiv.innerHTML += lineItemsHtml;
                 }
 
+                // Reset tabs to overview
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.querySelector('.tab-btn').classList.add('active');
+                document.getElementById('tab-overview').classList.add('active');
+
+                // Load counts for badges
+                loadTabCounts(invoiceId);
+
                 document.getElementById('invoice-modal').classList.add('active');
             } catch (error) {
                 alert('Error loading invoice details: ' + error.message);
+            }
+        }
+
+        // Load payment and attachment counts for tabs
+        async function loadTabCounts(invoiceId) {
+            try {
+                // Load payment count
+                const paymentsResp = await fetch(`/api/invoices/${invoiceId}/payments`);
+                const paymentsData = await paymentsResp.json();
+                document.getElementById('payments-count-badge').textContent = paymentsData.count || 0;
+
+                // Load attachment count
+                const attachmentsResp = await fetch(`/api/invoices/${invoiceId}/attachments`);
+                const attachmentsData = await attachmentsResp.json();
+                document.getElementById('attachments-count-badge').textContent = attachmentsData.count || 0;
+            } catch (error) {
+                console.error('Error loading tab counts:', error);
             }
         }
 
@@ -2003,6 +2189,9 @@
             if (modalId === 'edit-modal') {
                 document.getElementById('edit-form').reset();
                 currentEditingInvoiceId = null;
+            }
+            if (modalId === 'invoice-modal') {
+                currentInvoiceId = null;
             }
         }
 
@@ -2620,6 +2809,9 @@
             }
         }
     </script>
-    </script>
+
+    <!-- Invoice Attachments and Payments Modules -->
+    <script src="{{ url_for('static', filename='js/invoice_attachments.js') }}?v={{ cache_buster }}"></script>
+    <script src="{{ url_for('static', filename='js/invoice_payments.js') }}?v={{ cache_buster }}"></script>
 </body>
 </html>
