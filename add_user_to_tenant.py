@@ -116,8 +116,8 @@ try:
                tc.company_name
         FROM tenant_users tu
         JOIN users u ON tu.user_id = u.id
-        JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
-        WHERE u.email = %s AND tc.tenant_id = %s
+        JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+        WHERE u.email = %s AND tc.id = %s
         """,
         (args.user_email, args.tenant_id),
         fetch_one=True

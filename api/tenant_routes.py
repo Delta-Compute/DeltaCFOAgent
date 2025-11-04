@@ -41,9 +41,9 @@ def list_tenants():
 
         query = """
             SELECT
-                tc.tenant_id,
+                tc.id,
                 tc.company_name,
-                tc.company_description,
+                tc.description,
                 tc.payment_owner,
                 tc.subscription_status,
                 tu.role,
@@ -51,7 +51,7 @@ def list_tenants():
                 u_created.display_name as created_by_name,
                 u_admin.display_name as admin_name
             FROM tenant_configuration tc
-            JOIN tenant_users tu ON tc.tenant_id = tu.tenant_id
+            JOIN tenant_users tu ON tc.id = tu.tenant_id
             LEFT JOIN users u_created ON tc.created_by_user_id = u_created.id
             LEFT JOIN users u_admin ON tc.current_admin_user_id = u_admin.id
             WHERE tu.user_id = %s AND tu.is_active = true

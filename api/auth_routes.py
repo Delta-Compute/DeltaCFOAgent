@@ -224,13 +224,13 @@ def login():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.tenant_id,
+                tc.id as tenant_id,
                 tc.company_name,
-                tc.company_description,
+                tc.description as company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -336,13 +336,13 @@ def get_me():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.tenant_id,
+                tc.id as tenant_id,
                 tc.company_name,
-                tc.company_description,
+                tc.description as company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -561,13 +561,13 @@ def switch_tenant(tenant_id):
         # Check if user has access to this tenant
         query = """
             SELECT
-                tc.tenant_id,
+                tc.id,
                 tc.company_name,
-                tc.company_description,
+                tc.description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.tenant_id = %s AND tu.is_active = true
         """
         result = db_manager.execute_query(query, (user['id'], tenant_id), fetch_one=True)
@@ -631,7 +631,7 @@ def verify_invitation(invitation_token):
                 tc.company_name,
                 u.display_name as invited_by_name
             FROM user_invitations ui
-            JOIN tenant_configuration tc ON ui.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON ui.tenant_id = tc.id
             JOIN users u ON ui.invited_by_user_id = u.id
             WHERE ui.invitation_token = %s
         """

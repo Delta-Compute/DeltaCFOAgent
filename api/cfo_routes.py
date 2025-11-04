@@ -115,7 +115,7 @@ def list_assistants():
                 ARRAY_AGG(DISTINCT tc.tenant_id) as client_ids
             FROM users u
             JOIN tenant_users tu ON u.id = tu.user_id
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE u.user_type = 'cfo_assistant'
             AND u.invited_by_user_id = %s
             AND tu.is_active = true

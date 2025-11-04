@@ -95,14 +95,14 @@ def get_user_tenants(user_id: str) -> List[Dict[str, Any]]:
 
         query = """
             SELECT
-                tc.tenant_id as id,
+                tc.id,
                 tc.company_name,
-                tc.company_description,
+                tc.description as company_description,
                 tu.role,
                 tu.permissions,
                 tu.is_active
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         results = db_manager.execute_query(query, (user_id,), fetch_all=True)
