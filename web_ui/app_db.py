@@ -7687,14 +7687,14 @@ def upload_file():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Check file extension - accept CSV and PDF
+        # Check file extension - accept CSV, Excel, and PDF
         print("DEBUG: Checking file extension...")
-        allowed_extensions = ['.csv', '.pdf']
+        allowed_extensions = ['.csv', '.xls', '.xlsx', '.pdf']
         file_ext = os.path.splitext(file.filename.lower())[1]
         print(f"DEBUG: File extension: {file_ext}")
 
         if file_ext not in allowed_extensions:
-            return jsonify({'error': 'Only CSV and PDF files are allowed'}), 400
+            return jsonify({'error': 'Only CSV, Excel (.xls, .xlsx), and PDF files are allowed'}), 400
 
         # Secure the filename
         print("DEBUG: Securing filename...")
@@ -7713,6 +7713,43 @@ def upload_file():
 
         # Debug: Show file extension detection
         print(f"DEBUG: File extension detected: '{file_ext}' for file: {filename}")
+
+        # Convert Excel to CSV if needed
+        if file_ext in ['.xls', '.xlsx']:
+            print(f"Excel file detected: {filename}")
+            print(f"DEBUG: Converting Excel to CSV...")
+
+            try:
+                from excel_converter import convert_excel_to_csv
+
+                # Convert Excel to CSV
+                csv_filename = os.path.splitext(filename)[0] + '.csv'
+                csv_filepath = os.path.join(parent_dir, csv_filename)
+
+                convert_excel_to_csv(filepath, csv_filepath)
+
+                # Update filename and filepath to use CSV
+                filename = csv_filename
+                filepath = csv_filepath
+                file_ext = '.csv'
+
+                print(f"DEBUG: Excel converted to CSV: {csv_filename}")
+
+                # Clean up original Excel file
+                excel_path = os.path.join(parent_dir, secure_filename(file.filename))
+                if os.path.exists(excel_path):
+                    os.remove(excel_path)
+                    print(f"DEBUG: Cleaned up original Excel file")
+
+            except Exception as e:
+                print(f"ERROR: Failed to convert Excel to CSV: {e}")
+                # Clean up uploaded file
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                return jsonify({
+                    'success': False,
+                    'error': f"Failed to convert Excel file: {str(e)}"
+                }), 500
 
         # Check if PDF and process differently
         if file_ext == '.pdf':
@@ -9148,7 +9185,7 @@ def extract_compressed_file(file_path: str, extract_dir: str) -> List[str]:
 
         # Recursively walk through all directories to find supported files
         # This handles nested folder structures of any depth
-        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
         filtered_files = []
 
         for root, dirs, files in os.walk(extract_dir):
@@ -9178,8 +9215,8 @@ def api_upload_invoice():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Check file type
-        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        # Check file type - accept images, PDFs, CSV, and Excel
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
         file_ext = os.path.splitext(file.filename)[1].lower()
         if file_ext not in allowed_extensions:
             return jsonify({'error': f'File type not allowed. Allowed types: {", ".join(allowed_extensions)}'}), 400
@@ -9300,7 +9337,7 @@ def api_upload_batch_invoices():
                 results['files_found'] = len(files_to_process)
 
                 # Calculate skipped files
-                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
                 for file_in_archive in all_files_in_archive:
                     file_extension = os.path.splitext(file_in_archive)[1].lower()
                     if file_extension not in allowed_extensions and file_extension:
@@ -9342,7 +9379,7 @@ def api_upload_batch_invoices():
         for file_path, original_filename in files_to_process:
             try:
                 # Validate file type
-                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+                allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
                 file_ext = os.path.splitext(file_path)[1].lower()
 
                 if file_ext not in allowed_extensions:
@@ -9479,7 +9516,7 @@ def api_upload_batch_invoices_async():
             return jsonify({'error': 'No valid files to process'}), 400
 
         # Filter supported file types
-        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff'}
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
         valid_files = []
 
         for file_path, original_name in files_to_process:
