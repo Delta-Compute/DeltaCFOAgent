@@ -72,13 +72,13 @@
                 <div class="upload-grid">
                     <!-- Upload Transaction Files Section -->
                     <div class="upload-section-card">
-                        <h2>Upload Transaction Files (CSV/PDF)</h2>
+                        <h2>Upload Transaction Files (CSV/Excel/PDF)</h2>
                         <div class="upload-area" id="uploadArea">
                             <div class="upload-content">
                                 <div class="upload-icon">📁</div>
-                                <h3>Drag & Drop CSV or PDF Files Here</h3>
+                                <h3>Drag & Drop CSV, Excel or PDF Files Here</h3>
                                 <p>Or click to select files</p>
-                                <input type="file" id="fileInput" multiple accept=".csv,.pdf" style="display: none;">
+                                <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.pdf" style="display: none;">
                                 <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
                                     Choose Files
                                 </button>
@@ -98,9 +98,9 @@
                         <div class="upload-box-invoices" id="upload-box-invoices">
                             <div class="upload-icon">📤</div>
                             <div class="upload-text">Drag & drop invoice files here or click to browse</div>
-                            <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, ZIP, 7Z (Max 50MB total)</div>
+                            <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX), ZIP, 7Z (Max 50MB total)</div>
                             <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600;">Upload multiple files, a ZIP archive, or a single invoice</div>
-                            <input type="file" id="file-input-invoices" accept=".pdf,.png,.jpg,.jpeg,.tiff,.zip,.7z" multiple style="display: none;">
+                            <input type="file" id="file-input-invoices" accept=".pdf,.png,.jpg,.jpeg,.tiff,.csv,.xls,.xlsx,.zip,.7z" multiple style="display: none;">
                         </div>
 
                         <!-- Batch Progress for Invoices -->
@@ -160,6 +160,7 @@
                                     <span class="account-category-icon">
                                         {% if group.category == 'Checking' %}🏦
                                         {% elif group.category == 'Credit Card' %}💳
+                                        {% elif group.category == 'Crypto Exchange' %}🔄
                                         {% elif group.category == 'Crypto Wallet' %}🪙
                                         {% else %}📄{% endif %}
                                     </span>
@@ -369,11 +370,11 @@
         }
 
         async function uploadFile(file) {
-            // Support both CSV and PDF files (PDF support added in Dev branch)
-            const allowedExtensions = ['.csv', '.pdf'];
+            // Support CSV, Excel, and PDF files
+            const allowedExtensions = ['.csv', '.xls', '.xlsx', '.pdf'];
             const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
             if (!allowedExtensions.includes(fileExt)) {
-                showToast('Only CSV and PDF files are allowed', 'error');
+                showToast('Only CSV, Excel (XLS/XLSX) and PDF files are allowed', 'error');
                 return;
             }
 
@@ -663,6 +664,11 @@
         .category-credit-card {
             background: #bee3f8;
             color: #2c5282;
+        }
+
+        .category-crypto-exchange {
+            background: #fce7f3;
+            color: #831843;
         }
 
         .category-crypto-wallet {
