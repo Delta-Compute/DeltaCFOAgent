@@ -49,6 +49,17 @@ function debounce(func, wait) {
     };
 }
 
+// Utility: Scroll to top of transactions table
+function scrollToTableTop() {
+    const transactionTable = document.querySelector('#transactionTable');
+    if (transactionTable) {
+        transactionTable.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start'
+        });
+    }
+}
+
 function createUndoSnapshot(type, data) {
     return {
         type: type,  // 'single', 'bulk', 'drag-fill'
@@ -1066,7 +1077,7 @@ function renderTransactionTable(transactions) {
         const batchTransactions = transactions.slice(start, end);
 
         const html = batchTransactions.map(transaction => {
-        const amount = parseFloat(transaction.amount || 0);
+        const amount = parseFloat(transaction.usd_equivalent || transaction.amount || 0);
         const amountClass = amount > 0 ? 'amount-positive' : amount < 0 ? 'amount-negative' : '';
         const formattedAmount = Math.abs(amount).toLocaleString('en-US', {
             style: 'currency',
@@ -3122,6 +3133,9 @@ function sortTransactions(field) {
 
     updateSortIndicators();
     renderTransactionTable(currentTransactions);
+
+    // Scroll to top of table after sorting
+    scrollToTableTop();
 }
 
 function updateSortIndicators() {
@@ -5676,6 +5690,9 @@ function sortByCell(cell) {
     }, 2000);
 
     showToast(`✅ Sorted ${matchingRows.length} transactions by ${fieldName} = "${value}"`, 'success');
+
+    // Scroll to top of table after sorting
+    scrollToTableTop();
 }
 // ============================================================================
 // INTERNAL TRANSFER DETECTION
