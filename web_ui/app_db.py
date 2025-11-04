@@ -3463,6 +3463,7 @@ def enrich_transaction_with_invoice_context(transaction_id: str, invoice_data: D
     """
     Enrich transaction with AI-powered classification based on invoice context
     Called automatically after confirming an invoice-transaction match
+    Includes attachment and payment data for comprehensive enrichment
     """
     global claude_client
 
@@ -3476,7 +3477,7 @@ def enrich_transaction_with_invoice_context(transaction_id: str, invoice_data: D
 
         # Get current transaction data
         transaction = db_manager.execute_query("""
-            SELECT transaction_id, description, amount, classified_entity, accounting_category, subcategory, justification
+            SELECT transaction_id, description, amount, classified_entity, accounting_category, subcategory, justification, invoice_id
             FROM transactions
             WHERE tenant_id = %s AND transaction_id = %s
         """, (tenant_id, transaction_id), fetch_one=True)
@@ -3485,7 +3486,61 @@ def enrich_transaction_with_invoice_context(transaction_id: str, invoice_data: D
             print(f"ERROR: Transaction {transaction_id} not found")
             return False
 
-        # Create enrichment prompt
+        # Get invoice_id from transaction or invoice_data
+        invoice_id = transaction.get('invoice_id') or invoice_data.get('id')
+
+        # Get attachment stats if invoice_id is available
+        attachment_info = ""
+        if invoice_id:
+            attachment_stats = db_manager.execute_query("""
+                SELECT
+                    COUNT(*) as total_attachments,
+                    COUNT(CASE WHEN attachment_type = 'payment_proof' THEN 1 END) as payment_proofs,
+                    COUNT(CASE WHEN ai_analysis_status = 'analyzed' THEN 1 END) as ai_analyzed,
+                    STRING_AGG(DISTINCT attachment_type, ', ') as attachment_types
+                FROM invoice_attachments
+                WHERE invoice_id = %s AND tenant_id = %s
+            """, (invoice_id, tenant_id), fetch_one=True)
+
+            if attachment_stats and attachment_stats['total_attachments'] > 0:
+                attachment_info = f"""
+ATTACHMENTS:
+- Total Attachments: {attachment_stats['total_attachments']}
+- Payment Proofs: {attachment_stats['payment_proofs']}
+- AI Analyzed: {attachment_stats['ai_analyzed']}
+- Types: {attachment_stats['attachment_types'] or 'N/A'}
+"""
+
+        # Get payment summary if invoice_id is available
+        payment_info = ""
+        if invoice_id:
+            payment_summary = db_manager.execute_query("""
+                SELECT
+                    COUNT(*) as payment_count,
+                    COALESCE(SUM(payment_amount), 0) as total_paid,
+                    STRING_AGG(DISTINCT payment_method, ', ') as payment_methods,
+                    STRING_AGG(DISTINCT payment_currency, ', ') as currencies
+                FROM invoice_payments
+                WHERE invoice_id = %s AND tenant_id = %s
+            """, (invoice_id, tenant_id), fetch_one=True)
+
+            if payment_summary and payment_summary['payment_count'] > 0:
+                invoice_total = float(invoice_data.get('total_amount', 0))
+                total_paid = float(payment_summary['total_paid'] or 0)
+                remaining = invoice_total - total_paid
+                payment_status = 'Fully Paid' if remaining <= 0 else f'Partially Paid ({total_paid}/{invoice_total})'
+
+                payment_info = f"""
+PAYMENTS:
+- Payment Count: {payment_summary['payment_count']} payment(s)
+- Total Paid: {total_paid}
+- Remaining: {remaining}
+- Status: {payment_status}
+- Methods: {payment_summary['payment_methods'] or 'N/A'}
+- Currencies: {payment_summary['currencies'] or 'N/A'}
+"""
+
+        # Create enrichment prompt with attachment and payment context
         prompt = f"""
 You are a financial AI expert. A transaction has been matched with an invoice and needs enrichment.
 
@@ -3496,7 +3551,7 @@ INVOICE CONTEXT:
 - Amount: {invoice_data.get('total_amount', 'N/A')}
 - Category: {invoice_data.get('category', 'N/A')}
 - Business Unit: {invoice_data.get('business_unit', 'N/A')}
-
+{attachment_info}{payment_info}
 TRANSACTION DETAILS:
 - Description: {transaction['description']}
 - Amount: {transaction['amount']}
@@ -3507,7 +3562,7 @@ Based on this context, provide enriched classification:
 1. Entity: Who is the main vendor/service provider (focus on vendor_name from invoice)
 2. Primary Category: Main expense/revenue type (Technology, Professional Services, Office Supplies, etc.)
 3. Sub Category: More specific classification within the primary category
-4. Justification: Brief explanation including invoice reference
+4. Justification: Brief explanation including invoice reference and mention any payment proofs or partial payments if present
 
 Respond ONLY in valid JSON format:
 {{"entity": "", "primary_category": "", "sub_category": "", "justification": ""}}
@@ -10590,14 +10645,131 @@ def api_upload_attachment(invoice_id):
             analyze_with_ai=analyze_with_ai
         )
 
-        if success:
-            return jsonify({
-                'success': True,
-                'message': message,
-                'attachment': attachment_data
-            })
-        else:
+        if not success:
             return jsonify({'success': False, 'error': message}), 400
+
+        # AUTO-CREATE PAYMENT: If this is a payment proof with AI-extracted data, automatically create payment record
+        payment_created = False
+        payment_data = None
+
+        if attachment_type == 'payment_proof' and attachment_data.get('ai_extracted_data'):
+            try:
+                from payment_manager import PaymentManager
+
+                ai_data = attachment_data['ai_extracted_data']
+
+                # Check if AI successfully extracted payment information
+                if ai_data.get('payment_amount') and ai_data.get('payment_date'):
+                    payment_manager = PaymentManager(db_manager)
+
+                    # Get invoice details for currency and total amount
+                    invoice_details = db_manager.execute_query(
+                        "SELECT total_amount, currency FROM invoices WHERE id = %s AND tenant_id = %s",
+                        (invoice_id, tenant_id),
+                        fetch_one=True
+                    )
+
+                    # Create payment record
+                    payment_amount = float(ai_data['payment_amount'])
+                    payment_date = ai_data['payment_date']
+                    payment_currency = ai_data.get('payment_currency') or (invoice_details.get('currency') if invoice_details else 'USD')
+                    payment_method = ai_data.get('payment_method', 'unknown')
+                    payment_reference = ai_data.get('confirmation_number', '')
+                    payment_notes = f"Auto-created from payment proof: {attachment_data['file_name']}"
+
+                    success_payment, msg_payment, new_payment = payment_manager.add_payment(
+                        invoice_id=invoice_id,
+                        tenant_id=tenant_id,
+                        payment_amount=payment_amount,
+                        payment_date=payment_date,
+                        payment_currency=payment_currency,
+                        payment_method=payment_method,
+                        payment_reference=payment_reference,
+                        payment_notes=payment_notes,
+                        attachment_id=attachment_data['id'],
+                        recorded_by=uploaded_by
+                    )
+
+                    if success_payment:
+                        payment_created = True
+                        payment_data = new_payment
+                        print(f"AUTO-CREATED PAYMENT: ${payment_amount} {payment_currency} for invoice {invoice_id}")
+
+                        # AUTO-UPDATE TRANSACTION: Try to find and update matching transaction
+                        try:
+                            # Get invoice data for transaction matching
+                            invoice_data = db_manager.execute_query("""
+                                SELECT invoice_number, customer_name, vendor_name, total_amount
+                                FROM invoices
+                                WHERE id = %s AND tenant_id = %s
+                            """, (invoice_id, tenant_id), fetch_one=True)
+
+                            if invoice_data:
+                                # Find transaction that matches this invoice/payment
+                                # Match by amount, date, and currency
+                                matching_txn = db_manager.execute_query("""
+                                    SELECT transaction_id
+                                    FROM transactions
+                                    WHERE tenant_id = %s
+                                    AND ABS(amount - %s) <= (%s * 0.02)
+                                    AND currency = %s
+                                    AND DATE(date) = DATE(%s::date)
+                                    AND (invoice_id IS NULL OR invoice_id = %s)
+                                    ORDER BY ABS(amount - %s) ASC
+                                    LIMIT 1
+                                """, (tenant_id, payment_amount, payment_amount, payment_currency,
+                                     payment_date, invoice_id, payment_amount), fetch_one=True)
+
+                                if matching_txn:
+                                    transaction_id = matching_txn['transaction_id']
+                                    customer_name = invoice_data.get('customer_name') or invoice_data.get('vendor_name', 'Unknown')
+                                    invoice_number = invoice_data.get('invoice_number', '')
+
+                                    # Update transaction with customer name and invoice link
+                                    justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
+
+                                    db_manager.execute_query("""
+                                        UPDATE transactions
+                                        SET justification = %s,
+                                            accounting_category = 'REVENUE',
+                                            invoice_id = %s,
+                                            entity = %s
+                                        WHERE transaction_id = %s AND tenant_id = %s
+                                    """, (justification, invoice_id, customer_name, transaction_id, tenant_id))
+
+                                    # Also update invoice with transaction link
+                                    db_manager.execute_query("""
+                                        UPDATE invoices
+                                        SET linked_transaction_id = %s
+                                        WHERE id = %s AND tenant_id = %s
+                                    """, (transaction_id, invoice_id, tenant_id))
+
+                                    print(f"AUTO-UPDATED TRANSACTION: {transaction_id} with customer '{customer_name}' and invoice link")
+                                else:
+                                    print(f"INFO: No matching transaction found for payment ${payment_amount} on {payment_date}")
+                        except Exception as e_txn:
+                            print(f"WARNING: Could not auto-update transaction: {e_txn}")
+                            # Don't fail the payment creation due to transaction update errors
+                    else:
+                        print(f"WARNING: Could not auto-create payment: {msg_payment}")
+
+            except Exception as e:
+                print(f"WARNING: Failed to auto-create payment from proof: {e}")
+                # Don't fail the attachment upload if payment creation fails
+
+        # Return success with attachment and optional payment data
+        response = {
+            'success': True,
+            'message': message,
+            'attachment': attachment_data
+        }
+
+        if payment_created:
+            response['payment_auto_created'] = True
+            response['payment'] = payment_data
+            response['message'] += f" | Payment record auto-created: {payment_data['payment_currency']} {payment_data['payment_amount']}"
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error uploading attachment for invoice {invoice_id}: {e}")
@@ -13403,8 +13575,33 @@ def api_confirm_match():
         if not invoice_id or not transaction_id:
             return jsonify({'success': False, 'error': 'invoice_id and transaction_id are required (provide either both directly or match_id)'}), 400
 
-        # Build the justification field
+        # Build the justification field with attachment and payment context
+        tenant_id = get_current_tenant_id()
+
+        # Get attachment count
+        attachment_count = db_manager.execute_query("""
+            SELECT COUNT(*) as count
+            FROM invoice_attachments
+            WHERE invoice_id = %s AND tenant_id = %s
+        """, (invoice_id, tenant_id), fetch_one=True)
+
+        # Get payment summary
+        payment_summary = db_manager.execute_query("""
+            SELECT
+                COUNT(*) as payment_count,
+                COALESCE(SUM(payment_amount), 0) as total_paid
+            FROM invoice_payments
+            WHERE invoice_id = %s AND tenant_id = %s
+        """, (invoice_id, tenant_id), fetch_one=True)
+
+        # Build enriched justification
         justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
+
+        if attachment_count and attachment_count['count'] > 0:
+            justification += f" ({attachment_count['count']} attachment{'s' if attachment_count['count'] > 1 else ''})"
+
+        if payment_summary and payment_summary['payment_count'] > 0:
+            justification += f" [Split: {payment_summary['payment_count']} payment{'s' if payment_summary['payment_count'] > 1 else ''}]"
 
         # Get database connection using context manager
         with db_manager.get_connection() as conn:
