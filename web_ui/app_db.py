@@ -3794,6 +3794,13 @@ def sync_csv_to_database(csv_filename=None):
                     except Exception as e:
                         print(f"   WARNING: Could not auto-calculate USD for crypto transaction: {e}")
 
+            # AUTOMATIC WALLET MATCHING
+            # Match wallet addresses to friendly entity names from whitelisted wallets
+            from wallet_matcher import enrich_transaction_with_wallet_names
+            origin_display, destination_display = enrich_transaction_with_wallet_names(data, tenant_id)
+            data['origin_display'] = origin_display
+            data['destination_display'] = destination_display
+
             # SMART ENRICHMENT: Insert transaction or enrich existing one
             if is_postgresql:
                 # First, check if transaction exists
@@ -3848,6 +3855,10 @@ def sync_csv_to_database(csv_filename=None):
                                 THEN %s
                                 ELSE destination
                             END,
+
+                            -- Always update wallet display fields (these can change as whitelist is updated)
+                            origin_display = %s,
+                            destination_display = %s,
 
                             -- Enrich classified_entity ONLY if empty or if new confidence is higher
                             classified_entity = CASE
@@ -3904,6 +3915,8 @@ def sync_csv_to_database(csv_filename=None):
                         data['origin'], data['origin'], data['origin'], data['origin'],
                         # Destination enrichment (4 placeholders)
                         data['destination'], data['destination'], data['destination'], data['destination'],
+                        # Wallet display fields (2 placeholders)
+                        data['origin_display'], data['destination_display'],
                         # Entity enrichment (3 placeholders)
                         data['classified_entity'], data['confidence'], data['classified_entity'],
                         # Accounting category enrichment (3 placeholders)
@@ -3928,15 +3941,16 @@ def sync_csv_to_database(csv_filename=None):
                         INSERT INTO transactions (
                             transaction_id, tenant_id, date, description, amount, currency, usd_equivalent,
                             classified_entity, accounting_category, subcategory, justification,
-                            confidence, classification_reason, origin, destination, identifier,
-                            source_file, crypto_amount, conversion_note
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            confidence, classification_reason, origin, destination, origin_display, destination_display,
+                            identifier, source_file, crypto_amount, conversion_note
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         data['transaction_id'], tenant_id, data['date'], data['description'],
                         data['amount'], data['currency'], data['usd_equivalent'],
                         data['classified_entity'], data['accounting_category'], data['subcategory'],
                         data['justification'], data['confidence'], data['classification_reason'],
-                        data['origin'], data['destination'], data['identifier'], data['source_file'],
+                        data['origin'], data['destination'], data['origin_display'], data['destination_display'],
+                        data['identifier'], data['source_file'],
                         data['crypto_amount'], data['conversion_note']
                     ))
                     new_count += 1
@@ -14405,6 +14419,38 @@ def api_chatbot():
         return jsonify({
             'error': 'Internal server error',
             'response': 'I apologize, but I encountered an error processing your request. Please try again.'
+        }), 500
+
+
+@app.route('/api/wallets/update-transaction-displays', methods=['POST'])
+def api_update_wallet_displays():
+    """
+    Bulk update all transactions with wallet display names
+    Matches wallet addresses to entity names from whitelisted wallets
+    """
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Get optional limit from request
+        data = request.get_json() or {}
+        limit = data.get('limit')
+
+        # Import wallet matcher
+        from wallet_matcher import bulk_update_wallet_displays
+
+        # Update transactions
+        updated_count = bulk_update_wallet_displays(tenant_id, limit=limit)
+
+        return jsonify({
+            'success': True,
+            'updated_count': updated_count,
+            'message': f'Successfully updated {updated_count} transactions with wallet names'
+        })
+
+    except Exception as e:
+        logger.error(f"Wallet display update error: {e}", exc_info=True)
+        return jsonify({
+            'error': str(e)
         }), 500
 
 
