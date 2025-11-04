@@ -9848,6 +9848,213 @@ def api_invoice_stats():
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
+# PAYMENT PROOF UPLOAD API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/invoices/<invoice_id>/payment-proof', methods=['POST'])
+def api_upload_payment_proof(invoice_id):
+    """
+    Upload payment proof (receipt) for an invoice
+
+    Accepts: PDF, images, Excel, CSV
+    Extracts: date, amount, method, confirmation number
+    Validates: against invoice data
+    Updates: invoice payment status and stores receipt
+    """
+    try:
+        from services.payment_proof_processor import PaymentProofProcessor, store_payment_proof
+        from services.payment_validator import PaymentValidator
+        from database import db_manager
+        import os
+        from werkzeug.utils import secure_filename
+        from datetime import datetime
+
+        # Get current tenant
+        tenant_id = get_current_tenant_id()
+
+        # Check if invoice exists
+        invoice = db_manager.execute_query(
+            "SELECT * FROM invoices WHERE id = %s AND tenant_id = %s",
+            (invoice_id, tenant_id),
+            fetch_one=True
+        )
+
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Validate file type
+        allowed_extensions = {'.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.csv', '.xls', '.xlsx'}
+        file_ext = os.path.splitext(file.filename)[1].lower()
+
+        if file_ext not in allowed_extensions:
+            return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
+
+        # Save uploaded file temporarily
+        temp_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join(temp_dir, f"{invoice_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}")
+        file.save(temp_path)
+
+        try:
+            # Process receipt with Claude Vision
+            processor = PaymentProofProcessor()
+            payment_data = processor.process_payment_proof(temp_path, invoice)
+
+            if not payment_data.get('success'):
+                return jsonify({
+                    'success': False,
+                    'error': payment_data.get('error', 'Receipt processing failed'),
+                    'payment_data': payment_data
+                }), 400
+
+            # Validate payment data
+            validator = PaymentValidator()
+            is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
+
+            # Store receipt file
+            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
+
+            # Get current user (if available)
+            uploaded_by = None
+            if hasattr(request, 'user_id'):
+                uploaded_by = request.user_id
+
+            # Update invoice with payment data
+            update_query = """
+            UPDATE invoices
+            SET payment_date = %s,
+                payment_proof_path = %s,
+                payment_method = %s,
+                payment_confirmation_number = %s,
+                payment_notes = %s,
+                payment_status = %s,
+                payment_proof_uploaded_at = CURRENT_TIMESTAMP,
+                payment_proof_uploaded_by = %s
+            WHERE id = %s AND tenant_id = %s
+            """
+
+            # Prepare payment notes
+            notes_parts = []
+            if warnings:
+                notes_parts.append("Warnings: " + "; ".join(warnings))
+            if payment_data.get('bank_platform'):
+                notes_parts.append(f"Bank/Platform: {payment_data['bank_platform']}")
+            if payment_data.get('payer_name'):
+                notes_parts.append(f"Payer: {payment_data['payer_name']}")
+
+            payment_notes = " | ".join(notes_parts) if notes_parts else None
+
+            # Set payment status
+            payment_status = 'paid' if is_valid else 'pending_review'
+
+            db_manager.execute_query(
+                update_query,
+                (
+                    payment_data.get('payment_date'),
+                    stored_path,
+                    payment_data.get('payment_method'),
+                    payment_data.get('confirmation_number'),
+                    payment_notes,
+                    payment_status,
+                    uploaded_by,
+                    invoice_id,
+                    tenant_id
+                ),
+                fetch_one=False
+            )
+
+            # Generate validation report
+            validation_report = validator.format_validation_report(is_valid, errors, warnings)
+
+            return jsonify({
+                'success': True,
+                'message': f'Payment proof uploaded successfully (status: {payment_status})',
+                'payment_data': {
+                    'date': payment_data.get('payment_date'),
+                    'amount': payment_data.get('payment_amount'),
+                    'currency': payment_data.get('payment_currency'),
+                    'method': payment_data.get('payment_method'),
+                    'confirmation_number': payment_data.get('confirmation_number'),
+                    'confidence': payment_data.get('confidence'),
+                },
+                'validation': {
+                    'is_valid': is_valid,
+                    'errors': errors,
+                    'warnings': warnings,
+                    'report': validation_report
+                },
+                'payment_status': payment_status,
+                'stored_path': stored_path
+            })
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        logger.error(f"Error uploading payment proof: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/payment-proof', methods=['GET'])
+def api_get_payment_proof(invoice_id):
+    """
+    Get payment proof file for an invoice
+
+    Returns the stored receipt file
+    """
+    try:
+        from database import db_manager
+        from flask import send_file
+        import os
+
+        # Get current tenant
+        tenant_id = get_current_tenant_id()
+
+        # Get invoice with payment proof
+        invoice = db_manager.execute_query(
+            "SELECT payment_proof_path FROM invoices WHERE id = %s AND tenant_id = %s",
+            (invoice_id, tenant_id),
+            fetch_one=True
+        )
+
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        payment_proof_path = invoice.get('payment_proof_path')
+
+        if not payment_proof_path:
+            return jsonify({'error': 'No payment proof uploaded for this invoice'}), 404
+
+        # Construct full file path
+        full_path = os.path.join(os.path.dirname(__file__), payment_proof_path)
+
+        if not os.path.exists(full_path):
+            return jsonify({'error': 'Payment proof file not found on disk'}), 404
+
+        # Send file
+        return send_file(full_path, as_attachment=True)
+
+    except Exception as e:
+        logger.error(f"Error retrieving payment proof: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
 # CURRENCY CONVERSION API ENDPOINTS
 # ============================================================================
 
