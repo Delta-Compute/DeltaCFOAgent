@@ -10065,7 +10065,19 @@ def api_upload_payment_proof_auto_match():
             best_match = matcher.get_best_match(payment_data, tenant_id)
 
             if not best_match:
-                # No match found - return extracted data for manual selection
+                # No match found - return extracted data for manual selection with debug info
+                print(f"[MATCHER DEBUG] No match found for payment:")
+                print(f"  Amount: {payment_data.get('payment_amount')} {payment_data.get('payment_currency')}")
+                print(f"  Date: {payment_data.get('payment_date')}")
+                print(f"  Tenant: {tenant_id}")
+
+                # Show all candidate invoices for debugging
+                all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
+                print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices")
+                for idx, match in enumerate(all_matches[:5]):  # Show top 5
+                    inv = match['invoice']
+                    print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Status: {inv.get('payment_status')} - Score: {match['score']}")
+
                 return jsonify({
                     'success': False,
                     'error': 'No matching invoice found',
@@ -10076,6 +10088,19 @@ def api_upload_payment_proof_auto_match():
                         'method': payment_data.get('payment_method'),
                         'confirmation_number': payment_data.get('confirmation_number'),
                         'confidence': payment_data.get('confidence')
+                    },
+                    'debug': {
+                        'candidates_found': len(all_matches),
+                        'top_candidates': [
+                            {
+                                'invoice_number': m['invoice']['invoice_number'],
+                                'amount': float(m['invoice']['total_amount']),
+                                'currency': m['invoice']['currency'],
+                                'status': m['invoice']['payment_status'],
+                                'score': m['score'],
+                                'confidence': m['confidence']
+                            } for m in all_matches[:5]
+                        ]
                     },
                     'message': 'Please select invoice manually or check payment details'
                 }), 404
@@ -10695,61 +10720,117 @@ def api_upload_attachment(invoice_id):
                         payment_data = new_payment
                         print(f"AUTO-CREATED PAYMENT: ${payment_amount} {payment_currency} for invoice {invoice_id}")
 
-                        # AUTO-UPDATE TRANSACTION: Try to find and update matching transaction
+                        # AUTO-FIND MATCHING TRANSACTIONS: Search for potential matches
+                        matching_candidates = []
                         try:
+                            from datetime import datetime as dt
+
                             # Get invoice data for transaction matching
                             invoice_data = db_manager.execute_query("""
-                                SELECT invoice_number, customer_name, vendor_name, total_amount
+                                SELECT invoice_number, customer_name, vendor_name, total_amount, date, due_date
                                 FROM invoices
                                 WHERE id = %s AND tenant_id = %s
                             """, (invoice_id, tenant_id), fetch_one=True)
 
                             if invoice_data:
-                                # Find transaction that matches this invoice/payment
-                                # Match by amount, date, and currency
-                                matching_txn = db_manager.execute_query("""
-                                    SELECT transaction_id
+                                # Find transactions that match this invoice/payment
+                                # Match by amount (within 2%) and date (within 7 days)
+                                invoice_date = invoice_data.get('date')
+                                due_date = invoice_data.get('due_date')
+
+                                matching_txns = db_manager.execute_query("""
+                                    SELECT transaction_id, date, description, amount, accounting_category,
+                                           classified_entity, confidence
                                     FROM transactions
                                     WHERE tenant_id = %s
                                     AND ABS(amount - %s) <= (%s * 0.02)
                                     AND currency = %s
-                                    AND DATE(date) = DATE(%s::date)
+                                    AND (
+                                        date::date BETWEEN %s::date - INTERVAL '7 days'
+                                                    AND %s::date + INTERVAL '7 days'
+                                        OR (
+                                            %s::date IS NOT NULL
+                                            AND date::date BETWEEN %s::date - INTERVAL '7 days'
+                                                            AND %s::date + INTERVAL '7 days'
+                                        )
+                                    )
                                     AND (invoice_id IS NULL OR invoice_id = %s)
-                                    ORDER BY ABS(amount - %s) ASC
-                                    LIMIT 1
+                                    ORDER BY ABS(amount - %s) ASC,
+                                             ABS(date::date - %s::date) ASC
+                                    LIMIT 5
                                 """, (tenant_id, payment_amount, payment_amount, payment_currency,
-                                     payment_date, invoice_id, payment_amount), fetch_one=True)
+                                     payment_date, payment_date,
+                                     due_date, due_date, due_date,
+                                     invoice_id, payment_amount, payment_date), fetch_all=True)
 
-                                if matching_txn:
-                                    transaction_id = matching_txn['transaction_id']
+                                if matching_txns:
                                     customer_name = invoice_data.get('customer_name') or invoice_data.get('vendor_name', 'Unknown')
                                     invoice_number = invoice_data.get('invoice_number', '')
 
-                                    # Update transaction with customer name and invoice link
-                                    justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
+                                    # Calculate match scores for each candidate
+                                    from dateutil import parser as date_parser
+                                    for txn in matching_txns:
+                                        amount_diff = abs(abs(float(txn['amount'])) - payment_amount)
+                                        amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
 
-                                    db_manager.execute_query("""
-                                        UPDATE transactions
-                                        SET justification = %s,
-                                            accounting_category = 'REVENUE',
-                                            invoice_id = %s,
-                                            entity = %s
-                                        WHERE transaction_id = %s AND tenant_id = %s
-                                    """, (justification, invoice_id, customer_name, transaction_id, tenant_id))
+                                        # Parse both dates with flexible parser (handles multiple formats)
+                                        txn_date = date_parser.parse(txn['date']).date()
+                                        payment_date_obj = date_parser.parse(payment_date).date()
 
-                                    # Also update invoice with transaction link
-                                    db_manager.execute_query("""
-                                        UPDATE invoices
-                                        SET linked_transaction_id = %s
-                                        WHERE id = %s AND tenant_id = %s
-                                    """, (transaction_id, invoice_id, tenant_id))
+                                        date_diff = abs((txn_date - payment_date_obj).days)
 
-                                    print(f"AUTO-UPDATED TRANSACTION: {transaction_id} with customer '{customer_name}' and invoice link")
+                                        # Calculate overall match score (0-100)
+                                        match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+                                        matching_candidates.append({
+                                            'transaction_id': txn['transaction_id'],
+                                            'date': txn['date'],
+                                            'description': txn['description'],
+                                            'amount': float(txn['amount']),
+                                            'category': txn['accounting_category'],
+                                            'entity': txn['classified_entity'],
+                                            'match_score': round(match_score, 1),
+                                            'amount_diff': round(amount_diff, 2),
+                                            'date_diff_days': date_diff
+                                        })
+
+                                    # Auto-link if we have a very high confidence match (>95%)
+                                    best_match = matching_candidates[0] if matching_candidates else None
+                                    if best_match and best_match['match_score'] >= 95:
+                                        transaction_id = best_match['transaction_id']
+                                        justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
+
+                                        db_manager.execute_query("""
+                                            UPDATE transactions
+                                            SET justification = %s,
+                                                accounting_category = 'REVENUE',
+                                                invoice_id = %s,
+                                                classified_entity = %s
+                                            WHERE transaction_id = %s
+                                        """, (justification, invoice_id, customer_name, transaction_id))
+
+                                        # Also update invoice with transaction link
+                                        db_manager.execute_query("""
+                                            UPDATE invoices
+                                            SET linked_transaction_id = %s,
+                                                match_method = 'auto_proof_upload',
+                                                match_confidence = %s
+                                            WHERE id = %s AND tenant_id = %s
+                                        """, (transaction_id, int(best_match['match_score']), invoice_id, tenant_id))
+
+                                        print(f"AUTO-LINKED TRANSACTION: {transaction_id} (score: {best_match['match_score']}%)")
+
+                                        # Mark as auto-linked in the candidate
+                                        best_match['auto_linked'] = True
+                                    else:
+                                        print(f"INFO: Found {len(matching_candidates)} matching candidates (best score: {best_match['match_score']}% - below auto-link threshold)")
                                 else:
-                                    print(f"INFO: No matching transaction found for payment ${payment_amount} on {payment_date}")
+                                    print(f"INFO: No matching transactions found for payment ${payment_amount} on {payment_date}")
                         except Exception as e_txn:
-                            print(f"WARNING: Could not auto-update transaction: {e_txn}")
-                            # Don't fail the payment creation due to transaction update errors
+                            print(f"WARNING: Could not find matching transactions: {e_txn}")
+                            import traceback
+                            traceback.print_exc()
+                            # Don't fail the payment creation due to transaction matching errors
                     else:
                         print(f"WARNING: Could not auto-create payment: {msg_payment}")
 
@@ -10764,10 +10845,26 @@ def api_upload_attachment(invoice_id):
             'attachment': attachment_data
         }
 
+        print(f"DEBUG: payment_created={payment_created}, matching_candidates count={len(matching_candidates) if 'matching_candidates' in locals() else 0}")
+
         if payment_created:
             response['payment_auto_created'] = True
             response['payment'] = payment_data
             response['message'] += f" | Payment record auto-created: {payment_data['payment_currency']} {payment_data['payment_amount']}"
+
+            # Add matching transaction candidates if found
+            if matching_candidates:
+                print(f"DEBUG: Adding {len(matching_candidates)} matching_candidates to response")
+                response['matching_transactions'] = matching_candidates
+                auto_linked = any(c.get('auto_linked') for c in matching_candidates)
+                if auto_linked:
+                    response['transaction_auto_linked'] = True
+                    response['message'] += " | Transaction auto-linked"
+                    print(f"DEBUG: Transaction auto-linked flag set to True")
+                else:
+                    response['message'] += f" | Found {len(matching_candidates)} matching transaction(s)"
+            else:
+                print("DEBUG: No matching_candidates to add to response")
 
         return jsonify(response)
 
@@ -11197,6 +11294,312 @@ def api_link_payment_attachment(payment_id):
 
     except Exception as e:
         logger.error(f"Error linking payment {payment_id} to attachment: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/find-matching-transactions', methods=['GET'])
+def api_find_matching_transactions(invoice_id):
+    """Find transactions that could match this invoice based on date and amount"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        # Get invoice details
+        invoice_query = """
+            SELECT id, invoice_number, total_amount, date, due_date,
+                   vendor_name, customer_name
+            FROM invoices
+            WHERE id = %s AND tenant_id = %s
+        """
+        invoice = db_manager.execute_query(invoice_query, (invoice_id, tenant_id), fetch_one=True)
+
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        total_amount = float(invoice['total_amount'])
+        invoice_date = invoice['date']
+        due_date = invoice['due_date']
+
+        # Search for matching transactions
+        # Look for transactions within +/- 7 days of invoice date or due date
+        # and amount within 5% tolerance
+        tolerance = 0.05
+        min_amount = total_amount * (1 - tolerance)
+        max_amount = total_amount * (1 + tolerance)
+
+        transactions_query = """
+            SELECT transaction_id, date, description, amount, accounting_category,
+                   subcategory, classified_entity, origin, destination, confidence
+            FROM transactions
+            WHERE
+                ABS(amount) BETWEEN %s AND %s
+                AND (
+                    date::date BETWEEN %s::date - INTERVAL '7 days'
+                            AND %s::date + INTERVAL '7 days'
+                    OR date::date BETWEEN %s::date - INTERVAL '7 days'
+                            AND %s::date + INTERVAL '7 days'
+                )
+            ORDER BY
+                ABS(ABS(amount) - %s) ASC,
+                ABS(date::date - %s::date) ASC
+            LIMIT 20
+        """
+
+        transactions = db_manager.execute_query(
+            transactions_query,
+            (min_amount, max_amount, invoice_date, invoice_date,
+             due_date, due_date, total_amount, invoice_date),
+            fetch_all=True
+        )
+
+        # Calculate match confidence for each transaction
+        from datetime import datetime as dt
+        results = []
+        for txn in transactions:
+            amount_diff = abs(abs(float(txn['amount'])) - total_amount)
+            amount_match_pct = (1 - (amount_diff / total_amount)) * 100
+
+            # Parse transaction date string to date object (flexible parser)
+            from dateutil import parser as date_parser
+            txn_date = date_parser.parse(txn['date']).date()
+
+            date_diff = min(
+                abs((txn_date - invoice_date).days),
+                abs((txn_date - due_date).days) if due_date else 999
+            )
+
+            # Calculate overall match score (0-100)
+            match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+            results.append({
+                'id': txn['transaction_id'],
+                'date': txn['date'],
+                'description': txn['description'],
+                'amount': float(txn['amount']),
+                'category': txn['accounting_category'],
+                'subcategory': txn['subcategory'],
+                'entity': txn['classified_entity'],
+                'match_score': round(match_score, 1),
+                'amount_diff': round(amount_diff, 2),
+                'date_diff_days': date_diff
+            })
+
+        return jsonify({
+            'success': True,
+            'invoice': {
+                'id': invoice['id'],
+                'invoice_number': invoice['invoice_number'],
+                'total_amount': total_amount,
+                'date': invoice_date.strftime('%Y-%m-%d') if invoice_date else None,
+                'vendor_name': invoice.get('vendor_name'),
+                'customer_name': invoice.get('customer_name')
+            },
+            'matching_transactions': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error finding matching transactions for invoice {invoice_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/link-transaction', methods=['POST'])
+def api_link_invoice_to_transaction(invoice_id):
+    """Link an invoice to a transaction (manual match)"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        if not data.get('transaction_id'):
+            return jsonify({'success': False, 'error': 'transaction_id is required'}), 400
+
+        transaction_id = data['transaction_id']
+        match_score = data.get('match_score', 100)  # Get score from frontend or default to 100
+
+        # Ensure match_confidence is an integer between 0-100
+        match_confidence = min(100, max(0, int(float(match_score))))
+
+        # Get invoice details to update transaction description
+        invoice_query = """
+            SELECT invoice_number, vendor_name, customer_name, total_amount, currency
+            FROM invoices
+            WHERE id = %s AND tenant_id = %s
+        """
+        invoice = db_manager.execute_query(invoice_query, (invoice_id, tenant_id), fetch_one=True)
+
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        # Get original transaction description
+        txn_query = """
+            SELECT description
+            FROM transactions
+            WHERE transaction_id = %s
+        """
+        txn = db_manager.execute_query(txn_query, (transaction_id,), fetch_one=True)
+
+        # Build enhanced description
+        vendor_or_customer = invoice.get('vendor_name') or invoice.get('customer_name') or 'Unknown'
+        invoice_num = invoice.get('invoice_number', 'N/A')
+        amount = invoice.get('total_amount', 0)
+        currency = invoice.get('currency', 'USD')
+
+        original_desc = txn.get('description', '') if txn else ''
+        # Format: "Payment to [Vendor Name] - Invoice #XXX (USD 664.88) | Original description"
+        enhanced_description = f"Payment to {vendor_or_customer} - Invoice #{invoice_num} ({currency} {amount:.2f}) | {original_desc}"
+
+        # Update invoice with linked transaction
+        update_invoice_query = """
+            UPDATE invoices
+            SET linked_transaction_id = %s,
+                match_method = 'manual',
+                match_confidence = %s
+            WHERE id = %s AND tenant_id = %s
+        """
+        db_manager.execute_query(update_invoice_query, (transaction_id, match_confidence, invoice_id, tenant_id))
+
+        # Update transaction with enhanced description and link
+        # Save original description first if not already saved
+        update_txn_query = """
+            UPDATE transactions
+            SET accounting_category = 'Invoice Payment',
+                invoice_id = %s,
+                original_description = COALESCE(original_description, description),
+                description = %s,
+                classified_entity = %s
+            WHERE transaction_id = %s
+        """
+        db_manager.execute_query(update_txn_query, (invoice_id, enhanced_description, vendor_or_customer, transaction_id))
+
+        return jsonify({
+            'success': True,
+            'message': 'Invoice linked to transaction successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error linking invoice {invoice_id} to transaction: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/linked-transaction', methods=['GET'])
+def api_get_linked_transaction(invoice_id):
+    """Get the linked transaction details for an invoice"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        # Get invoice with linked transaction ID
+        invoice_query = """
+            SELECT linked_transaction_id, match_confidence, match_method
+            FROM invoices
+            WHERE id = %s AND tenant_id = %s
+        """
+        invoice = db_manager.execute_query(invoice_query, (invoice_id, tenant_id), fetch_one=True)
+
+        if not invoice or not invoice.get('linked_transaction_id'):
+            return jsonify({
+                'success': True,
+                'transaction': None,
+                'match_confidence': None
+            })
+
+        # Get transaction details
+        txn_query = """
+            SELECT
+                transaction_id,
+                date,
+                description,
+                amount,
+                currency,
+                accounting_category,
+                classified_entity,
+                confidence
+            FROM transactions
+            WHERE transaction_id = %s
+        """
+        txn = db_manager.execute_query(txn_query, (invoice['linked_transaction_id'],), fetch_one=True)
+
+        if not txn:
+            return jsonify({
+                'success': True,
+                'transaction': None,
+                'match_confidence': None
+            })
+
+        return jsonify({
+            'success': True,
+            'transaction': {
+                'id': txn['transaction_id'],
+                'date': str(txn['date']) if txn['date'] else None,
+                'description': txn['description'],
+                'amount': float(txn['amount']),
+                'currency': txn.get('currency', 'USD'),
+                'category': txn.get('accounting_category'),
+                'entity': txn.get('classified_entity'),
+                'confidence': float(txn.get('confidence', 0))
+            },
+            'match_confidence': invoice.get('match_confidence'),
+            'match_method': invoice.get('match_method')
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting linked transaction for invoice {invoice_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/unlink-transaction', methods=['POST'])
+def api_unlink_transaction(invoice_id):
+    """Unlink a transaction from an invoice"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        # Get the linked transaction ID first
+        invoice_query = """
+            SELECT linked_transaction_id
+            FROM invoices
+            WHERE id = %s AND tenant_id = %s
+        """
+        invoice = db_manager.execute_query(invoice_query, (invoice_id, tenant_id), fetch_one=True)
+
+        if not invoice or not invoice.get('linked_transaction_id'):
+            return jsonify({'success': False, 'error': 'No linked transaction found'}), 400
+
+        transaction_id = invoice['linked_transaction_id']
+
+        # Remove link from invoice
+        update_invoice_query = """
+            UPDATE invoices
+            SET linked_transaction_id = NULL,
+                match_method = NULL,
+                match_confidence = NULL
+            WHERE id = %s AND tenant_id = %s
+        """
+        db_manager.execute_query(update_invoice_query, (invoice_id, tenant_id))
+
+        # Restore original description and remove link from transaction
+        update_txn_query = """
+            UPDATE transactions
+            SET invoice_id = NULL,
+                description = COALESCE(original_description, description),
+                original_description = NULL
+            WHERE transaction_id = %s
+        """
+        db_manager.execute_query(update_txn_query, (transaction_id,))
+
+        return jsonify({
+            'success': True,
+            'message': 'Transaction unlinked successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error unlinking transaction from invoice {invoice_id}: {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
