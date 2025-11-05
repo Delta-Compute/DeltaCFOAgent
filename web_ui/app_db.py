@@ -10691,6 +10691,8 @@ def api_upload_and_confirm_payment_proof():
         JSON with success flag, match details, and payment record
     """
     try:
+        import os
+        import shutil
         from database import db_manager
 
         # Import from web_ui local services
@@ -10699,9 +10701,6 @@ def api_upload_and_confirm_payment_proof():
             sys.path.insert(0, services_path)
         from payment_proof_processor import PaymentProofProcessor
         from receipt_invoice_matcher import ReceiptInvoiceMatcher
-
-        import os
-        import shutil
 
         # Get current tenant
         tenant_id = get_current_tenant_id()
@@ -10726,27 +10725,63 @@ def api_upload_and_confirm_payment_proof():
         try:
             # Extract payment data using Claude Vision API
             processor = PaymentProofProcessor()
-            payment_data = processor.extract_payment_data(temp_path)
+            payment_data = processor.process_payment_proof(temp_path)
 
-            if not payment_data or not payment_data.get('payment_amount'):
+            # Check if extraction was successful
+            if not payment_data.get('success') or not payment_data.get('payment_amount'):
                 return jsonify({
                     'success': False,
                     'error': 'Could not extract payment data from receipt'
                 }), 400
 
-            # Find best matching invoice
+            # Find ALL matching invoices (not just the best one)
             matcher = ReceiptInvoiceMatcher(db_manager)
-            best_match = matcher.get_best_match(payment_data, tenant_id, customer_filter)
+            all_matches = matcher.find_matching_invoices(payment_data, tenant_id, customer_filter)
 
-            if not best_match:
+            print(f"[Payment Proof] Found {len(all_matches) if all_matches else 0} matching invoices")
+            if all_matches:
+                for i, match in enumerate(all_matches[:3]):  # Log first 3 matches
+                    print(f"  Match {i+1}: Score={match['score']}, Invoice={match['invoice'].get('invoice_number')}")
+
+            if not all_matches or len(all_matches) == 0:
+                print(f"[Payment Proof] No matches found - Payment: {payment_data.get('payment_amount')} {payment_data.get('payment_currency')}")
                 return jsonify({
                     'success': False,
-                    'error': 'No matching invoice found for this receipt'
+                    'error': 'No matching invoices found for this receipt'
                 }), 404
 
-            invoice = best_match['invoice']
-            invoice_id = invoice['id']
-            match_score = best_match['score']
+            # Return matches for user to choose
+            matches_data = []
+            for match in all_matches:
+                invoice = match['invoice']
+                matches_data.append({
+                    'invoice_id': invoice['id'],
+                    'invoice_number': invoice.get('invoice_number', invoice['id'][:8]),
+                    'customer_name': invoice.get('customer_name') or invoice.get('vendor_name'),
+                    'total_amount': float(invoice.get('total_amount', 0)),
+                    'currency': invoice.get('currency', 'USD'),
+                    'date': invoice.get('date'),
+                    'payment_status': invoice.get('payment_status', 'pending'),
+                    'match_score': match['score'],
+                    'confidence': match['confidence']
+                })
+
+            response_data = {
+                'success': True,
+                'payment_data': {
+                    'payment_date': payment_data.get('payment_date'),
+                    'payment_amount': payment_data.get('payment_amount'),
+                    'payment_currency': payment_data.get('payment_currency'),
+                    'payment_method': payment_data.get('payment_method'),
+                    'payer_name': payment_data.get('payer_name'),
+                    'receiver_name': payment_data.get('receiver_name'),
+                    'confirmation_number': payment_data.get('confirmation_number')
+                },
+                'matches': matches_data,
+                'temp_file_path': temp_path  # Keep temp file for later confirmation
+            }
+            print(f"[Payment Proof] Returning response with {len(matches_data)} matches")
+            return jsonify(response_data), 200
 
             # Store the receipt file
             receipt_dir = os.path.join('web_ui', 'uploads', 'payment_receipts', tenant_id)

@@ -543,9 +543,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const progressBar = document.getElementById('progress-bar-receipts');
         const currentFileText = document.getElementById('current-file-receipts');
         const resultsSummary = document.getElementById('results-summary-receipts');
-        const successCountEl = document.getElementById('success-count-receipts');
-        const errorCountEl = document.getElementById('error-count-receipts');
-        const errorDetailsEl = document.getElementById('error-details-receipts');
 
         // Hide single upload UI, show batch UI
         if (receiptProgress) receiptProgress.style.display = 'none';
@@ -553,9 +550,7 @@ document.addEventListener('DOMContentLoaded', function() {
         batchProgress.style.display = 'block';
         resultsSummary.style.display = 'none';
 
-        let successCount = 0;
-        let errorCount = 0;
-        const errors = [];
+        const processedFiles = []; // Store results with matches
 
         // Process each file sequentially
         for (let i = 0; i < files.length; i++) {
@@ -586,50 +581,275 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
 
                 const result = await response.json();
+                console.log(`[Batch Upload] File ${i + 1}:`, file.name, result);
+
+                processedFiles.push({
+                    file: file,
+                    filename: file.name,
+                    success: result.success,
+                    payment_data: result.payment_data,
+                    matches: result.matches || [],
+                    error: result.error,
+                    temp_file_path: result.temp_file_path
+                });
+
+            } catch (error) {
+                processedFiles.push({
+                    file: file,
+                    filename: file.name,
+                    success: false,
+                    error: error.message,
+                    matches: []
+                });
+            }
+        }
+
+        // Hide progress, show match selection UI
+        batchProgress.style.display = 'none';
+        console.log('[Batch Upload] Processed files:', processedFiles);
+        console.log('[Batch Upload] Calling showBatchMatchSelection...');
+        showBatchMatchSelection(processedFiles);
+
+        // Reset file input
+        fileInputReceipts.value = '';
+    }
+
+    function showBatchMatchSelection(processedFiles) {
+        console.log('[showBatchMatchSelection] Called with', processedFiles.length, 'files');
+        console.log('[showBatchMatchSelection] receiptResult element:', receiptResult);
+
+        if (!receiptResult) {
+            console.error('[showBatchMatchSelection] ERROR: receiptResult element not found!');
+            alert('Error: Unable to display match selection UI. Please refresh the page.');
+            return;
+        }
+
+        // Create match selection UI
+        const matchSelectionHtml = `
+            <div id="batch-match-selection" style="margin-top: 2rem;">
+                <h3 style="margin-bottom: 1rem; color: #1e293b;">Select Matching Invoices</h3>
+                <p style="color: #64748b; margin-bottom: 1.5rem;">Review the extracted payment data and select the correct invoice for each receipt.</p>
+
+                <div id="match-cards-container"></div>
+
+                <div style="margin-top: 2rem; padding: 1rem; background: #f8fafc; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <span id="confirmed-count">0</span> of <span id="total-count">${processedFiles.length}</span> receipts ready
+                    </div>
+                    <button id="confirm-all-btn" class="btn btn-primary" disabled>Confirm All Matches</button>
+                </div>
+            </div>
+        `;
+
+        // Insert into page
+        receiptResult.innerHTML = matchSelectionHtml;
+        receiptResult.style.display = 'block';
+        console.log('[showBatchMatchSelection] UI created, receiptResult display:', receiptResult.style.display);
+
+        const matchCardsContainer = document.getElementById('match-cards-container');
+        const confirmAllBtn = document.getElementById('confirm-all-btn');
+        const confirmedCountEl = document.getElementById('confirmed-count');
+        const totalCountEl = document.getElementById('total-count');
+
+        console.log('[showBatchMatchSelection] Container elements:', {
+            matchCardsContainer,
+            confirmAllBtn,
+            confirmedCountEl,
+            totalCountEl
+        });
+
+        if (!matchCardsContainer) {
+            console.error('[showBatchMatchSelection] ERROR: matchCardsContainer not found!');
+            return;
+        }
+
+        let selectedMatches = {}; // Track selected invoice for each file
+
+        // Render each file's matches
+        console.log('[showBatchMatchSelection] Rendering', processedFiles.length, 'match cards...');
+        console.log('[showBatchMatchSelection] First file data:', processedFiles[0]);
+
+        processedFiles.forEach((fileData, index) => {
+            console.log(`[showBatchMatchSelection] Creating card ${index + 1} for:`, fileData.filename);
+            console.log(`[showBatchMatchSelection] File ${index + 1} data:`, {
+                success: fileData.success,
+                matches_count: fileData.matches?.length || 0,
+                payment_data: fileData.payment_data,
+                error: fileData.error
+            });
+            const cardHtml = createMatchCard(fileData, index);
+            console.log(`[showBatchMatchSelection] Card ${index + 1} HTML length:`, cardHtml.length);
+            matchCardsContainer.insertAdjacentHTML('beforeend', cardHtml);
+
+            // Add event listeners for this card (only for displayed matches)
+            if (fileData.success && fileData.matches.length > 0) {
+                const displayedMatches = fileData.matches.slice(0, 10); // Match the limit above
+                displayedMatches.forEach((match, matchIndex) => {
+                    const radioBtn = document.getElementById(`match-${index}-${matchIndex}`);
+                    if (radioBtn) {
+                        radioBtn.addEventListener('change', () => {
+                            selectedMatches[index] = match;
+                            updateConfirmButton();
+                        });
+                    }
+                });
+            }
+        });
+
+        function updateConfirmButton() {
+            const confirmedCount = Object.keys(selectedMatches).length;
+            confirmedCountEl.textContent = confirmedCount;
+            confirmAllBtn.disabled = confirmedCount === 0;
+        }
+
+        // Confirm all button handler
+        confirmAllBtn.addEventListener('click', async () => {
+            await confirmAllMatches(processedFiles, selectedMatches);
+        });
+    }
+
+    function createMatchCard(fileData, index) {
+        if (!fileData.success) {
+            return `
+                <div class="match-card" style="background: #fee2e2; border: 2px solid #f87171; border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem;">
+                    <div style="display: flex; align-items: start; gap: 1rem;">
+                        <div style="color: #dc2626; font-size: 1.5rem;">❌</div>
+                        <div style="flex: 1;">
+                            <strong style="color: #991b1b;">${fileData.filename}</strong>
+                            <div style="color: #7f1d1d; margin-top: 0.5rem;">${fileData.error}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        const paymentData = fileData.payment_data;
+        const allMatches = fileData.matches || [];
+
+        // LIMIT to top 10 matches to avoid browser freeze
+        const matches = allMatches.slice(0, 10);
+        const hasMoreMatches = allMatches.length > 10;
+
+        let matchesHtml = '';
+        if (matches.length === 0) {
+            matchesHtml = '<div style="color: #64748b; padding: 1rem; text-align: center;">No matching invoices found</div>';
+        } else {
+            if (hasMoreMatches) {
+                matchesHtml += `<div style="color: #f59e0b; padding: 0.5rem; margin-bottom: 0.5rem; background: #fffbeb; border-radius: 4px; font-size: 0.9rem;">
+                    Showing top 10 matches out of ${allMatches.length} total matches
+                </div>`;
+            }
+            matchesHtml += matches.map((match, matchIndex) => {
+                const scoreColor = match.match_score >= 90 ? '#10b981' : match.match_score >= 75 ? '#f59e0b' : '#64748b';
+                return `
+                    <label style="display: block; padding: 1rem; border: 2px solid #e2e8f0; border-radius: 6px; margin-bottom: 0.75rem; cursor: pointer; transition: all 0.2s;"
+                           onmouseover="this.style.borderColor='#667eea'; this.style.background='#f0f9ff'"
+                           onmouseout="this.style.borderColor='#e2e8f0'; this.style.background='white'">
+                        <input type="radio" name="match-${index}" id="match-${index}-${matchIndex}" style="margin-right: 0.75rem;">
+                        <span style="display: inline-flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                            <strong style="color: #1e293b;">Invoice #${match.invoice_number}</strong>
+                            <span style="background: ${scoreColor}; color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.85rem;">
+                                ${match.match_score.toFixed(1)}% match
+                            </span>
+                            <span style="color: #64748b;">${match.customer_name}</span>
+                            <span style="color: #1e293b; font-weight: 500;">$${match.total_amount.toFixed(2)} ${match.currency}</span>
+                            <span style="color: #64748b;">${match.date}</span>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        return `
+            <div class="match-card" style="background: white; border: 2px solid #e2e8f0; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: start; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="color: #10b981; font-size: 1.5rem;">✓</div>
+                    <div style="flex: 1;">
+                        <strong style="color: #1e293b; font-size: 1.1rem;">${fileData.filename}</strong>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; padding: 0.75rem; background: #f8fafc; border-radius: 6px;">
+                            <div>
+                                <div style="font-size: 0.75rem; color: #64748b;">Amount</div>
+                                <div style="color: #1e293b; font-weight: 500;">$${paymentData.payment_amount?.toFixed(2) || 'N/A'} ${paymentData.payment_currency || ''}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #64748b;">Date</div>
+                                <div style="color: #1e293b;">${paymentData.payment_date || 'N/A'}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 0.75rem; color: #64748b;">Method</div>
+                                <div style="color: #1e293b;">${paymentData.payment_method || 'N/A'}</div>
+                            </div>
+                            ${paymentData.payer_name ? `
+                            <div>
+                                <div style="font-size: 0.75rem; color: #64748b;">Payer</div>
+                                <div style="color: #1e293b;">${paymentData.payer_name}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1rem;">
+                    <strong style="color: #1e293b; margin-bottom: 0.75rem; display: block;">Select matching invoice:</strong>
+                    ${matchesHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    async function confirmAllMatches(processedFiles, selectedMatches) {
+        const confirmAllBtn = document.getElementById('confirm-all-btn');
+        const originalText = confirmAllBtn.textContent;
+
+        confirmAllBtn.disabled = true;
+        confirmAllBtn.textContent = 'Confirming...';
+
+        let successCount = 0;
+        let errorCount = 0;
+        const errors = [];
+
+        for (const [index, match] of Object.entries(selectedMatches)) {
+            const fileData = processedFiles[index];
+
+            try {
+                const response = await fetch('/api/payment-proof/confirm-match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        invoice_id: match.invoice_id,
+                        payment_data: fileData.payment_data,
+                        temp_file_path: fileData.temp_file_path,
+                        match_score: match.match_score
+                    })
+                });
+
+                const result = await response.json();
 
                 if (result.success) {
                     successCount++;
                 } else {
                     errorCount++;
-                    errors.push({ file: file.name, error: result.error || 'Unknown error' });
+                    errors.push({ file: fileData.filename, error: result.error });
                 }
-
             } catch (error) {
                 errorCount++;
-                errors.push({ file: file.name, error: error.message });
+                errors.push({ file: fileData.filename, error: error.message });
             }
         }
 
         // Show results
-        currentFileText.textContent = 'Processing complete!';
-        resultsSummary.style.display = 'block';
-        successCountEl.textContent = successCount;
-        errorCountEl.textContent = errorCount;
+        alert(`Confirmation complete!\n✓ ${successCount} successful\n✗ ${errorCount} failed`);
 
-        // Show error details if any
         if (errors.length > 0) {
-            errorDetailsEl.innerHTML = `
-                <div style="background: #fee2e2; border: 1px solid #f87171; border-radius: 6px; padding: 1rem;">
-                    <strong style="color: #991b1b;">Errors:</strong>
-                    <div style="margin-top: 0.5rem; font-size: 0.85rem;">
-                        ${errors.map(e => `<div style="color: #7f1d1d; margin: 0.25rem 0;">• ${e.file}: ${e.error}</div>`).join('')}
-                    </div>
-                </div>
-            `;
-        } else {
-            errorDetailsEl.innerHTML = '';
+            console.error('Confirmation errors:', errors);
         }
 
-        // Reset file input
-        fileInputReceipts.value = '';
-
-        // Show completion message
-        if (successCount === files.length) {
-            setTimeout(() => {
-                if (confirm('All receipts processed successfully! Reload page to see updated data?')) {
-                    location.reload();
-                }
-            }, 1000);
+        // Reload page to show updated data
+        if (successCount > 0) {
+            location.reload();
+        } else {
+            confirmAllBtn.disabled = false;
+            confirmAllBtn.textContent = originalText;
         }
     }
 });
