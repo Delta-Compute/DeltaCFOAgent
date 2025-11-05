@@ -12,8 +12,8 @@ class ReceiptInvoiceMatcher:
     """Match payment receipts to invoices using smart algorithms"""
 
     # Matching thresholds
-    AMOUNT_TOLERANCE_PERCENT = 2.0  # Allow 2% difference
-    MAX_DATE_DIFF_DAYS = 90  # Payment within 90 days of invoice
+    AMOUNT_TOLERANCE_PERCENT = 5.0  # Allow 5% difference for fees/conversion
+    MAX_DATE_DIFF_DAYS = 180  # Payment within 6 months of invoice
 
     def __init__(self, db_manager):
         """Initialize with database manager"""
@@ -54,7 +54,7 @@ class ReceiptInvoiceMatcher:
                 pass
 
         # Build query to find candidate invoices
-        # Use case-insensitive matching and include partially_paid invoices
+        # Search all invoices, prioritizing unpaid ones in scoring
         query = """
             SELECT
                 id,
@@ -68,7 +68,6 @@ class ReceiptInvoiceMatcher:
                 payment_date as existing_payment_date
             FROM invoices
             WHERE tenant_id = %s
-            AND UPPER(payment_status) IN ('PENDING', 'PENDING_REVIEW', 'PARTIALLY_PAID')
             AND total_amount IS NOT NULL
         """
         params = [tenant_id]
@@ -220,8 +219,8 @@ class ReceiptInvoiceMatcher:
 
         best_match = matches[0]
 
-        # Only return if confidence is at least medium
-        if best_match['confidence'] in ['very_high', 'high', 'medium']:
+        # Accept any match with score >= 30 (low confidence or better)
+        if best_match['score'] >= 30:
             return best_match
 
         return None

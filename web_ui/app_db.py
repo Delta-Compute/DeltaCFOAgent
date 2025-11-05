@@ -10734,7 +10734,7 @@ def api_upload_attachment(invoice_id):
 
                             if invoice_data:
                                 # Find transactions that match this invoice/payment
-                                # Match by amount (within 2%) and date (within 7 days)
+                                # Match by amount (within 5%) and date (within 14 days)
                                 invoice_date = invoice_data.get('date')
                                 due_date = invoice_data.get('due_date')
 
@@ -10743,21 +10743,21 @@ def api_upload_attachment(invoice_id):
                                            classified_entity, confidence
                                     FROM transactions
                                     WHERE tenant_id = %s
-                                    AND ABS(amount - %s) <= (%s * 0.02)
+                                    AND ABS(amount - %s) <= (%s * 0.05)
                                     AND currency = %s
                                     AND (
-                                        date::date BETWEEN %s::date - INTERVAL '7 days'
-                                                    AND %s::date + INTERVAL '7 days'
+                                        date::date BETWEEN %s::date - INTERVAL '14 days'
+                                                    AND %s::date + INTERVAL '14 days'
                                         OR (
                                             %s::date IS NOT NULL
-                                            AND date::date BETWEEN %s::date - INTERVAL '7 days'
-                                                            AND %s::date + INTERVAL '7 days'
+                                            AND date::date BETWEEN %s::date - INTERVAL '14 days'
+                                                            AND %s::date + INTERVAL '14 days'
                                         )
                                     )
                                     AND (invoice_id IS NULL OR invoice_id = %s)
                                     ORDER BY ABS(amount - %s) ASC,
                                              ABS(date::date - %s::date) ASC
-                                    LIMIT 5
+                                    LIMIT 10
                                 """, (tenant_id, payment_amount, payment_amount, payment_currency,
                                      payment_date, payment_date,
                                      due_date, due_date, due_date,
@@ -10794,20 +10794,31 @@ def api_upload_attachment(invoice_id):
                                             'date_diff_days': date_diff
                                         })
 
-                                    # Auto-link if we have a very high confidence match (>95%)
+                                    # Auto-link if we have a high confidence match (>80%)
                                     best_match = matching_candidates[0] if matching_candidates else None
-                                    if best_match and best_match['match_score'] >= 95:
+                                    if best_match and best_match['match_score'] >= 80:
                                         transaction_id = best_match['transaction_id']
-                                        justification = f"Revenue - {customer_name} - Invoice {invoice_number}"
+
+                                        # Get original transaction description for enhancement
+                                        txn_desc_query = """
+                                            SELECT description FROM transactions WHERE transaction_id = %s
+                                        """
+                                        txn_desc_result = db_manager.execute_query(txn_desc_query, (transaction_id,), fetch_one=True)
+                                        original_desc = txn_desc_result.get('description', '') if txn_desc_result else ''
+
+                                        # Build enhanced description
+                                        total_amount = invoice_data.get('total_amount', 0)
+                                        enhanced_description = f"Payment to {customer_name} - Invoice #{invoice_number} ({payment_currency} {total_amount:.2f}) | {original_desc}"
 
                                         db_manager.execute_query("""
                                             UPDATE transactions
-                                            SET justification = %s,
-                                                accounting_category = 'REVENUE',
+                                            SET accounting_category = 'Invoice Payment',
                                                 invoice_id = %s,
+                                                original_description = COALESCE(original_description, description),
+                                                description = %s,
                                                 classified_entity = %s
                                             WHERE transaction_id = %s
-                                        """, (justification, invoice_id, customer_name, transaction_id))
+                                        """, (invoice_id, enhanced_description, customer_name, transaction_id))
 
                                         # Also update invoice with transaction link
                                         db_manager.execute_query("""
