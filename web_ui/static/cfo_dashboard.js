@@ -1360,57 +1360,191 @@ function populateBalanceSheetTable(balanceSheetData) {
     const totalLiabilities = balanceSheetData.liabilities?.total || balanceSheetData.summary_metrics?.total_liabilities || 0;
     const totalEquity = balanceSheetData.equity?.total || balanceSheetData.summary_metrics?.total_equity || 0;
 
-    // Build Balance Sheet structure following Brazilian standards
-    const balanceSheetStructure = [
-        {
-            name: 'ATIVO',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Total do Ativo',
-            amount: totalAssets,
-            isMain: true,
-            type: 'asset'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'PASSIVO E PATRIMÔNIO LÍQUIDO',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Total do Passivo',
-            amount: totalLiabilities,
-            isMain: true,
-            type: 'liability'
-        },
-        {
-            name: 'Total do Patrimônio Líquido',
+    // Build Balance Sheet structure dynamically from API data
+    const balanceSheetStructure = [];
+
+    // ASSETS SECTION
+    balanceSheetStructure.push({
+        name: 'ATIVO',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Current Assets
+    if (balanceSheetData.assets?.current_assets) {
+        const currentAssets = balanceSheetData.assets.current_assets;
+        if (currentAssets.total > 0 || currentAssets.categories?.length > 0) {
+            balanceSheetStructure.push({
+                name: 'Ativo Circulante',
+                amount: currentAssets.total,
+                isMain: true,
+                type: 'asset'
+            });
+
+            // Add categories
+            if (currentAssets.categories && currentAssets.categories.length > 0) {
+                currentAssets.categories.forEach(cat => {
+                    balanceSheetStructure.push({
+                        name: '    ' + cat.category,
+                        amount: cat.amount,
+                        isMain: false,
+                        type: 'asset',
+                        count: cat.count
+                    });
+                });
+            }
+        }
+    }
+
+    // Non-Current Assets
+    if (balanceSheetData.assets?.non_current_assets) {
+        const nonCurrentAssets = balanceSheetData.assets.non_current_assets;
+        if (nonCurrentAssets.total > 0 || nonCurrentAssets.categories?.length > 0) {
+            balanceSheetStructure.push({
+                name: 'Ativo Não Circulante',
+                amount: nonCurrentAssets.total,
+                isMain: true,
+                type: 'asset'
+            });
+
+            // Add categories
+            if (nonCurrentAssets.categories && nonCurrentAssets.categories.length > 0) {
+                nonCurrentAssets.categories.forEach(cat => {
+                    balanceSheetStructure.push({
+                        name: '    ' + cat.category,
+                        amount: cat.amount,
+                        isMain: false,
+                        type: 'asset',
+                        count: cat.count
+                    });
+                });
+            }
+        }
+    }
+
+    // Total Assets
+    balanceSheetStructure.push({
+        name: 'TOTAL DO ATIVO',
+        amount: totalAssets,
+        isMain: true,
+        type: 'asset_total'
+    });
+
+    // Spacer
+    balanceSheetStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // LIABILITIES SECTION
+    balanceSheetStructure.push({
+        name: 'PASSIVO E PATRIMÔNIO LÍQUIDO',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Current Liabilities
+    if (balanceSheetData.liabilities?.current_liabilities) {
+        const currentLiabilities = balanceSheetData.liabilities.current_liabilities;
+        if (currentLiabilities.total > 0 || currentLiabilities.categories?.length > 0) {
+            balanceSheetStructure.push({
+                name: 'Passivo Circulante',
+                amount: currentLiabilities.total,
+                isMain: true,
+                type: 'liability'
+            });
+
+            // Add categories
+            if (currentLiabilities.categories && currentLiabilities.categories.length > 0) {
+                currentLiabilities.categories.forEach(cat => {
+                    balanceSheetStructure.push({
+                        name: '    ' + cat.category,
+                        amount: cat.amount,
+                        isMain: false,
+                        type: 'liability',
+                        count: cat.count
+                    });
+                });
+            }
+        }
+    }
+
+    // Non-Current Liabilities
+    if (balanceSheetData.liabilities?.non_current_liabilities) {
+        const nonCurrentLiabilities = balanceSheetData.liabilities.non_current_liabilities;
+        if (nonCurrentLiabilities.total > 0 || nonCurrentLiabilities.categories?.length > 0) {
+            balanceSheetStructure.push({
+                name: 'Passivo Não Circulante',
+                amount: nonCurrentLiabilities.total,
+                isMain: true,
+                type: 'liability'
+            });
+
+            // Add categories
+            if (nonCurrentLiabilities.categories && nonCurrentLiabilities.categories.length > 0) {
+                nonCurrentLiabilities.categories.forEach(cat => {
+                    balanceSheetStructure.push({
+                        name: '    ' + cat.category,
+                        amount: cat.amount,
+                        isMain: false,
+                        type: 'liability',
+                        count: cat.count
+                    });
+                });
+            }
+        }
+    }
+
+    // Total Liabilities
+    balanceSheetStructure.push({
+        name: 'TOTAL DO PASSIVO',
+        amount: totalLiabilities,
+        isMain: true,
+        type: 'liability_total'
+    });
+
+    // EQUITY SECTION
+    if (balanceSheetData.equity) {
+        balanceSheetStructure.push({
+            name: 'Patrimônio Líquido',
             amount: totalEquity,
             isMain: true,
             type: 'equity'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'TOTAL DO PASSIVO + PATRIMÔNIO LÍQUIDO',
-            amount: totalLiabilities + totalEquity,
-            isMain: true,
-            type: 'total'
+        });
+
+        // Add equity categories
+        if (balanceSheetData.equity.categories && balanceSheetData.equity.categories.length > 0) {
+            balanceSheetData.equity.categories.forEach(cat => {
+                balanceSheetStructure.push({
+                    name: '    ' + cat.category,
+                    amount: cat.amount,
+                    isMain: false,
+                    type: 'equity',
+                    count: cat.count
+                });
+            });
         }
-    ];
+    }
+
+    // Spacer
+    balanceSheetStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // Total Liabilities + Equity
+    balanceSheetStructure.push({
+        name: 'TOTAL DO PASSIVO + PATRIMÔNIO LÍQUIDO',
+        amount: totalLiabilities + totalEquity,
+        isMain: true,
+        type: 'total'
+    });
 
     balanceSheetStructure.forEach(item => {
         if (item.type === 'spacer' && !item.name) {
@@ -1720,81 +1854,147 @@ function populateCashFlowTable(cashFlowData) {
     const cashPayments = cashFlowData.summary_metrics?.cash_payments || cashFlowData.operating_activities?.cash_payments || 0;
     const netOperating = cashFlowData.summary_metrics?.net_cash_flow || cashFlowData.operating_activities?.net_operating || (cashReceipts - cashPayments);
 
-    // Build Cash Flow structure following Brazilian standards
-    const cashFlowStructure = [
-        {
-            name: 'FLUXOS DE CAIXA DAS ATIVIDADES OPERACIONAIS',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Recebimentos de Clientes',
-            amount: cashReceipts,
-            isMain: false,
-            type: 'operating_inflow'
-        },
-        {
-            name: 'Pagamentos a Fornecedores e Funcionários',
-            amount: -cashPayments,
-            isMain: false,
-            type: 'operating_outflow'
-        },
-        {
-            name: 'Caixa Líquido das Atividades Operacionais',
-            amount: netOperating,
-            isMain: true,
-            type: 'operating_total'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE INVESTIMENTO',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Caixa Líquido das Atividades de Investimento',
-            amount: 0, // Simplified
-            isMain: true,
-            type: 'investing_total'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE FINANCIAMENTO',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Caixa Líquido das Atividades de Financiamento',
-            amount: 0, // Simplified
-            isMain: true,
-            type: 'financing_total'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'AUMENTO (DIMINUIÇÃO) LÍQUIDA DE CAIXA',
-            amount: netOperating,
-            isMain: true,
-            type: 'net_change'
+    // Build Cash Flow structure dynamically from API data
+    const cashFlowStructure = [];
+
+    // OPERATING ACTIVITIES SECTION
+    cashFlowStructure.push({
+        name: 'FLUXOS DE CAIXA DAS ATIVIDADES OPERACIONAIS',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Add operating categories from API data
+    if (cashFlowData.operating_activities?.categories && cashFlowData.operating_activities.categories.length > 0) {
+        cashFlowData.operating_activities.categories.forEach(cat => {
+            cashFlowStructure.push({
+                name: '    ' + cat.category,
+                amount: cat.amount,
+                isMain: false,
+                type: cat.amount > 0 ? 'operating_inflow' : 'operating_outflow',
+                count: cat.count
+            });
+        });
+    } else {
+        // Fallback to simple structure
+        if (cashReceipts > 0) {
+            cashFlowStructure.push({
+                name: '    Recebimentos de Clientes',
+                amount: cashReceipts,
+                isMain: false,
+                type: 'operating_inflow'
+            });
         }
-    ];
+        if (cashPayments > 0) {
+            cashFlowStructure.push({
+                name: '    Pagamentos a Fornecedores e Funcionários',
+                amount: -cashPayments,
+                isMain: false,
+                type: 'operating_outflow'
+            });
+        }
+    }
+
+    cashFlowStructure.push({
+        name: 'Caixa Líquido das Atividades Operacionais',
+        amount: netOperating,
+        isMain: true,
+        type: 'operating_total'
+    });
+
+    // Spacer
+    cashFlowStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // INVESTING ACTIVITIES SECTION
+    const netInvesting = cashFlowData.investing_activities?.net_investing || 0;
+
+    cashFlowStructure.push({
+        name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE INVESTIMENTO',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Add investing categories from API data
+    if (cashFlowData.investing_activities?.categories && cashFlowData.investing_activities.categories.length > 0) {
+        cashFlowData.investing_activities.categories.forEach(cat => {
+            cashFlowStructure.push({
+                name: '    ' + cat.category,
+                amount: cat.amount,
+                isMain: false,
+                type: cat.amount > 0 ? 'investing_inflow' : 'investing_outflow',
+                count: cat.count
+            });
+        });
+    }
+
+    cashFlowStructure.push({
+        name: 'Caixa Líquido das Atividades de Investimento',
+        amount: netInvesting,
+        isMain: true,
+        type: 'investing_total'
+    });
+
+    // Spacer
+    cashFlowStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // FINANCING ACTIVITIES SECTION
+    const netFinancing = cashFlowData.financing_activities?.net_financing || 0;
+
+    cashFlowStructure.push({
+        name: 'FLUXOS DE CAIXA DAS ATIVIDADES DE FINANCIAMENTO',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Add financing categories from API data
+    if (cashFlowData.financing_activities?.categories && cashFlowData.financing_activities.categories.length > 0) {
+        cashFlowData.financing_activities.categories.forEach(cat => {
+            cashFlowStructure.push({
+                name: '    ' + cat.category,
+                amount: cat.amount,
+                isMain: false,
+                type: cat.amount > 0 ? 'financing_inflow' : 'financing_outflow',
+                count: cat.count
+            });
+        });
+    }
+
+    cashFlowStructure.push({
+        name: 'Caixa Líquido das Atividades de Financiamento',
+        amount: netFinancing,
+        isMain: true,
+        type: 'financing_total'
+    });
+
+    // Spacer
+    cashFlowStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // Net change in cash
+    const totalNetChange = netOperating + netInvesting + netFinancing;
+    cashFlowStructure.push({
+        name: 'AUMENTO (DIMINUIÇÃO) LÍQUIDA DE CAIXA',
+        amount: totalNetChange,
+        isMain: true,
+        type: 'net_change'
+    });
 
     cashFlowStructure.forEach(item => {
         if (item.type === 'spacer' && !item.name) {
@@ -2105,69 +2305,109 @@ function populateDMPLTable(dmplData) {
     const netIncome = dmplData.summary_metrics?.net_income || dmplData.equity_movements?.net_income || 0;
     const endingEquity = dmplData.summary_metrics?.ending_equity || dmplData.equity_movements?.ending_equity || 0;
 
-    // Build DMPL structure following Brazilian standards
-    const dmplStructure = [
-        {
-            name: 'PATRIMÔNIO LÍQUIDO - INÍCIO DO PERÍODO',
-            amount: beginningEquity,
-            isMain: true,
-            type: 'beginning'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'MUTAÇÕES DO PERÍODO:',
-            amount: null,
-            isHeader: true,
-            type: 'header'
-        },
-        {
-            name: 'Lucro/Prejuízo do Exercício',
-            amount: netIncome,
-            isMain: false,
-            type: 'income'
-        },
-        {
-            name: 'Aportes de Capital',
-            amount: 0, // Simplified
-            isMain: false,
-            type: 'capital'
-        },
-        {
-            name: 'Distribuições de Resultado',
-            amount: 0, // Simplified
-            isMain: false,
-            type: 'distribution'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'TOTAL DAS MUTAÇÕES',
-            amount: netIncome, // Simplified - just net income for now
-            isMain: true,
-            type: 'total_changes'
-        },
-        {
-            name: '',
-            amount: null,
-            isHeader: false,
-            type: 'spacer'
-        },
-        {
-            name: 'PATRIMÔNIO LÍQUIDO - FINAL DO PERÍODO',
-            amount: endingEquity,
-            isMain: true,
-            type: 'ending'
+    // Build DMPL structure dynamically from API data
+    const dmplStructure = [];
+
+    // Beginning equity
+    dmplStructure.push({
+        name: 'PATRIMÔNIO LÍQUIDO - INÍCIO DO PERÍODO',
+        amount: beginningEquity,
+        isMain: true,
+        type: 'beginning'
+    });
+
+    // Spacer
+    dmplStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // Equity movements
+    dmplStructure.push({
+        name: 'MUTAÇÕES DO PERÍODO:',
+        amount: null,
+        isHeader: true,
+        type: 'header'
+    });
+
+    // Add equity movement categories from API data
+    if (dmplData.equity_movements?.categories && dmplData.equity_movements.categories.length > 0) {
+        dmplData.equity_movements.categories.forEach(cat => {
+            dmplStructure.push({
+                name: '    ' + cat.category,
+                amount: cat.amount,
+                isMain: false,
+                type: cat.amount > 0 ? 'income' : 'distribution',
+                count: cat.count
+            });
+        });
+    } else {
+        // Fallback to simple structure
+        if (netIncome !== 0) {
+            dmplStructure.push({
+                name: '    Lucro/Prejuízo do Exercício',
+                amount: netIncome,
+                isMain: false,
+                type: 'income'
+            });
         }
-    ];
+
+        const capitalContributions = dmplData.equity_movements?.capital_contributions || 0;
+        if (capitalContributions !== 0) {
+            dmplStructure.push({
+                name: '    Aportes de Capital',
+                amount: capitalContributions,
+                isMain: false,
+                type: 'capital'
+            });
+        }
+
+        const distributions = dmplData.equity_movements?.capital_distributions || dmplData.equity_movements?.dividends_paid || 0;
+        if (distributions !== 0) {
+            dmplStructure.push({
+                name: '    Distribuições de Resultado',
+                amount: distributions,
+                isMain: false,
+                type: 'distribution'
+            });
+        }
+    }
+
+    // Calculate total changes
+    const totalChanges = endingEquity - beginningEquity;
+
+    // Spacer
+    dmplStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    dmplStructure.push({
+        name: 'TOTAL DAS MUTAÇÕES',
+        amount: totalChanges,
+        isMain: true,
+        type: 'total_changes'
+    });
+
+    // Spacer
+    dmplStructure.push({
+        name: '',
+        amount: null,
+        isHeader: false,
+        type: 'spacer'
+    });
+
+    // Ending equity
+    dmplStructure.push({
+        name: 'PATRIMÔNIO LÍQUIDO - FINAL DO PERÍODO',
+        amount: endingEquity,
+        isMain: true,
+        type: 'ending'
+    });
 
     dmplStructure.forEach(item => {
         if (item.type === 'spacer' && !item.name) {

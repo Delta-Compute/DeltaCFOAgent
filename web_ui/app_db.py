@@ -10110,6 +10110,48 @@ def api_upload_payment_proof_auto_match():
             match_confidence = best_match['confidence']
             match_score = best_match['score']
 
+            # If score < 80, require manual confirmation
+            if match_score < 80:
+                print(f"[MATCHER DEBUG] Match score {match_score} < 80, requiring manual confirmation")
+
+                # Get all candidates for manual selection
+                all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
+                print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices for manual selection")
+                for idx, match in enumerate(all_matches[:5]):
+                    inv = match['invoice']
+                    print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Score: {match['score']}")
+
+                return jsonify({
+                    'success': False,
+                    'error': 'Manual confirmation required',
+                    'payment_data': {
+                        'date': payment_data.get('payment_date'),
+                        'amount': payment_data.get('payment_amount'),
+                        'currency': payment_data.get('payment_currency'),
+                        'method': payment_data.get('payment_method'),
+                        'confirmation_number': payment_data.get('confirmation_number'),
+                        'confidence': payment_data.get('confidence')
+                    },
+                    'debug': {
+                        'candidates_found': len(all_matches),
+                        'top_candidates': [
+                            {
+                                'invoice_number': m['invoice']['invoice_number'],
+                                'invoice_id': m['invoice']['id'],
+                                'customer_name': m['invoice'].get('customer_name') or m['invoice'].get('vendor_name'),
+                                'invoice_date': str(m['invoice'].get('date', '')),
+                                'amount': float(m['invoice']['total_amount']),
+                                'currency': m['invoice']['currency'],
+                                'status': m['invoice']['payment_status'],
+                                'score': m['score'],
+                                'confidence': m['confidence'],
+                                'score_breakdown': m['score_breakdown']
+                            } for m in all_matches[:5]
+                        ]
+                    },
+                    'message': 'Please select the correct invoice to confirm the match'
+                }), 404
+
             # Step 3: Validate against matched invoice
             validator = PaymentValidator()
             is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
@@ -10187,6 +10229,273 @@ def api_upload_payment_proof_auto_match():
                     'warnings': warnings,
                     'report': validation_report
                 }
+            }), 200
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+@app.route('/api/payment-proof/confirm-match', methods=['POST'])
+def api_confirm_payment_proof_match():
+    """
+    Confirm a payment proof match to an invoice
+
+    Request body (FormData):
+    - file: The payment proof file (re-uploaded)
+    - invoice_id: The invoice ID to match to
+    - payment_data: JSON string with extracted payment data
+    """
+    try:
+        import os
+        import sys
+        import uuid
+        import json
+        from werkzeug.utils import secure_filename
+        from datetime import datetime
+        from database import db_manager
+
+        # Import services
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_proof_processor import store_payment_proof
+        from payment_manager import PaymentManager
+
+        # Get current tenant
+        tenant_id = get_current_tenant_id()
+
+        # Get invoice_id from form
+        invoice_id = request.form.get('invoice_id')
+        if not invoice_id:
+            return jsonify({'error': 'invoice_id is required'}), 400
+
+        # Get payment_data from form (JSON string)
+        payment_data_json = request.form.get('payment_data')
+        if not payment_data_json:
+            return jsonify({'error': 'payment_data is required'}), 400
+
+        try:
+            payment_data = json.loads(payment_data_json)
+        except:
+            return jsonify({'error': 'Invalid payment_data JSON'}), 400
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        # Verify invoice exists
+        invoice = db_manager.execute_query(
+            "SELECT * FROM invoices WHERE id = %s AND tenant_id = %s",
+            (invoice_id, tenant_id),
+            fetch_one=True
+        )
+
+        if not invoice:
+            return jsonify({'error': 'Invoice not found'}), 404
+
+        # Save file temporarily
+        filename = secure_filename(file.filename)
+        temp_path = os.path.join('/tmp' if os.name != 'nt' else os.environ.get('TEMP', 'C:\\temp'), filename)
+        file.save(temp_path)
+
+        try:
+            # Step 1: Store payment proof as attachment
+            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
+
+            # Step 2: Save attachment record to database
+            attachment_id = str(uuid.uuid4())
+            attachment_query = """
+                INSERT INTO invoice_attachments (
+                    id, invoice_id, tenant_id, file_name, file_path,
+                    file_size, attachment_type, ai_extracted_data, uploaded_by, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            """
+
+            file_size = os.path.getsize(temp_path)
+
+            db_manager.execute_query(
+                attachment_query,
+                (
+                    attachment_id, invoice_id, tenant_id, filename, stored_path,
+                    file_size, 'payment_proof', json.dumps(payment_data),
+                    'system',
+                )
+            )
+
+            # Step 3: Create payment record using PaymentManager
+            payment_manager = PaymentManager(db_manager)
+
+            # Handle both formats: with and without 'payment_' prefix
+            payment_amount_value = payment_data.get('payment_amount') or payment_data.get('amount', 0)
+            payment_date_value = payment_data.get('payment_date') or payment_data.get('date')
+            payment_currency_value = payment_data.get('payment_currency') or payment_data.get('currency', 'USD')
+            payment_method_value = payment_data.get('payment_method') or payment_data.get('method')
+            payment_reference_value = payment_data.get('confirmation_number')
+
+            success, message, payment_record = payment_manager.add_payment(
+                invoice_id=invoice_id,
+                tenant_id=tenant_id,
+                payment_amount=float(payment_amount_value),
+                payment_date=payment_date_value,
+                payment_currency=payment_currency_value,
+                payment_method=payment_method_value,
+                payment_reference=payment_reference_value,
+                payment_notes=f"From payment proof - Confidence: {payment_data.get('confidence', 0)}",
+                attachment_id=attachment_id,
+                recorded_by='system'
+            )
+
+            if not success:
+                return jsonify({
+                    'success': False,
+                    'error': f'Failed to create payment record: {message}'
+                }), 400
+
+            # Step 4: Try to auto-link with transaction (same logic as attachment upload)
+            payment_amount = float(payment_amount_value)
+            payment_date = payment_date_value
+            payment_currency = payment_currency_value
+
+            # Search for matching transactions
+            matching_txns = db_manager.execute_query("""
+                SELECT transaction_id, date, description, amount, accounting_category,
+                       classified_entity, confidence
+                FROM transactions
+                WHERE tenant_id = %s
+                AND ABS(amount - %s) <= (%s * 0.05)
+                AND currency = %s
+                AND (
+                    date::date BETWEEN %s::date - INTERVAL '14 days'
+                                AND %s::date + INTERVAL '14 days'
+                    OR date::date BETWEEN (SELECT date FROM invoices WHERE id = %s)::date - INTERVAL '14 days'
+                                    AND (SELECT date FROM invoices WHERE id = %s)::date + INTERVAL '14 days'
+                )
+                AND (invoice_id IS NULL OR invoice_id = %s)
+                ORDER BY ABS(amount - %s) ASC, ABS(date::date - %s::date) ASC
+                LIMIT 10
+            """, (
+                tenant_id, payment_amount, payment_amount, payment_currency,
+                payment_date, payment_date, invoice_id, invoice_id,
+                invoice_id, payment_amount, payment_date
+            ), fetch_all=True)
+
+            transaction_linked = None
+
+            if matching_txns:
+                # Calculate match score for each
+                from dateutil import parser as date_parser
+                best_match = None
+                best_score = 0
+
+                for txn in matching_txns:
+                    txn_amount = abs(float(txn['amount']))
+                    amount_diff = abs(txn_amount - payment_amount)
+                    amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
+
+                    try:
+                        txn_date = date_parser.parse(txn['date']).date()
+                        pay_date = date_parser.parse(payment_date).date()
+                        date_diff = abs((txn_date - pay_date).days)
+                    except:
+                        date_diff = 999
+
+                    match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+                    if match_score > best_score:
+                        best_score = match_score
+                        best_match = txn
+
+                # Auto-link if score >= 80%
+                if best_match and best_score >= 80:
+                    transaction_id = best_match['transaction_id']
+
+                    # Get customer name
+                    customer_name = invoice.get('customer_name') or invoice.get('vendor_name', 'Unknown')
+                    invoice_number = invoice.get('invoice_number', invoice_id[:8])
+
+                    # Get original description
+                    txn_desc_result = db_manager.execute_query(
+                        "SELECT description, original_description FROM transactions WHERE transaction_id = %s",
+                        (transaction_id,),
+                        fetch_one=True
+                    )
+                    original_desc = txn_desc_result.get('original_description') or txn_desc_result.get('description', '')
+
+                    # Build enhanced description
+                    enhanced_description = f"Payment to {customer_name} - Invoice #{invoice_number} ({payment_currency} {payment_amount:.2f}) | {original_desc}"
+
+                    # Update transaction
+                    db_manager.execute_query("""
+                        UPDATE transactions
+                        SET accounting_category = 'Invoice Payment',
+                            invoice_id = %s,
+                            original_description = COALESCE(original_description, description),
+                            description = %s,
+                            classified_entity = %s
+                        WHERE transaction_id = %s AND tenant_id = %s
+                    """, (invoice_id, enhanced_description, customer_name, transaction_id, tenant_id))
+
+                    transaction_linked = {
+                        'transaction_id': transaction_id,
+                        'match_score': best_score,
+                        'description': enhanced_description
+                    }
+
+            # Prepare all transaction candidates for display
+            transaction_candidates = []
+            if matching_txns:
+                from dateutil import parser as date_parser
+                for txn in matching_txns:
+                    txn_amount = abs(float(txn['amount']))
+                    amount_diff = abs(txn_amount - payment_amount)
+                    amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
+
+                    try:
+                        txn_date = date_parser.parse(txn['date']).date()
+                        pay_date = date_parser.parse(payment_date).date()
+                        date_diff = abs((txn_date - pay_date).days)
+                    except:
+                        date_diff = 999
+
+                    match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+                    transaction_candidates.append({
+                        'id': txn['transaction_id'],
+                        'description': txn['description'],
+                        'date': str(txn['date']),
+                        'amount': float(txn['amount']),
+                        'category': txn.get('accounting_category'),
+                        'entity': txn.get('classified_entity'),
+                        'match_score': round(match_score, 1),
+                        'amount_diff': round(amount_diff, 2),
+                        'date_diff_days': date_diff,
+                        'linked': txn['transaction_id'] == transaction_linked['transaction_id'] if transaction_linked else False
+                    })
+
+            return jsonify({
+                'success': True,
+                'message': 'Payment proof confirmed and matched successfully',
+                'invoice_id': invoice_id,
+                'attachment_id': attachment_id,
+                'payment_id': payment_record['id'] if payment_record else None,
+                'transaction_linked': transaction_linked,
+                'transaction_candidates': transaction_candidates,
+                'stored_path': stored_path
             }), 200
 
         finally:
@@ -10367,6 +10676,271 @@ def api_upload_payment_proof(invoice_id):
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
+
+@app.route('/api/payment-proof/upload-and-confirm', methods=['POST'])
+def api_upload_and_confirm_payment_proof():
+    """
+    Upload payment receipt, find matching invoice, and auto-confirm match
+    Used for batch upload processing
+
+    Query Parameters:
+        customer_filter: Optional customer name to filter invoices for better matching
+
+    Returns:
+        JSON with success flag, match details, and payment record
+    """
+    try:
+        from database import db_manager
+
+        # Import from web_ui local services
+        services_path = os.path.join(os.path.dirname(__file__), 'services')
+        if services_path not in sys.path:
+            sys.path.insert(0, services_path)
+        from payment_proof_processor import PaymentProofProcessor
+        from receipt_invoice_matcher import ReceiptInvoiceMatcher
+
+        import os
+        import shutil
+
+        # Get current tenant
+        tenant_id = get_current_tenant_id()
+        uploaded_by = 'batch_upload'
+
+        # Get optional customer filter
+        customer_filter = request.args.get('customer_filter')
+
+        # Check if file was uploaded
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'Empty filename'}), 400
+
+        # Save file to temp location
+        temp_path = os.path.join('temp_uploads', file.filename)
+        os.makedirs('temp_uploads', exist_ok=True)
+        file.save(temp_path)
+
+        try:
+            # Extract payment data using Claude Vision API
+            processor = PaymentProofProcessor()
+            payment_data = processor.extract_payment_data(temp_path)
+
+            if not payment_data or not payment_data.get('payment_amount'):
+                return jsonify({
+                    'success': False,
+                    'error': 'Could not extract payment data from receipt'
+                }), 400
+
+            # Find best matching invoice
+            matcher = ReceiptInvoiceMatcher(db_manager)
+            best_match = matcher.get_best_match(payment_data, tenant_id, customer_filter)
+
+            if not best_match:
+                return jsonify({
+                    'success': False,
+                    'error': 'No matching invoice found for this receipt'
+                }), 404
+
+            invoice = best_match['invoice']
+            invoice_id = invoice['id']
+            match_score = best_match['score']
+
+            # Store the receipt file
+            receipt_dir = os.path.join('web_ui', 'uploads', 'payment_receipts', tenant_id)
+            os.makedirs(receipt_dir, exist_ok=True)
+
+            file_ext = os.path.splitext(file.filename)[1]
+            stored_filename = f"{invoice_id}_{payment_data.get('payment_date', 'unknown')}{file_ext}"
+            stored_path = os.path.join(receipt_dir, stored_filename)
+
+            # Copy temp file to permanent storage
+            shutil.copy2(temp_path, stored_path)
+
+            # Prepare payment notes
+            notes_parts = [f"Auto-matched with score: {match_score:.1f}"]
+            if customer_filter:
+                notes_parts.append(f"Customer filter: {customer_filter}")
+            if payment_data.get('bank_platform'):
+                notes_parts.append(f"Bank/Platform: {payment_data['bank_platform']}")
+            if payment_data.get('payer_name'):
+                notes_parts.append(f"Payer: {payment_data['payer_name']}")
+
+            payment_notes = " | ".join(notes_parts)
+
+            # Determine payment status based on match score
+            if match_score >= 90:
+                payment_status = 'paid'
+            elif match_score >= 75:
+                payment_status = 'pending_review'
+            else:
+                payment_status = 'pending_review'
+
+            # Update invoice with payment data
+            update_query = """
+            UPDATE invoices
+            SET payment_date = %s,
+                payment_proof_path = %s,
+                payment_method = %s,
+                payment_confirmation_number = %s,
+                payment_notes = %s,
+                payment_status = %s,
+                payment_proof_uploaded_at = CURRENT_TIMESTAMP,
+                payment_proof_uploaded_by = %s
+            WHERE id = %s AND tenant_id = %s
+            """
+
+            db_manager.execute_query(
+                update_query,
+                (
+                    payment_data.get('payment_date'),
+                    stored_path,
+                    payment_data.get('payment_method'),
+                    payment_data.get('confirmation_number'),
+                    payment_notes,
+                    payment_status,
+                    uploaded_by,
+                    invoice_id,
+                    tenant_id
+                ),
+                fetch_one=False
+            )
+
+            # Try to find and link matching transaction
+            transaction_linked = False
+            transaction_id = None
+
+            try:
+                # Search for transactions that match the payment amount and date
+                payment_amount = float(payment_data.get('payment_amount', 0))
+                payment_date = payment_data.get('payment_date')
+
+                if payment_amount > 0 and payment_date:
+                    # Query for matching transactions
+                    tx_query = """
+                        SELECT id, amount, date, description
+                        FROM transactions
+                        WHERE tenant_id = %s
+                          AND ABS(ABS(amount) - %s) <= %s
+                          AND date BETWEEN %s::date - INTERVAL '7 days' AND %s::date + INTERVAL '7 days'
+                          AND linked_invoice_id IS NULL
+                        ORDER BY ABS(ABS(amount) - %s) ASC,
+                                 ABS(EXTRACT(epoch FROM (date - %s::date))) ASC
+                        LIMIT 1
+                    """
+
+                    amount_tolerance = payment_amount * 0.05  # 5% tolerance
+
+                    matching_tx = db_manager.execute_query(
+                        tx_query,
+                        (tenant_id, payment_amount, amount_tolerance, payment_date, payment_date, payment_amount, payment_date),
+                        fetch_one=True
+                    )
+
+                    if matching_tx:
+                        transaction_id = matching_tx['id']
+
+                        # Link transaction to invoice
+                        link_query = """
+                            UPDATE transactions
+                            SET linked_invoice_id = %s,
+                                match_confidence = %s
+                            WHERE id = %s AND tenant_id = %s
+                        """
+
+                        db_manager.execute_query(
+                            link_query,
+                            (invoice_id, match_score, transaction_id, tenant_id),
+                            fetch_one=False
+                        )
+
+                        transaction_linked = True
+
+            except Exception as tx_error:
+                logger.warning(f"Could not link transaction: {tx_error}")
+                # Don't fail the whole operation if transaction linking fails
+
+            return jsonify({
+                'success': True,
+                'message': f'Receipt uploaded and matched successfully (score: {match_score:.1f}%)',
+                'invoice': {
+                    'id': invoice_id,
+                    'invoice_number': invoice.get('invoice_number', invoice_id[:8]),
+                    'customer_name': invoice.get('customer_name') or invoice.get('vendor_name', 'Unknown'),
+                    'amount': float(invoice.get('total_amount', 0))
+                },
+                'match_score': match_score,
+                'payment_status': payment_status,
+                'transaction_linked': transaction_linked,
+                'transaction_id': transaction_id,
+                'payment_data': {
+                    'date': payment_data.get('payment_date'),
+                    'amount': payment_data.get('payment_amount'),
+                    'currency': payment_data.get('payment_currency'),
+                    'method': payment_data.get('payment_method'),
+                    'confirmation_number': payment_data.get('confirmation_number'),
+                }
+            })
+
+        finally:
+            # Clean up temp file
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    except Exception as e:
+        logger.error(f"Error in upload-and-confirm: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/customers', methods=['GET'])
+def api_get_invoice_customers():
+    """
+    Get list of unique customers/vendors from invoices for filter dropdown
+
+    Returns:
+        JSON with success flag and list of customers with invoice counts
+    """
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        # Get unique customers (both customer_name and vendor_name)
+        query = """
+            SELECT
+                COALESCE(customer_name, vendor_name) as name,
+                COUNT(*) as invoice_count
+            FROM invoices
+            WHERE tenant_id = %s
+              AND (customer_name IS NOT NULL OR vendor_name IS NOT NULL)
+            GROUP BY COALESCE(customer_name, vendor_name)
+            HAVING COUNT(*) > 0
+            ORDER BY COUNT(*) DESC, COALESCE(customer_name, vendor_name) ASC
+        """
+
+        customers = db_manager.execute_query(query, (tenant_id,), fetch_all=True)
+
+        customer_list = []
+        if customers:
+            for customer in customers:
+                if customer['name']:  # Skip any NULL names
+                    customer_list.append({
+                        'name': customer['name'],
+                        'invoice_count': customer['invoice_count']
+                    })
+
+        return jsonify({
+            'success': True,
+            'customers': customer_list
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting invoice customers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/invoices/<invoice_id>/payment-proof', methods=['GET'])
@@ -11310,7 +11884,10 @@ def api_link_payment_attachment(payment_id):
 
 @app.route('/api/invoices/<invoice_id>/find-matching-transactions', methods=['GET'])
 def api_find_matching_transactions(invoice_id):
-    """Find transactions that could match this invoice based on date and amount"""
+    """Find transactions that could match this invoice based on date and amount
+
+    Uses payment proof data if available (for partial payments), otherwise uses invoice totals
+    """
     try:
         from database import db_manager
 
@@ -11319,7 +11896,7 @@ def api_find_matching_transactions(invoice_id):
         # Get invoice details
         invoice_query = """
             SELECT id, invoice_number, total_amount, date, due_date,
-                   vendor_name, customer_name
+                   vendor_name, customer_name, currency
             FROM invoices
             WHERE id = %s AND tenant_id = %s
         """
@@ -11328,28 +11905,71 @@ def api_find_matching_transactions(invoice_id):
         if not invoice:
             return jsonify({'success': False, 'error': 'Invoice not found'}), 404
 
-        total_amount = float(invoice['total_amount'])
+        # Check for payment proof attachments with extracted data
+        attachment_query = """
+            SELECT ai_extracted_data
+            FROM invoice_attachments
+            WHERE invoice_id = %s
+            AND tenant_id = %s
+            AND attachment_type = 'payment_proof'
+            AND ai_extracted_data IS NOT NULL
+            ORDER BY created_at DESC
+            LIMIT 1
+        """
+        attachment = db_manager.execute_query(attachment_query, (invoice_id, tenant_id), fetch_one=True)
+
+        # Determine search criteria (prefer payment proof data for partial payments)
+        if attachment and attachment.get('ai_extracted_data'):
+            import json
+            ai_data = json.loads(attachment['ai_extracted_data']) if isinstance(attachment['ai_extracted_data'], str) else attachment['ai_extracted_data']
+
+            # Use payment proof data (supports partial payments)
+            search_amount = float(ai_data.get('payment_amount', invoice['total_amount']))
+            search_date = ai_data.get('payment_date', invoice['date'])
+            search_currency = ai_data.get('payment_currency', invoice.get('currency', 'USD'))
+            search_source = 'payment_proof'
+
+            print(f"[MATCH] Using payment proof data: ${search_amount} {search_currency} on {search_date}")
+        else:
+            # Use invoice data (full payment expected)
+            search_amount = float(invoice['total_amount'])
+            search_date = invoice['date']
+            search_currency = invoice.get('currency', 'USD')
+            search_source = 'invoice'
+
+            print(f"[MATCH] Using invoice data: ${search_amount} {search_currency} on {search_date}")
+
         invoice_date = invoice['date']
         due_date = invoice['due_date']
 
-        # Search for matching transactions
-        # Look for transactions within +/- 7 days of invoice date or due date
-        # and amount within 5% tolerance
+        # Search for matching transactions with 5% tolerance
         tolerance = 0.05
-        min_amount = total_amount * (1 - tolerance)
-        max_amount = total_amount * (1 + tolerance)
+        min_amount = search_amount * (1 - tolerance)
+        max_amount = search_amount * (1 + tolerance)
+
+        # Build query to search within +/- 14 days of search_date OR due_date
+        # Use search_date (from payment proof) as primary reference
+        from dateutil import parser as date_parser
+        if isinstance(search_date, str):
+            search_date_obj = date_parser.parse(search_date).date()
+        else:
+            search_date_obj = search_date
 
         transactions_query = """
             SELECT transaction_id, date, description, amount, accounting_category,
-                   subcategory, classified_entity, origin, destination, confidence
+                   subcategory, classified_entity, origin, destination, confidence, currency
             FROM transactions
             WHERE
                 ABS(amount) BETWEEN %s AND %s
+                AND currency = %s
                 AND (
-                    date::date BETWEEN %s::date - INTERVAL '7 days'
-                            AND %s::date + INTERVAL '7 days'
-                    OR date::date BETWEEN %s::date - INTERVAL '7 days'
-                            AND %s::date + INTERVAL '7 days'
+                    date::date BETWEEN %s::date - INTERVAL '14 days'
+                            AND %s::date + INTERVAL '14 days'
+                    OR (
+                        %s::date IS NOT NULL
+                        AND date::date BETWEEN %s::date - INTERVAL '14 days'
+                                        AND %s::date + INTERVAL '14 days'
+                    )
                 )
             ORDER BY
                 ABS(ABS(amount) - %s) ASC,
@@ -11359,8 +11979,10 @@ def api_find_matching_transactions(invoice_id):
 
         transactions = db_manager.execute_query(
             transactions_query,
-            (min_amount, max_amount, invoice_date, invoice_date,
-             due_date, due_date, total_amount, invoice_date),
+            (min_amount, max_amount, search_currency,
+             search_date, search_date,
+             due_date, due_date, due_date,
+             search_amount, search_date),
             fetch_all=True
         )
 
@@ -11368,17 +11990,14 @@ def api_find_matching_transactions(invoice_id):
         from datetime import datetime as dt
         results = []
         for txn in transactions:
-            amount_diff = abs(abs(float(txn['amount'])) - total_amount)
-            amount_match_pct = (1 - (amount_diff / total_amount)) * 100
+            amount_diff = abs(abs(float(txn['amount'])) - search_amount)
+            amount_match_pct = (1 - (amount_diff / search_amount)) * 100 if search_amount > 0 else 0
 
             # Parse transaction date string to date object (flexible parser)
-            from dateutil import parser as date_parser
             txn_date = date_parser.parse(txn['date']).date()
 
-            date_diff = min(
-                abs((txn_date - invoice_date).days),
-                abs((txn_date - due_date).days) if due_date else 999
-            )
+            # Calculate date diff from search_date (payment proof date or invoice date)
+            date_diff = abs((txn_date - search_date_obj).days)
 
             # Calculate overall match score (0-100)
             match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
@@ -11388,6 +12007,7 @@ def api_find_matching_transactions(invoice_id):
                 'date': txn['date'],
                 'description': txn['description'],
                 'amount': float(txn['amount']),
+                'currency': txn.get('currency', 'USD'),
                 'category': txn['accounting_category'],
                 'subcategory': txn['subcategory'],
                 'entity': txn['classified_entity'],
@@ -11401,10 +12021,16 @@ def api_find_matching_transactions(invoice_id):
             'invoice': {
                 'id': invoice['id'],
                 'invoice_number': invoice['invoice_number'],
-                'total_amount': total_amount,
+                'total_amount': float(invoice['total_amount']),
                 'date': invoice_date.strftime('%Y-%m-%d') if invoice_date else None,
                 'vendor_name': invoice.get('vendor_name'),
                 'customer_name': invoice.get('customer_name')
+            },
+            'search_criteria': {
+                'source': search_source,  # 'payment_proof' or 'invoice'
+                'amount': search_amount,
+                'date': search_date.strftime('%Y-%m-%d') if hasattr(search_date, 'strftime') else str(search_date),
+                'currency': search_currency
             },
             'matching_transactions': results
         })
@@ -11487,7 +12113,8 @@ def api_link_invoice_to_transaction(invoice_id):
 
         return jsonify({
             'success': True,
-            'message': 'Invoice linked to transaction successfully'
+            'message': 'Invoice linked to transaction successfully',
+            'enhanced_description': enhanced_description
         })
 
     except Exception as e:
