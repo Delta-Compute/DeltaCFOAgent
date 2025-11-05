@@ -19,13 +19,14 @@ class ReceiptInvoiceMatcher:
         """Initialize with database manager"""
         self.db_manager = db_manager
 
-    def find_matching_invoices(self, payment_data: Dict[str, Any], tenant_id: str) -> List[Dict[str, Any]]:
+    def find_matching_invoices(self, payment_data: Dict[str, Any], tenant_id: str, customer_filter: str = None) -> List[Dict[str, Any]]:
         """
         Find invoices that match the payment receipt data
 
         Args:
             payment_data: Extracted payment data from receipt
             tenant_id: Tenant ID
+            customer_filter: Optional customer name to filter invoices (improves accuracy)
 
         Returns:
             List of matching invoices with match scores
@@ -72,10 +73,14 @@ class ReceiptInvoiceMatcher:
         """
         params = [tenant_id]
 
-        # Add currency filter if specified
-        if payment_currency:
-            query += " AND currency = %s"
-            params.append(payment_currency.upper())
+        # Add customer filter if provided
+        if customer_filter:
+            query += " AND (customer_name = %s OR vendor_name = %s)"
+            params.extend([customer_filter, customer_filter])
+
+        # Don't filter by currency at all - we'll score it instead
+        # This allows matching invoices even with currency mismatches
+        # Currency matching will be factored into the score
 
         invoices = self.db_manager.execute_query(query, tuple(params), fetch_all=True)
 
@@ -163,11 +168,22 @@ class ReceiptInvoiceMatcher:
                 score_breakdown['date_score'] = 5  # Unknown, give small score
 
         # Score 3: Currency matching (0-10 points)
-        payment_currency = payment_data.get('payment_currency', 'USD').upper()
-        invoice_currency = invoice.get('currency', 'USD').upper()
+        payment_currency = payment_data.get('payment_currency', 'USD')
+        invoice_currency = invoice.get('currency', 'USD')
+
+        # Handle NULL/empty currency - assume USD
+        if not payment_currency or payment_currency.strip() == '':
+            payment_currency = 'USD'
+        if not invoice_currency or invoice_currency.strip() == '':
+            invoice_currency = 'USD'
+
+        payment_currency = payment_currency.upper()
+        invoice_currency = invoice_currency.upper()
 
         if payment_currency == invoice_currency:
             score_breakdown['currency_score'] = 10
+        elif not invoice.get('currency'):  # Invoice has no currency - give partial credit
+            score_breakdown['currency_score'] = 5
         else:
             score_breakdown['currency_score'] = 0
 
@@ -205,22 +221,28 @@ class ReceiptInvoiceMatcher:
         else:
             return 'very_low'  # Unlikely match
 
-    def get_best_match(self, payment_data: Dict[str, Any], tenant_id: str) -> Optional[Dict[str, Any]]:
+    def get_best_match(self, payment_data: Dict[str, Any], tenant_id: str, customer_filter: str = None) -> Optional[Dict[str, Any]]:
         """
         Get the single best matching invoice
+
+        Args:
+            payment_data: Extracted payment data
+            tenant_id: Tenant ID
+            customer_filter: Optional customer name filter
 
         Returns:
             Best match with invoice data and score, or None if no good match
         """
-        matches = self.find_matching_invoices(payment_data, tenant_id)
+        matches = self.find_matching_invoices(payment_data, tenant_id, customer_filter)
 
         if not matches:
             return None
 
         best_match = matches[0]
 
-        # Accept any match with score >= 30 (low confidence or better)
-        if best_match['score'] >= 30:
+        # Accept any match with score >= 20 (very lenient for debugging)
+        # This should catch even weak matches
+        if best_match['score'] >= 20:
             return best_match
 
         return None

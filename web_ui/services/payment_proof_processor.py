@@ -23,8 +23,95 @@ class PaymentProofProcessor:
             raise ValueError("Claude API key not configured. Set ANTHROPIC_API_KEY environment variable.")
 
         self.client = anthropic.Anthropic(api_key=self.api_key)
-        self.model = "claude-3-5-sonnet-20241022"
+        self.model = "claude-3-haiku-20240307"  # Fast, cost-effective model for receipt extraction
         self.max_file_size = 50 * 1024 * 1024  # 50MB
+
+    @staticmethod
+    def normalize_decimal_number(value: Any) -> float:
+        """
+        Normalize decimal numbers that may use comma or dot as decimal separator
+        Handles formats like:
+        - US/UK: 1,000.50 (comma thousands, dot decimal)
+        - BR/EU: 1.000,50 (dot thousands, comma decimal)
+        - No separator: 1000.50 or 1000,50
+
+        Args:
+            value: String, int, or float number
+
+        Returns:
+            float: Normalized number with dot as decimal separator
+        """
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        if not isinstance(value, str):
+            return 0.0
+
+        # Remove spaces and currency symbols
+        value = value.strip().replace(' ', '').replace('$', '').replace('€', '').replace('R$', '').replace('£', '')
+
+        if not value:
+            return 0.0
+
+        # Count dots and commas to determine format
+        dot_count = value.count('.')
+        comma_count = value.count(',')
+
+        try:
+            # No separators - simple number
+            if dot_count == 0 and comma_count == 0:
+                return float(value)
+
+            # Only dots - could be thousands OR decimal
+            if comma_count == 0:
+                # If multiple dots, they're thousands separators (EU format without decimals)
+                if dot_count > 1:
+                    value = value.replace('.', '')
+                    return float(value)
+                # Single dot - could be thousands or decimal
+                # If exactly 3 digits after dot, likely thousands separator
+                parts = value.split('.')
+                if len(parts) == 2 and len(parts[1]) == 3 and len(parts[0]) <= 3:
+                    # Likely thousands: 1.000 -> 1000
+                    value = value.replace('.', '')
+                    return float(value)
+                # Otherwise it's a decimal separator
+                return float(value)
+
+            # Only commas - could be thousands OR decimal
+            if dot_count == 0:
+                # If multiple commas, they're thousands separators (US format without decimals)
+                if comma_count > 1:
+                    value = value.replace(',', '')
+                    return float(value)
+                # Single comma - could be thousands or decimal (BR/EU format)
+                # If exactly 3 digits after comma, likely thousands separator
+                parts = value.split(',')
+                if len(parts) == 2 and len(parts[1]) == 3 and len(parts[0]) <= 3:
+                    # Likely thousands: 1,000 -> 1000
+                    value = value.replace(',', '')
+                    return float(value)
+                # Otherwise it's a decimal separator (BR/EU format)
+                value = value.replace(',', '.')
+                return float(value)
+
+            # Both dots and commas present
+            # Determine which is the decimal separator (appears last)
+            last_dot_pos = value.rfind('.')
+            last_comma_pos = value.rfind(',')
+
+            if last_comma_pos > last_dot_pos:
+                # Comma is decimal separator (BR/EU format): 1.000,50
+                value = value.replace('.', '').replace(',', '.')
+            else:
+                # Dot is decimal separator (US/UK format): 1,000.50
+                value = value.replace(',', '')
+
+            return float(value)
+
+        except (ValueError, AttributeError):
+            print(f"WARNING: Could not parse number: {value}")
+            return 0.0
 
     def process_payment_proof(self, file_path: str, invoice_data: Optional[Dict] = None) -> Dict[str, Any]:
         """
@@ -219,6 +306,11 @@ If you cannot find a field, use null. Estimate confidence 0-1 based on image qua
             if json_start >= 0 and json_end > json_start:
                 json_str = response_text[json_start:json_end]
                 extracted_data = json.loads(json_str)
+
+                # Normalize payment_amount to handle comma/dot decimal separators
+                if 'payment_amount' in extracted_data:
+                    extracted_data['payment_amount'] = self.normalize_decimal_number(extracted_data['payment_amount'])
+
                 extracted_data['success'] = True
                 extracted_data['discrepancies'] = []
                 return extracted_data
@@ -269,6 +361,11 @@ If you cannot find a field, use null. Estimate confidence 0-1 based on data comp
             if json_start >= 0 and json_end > json_start:
                 json_str = response_text[json_start:json_end]
                 extracted_data = json.loads(json_str)
+
+                # Normalize payment_amount to handle comma/dot decimal separators
+                if 'payment_amount' in extracted_data:
+                    extracted_data['payment_amount'] = self.normalize_decimal_number(extracted_data['payment_amount'])
+
                 extracted_data['success'] = True
                 extracted_data['discrepancies'] = []
                 return extracted_data
@@ -291,6 +388,9 @@ If you cannot find a field, use null. Estimate confidence 0-1 based on data comp
         payment_amount = payment_data.get('payment_amount', 0)
 
         if invoice_amount and payment_amount:
+            # Convert to float to handle Decimal from database
+            invoice_amount = float(invoice_amount)
+            payment_amount = float(payment_amount)
             diff_pct = abs(invoice_amount - payment_amount) / invoice_amount * 100
             if diff_pct > 2.0:  # More than 2% difference
                 discrepancies.append(

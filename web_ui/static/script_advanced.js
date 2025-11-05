@@ -992,6 +992,48 @@ function truncateText(text, maxLength = 30) {
     return `<span title="${text}">${text.substring(0, maxLength)}...</span>`;
 }
 
+// Render justification with invoice link if available
+function renderJustificationWithInvoiceLink(transaction) {
+    const justification = transaction.justification || 'Unknown';
+    const invoiceId = transaction.invoice_id;
+
+    if (invoiceId) {
+        // Transaction is linked to an invoice - show link icon and make it clickable
+        const truncated = justification.length > 35 ? `${justification.substring(0, 35)}...` : justification;
+        return `
+            <span title="${justification}">
+                ${truncated}
+                <a href="/invoices?highlight=${invoiceId}"
+                   style="margin-left: 5px; color: #0066cc; text-decoration: none; font-size: 0.9em;"
+                   title="View linked invoice with ${extractInvoiceInfo(justification)}"
+                   onclick="event.stopPropagation();">
+                    📄
+                </a>
+            </span>
+        `;
+    } else {
+        // No invoice link - show as normal
+        return truncateText(justification, 35);
+    }
+}
+
+// Extract invoice info from justification text for tooltip
+function extractInvoiceInfo(justification) {
+    if (!justification) return 'invoice details';
+
+    // Extract attachment count
+    const attachmentMatch = justification.match(/\((\d+)\s+attachment/);
+    const attachmentInfo = attachmentMatch ? `${attachmentMatch[1]} attachment(s)` : '';
+
+    // Extract payment count
+    const paymentMatch = justification.match(/\[Split:\s*(\d+)\s+payment/);
+    const paymentInfo = paymentMatch ? `${paymentMatch[1]} payment(s)` : '';
+
+    // Combine info
+    const info = [attachmentInfo, paymentInfo].filter(Boolean).join(', ');
+    return info || 'invoice details';
+}
+
 // Function to load correct dashboard statistics from backend
 async function loadDashboardStats() {
     try {
@@ -1124,7 +1166,7 @@ function renderTransactionTable(transactions) {
                     ${transaction.subcategory || 'N/A'}
                 </td>
                 <td class="editable-field" data-field="justification" data-transaction-id="${transaction.transaction_id}">
-                    ${truncateText(transaction.justification, 35) || 'Unknown'}
+                    ${renderJustificationWithInvoiceLink(transaction)}
                 </td>
                 <td>
                     <span class="confidence-score ${confidenceClass}">${confidence}</span>

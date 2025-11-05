@@ -174,6 +174,12 @@ class PaymentValidator:
             return errors, warnings
 
         try:
+            # Convert to string if it's a date object from database
+            if not isinstance(payment_date_str, str):
+                payment_date_str = str(payment_date_str)
+            if not isinstance(invoice_date_str, str):
+                invoice_date_str = str(invoice_date_str)
+
             payment_date = date_parser.parse(payment_date_str)
             invoice_date = date_parser.parse(invoice_date_str)
 

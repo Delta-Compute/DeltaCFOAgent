@@ -283,20 +283,17 @@ class PaymentManager:
                 return False, summary['error']
 
             status = summary['status']
-            total_paid = summary['total_paid']
 
             # Update invoice with new status
             update_query = """
                 UPDATE invoices
-                SET payment_status = %s,
-                    amount_paid = %s,
-                    updated_at = CURRENT_TIMESTAMP
+                SET payment_status = %s
                 WHERE id = %s AND tenant_id = %s
             """
 
             self.db_manager.execute_query(
                 update_query,
-                (status, total_paid, invoice_id, tenant_id)
+                (status, invoice_id, tenant_id)
             )
 
             # If fully paid, set payment_date to last payment date
@@ -510,7 +507,7 @@ class PaymentManager:
         try:
             query = """
                 SELECT id, invoice_number, total_amount, payment_status,
-                       amount_paid, payment_date, tenant_id
+                       payment_date, tenant_id
                 FROM invoices
                 WHERE id = %s AND tenant_id = %s
             """

@@ -247,6 +247,7 @@ window.InvoiceAttachments = (function() {
             });
 
             const result = await response.json();
+            console.log('Upload result:', result);
 
             if (result.success) {
                 closeUploadModal();
@@ -257,7 +258,46 @@ window.InvoiceAttachments = (function() {
                     window.loadTabCounts(currentInvoiceId);
                 }
 
-                alert('Attachment uploaded successfully!');
+                // Show matching transaction suggestions if found
+                console.log('Checking for matching_transactions:', result.matching_transactions);
+                if (result.matching_transactions && result.matching_transactions.length > 0) {
+                    console.log('Found', result.matching_transactions.length, 'matching transactions - switching to matches tab');
+
+                    // Show success message with timeout to allow it to be read
+                    const matchCount = result.matching_transactions.length;
+                    setTimeout(() => {
+                        alert(result.message + `\n\nFound ${matchCount} matching transaction(s)!`);
+                    }, 100);
+
+                    // Switch to matches tab after a short delay
+                    setTimeout(() => {
+                        console.log('Switching to Transaction Matches tab...');
+
+                        // Find and click the matches tab button
+                        const tabButtons = document.querySelectorAll('.tab-btn');
+                        console.log('Found', tabButtons.length, 'tab buttons');
+
+                        for (let btn of tabButtons) {
+                            console.log('Tab button text:', btn.textContent.trim());
+                            if (btn.textContent.includes('Transaction Matches')) {
+                                console.log('Clicking Transaction Matches tab');
+                                btn.click();
+
+                                // Force load after tab switch
+                                setTimeout(() => {
+                                    console.log('Forcing InvoiceMatches.load()');
+                                    if (window.InvoiceMatches && window.InvoiceMatches.load) {
+                                        window.InvoiceMatches.load(currentInvoiceId);
+                                    }
+                                }, 200);
+                                break;
+                            }
+                        }
+                    }, 500);
+                } else {
+                    console.log('No matching transactions found, showing alert');
+                    alert(result.message || 'Attachment uploaded successfully!');
+                }
             } else {
                 alert('Upload failed: ' + result.error);
                 submitBtn.textContent = originalText;
@@ -337,6 +377,167 @@ window.InvoiceAttachments = (function() {
     }
 
     /**
+     * Show matching transaction suggestions modal after payment proof upload
+     */
+    function showMatchingSuggestionsModal(uploadResult) {
+        const transactions = uploadResult.matching_transactions;
+        const autoLinked = uploadResult.transaction_auto_linked;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal active';
+        modal.id = 'matching-suggestions-modal';
+
+        let header = '';
+        if (autoLinked) {
+            header = `
+                <div style="background: #d1fae5; color: #047857; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <strong>Transaction Auto-Linked!</strong><br>
+                    A high-confidence match was found and linked automatically.
+                </div>
+            `;
+        } else {
+            header = `
+                <div style="background: #fef3c7; color: #92400e; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+                    <strong>Matching Transactions Found!</strong><br>
+                    We found ${transactions.length} transaction(s) that may match this payment. Please review and select one to link.
+                </div>
+            `;
+        }
+
+        let transactionsHtml = transactions.map(txn => {
+            const isPositive = txn.amount >= 0;
+            const amountColor = isPositive ? '#10b981' : '#ef4444';
+
+            let matchColor = '#94a3b8';
+            let matchBg = '#f1f5f9';
+            let matchLabel = 'Low';
+            if (txn.match_score >= 80) {
+                matchColor = '#10b981';
+                matchBg = '#d1fae5';
+                matchLabel = 'High';
+            } else if (txn.match_score >= 60) {
+                matchColor = '#f59e0b';
+                matchBg = '#fef3c7';
+                matchLabel = 'Medium';
+            }
+
+            const isAutoLinked = txn.auto_linked;
+
+            return `
+                <div style="background: ${isAutoLinked ? '#eff6ff' : 'white'};
+                            border: 2px solid ${isAutoLinked ? '#3b82f6' : '#e2e8f0'};
+                            border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem;
+                            ${isAutoLinked ? '' : 'cursor: pointer;'}
+                            transition: all 0.2s;"
+                     ${isAutoLinked ? '' : `onmouseover="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 2px 8px rgba(59,130,246,0.1)'"
+                     onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'"
+                     onclick="window.InvoiceAttachments.linkTransactionFromSuggestion('${txn.transaction_id}')"`}>
+
+                    ${isAutoLinked ? '<div style="position: absolute; top: 0.5rem; right: 0.5rem; background: #3b82f6; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">AUTO-LINKED</div>' : ''}
+
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 0.25rem;">
+                                ${txn.description}
+                            </div>
+                            <div style="display: flex; gap: 1rem; font-size: 0.875rem; color: #64748b;">
+                                <span>${txn.date}</span>
+                                <span>${txn.entity || 'N/A'}</span>
+                                ${txn.category ? `<span>${txn.category}</span>` : ''}
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 1.125rem; font-weight: 700; color: ${amountColor};">
+                                $${Math.abs(txn.amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                            </div>
+                            <div style="font-size: 0.75rem; margin-top: 0.25rem;">
+                                <span style="background: ${matchBg}; color: ${matchColor};
+                                           padding: 0.125rem 0.5rem; border-radius: 999px; font-weight: 600;">
+                                    ${txn.match_score}% ${matchLabel}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #94a3b8; display: flex; gap: 1rem;">
+                        <span>Amount diff: $${txn.amount_diff}</span>
+                        <span>Date diff: ${txn.date_diff_days} day${txn.date_diff_days !== 1 ? 's' : ''}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 800px;">
+                <div class="modal-header">
+                    <div class="modal-title">Payment Proof Processed</div>
+                    <button class="close-modal" onclick="window.InvoiceAttachments.closeMatchingSuggestionsModal()">&times;</button>
+                </div>
+                <div style="padding: 1.5rem;">
+                    ${header}
+
+                    <div style="margin-bottom: 1rem;">
+                        <h3 style="margin: 0 0 0.75rem 0; font-size: 1rem; color: #475569;">
+                            Matching Transaction${transactions.length > 1 ? 's' : ''}:
+                        </h3>
+                    </div>
+
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        ${transactionsHtml}
+                    </div>
+
+                    <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; text-align: right;">
+                        <button class="btn btn-primary" onclick="window.InvoiceAttachments.closeMatchingSuggestionsModal()">
+                            ${autoLinked ? 'Done' : 'Skip for Now'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+    }
+
+    /**
+     * Link transaction from suggestion
+     */
+    async function linkTransactionFromSuggestion(transactionId) {
+        try {
+            const response = await fetch(`/api/invoices/${currentInvoiceId}/link-transaction`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transaction_id: transactionId })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                closeMatchingSuggestionsModal();
+                alert('Transaction linked successfully!');
+
+                // Refresh invoice list
+                if (window.loadInvoices) {
+                    window.loadInvoices(window.currentPage);
+                }
+            } else {
+                alert('Failed to link transaction: ' + result.error);
+            }
+        } catch (error) {
+            console.error('Error linking transaction:', error);
+            alert('Error linking transaction: ' + error.message);
+        }
+    }
+
+    /**
+     * Close matching suggestions modal
+     */
+    function closeMatchingSuggestionsModal() {
+        const modal = document.getElementById('matching-suggestions-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    /**
      * Show error message
      */
     function showError(message) {
@@ -360,6 +561,8 @@ window.InvoiceAttachments = (function() {
         handleUpload,
         downloadAttachment,
         analyzeAttachment,
-        deleteAttachment
+        deleteAttachment,
+        linkTransactionFromSuggestion,
+        closeMatchingSuggestionsModal
     };
 })();
