@@ -16745,6 +16745,760 @@ def api_update_wallet_displays():
         }), 500
 
 
+# ============================================================================
+# WORKFORCE MANAGEMENT API ENDPOINTS
+# ============================================================================
+
+@app.route('/workforce')
+def workforce_page():
+    """Render the workforce management page"""
+    return render_template('workforce.html', cache_buster=get_cache_buster())
+
+
+@app.route('/api/workforce', methods=['GET'])
+def api_get_workforce():
+    """Get all workforce members with optional filtering"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Get filter parameters
+        employment_type = request.args.get('employment_type')
+        status = request.args.get('status')
+        department = request.args.get('department')
+        keyword = request.args.get('keyword')
+
+        # Pagination
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        offset = (page - 1) * per_page
+
+        # Build query
+        query = "SELECT * FROM workforce_members WHERE tenant_id = %s"
+        params = [tenant_id]
+
+        if employment_type:
+            query += " AND employment_type = %s"
+            params.append(employment_type)
+
+        if status:
+            query += " AND status = %s"
+            params.append(status)
+
+        if department:
+            query += " AND department = %s"
+            params.append(department)
+
+        if keyword:
+            query += " AND (full_name ILIKE %s OR job_title ILIKE %s OR email ILIKE %s)"
+            keyword_param = f"%{keyword}%"
+            params.extend([keyword_param, keyword_param, keyword_param])
+
+        # Count total
+        count_query = f"SELECT COUNT(*) as count FROM ({query}) as subq"
+        count_result = db_manager.execute_query(count_query, tuple(params), fetch_one=True)
+        total = count_result['count'] if count_result else 0
+
+        # Add pagination
+        query += " ORDER BY date_of_hire DESC LIMIT %s OFFSET %s"
+        params.extend([per_page, offset])
+
+        members = db_manager.execute_query(query, tuple(params), fetch_all=True)
+
+        return jsonify({
+            'success': True,
+            'workforce_members': members,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching workforce members: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/workforce', methods=['POST'])
+def api_create_workforce_member():
+    """Create a new workforce member (employee or contractor)"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Validate required fields
+        required = ['full_name', 'employment_type', 'date_of_hire', 'pay_rate', 'pay_frequency']
+        for field in required:
+            if not data.get(field):
+                return jsonify({'success': False, 'error': f'Missing required field: {field}'}), 400
+
+        # Insert into database
+        query = """
+            INSERT INTO workforce_members
+            (tenant_id, full_name, employment_type, document_type, document_number,
+             date_of_hire, status, pay_rate, pay_frequency, currency,
+             email, phone, address, job_title, department, notes, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        params = (
+            tenant_id,
+            data['full_name'],
+            data['employment_type'],
+            data.get('document_type'),
+            data.get('document_number'),
+            data['date_of_hire'],
+            data.get('status', 'active'),
+            data['pay_rate'],
+            data['pay_frequency'],
+            data.get('currency', 'USD'),
+            data.get('email'),
+            data.get('phone'),
+            data.get('address'),
+            data.get('job_title'),
+            data.get('department'),
+            data.get('notes'),
+            session.get('user_id', 'api_user')
+        )
+
+        result = db_manager.execute_query(query, params, fetch_one=True)
+
+        return jsonify({
+            'success': True,
+            'member_id': result['id'],
+            'message': 'Workforce member created successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating workforce member: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/workforce/<member_id>', methods=['GET'])
+def api_get_workforce_member(member_id):
+    """Get a specific workforce member by ID"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        query = "SELECT * FROM workforce_members WHERE id = %s AND tenant_id = %s"
+        member = db_manager.execute_query(query, (member_id, tenant_id), fetch_one=True)
+
+        if not member:
+            return jsonify({'success': False, 'error': 'Member not found'}), 404
+
+        return jsonify({'success': True, 'member': member})
+
+    except Exception as e:
+        logger.error(f"Error fetching workforce member: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/workforce/<member_id>', methods=['PUT'])
+def api_update_workforce_member(member_id):
+    """Update a workforce member"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Build update query dynamically
+        update_fields = []
+        params = []
+
+        allowed_fields = [
+            'full_name', 'employment_type', 'document_type', 'document_number',
+            'date_of_hire', 'termination_date', 'status', 'pay_rate', 'pay_frequency',
+            'currency', 'email', 'phone', 'address', 'job_title', 'department', 'notes'
+        ]
+
+        for field in allowed_fields:
+            if field in data:
+                update_fields.append(f"{field} = %s")
+                params.append(data[field])
+
+        if not update_fields:
+            return jsonify({'success': False, 'error': 'No fields to update'}), 400
+
+        params.extend([member_id, tenant_id])
+
+        query = f"""
+            UPDATE workforce_members
+            SET {', '.join(update_fields)}
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        db_manager.execute_query(query, tuple(params))
+
+        return jsonify({'success': True, 'message': 'Member updated successfully'})
+
+    except Exception as e:
+        logger.error(f"Error updating workforce member: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/workforce/<member_id>', methods=['DELETE'])
+def api_delete_workforce_member(member_id):
+    """Soft delete a workforce member (set status to inactive)"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        query = """
+            UPDATE workforce_members
+            SET status = 'inactive', termination_date = CURRENT_DATE
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        db_manager.execute_query(query, (member_id, tenant_id))
+
+        return jsonify({'success': True, 'message': 'Member deactivated successfully'})
+
+    except Exception as e:
+        logger.error(f"Error deleting workforce member: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# PAYSLIP API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/payslips', methods=['GET'])
+def api_get_payslips():
+    """Get all payslips with optional filtering"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Get filter parameters
+        workforce_member_id = request.args.get('workforce_member_id')
+        status = request.args.get('status')
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        keyword = request.args.get('keyword')
+
+        # Pagination
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        offset = (page - 1) * per_page
+
+        # Build query with JOIN to get employee names
+        query = """
+            SELECT p.*, w.full_name as employee_name, w.employment_type
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.tenant_id = %s
+        """
+        params = [tenant_id]
+
+        if workforce_member_id:
+            query += " AND p.workforce_member_id = %s"
+            params.append(workforce_member_id)
+
+        if status:
+            query += " AND p.status = %s"
+            params.append(status)
+
+        if date_from:
+            query += " AND p.payment_date >= %s"
+            params.append(date_from)
+
+        if date_to:
+            query += " AND p.payment_date <= %s"
+            params.append(date_to)
+
+        if keyword:
+            query += " AND (p.payslip_number ILIKE %s OR w.full_name ILIKE %s)"
+            keyword_param = f"%{keyword}%"
+            params.extend([keyword_param, keyword_param])
+
+        # Count total
+        count_query = f"SELECT COUNT(*) as count FROM ({query}) as subq"
+        count_result = db_manager.execute_query(count_query, tuple(params), fetch_one=True)
+        total = count_result['count'] if count_result else 0
+
+        # Add pagination
+        query += " ORDER BY p.payment_date DESC LIMIT %s OFFSET %s"
+        params.extend([per_page, offset])
+
+        payslips = db_manager.execute_query(query, tuple(params), fetch_all=True)
+
+        return jsonify({
+            'success': True,
+            'payslips': payslips,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching payslips: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips', methods=['POST'])
+def api_create_payslip():
+    """Create a new payslip"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Validate required fields
+        required = ['workforce_member_id', 'payslip_number', 'pay_period_start',
+                   'pay_period_end', 'payment_date', 'gross_amount', 'net_amount']
+        for field in required:
+            if not data.get(field):
+                return jsonify({'success': False, 'error': f'Missing required field: {field}'}), 400
+
+        # Insert into database
+        query = """
+            INSERT INTO payslips
+            (tenant_id, workforce_member_id, payslip_number, pay_period_start, pay_period_end,
+             payment_date, gross_amount, deductions, net_amount, currency, line_items,
+             deductions_items, status, payment_method, notes, internal_notes, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """
+
+        params = (
+            tenant_id,
+            data['workforce_member_id'],
+            data['payslip_number'],
+            data['pay_period_start'],
+            data['pay_period_end'],
+            data['payment_date'],
+            data['gross_amount'],
+            data.get('deductions', 0),
+            data['net_amount'],
+            data.get('currency', 'USD'),
+            json.dumps(data.get('line_items', [])),
+            json.dumps(data.get('deductions_items', [])),
+            data.get('status', 'draft'),
+            data.get('payment_method'),
+            data.get('notes'),
+            data.get('internal_notes'),
+            session.get('user_id', 'api_user')
+        )
+
+        result = db_manager.execute_query(query, params, fetch_one=True)
+
+        return jsonify({
+            'success': True,
+            'payslip_id': result['id'],
+            'message': 'Payslip created successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating payslip: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips/<payslip_id>', methods=['GET'])
+def api_get_payslip(payslip_id):
+    """Get a specific payslip by ID"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        query = """
+            SELECT p.*, w.full_name as employee_name, w.employment_type, w.job_title
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.id = %s AND p.tenant_id = %s
+        """
+        payslip = db_manager.execute_query(query, (payslip_id, tenant_id), fetch_one=True)
+
+        if not payslip:
+            return jsonify({'success': False, 'error': 'Payslip not found'}), 404
+
+        return jsonify({'success': True, 'payslip': payslip})
+
+    except Exception as e:
+        logger.error(f"Error fetching payslip: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips/<payslip_id>', methods=['PUT'])
+def api_update_payslip(payslip_id):
+    """Update a payslip"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        # Build update query dynamically
+        update_fields = []
+        params = []
+
+        allowed_fields = [
+            'pay_period_start', 'pay_period_end', 'payment_date', 'gross_amount',
+            'deductions', 'net_amount', 'currency', 'line_items', 'deductions_items',
+            'status', 'payment_method', 'notes', 'internal_notes'
+        ]
+
+        for field in allowed_fields:
+            if field in data:
+                if field in ['line_items', 'deductions_items']:
+                    update_fields.append(f"{field} = %s")
+                    params.append(json.dumps(data[field]))
+                else:
+                    update_fields.append(f"{field} = %s")
+                    params.append(data[field])
+
+        if not update_fields:
+            return jsonify({'success': False, 'error': 'No fields to update'}), 400
+
+        params.extend([payslip_id, tenant_id])
+
+        query = f"""
+            UPDATE payslips
+            SET {', '.join(update_fields)}
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        db_manager.execute_query(query, tuple(params))
+
+        return jsonify({'success': True, 'message': 'Payslip updated successfully'})
+
+    except Exception as e:
+        logger.error(f"Error updating payslip: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips/<payslip_id>', methods=['DELETE'])
+def api_delete_payslip(payslip_id):
+    """Delete a payslip (only if not paid)"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Check if payslip is paid
+        check_query = "SELECT status FROM payslips WHERE id = %s AND tenant_id = %s"
+        payslip = db_manager.execute_query(check_query, (payslip_id, tenant_id), fetch_one=True)
+
+        if not payslip:
+            return jsonify({'success': False, 'error': 'Payslip not found'}), 404
+
+        if payslip['status'] == 'paid':
+            return jsonify({'success': False, 'error': 'Cannot delete paid payslip'}), 400
+
+        # Delete payslip
+        query = "DELETE FROM payslips WHERE id = %s AND tenant_id = %s"
+        db_manager.execute_query(query, (payslip_id, tenant_id))
+
+        return jsonify({'success': True, 'message': 'Payslip deleted successfully'})
+
+    except Exception as e:
+        logger.error(f"Error deleting payslip: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips/<payslip_id>/mark-paid', methods=['POST'])
+def api_mark_payslip_paid(payslip_id):
+    """Mark a payslip as paid"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json() or {}
+
+        query = """
+            UPDATE payslips
+            SET status = 'paid', approved_by = %s, approved_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        db_manager.execute_query(query, (
+            session.get('user_id', 'api_user'),
+            payslip_id,
+            tenant_id
+        ))
+
+        return jsonify({'success': True, 'message': 'Payslip marked as paid'})
+
+    except Exception as e:
+        logger.error(f"Error marking payslip as paid: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# PAYSLIP-TRANSACTION MATCHING API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/payslips/<payslip_id>/find-matching-transactions', methods=['GET'])
+def api_find_matching_transactions_for_payslip(payslip_id):
+    """Find transactions that could match this payslip based on date and amount"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Get payslip details
+        payslip_query = """
+            SELECT p.*, w.full_name as employee_name
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.id = %s AND p.tenant_id = %s
+        """
+        payslip = db_manager.execute_query(payslip_query, (payslip_id, tenant_id), fetch_one=True)
+
+        if not payslip:
+            return jsonify({'success': False, 'error': 'Payslip not found'}), 404
+
+        # Find matching transactions (negative amounts, within date range)
+        net_amount = float(payslip['net_amount'])
+        payment_date = payslip['payment_date']
+
+        # Search within +/- 30 days
+        transactions_query = """
+            SELECT id as transaction_id, date, description, amount, currency, category, subcategory
+            FROM transactions
+            WHERE tenant_id = %s
+              AND amount < 0
+              AND ABS(amount) BETWEEN %s AND %s
+              AND date BETWEEN %s::date - INTERVAL '30 days' AND %s::date + INTERVAL '30 days'
+            ORDER BY ABS(ABS(amount) - %s) ASC, ABS(EXTRACT(DAY FROM date - %s::date)) ASC
+            LIMIT 20
+        """
+
+        tolerance = net_amount * 0.10  # 10% tolerance
+        params = (
+            tenant_id,
+            net_amount - tolerance,
+            net_amount + tolerance,
+            payment_date,
+            payment_date,
+            net_amount,
+            payment_date
+        )
+
+        transactions = db_manager.execute_query(transactions_query, params, fetch_all=True)
+
+        # Calculate match scores
+        matches = []
+        for txn in transactions:
+            txn_amount = abs(float(txn['amount']))
+            txn_date = txn['date']
+
+            # Amount score
+            amount_diff = abs(net_amount - txn_amount)
+            amount_diff_pct = (amount_diff / net_amount) * 100
+            amount_score = max(0, 100 - amount_diff_pct * 10)
+
+            # Date score
+            date_diff = abs((txn_date - payment_date).days)
+            date_score = max(0, 100 - date_diff * 5)
+
+            # Description score (check for employee name)
+            desc_score = 0
+            if payslip['employee_name'].lower() in txn['description'].lower():
+                desc_score = 100
+
+            # Overall score
+            overall_score = (amount_score * 0.5 + date_score * 0.3 + desc_score * 0.2)
+
+            matches.append({
+                'transaction_id': txn['transaction_id'],
+                'date': str(txn['date']),
+                'description': txn['description'],
+                'amount': float(txn['amount']),
+                'currency': txn['currency'],
+                'category': txn['category'],
+                'subcategory': txn['subcategory'],
+                'match_score': round(overall_score, 1),
+                'amount_diff': round(amount_diff, 2),
+                'date_diff_days': date_diff,
+                'linked': False
+            })
+
+        return jsonify({
+            'success': True,
+            'payslip': payslip,
+            'matching_transactions': matches
+        })
+
+    except Exception as e:
+        logger.error(f"Error finding matching transactions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payslips/<payslip_id>/link-transaction', methods=['POST'])
+def api_link_payslip_to_transaction(payslip_id):
+    """Manually link a payslip to a transaction"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        transaction_id = data.get('transaction_id')
+        match_confidence = data.get('match_confidence', 100)
+
+        if not transaction_id:
+            return jsonify({'success': False, 'error': 'Missing transaction_id'}), 400
+
+        # Update payslip
+        update_query = """
+            UPDATE payslips
+            SET transaction_id = %s, match_confidence = %s, match_method = 'manual'
+            WHERE id = %s AND tenant_id = %s
+        """
+        db_manager.execute_query(update_query, (transaction_id, match_confidence, payslip_id, tenant_id))
+
+        # Log the match
+        log_query = """
+            INSERT INTO payslip_match_log
+            (payslip_id, transaction_id, action, score, match_type, user_id)
+            VALUES (%s, %s, 'manual_link', %s, 'manual', %s)
+        """
+        db_manager.execute_query(log_query, (
+            payslip_id,
+            transaction_id,
+            match_confidence / 100.0,
+            session.get('user_id', 'api_user')
+        ))
+
+        # Enrich transaction with payslip info
+        payslip_query = """
+            SELECT p.*, w.full_name as employee_name
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.id = %s
+        """
+        payslip = db_manager.execute_query(payslip_query, (payslip_id,), fetch_one=True)
+
+        if payslip:
+            # Update transaction classification
+            txn_update_query = """
+                UPDATE transactions
+                SET category = 'Payroll Expense',
+                    subcategory = 'Salary Payment',
+                    justification = %s
+                WHERE id = %s AND tenant_id = %s
+            """
+            justification = f"Payroll payment to {payslip['employee_name']} - Payslip #{payslip['payslip_number']}"
+            db_manager.execute_query(txn_update_query, (justification, transaction_id, tenant_id))
+
+        return jsonify({'success': True, 'message': 'Payslip linked to transaction successfully'})
+
+    except Exception as e:
+        logger.error(f"Error linking payslip to transaction: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payroll/run-matching', methods=['POST'])
+def api_run_payroll_matching():
+    """Run automatic matching for all unmatched payslips"""
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json() or {}
+
+        payslip_ids = data.get('payslip_ids')
+        auto_apply = data.get('auto_apply', False)
+
+        # Run matching
+        from payslip_matcher import run_payslip_matching
+
+        result = run_payslip_matching(payslip_ids, auto_apply, tenant_id)
+
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error running payroll matching: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payroll/matched-pairs', methods=['GET'])
+def api_get_payroll_matched_pairs():
+    """Get all confirmed payslip-transaction matches"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # Pagination
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+        offset = (page - 1) * per_page
+
+        query = """
+            SELECT
+                p.id as payslip_id,
+                p.payslip_number,
+                p.payment_date,
+                p.net_amount,
+                p.transaction_id,
+                w.full_name as employee_name,
+                t.date as transaction_date,
+                t.description as transaction_description,
+                t.amount as transaction_amount,
+                p.match_confidence,
+                p.match_method
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            LEFT JOIN transactions t ON p.transaction_id = t.id
+            WHERE p.tenant_id = %s
+              AND p.transaction_id IS NOT NULL
+            ORDER BY p.payment_date DESC
+            LIMIT %s OFFSET %s
+        """
+
+        matches = db_manager.execute_query(query, (tenant_id, per_page, offset), fetch_all=True)
+
+        # Count total
+        count_query = """
+            SELECT COUNT(*) as count
+            FROM payslips
+            WHERE tenant_id = %s AND transaction_id IS NOT NULL
+        """
+        count_result = db_manager.execute_query(count_query, (tenant_id,), fetch_one=True)
+        total = count_result['count'] if count_result else 0
+
+        return jsonify({
+            'success': True,
+            'matches': matches,
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'pages': (total + per_page - 1) // per_page
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching matched pairs: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/payroll/stats', methods=['GET'])
+def api_get_payroll_stats():
+    """Get payroll matching statistics"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        stats = {}
+
+        # Total payslips
+        total_query = "SELECT COUNT(*) as count FROM payslips WHERE tenant_id = %s"
+        result = db_manager.execute_query(total_query, (tenant_id,), fetch_one=True)
+        stats['total_payslips'] = result['count'] if result else 0
+
+        # Matched payslips
+        matched_query = "SELECT COUNT(*) as count FROM payslips WHERE tenant_id = %s AND transaction_id IS NOT NULL"
+        result = db_manager.execute_query(matched_query, (tenant_id,), fetch_one=True)
+        stats['matched_payslips'] = result['count'] if result else 0
+
+        # Unmatched payslips
+        stats['unmatched_payslips'] = stats['total_payslips'] - stats['matched_payslips']
+
+        # Match rate
+        if stats['total_payslips'] > 0:
+            stats['match_rate'] = round((stats['matched_payslips'] / stats['total_payslips']) * 100, 1)
+        else:
+            stats['match_rate'] = 0
+
+        # Total workforce members
+        members_query = "SELECT COUNT(*) as count FROM workforce_members WHERE tenant_id = %s AND status = 'active'"
+        result = db_manager.execute_query(members_query, (tenant_id,), fetch_one=True)
+        stats['total_active_members'] = result['count'] if result else 0
+
+        return jsonify({'success': True, 'stats': stats})
+
+    except Exception as e:
+        logger.error(f"Error fetching payroll stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
