@@ -2642,10 +2642,20 @@ function createSankeyDiagram() {
     // Clear any existing content
     container.innerHTML = '';
 
-    // Check if D3 and d3-sankey are available
-    if (typeof d3 === 'undefined' || typeof d3.sankey === 'undefined') {
-        console.warn('D3.js or d3-sankey library not available for Sankey diagram');
-        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Sankey diagram requires D3.js and d3-sankey libraries</div>';
+    // Check if Plotly is available, if not wait and retry
+    if (typeof Plotly === 'undefined') {
+        console.warn('Plotly library not loaded yet, waiting...');
+        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Loading Sankey diagram...</div>';
+
+        // Retry after a short delay to allow Plotly to load
+        setTimeout(() => {
+            if (typeof Plotly === 'undefined') {
+                console.error('Plotly library failed to load');
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Sankey diagram requires Plotly.js library. Please refresh the page.</div>';
+            } else {
+                createSankeyDiagram(); // Retry now that Plotly is loaded
+            }
+        }, 500);
         return;
     }
 
@@ -2656,24 +2666,14 @@ function createSankeyDiagram() {
         return;
     }
 
-    // Set dimensions
-    const margin = {top: 10, right: 10, bottom: 10, left: 10};
-    const width = container.clientWidth - margin.left - margin.right;
-    const height = 450 - margin.top - margin.bottom;
-
-    // Create SVG
-    const svg = d3.select(container)
-        .append('svg')
-        .attr('width', width + margin.left + margin.right)
-        .attr('height', height + margin.top + margin.bottom);
-
-    const g = svg.append('g')
-        .attr('transform', `translate(${margin.left},${margin.top})`);
-
     // Prepare data for Sankey diagram
     const totalRevenue = Math.max(plData.total_revenue || 0, 0);
     const totalExpenses = Math.max(plData.total_expenses || 0, 0);
     const netProfit = (plData.total_profit || 0);
+
+    // Get category data from API
+    const revenueCategories = dashboardData.monthlyPL?.summary?.revenue_categories || [];
+    const expenseCategories = dashboardData.monthlyPL?.summary?.expense_categories || [];
 
     // If no significant data, show placeholder
     if (totalRevenue < 1) {
@@ -2681,164 +2681,212 @@ function createSankeyDiagram() {
         return;
     }
 
-    // Create nodes and links for the Sankey diagram
-    const nodes = [
-        // Source: Revenue
-        { id: 0, name: 'Total Revenue' },
+    // Build Plotly Sankey structure
+    const nodeLabels = [];
+    const nodeValues = []; // Store actual values for each node
+    const nodeColors = [];
+    const nodeMap = {};
+    let nodeIndex = 0;
 
-        // Intermediate: Expense categories (simplified)
-        { id: 1, name: 'Operating Expenses' },
-        { id: 2, name: 'Other Costs' },
-
-        // Destination: Net result
-        { id: 3, name: netProfit >= 0 ? 'Net Profit' : 'Net Loss' }
-    ];
-
-    // Calculate flows
-    const operatingExpenseFlow = Math.min(totalExpenses * 0.7, totalRevenue); // 70% of expenses as operating
-    const otherCostFlow = Math.min(totalExpenses * 0.3, totalRevenue - operatingExpenseFlow); // 30% as other costs
-    const remainingRevenue = Math.max(totalRevenue - operatingExpenseFlow - otherCostFlow, 0);
-
-    const links = [
-        // Revenue flows to expenses and profit/loss
-        { source: 0, target: 1, value: operatingExpenseFlow },
-        { source: 0, target: 2, value: otherCostFlow },
-        { source: 0, target: 3, value: remainingRevenue }
-    ].filter(link => link.value > 0); // Only include links with positive values
-
-    // Create Sankey generator
-    const sankey = d3.sankey()
-        .nodeWidth(15)
-        .nodePadding(20)
-        .size([width, height]);
-
-    // Generate the Sankey layout
-    const sankeyData = sankey({
-        nodes: nodes.map(d => Object.assign({}, d)),
-        links: links.map(d => Object.assign({}, d))
+    // Level 0: Revenue categories (only show categories > 2% of revenue)
+    const significantRevenueCategories = revenueCategories.filter(cat => {
+        return cat.amount > totalRevenue * 0.02 &&
+               cat.category &&
+               cat.category.trim().length > 0;
     });
 
-    // Color scale for different flow types
-    const color = d3.scaleOrdinal()
-        .domain(['revenue', 'expense', 'profit', 'loss'])
-        .range(['#48bb78', '#f56565', '#4299e1', '#f59e0b']);
+    // Add significant revenue category nodes (green)
+    significantRevenueCategories.forEach(cat => {
+        nodeLabels.push(`${cat.category}<br>${formatCurrency(cat.amount)}`);
+        nodeValues.push(cat.amount);
+        nodeColors.push('#86efac'); // Light green
+        nodeMap[`revenue_${cat.category}`] = nodeIndex++;
+    });
 
-    // Function to get color for links
-    const getLinkColor = (link) => {
-        if (link.target.name.includes('Profit')) return color('profit');
-        if (link.target.name.includes('Loss')) return color('loss');
-        if (link.target.name.includes('Expenses') || link.target.name.includes('Cost')) return color('expense');
-        return color('revenue');
+    // Add "Other Revenue" node if needed (green)
+    const otherRevenueAmount = totalRevenue - significantRevenueCategories.reduce((sum, cat) => sum + cat.amount, 0);
+    if (otherRevenueAmount > totalRevenue * 0.01) {
+        nodeLabels.push(`Other Revenue<br>${formatCurrency(otherRevenueAmount)}`);
+        nodeValues.push(otherRevenueAmount);
+        nodeColors.push('#86efac'); // Light green
+        nodeMap['other_revenue'] = nodeIndex++;
+    }
+
+    // Level 1: Total Revenue aggregation node (gray)
+    nodeLabels.push(`Total Revenue<br>${formatCurrency(totalRevenue)}`);
+    nodeValues.push(totalRevenue);
+    nodeColors.push('#d1d5db'); // Gray
+    nodeMap['total_revenue'] = nodeIndex++;
+
+    // Level 2: Top expense subcategories (only show > 1% of expenses, pink/red)
+    const expenseNodesList = [];
+    expenseCategories.slice(0, 3).forEach(cat => {
+        const topSubcategories = cat.subcategories
+            .filter(subcat => {
+                return subcat.amount > totalExpenses * 0.01 &&
+                       subcat.name &&
+                       subcat.name.length < 100;
+            })
+            .slice(0, 5);
+
+        topSubcategories.forEach(subcat => {
+            const nodeName = `${cat.category}: ${subcat.name}<br>${formatCurrency(subcat.amount)}`;
+            nodeLabels.push(nodeName);
+            nodeValues.push(subcat.amount);
+            nodeColors.push('#fca5a5'); // Light pink/red
+            expenseNodesList.push({
+                index: nodeIndex,
+                category: cat.category,
+                subcategory: subcat.name,
+                amount: subcat.amount
+            });
+            nodeMap[`expense_${cat.category}_${subcat.name}`] = nodeIndex++;
+        });
+
+        // Add "Other" node for remaining subcategories
+        const otherSubcatsAmount = cat.total - topSubcategories.reduce((sum, sub) => sum + sub.amount, 0);
+        if (otherSubcatsAmount > totalExpenses * 0.01) {
+            const nodeName = `${cat.category}: Other<br>${formatCurrency(otherSubcatsAmount)}`;
+            nodeLabels.push(nodeName);
+            nodeValues.push(otherSubcatsAmount);
+            nodeColors.push('#fca5a5'); // Light pink/red
+            expenseNodesList.push({
+                index: nodeIndex,
+                category: cat.category,
+                subcategory: 'Other',
+                amount: otherSubcatsAmount
+            });
+            nodeMap[`expense_${cat.category}_Other`] = nodeIndex++;
+        }
+    });
+
+    // Level 3: Net Profit node (only if positive, dark green)
+    if (netProfit > 0) {
+        nodeLabels.push(`Net Profit<br>${formatCurrency(netProfit)}`);
+        nodeValues.push(netProfit);
+        nodeColors.push('#22c55e'); // Dark green
+        nodeMap['net_profit'] = nodeIndex++;
+    }
+
+    // Build links array
+    const linkSources = [];
+    const linkTargets = [];
+    const linkValues = [];
+    const linkColors = [];
+
+    // Links from revenue categories to Total Revenue
+    significantRevenueCategories.forEach(cat => {
+        linkSources.push(nodeMap[`revenue_${cat.category}`]);
+        linkTargets.push(nodeMap['total_revenue']);
+        linkValues.push(cat.amount);
+        linkColors.push('rgba(134, 239, 172, 0.4)'); // Light green with transparency
+    });
+
+    // Link from Other Revenue to Total Revenue
+    if (otherRevenueAmount > totalRevenue * 0.01) {
+        linkSources.push(nodeMap['other_revenue']);
+        linkTargets.push(nodeMap['total_revenue']);
+        linkValues.push(otherRevenueAmount);
+        linkColors.push('rgba(134, 239, 172, 0.4)'); // Light green with transparency
+    }
+
+    // Links from Total Revenue to expense categories
+    expenseNodesList.forEach(expense => {
+        linkSources.push(nodeMap['total_revenue']);
+        linkTargets.push(expense.index);
+        linkValues.push(expense.amount);
+        linkColors.push('rgba(252, 165, 165, 0.4)'); // Light pink with transparency
+    });
+
+    // Link from Total Revenue to Net Profit (if positive)
+    if (netProfit > 0) {
+        linkSources.push(nodeMap['total_revenue']);
+        linkTargets.push(nodeMap['net_profit']);
+        linkValues.push(netProfit);
+        linkColors.push('rgba(34, 197, 94, 0.4)'); // Dark green with transparency
+    }
+
+    // Create Plotly Sankey trace
+    const data = [{
+        type: "sankey",
+        orientation: "h",
+        node: {
+            pad: 15,
+            thickness: 20,
+            line: {
+                color: "white",
+                width: 2
+            },
+            label: nodeLabels,
+            color: nodeColors,
+            customdata: nodeValues.map(val => formatCurrency(val)),
+            hovertemplate: '<b>%{label}</b><extra></extra>'
+        },
+        link: {
+            source: linkSources,
+            target: linkTargets,
+            value: linkValues,
+            color: linkColors,
+            customdata: linkSources.map((src, i) => {
+                return {
+                    from: nodeLabels[src],
+                    to: nodeLabels[linkTargets[i]],
+                    value: formatCurrency(linkValues[i])
+                };
+            }),
+            hovertemplate: '<b>%{customdata.from}</b> → <b>%{customdata.to}</b><br>Flow: %{customdata.value}<extra></extra>'
+        }
+    }];
+
+    // Layout configuration
+    const layout = {
+        title: {
+            text: 'Financial Flow',
+            font: {
+                family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                size: 18,
+                color: '#1f2937'
+            }
+        },
+        font: {
+            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            size: 12,
+            color: '#4a5568'
+        },
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        margin: {
+            l: 10,
+            r: 10,
+            t: 50,
+            b: 10
+        },
+        height: 500
     };
 
-    // Draw links
-    g.selectAll('.link')
-        .data(sankeyData.links)
-        .enter().append('path')
-        .attr('class', 'link')
-        .attr('d', d3.sankeyLinkHorizontal())
-        .attr('stroke', d => getLinkColor(d))
-        .attr('stroke-width', d => Math.max(1, d.width))
-        .attr('fill', 'none')
-        .attr('opacity', 0.7)
-        .on('mouseover', function(event, d) {
-            // Show tooltip on hover
-            d3.select(this).attr('opacity', 0.9);
+    // Configuration
+    const config = {
+        displayModeBar: false,
+        responsive: true
+    };
 
-            // Create or update tooltip
-            let tooltip = d3.select('body').select('.sankey-tooltip');
-            if (tooltip.empty()) {
-                tooltip = d3.select('body').append('div')
-                    .attr('class', 'sankey-tooltip')
-                    .style('position', 'absolute')
-                    .style('background', 'rgba(0, 0, 0, 0.8)')
-                    .style('color', 'white')
-                    .style('padding', '8px 12px')
-                    .style('border-radius', '4px')
-                    .style('font-size', '12px')
-                    .style('pointer-events', 'none')
-                    .style('opacity', 0)
-                    .style('z-index', 1000);
-            }
+    // Render the Sankey diagram
+    Plotly.newPlot(container, data, layout, config);
 
-            tooltip.html(`
-                <strong>${d.source.name}</strong> → <strong>${d.target.name}</strong><br/>
-                Flow: ${formatCurrency(d.value)}
-            `)
-                .style('left', (event.pageX + 10) + 'px')
-                .style('top', (event.pageY - 10) + 'px')
-                .transition()
-                .duration(200)
-                .style('opacity', 1);
-        })
-        .on('mouseout', function(event, d) {
-            d3.select(this).attr('opacity', 0.7);
-            d3.select('.sankey-tooltip').transition().duration(200).style('opacity', 0);
-        });
-
-    // Draw nodes
-    const nodeGroup = g.selectAll('.node')
-        .data(sankeyData.nodes)
-        .enter().append('g')
-        .attr('class', 'node');
-
-    nodeGroup.append('rect')
-        .attr('x', d => d.x0)
-        .attr('y', d => d.y0)
-        .attr('height', d => d.y1 - d.y0)
-        .attr('width', d => d.x1 - d.x0)
-        .attr('fill', d => {
-            if (d.name.includes('Revenue')) return color('revenue');
-            if (d.name.includes('Profit')) return color('profit');
-            if (d.name.includes('Loss')) return color('loss');
-            return color('expense');
-        })
-        .attr('opacity', 0.8)
-        .on('mouseover', function(event, d) {
-            d3.select(this).attr('opacity', 1);
-        })
-        .on('mouseout', function(event, d) {
-            d3.select(this).attr('opacity', 0.8);
-        });
-
-    // Add node labels
-    nodeGroup.append('text')
-        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
-        .attr('y', d => (d.y1 + d.y0) / 2)
-        .attr('dy', '0.35em')
-        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-        .text(d => d.name)
-        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
-        .style('font-size', '12px')
-        .style('fill', '#4a5568')
-        .style('font-weight', 'bold');
-
-    // Add value labels on nodes
-    nodeGroup.append('text')
-        .attr('x', d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
-        .attr('y', d => (d.y1 + d.y0) / 2 + 14)
-        .attr('text-anchor', d => d.x0 < width / 2 ? 'start' : 'end')
-        .text(d => {
-            // Calculate total value for the node
-            let value = 0;
-            if (d.name === 'Total Revenue') value = totalRevenue;
-            else if (d.name.includes('Profit') || d.name.includes('Loss')) value = Math.abs(netProfit);
-            else {
-                // Sum up the incoming flows for expense nodes
-                value = sankeyData.links.filter(link => link.target === d).reduce((sum, link) => sum + link.value, 0);
-            }
-            return formatCurrency(value);
-        })
-        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif')
-        .style('font-size', '10px')
-        .style('fill', '#666')
-        .style('font-weight', 'normal');
-
-    console.log('Sankey diagram created successfully with data:', {
+    console.log('Plotly Sankey diagram created successfully with data:', {
         totalRevenue,
         totalExpenses,
         netProfit,
-        nodes: sankeyData.nodes.length,
-        links: sankeyData.links.length
+        revenueCategories: revenueCategories.length,
+        expenseCategories: expenseCategories.length,
+        significantRevenueCategories: significantRevenueCategories.length,
+        nodes: nodeLabels.length,
+        links: linkSources.length,
+        nodeLabels,
+        linkFlows: linkSources.map((src, i) => ({
+            from: nodeLabels[src],
+            to: nodeLabels[linkTargets[i]],
+            value: linkValues[i]
+        }))
     });
 }
