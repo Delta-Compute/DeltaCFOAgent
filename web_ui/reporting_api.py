@@ -2623,18 +2623,15 @@ def register_reporting_routes(app):
                 # Get current tenant for date range query
                 temp_tenant_id = get_current_tenant_id()
 
-                # Use all available data - find min/max dates
+                # Use all available data - find min/max dates from transactions only
                 date_range_query = """
                     SELECT
                         MIN(date::date) as min_date,
                         MAX(date::date) as max_date
-                    FROM (
-                        SELECT date::date as date FROM transactions WHERE tenant_id = %s AND date IS NOT NULL
-                        UNION ALL
-                        SELECT date::date as date FROM invoices WHERE tenant_id = %s AND date IS NOT NULL
-                    ) combined_dates
+                    FROM transactions
+                    WHERE tenant_id = %s AND date IS NOT NULL
                 """
-                date_range_result = db_manager.execute_query(date_range_query, (temp_tenant_id, temp_tenant_id), fetch_one=True)
+                date_range_result = db_manager.execute_query(date_range_query, (temp_tenant_id,), fetch_one=True)
                 if date_range_result and date_range_result.get('min_date'):
                     start_date = date_range_result['min_date']
                     end_date = date_range_result['max_date'] or date.today()
@@ -2661,55 +2658,46 @@ def register_reporting_routes(app):
             elif is_internal_param == 'false':
                 internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
 
-            # Consolidated query combining transactions + invoices - with NaN filtering
+            # FIXED: Use ONLY transactions table (no invoice UNION to avoid double counting)
+            # Transactions represent actual cash flow, invoices are just documentation
             monthly_pl_query = f"""
-                WITH combined_data AS (
-                    -- Transactions data (can be revenue or expenses)
-                    SELECT
-                        date::date as transaction_date,
-                        CASE WHEN amount > 0 THEN amount ELSE 0 END as revenue,
-                        CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END as expenses,
-                        'transaction' as source_type
-                    FROM transactions
-                    WHERE tenant_id = %s
-                        AND date::date >= %s AND date::date <= %s
-                        AND amount::text != 'NaN' AND amount IS NOT NULL
-                        {internal_filter}
-
-                    UNION ALL
-
-                    -- Invoices data (always revenue) - use USD equivalent when available
-                    SELECT
-                        date::date as transaction_date,
-                        CASE
-                            WHEN usd_equivalent_amount IS NOT NULL AND usd_equivalent_amount > 0
-                            THEN usd_equivalent_amount
-                            WHEN currency = 'USD' AND total_amount::text ~ '^[0-9]+\.?[0-9]*$'
-                            THEN total_amount::float
-                            ELSE 0
-                        END as revenue,
-                        0 as expenses,
-                        'invoice' as source_type
-                    FROM invoices
-                    WHERE tenant_id = %s
-                        AND date::date >= %s AND date::date <= %s
-                        AND total_amount IS NOT NULL
-                        AND total_amount::text != 'NaN'
-                        AND total_amount::text != ''
-                )
                 SELECT
-                    EXTRACT(YEAR FROM transaction_date) as year,
-                    EXTRACT(MONTH FROM transaction_date) as month_number,
-                    SUM(revenue) as total_revenue,
-                    SUM(expenses) as total_expenses,
-                    SUM(revenue) - SUM(expenses) as net_profit,
+                    EXTRACT(YEAR FROM date::date) as year,
+                    EXTRACT(MONTH FROM date::date) as month_number,
+                    SUM(CASE WHEN amount > 0 THEN
+                        CASE
+                            WHEN usd_equivalent IS NOT NULL AND usd_equivalent::text != 'NaN'
+                            THEN usd_equivalent
+                            ELSE amount
+                        END
+                    ELSE 0 END) as total_revenue,
+                    SUM(CASE WHEN amount < 0 THEN ABS(
+                        CASE
+                            WHEN usd_equivalent IS NOT NULL AND usd_equivalent::text != 'NaN'
+                            THEN usd_equivalent
+                            ELSE amount
+                        END
+                    ) ELSE 0 END) as total_expenses,
+                    SUM(
+                        CASE
+                            WHEN usd_equivalent IS NOT NULL AND usd_equivalent::text != 'NaN'
+                            THEN usd_equivalent
+                            ELSE amount
+                        END
+                    ) as net_profit,
                     COUNT(*) as transaction_count
-                FROM combined_data
-                GROUP BY EXTRACT(YEAR FROM transaction_date), EXTRACT(MONTH FROM transaction_date)
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount IS NOT NULL
+                    AND amount::text != 'NaN'
+                    AND date IS NOT NULL
+                    {internal_filter}
+                GROUP BY EXTRACT(YEAR FROM date::date), EXTRACT(MONTH FROM date::date)
                 ORDER BY year, month_number
             """
 
-            monthly_data = db_manager.execute_query(monthly_pl_query, (tenant_id, start_date, end_date, tenant_id, start_date, end_date), fetch_all=True)
+            monthly_data = db_manager.execute_query(monthly_pl_query, (tenant_id, start_date, end_date), fetch_all=True)
 
             # Process monthly data - simplified
             monthly_pl = []
@@ -2752,6 +2740,105 @@ def register_reporting_routes(app):
                         logger.warning(f"Error processing monthly row: {row_error}")
                         continue
 
+            # Get revenue breakdown by category for Sankey diagram
+            revenue_category_query = f"""
+                SELECT
+                    COALESCE(accounting_category, classified_entity, 'Other Revenue') as category,
+                    SUM(
+                        CASE
+                            WHEN usd_equivalent IS NOT NULL AND usd_equivalent::text != 'NaN'
+                            THEN usd_equivalent
+                            ELSE amount
+                        END
+                    ) as total
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount > 0
+                    AND amount IS NOT NULL
+                    AND amount::text != 'NaN'
+                    {internal_filter}
+                GROUP BY COALESCE(accounting_category, classified_entity, 'Other Revenue')
+                HAVING SUM(amount) > 0
+                ORDER BY total DESC
+            """
+
+            revenue_categories = []
+            try:
+                revenue_data = db_manager.execute_query(revenue_category_query, (tenant_id, start_date, end_date), fetch_all=True)
+                if revenue_data:
+                    for row in revenue_data:
+                        category = row.get('category', 'Other Revenue')
+                        amount = float(row.get('total', 0) or 0)
+                        if amount > 0:
+                            revenue_categories.append({
+                                'category': category,
+                                'amount': round(amount, 2)
+                            })
+            except Exception as e:
+                logger.warning(f"Error fetching revenue categories: {e}")
+
+            # Get expense breakdown by category and subcategory for Sankey diagram
+            expense_category_query = f"""
+                SELECT
+                    COALESCE(accounting_category, 'Operating Expenses') as category,
+                    COALESCE(subcategory, accounting_category, classified_entity, 'Other') as subcategory,
+                    SUM(ABS(
+                        CASE
+                            WHEN usd_equivalent IS NOT NULL AND usd_equivalent::text != 'NaN'
+                            THEN usd_equivalent
+                            ELSE amount
+                        END
+                    )) as total
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount < 0
+                    AND amount IS NOT NULL
+                    AND amount::text != 'NaN'
+                    {internal_filter}
+                GROUP BY COALESCE(accounting_category, 'Operating Expenses'),
+                         COALESCE(subcategory, accounting_category, classified_entity, 'Other')
+                HAVING SUM(amount) < 0
+                ORDER BY category, total DESC
+            """
+
+            expense_categories = []
+            try:
+                expense_data = db_manager.execute_query(expense_category_query, (tenant_id, start_date, end_date), fetch_all=True)
+                if expense_data:
+                    # Group expenses by main category
+                    category_map = {}
+                    for row in expense_data:
+                        cat = row.get('category', 'Operating Expenses')
+                        subcat = row.get('subcategory', 'Other')
+                        amount = float(row.get('total', 0) or 0)
+
+                        if cat not in category_map:
+                            category_map[cat] = {
+                                'category': cat,
+                                'subcategories': [],
+                                'total': 0
+                            }
+
+                        category_map[cat]['subcategories'].append({
+                            'name': subcat,
+                            'amount': round(amount, 2)
+                        })
+                        category_map[cat]['total'] += amount
+
+                    # Convert to list and sort by total
+                    expense_categories = sorted(
+                        [{'category': v['category'],
+                          'subcategories': v['subcategories'],
+                          'total': round(v['total'], 2)}
+                         for v in category_map.values()],
+                        key=lambda x: x['total'],
+                        reverse=True
+                    )
+            except Exception as e:
+                logger.warning(f"Error fetching expense categories: {e}")
+
             # Calculate generation time
             end_time = datetime.now()
             generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -2765,7 +2852,9 @@ def register_reporting_routes(app):
                             'total_revenue': round(total_revenue, 2),
                             'total_expenses': round(total_expenses, 2),
                             'total_profit': round(total_profit, 2),
-                        }
+                        },
+                        'revenue_categories': revenue_categories,
+                        'expense_categories': expense_categories
                     },
                     'generated_at': datetime.now().isoformat(),
                     'generation_time_ms': generation_time_ms
