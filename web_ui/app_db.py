@@ -16752,13 +16752,18 @@ def api_update_wallet_displays():
 @app.route('/workforce')
 def workforce_page():
     """Render the workforce management page"""
-    return render_template('workforce.html', cache_buster=get_cache_buster())
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('workforce.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading workforce page: {str(e)}", 500
 
 
 @app.route('/api/workforce', methods=['GET'])
 def api_get_workforce():
     """Get all workforce members with optional filtering"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Get filter parameters
@@ -16804,6 +16809,17 @@ def api_get_workforce():
 
         members = db_manager.execute_query(query, tuple(params), fetch_all=True)
 
+        # Convert date fields to ISO format strings for JSON serialization
+        for member in members:
+            if member.get('date_of_hire'):
+                member['date_of_hire'] = member['date_of_hire'].strftime('%Y-%m-%d') if hasattr(member['date_of_hire'], 'strftime') else str(member['date_of_hire'])
+            if member.get('termination_date'):
+                member['termination_date'] = member['termination_date'].strftime('%Y-%m-%d') if hasattr(member['termination_date'], 'strftime') else str(member['termination_date'])
+            if member.get('created_at'):
+                member['created_at'] = member['created_at'].isoformat() if hasattr(member['created_at'], 'isoformat') else str(member['created_at'])
+            if member.get('updated_at'):
+                member['updated_at'] = member['updated_at'].isoformat() if hasattr(member['updated_at'], 'isoformat') else str(member['updated_at'])
+
         return jsonify({
             'success': True,
             'workforce_members': members,
@@ -16824,6 +16840,7 @@ def api_get_workforce():
 def api_create_workforce_member():
     """Create a new workforce member (employee or contractor)"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
@@ -16880,6 +16897,7 @@ def api_create_workforce_member():
 def api_get_workforce_member(member_id):
     """Get a specific workforce member by ID"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         query = "SELECT * FROM workforce_members WHERE id = %s AND tenant_id = %s"
@@ -16887,6 +16905,16 @@ def api_get_workforce_member(member_id):
 
         if not member:
             return jsonify({'success': False, 'error': 'Member not found'}), 404
+
+        # Convert date fields to ISO format strings for JSON serialization
+        if member.get('date_of_hire'):
+            member['date_of_hire'] = member['date_of_hire'].strftime('%Y-%m-%d') if hasattr(member['date_of_hire'], 'strftime') else str(member['date_of_hire'])
+        if member.get('termination_date'):
+            member['termination_date'] = member['termination_date'].strftime('%Y-%m-%d') if hasattr(member['termination_date'], 'strftime') else str(member['termination_date'])
+        if member.get('created_at'):
+            member['created_at'] = member['created_at'].isoformat() if hasattr(member['created_at'], 'isoformat') else str(member['created_at'])
+        if member.get('updated_at'):
+            member['updated_at'] = member['updated_at'].isoformat() if hasattr(member['updated_at'], 'isoformat') else str(member['updated_at'])
 
         return jsonify({'success': True, 'member': member})
 
@@ -16899,6 +16927,7 @@ def api_get_workforce_member(member_id):
 def api_update_workforce_member(member_id):
     """Update a workforce member"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
@@ -16941,6 +16970,7 @@ def api_update_workforce_member(member_id):
 def api_delete_workforce_member(member_id):
     """Soft delete a workforce member (set status to inactive)"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         query = """
@@ -16966,6 +16996,7 @@ def api_delete_workforce_member(member_id):
 def api_get_payslips():
     """Get all payslips with optional filtering"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Get filter parameters
@@ -17021,6 +17052,25 @@ def api_get_payslips():
 
         payslips = db_manager.execute_query(query, tuple(params), fetch_all=True)
 
+        # Convert date fields to ISO format strings for JSON serialization
+        for payslip in payslips:
+            if payslip.get('pay_period_start'):
+                payslip['pay_period_start'] = payslip['pay_period_start'].strftime('%Y-%m-%d') if hasattr(payslip['pay_period_start'], 'strftime') else str(payslip['pay_period_start'])
+            if payslip.get('pay_period_end'):
+                payslip['pay_period_end'] = payslip['pay_period_end'].strftime('%Y-%m-%d') if hasattr(payslip['pay_period_end'], 'strftime') else str(payslip['pay_period_end'])
+            if payslip.get('payment_date'):
+                payslip['payment_date'] = payslip['payment_date'].strftime('%Y-%m-%d') if hasattr(payslip['payment_date'], 'strftime') else str(payslip['payment_date'])
+            if payslip.get('created_at'):
+                payslip['created_at'] = payslip['created_at'].isoformat() if hasattr(payslip['created_at'], 'isoformat') else str(payslip['created_at'])
+            if payslip.get('updated_at'):
+                payslip['updated_at'] = payslip['updated_at'].isoformat() if hasattr(payslip['updated_at'], 'isoformat') else str(payslip['updated_at'])
+            if payslip.get('approved_at'):
+                payslip['approved_at'] = payslip['approved_at'].isoformat() if hasattr(payslip['approved_at'], 'isoformat') else str(payslip['approved_at'])
+            if payslip.get('sent_to_employee_at'):
+                payslip['sent_to_employee_at'] = payslip['sent_to_employee_at'].isoformat() if hasattr(payslip['sent_to_employee_at'], 'isoformat') else str(payslip['sent_to_employee_at'])
+            if payslip.get('employee_viewed_at'):
+                payslip['employee_viewed_at'] = payslip['employee_viewed_at'].isoformat() if hasattr(payslip['employee_viewed_at'], 'isoformat') else str(payslip['employee_viewed_at'])
+
         return jsonify({
             'success': True,
             'payslips': payslips,
@@ -17041,6 +17091,7 @@ def api_get_payslips():
 def api_create_payslip():
     """Create a new payslip"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
@@ -17098,6 +17149,7 @@ def api_create_payslip():
 def api_get_payslip(payslip_id):
     """Get a specific payslip by ID"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         query = """
@@ -17111,6 +17163,24 @@ def api_get_payslip(payslip_id):
         if not payslip:
             return jsonify({'success': False, 'error': 'Payslip not found'}), 404
 
+        # Convert date fields to ISO format strings for JSON serialization
+        if payslip.get('pay_period_start'):
+            payslip['pay_period_start'] = payslip['pay_period_start'].strftime('%Y-%m-%d') if hasattr(payslip['pay_period_start'], 'strftime') else str(payslip['pay_period_start'])
+        if payslip.get('pay_period_end'):
+            payslip['pay_period_end'] = payslip['pay_period_end'].strftime('%Y-%m-%d') if hasattr(payslip['pay_period_end'], 'strftime') else str(payslip['pay_period_end'])
+        if payslip.get('payment_date'):
+            payslip['payment_date'] = payslip['payment_date'].strftime('%Y-%m-%d') if hasattr(payslip['payment_date'], 'strftime') else str(payslip['payment_date'])
+        if payslip.get('created_at'):
+            payslip['created_at'] = payslip['created_at'].isoformat() if hasattr(payslip['created_at'], 'isoformat') else str(payslip['created_at'])
+        if payslip.get('updated_at'):
+            payslip['updated_at'] = payslip['updated_at'].isoformat() if hasattr(payslip['updated_at'], 'isoformat') else str(payslip['updated_at'])
+        if payslip.get('approved_at'):
+            payslip['approved_at'] = payslip['approved_at'].isoformat() if hasattr(payslip['approved_at'], 'isoformat') else str(payslip['approved_at'])
+        if payslip.get('sent_to_employee_at'):
+            payslip['sent_to_employee_at'] = payslip['sent_to_employee_at'].isoformat() if hasattr(payslip['sent_to_employee_at'], 'isoformat') else str(payslip['sent_to_employee_at'])
+        if payslip.get('employee_viewed_at'):
+            payslip['employee_viewed_at'] = payslip['employee_viewed_at'].isoformat() if hasattr(payslip['employee_viewed_at'], 'isoformat') else str(payslip['employee_viewed_at'])
+
         return jsonify({'success': True, 'payslip': payslip})
 
     except Exception as e:
@@ -17122,6 +17192,7 @@ def api_get_payslip(payslip_id):
 def api_update_payslip(payslip_id):
     """Update a payslip"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
@@ -17168,6 +17239,7 @@ def api_update_payslip(payslip_id):
 def api_delete_payslip(payslip_id):
     """Delete a payslip (only if not paid)"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Check if payslip is paid
@@ -17195,6 +17267,7 @@ def api_delete_payslip(payslip_id):
 def api_mark_payslip_paid(payslip_id):
     """Mark a payslip as paid"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json() or {}
 
@@ -17225,6 +17298,7 @@ def api_mark_payslip_paid(payslip_id):
 def api_find_matching_transactions_for_payslip(payslip_id):
     """Find transactions that could match this payslip based on date and amount"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Get payslip details
@@ -17320,6 +17394,7 @@ def api_find_matching_transactions_for_payslip(payslip_id):
 def api_link_payslip_to_transaction(payslip_id):
     """Manually link a payslip to a transaction"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
@@ -17382,6 +17457,7 @@ def api_link_payslip_to_transaction(payslip_id):
 def api_run_payroll_matching():
     """Run automatic matching for all unmatched payslips"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
         data = request.get_json() or {}
 
@@ -17404,6 +17480,7 @@ def api_run_payroll_matching():
 def api_get_payroll_matched_pairs():
     """Get all confirmed payslip-transaction matches"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         # Pagination
@@ -17464,6 +17541,7 @@ def api_get_payroll_matched_pairs():
 def api_get_payroll_stats():
     """Get payroll matching statistics"""
     try:
+        from database import db_manager
         tenant_id = get_current_tenant_id()
 
         stats = {}

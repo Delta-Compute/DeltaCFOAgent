@@ -129,7 +129,7 @@ function renderWorkforceMembers(members) {
             </td>
             <td>${escapeHtml(member.job_title || '-')}</td>
             <td>${formatDate(member.date_of_hire)}</td>
-            <td>$${formatNumber(member.pay_rate)} ${member.pay_frequency}</td>
+            <td>${member.currency || 'USD'} ${formatNumber(member.pay_rate)} ${member.pay_frequency}</td>
             <td>
                 <span class="status-badge status-${member.status}">
                     ${member.status.charAt(0).toUpperCase() + member.status.slice(1)}
@@ -286,6 +286,7 @@ async function editMember(memberId) {
             document.getElementById('member-doc-number').value = member.document_number || '';
             document.getElementById('member-hire-date').value = member.date_of_hire;
             document.getElementById('member-pay-rate').value = member.pay_rate;
+            document.getElementById('member-currency').value = member.currency || 'USD';
             document.getElementById('member-pay-frequency').value = member.pay_frequency;
             document.getElementById('member-job-title').value = member.job_title || '';
             document.getElementById('member-department').value = member.department || '';
@@ -338,6 +339,7 @@ document.getElementById('member-form').addEventListener('submit', async function
         document_number: document.getElementById('member-doc-number').value || null,
         date_of_hire: document.getElementById('member-hire-date').value,
         pay_rate: parseFloat(document.getElementById('member-pay-rate').value),
+        currency: document.getElementById('member-currency').value,
         pay_frequency: document.getElementById('member-pay-frequency').value,
         job_title: document.getElementById('member-job-title').value || null,
         department: document.getElementById('member-department').value || null,
