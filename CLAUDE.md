@@ -197,6 +197,91 @@ Business entities and rules are defined in `business_knowledge.md`.
 - Modal forms for add/edit operations
 - Color-coded account types and status indicators
 
+### Workforce Management System
+
+**Overview:**
+Complete payroll management system for employees and contractors with automated transaction matching. Reuses 80-90% of invoice-transaction matching code for efficient implementation.
+
+**Database Tables:**
+- `workforce_members`: Employee and contractor records with compensation details
+  - Full name, employment type (employee/contractor), document info
+  - Date of hire, termination date, status (active/inactive)
+  - Pay rate, pay frequency, currency
+  - Contact information (email, phone, address)
+  - Job title, department, notes
+- `payslips`: Payslip records with payment tracking
+  - Payslip number, pay period dates, payment date
+  - Gross amount, deductions, net amount
+  - Line items (JSONB) for detailed breakdown
+  - Payment status (draft/approved/paid)
+  - Transaction linking for matching
+- `pending_payslip_matches`: Potential transaction matches
+  - Payslip-transaction pairs with scoring
+  - Match type, confidence level, explanation
+  - Status tracking (pending/confirmed/rejected)
+- `payslip_match_log`: Audit trail for matching actions
+  - All match/unmatch operations logged
+  - User ID and timestamp tracking
+
+**Matching Engine (`web_ui/payslip_matcher.py`):**
+- `PayslipMatcher` class adapted from `RevenueInvoiceMatcher`
+- Filters for NEGATIVE transactions (outgoing payments)
+- Matching criteria:
+  - Amount matching with 3% tolerance
+  - Date proximity scoring (payment date ± days)
+  - Employee name detection in transaction descriptions
+  - Payroll keyword recognition (salary, wage, payroll, etc.)
+  - Claude AI semantic matching support
+- Confidence scoring: HIGH (80%+), MEDIUM (55-80%), LOW (<55%)
+- Automatic and manual matching workflows
+
+**API Endpoints:**
+- Workforce Members: `GET/POST/PUT/DELETE /api/workforce`
+- Workforce Member Details: `GET/PUT/DELETE /api/workforce/<id>`
+- Payslips: `GET/POST/PUT/DELETE /api/payslips`
+- Payslip Details: `GET/PUT/DELETE /api/payslips/<id>`
+- Mark Paid: `POST /api/payslips/<id>/mark-paid`
+- Transaction Matching:
+  - `GET /api/payslips/<id>/find-matching-transactions` - Find matches
+  - `POST /api/payslips/<id>/link-transaction` - Manual link
+  - `POST /api/payroll/run-matching` - Run automatic matching
+  - `GET /api/payroll/matched-pairs` - Get confirmed matches
+  - `GET /api/payroll/stats` - Matching statistics
+
+**Frontend:**
+- `/workforce` - Two-tab interface (Workforce Members / Payslips)
+- `web_ui/templates/workforce.html` - Main page template
+- `web_ui/static/js/workforce.js` - Frontend logic and API integration
+- `web_ui/static/js/payslip_matches.js` - Transaction matching UI
+- Features:
+  - Real-time statistics dashboard
+  - Search and pagination
+  - Create/edit/delete operations
+  - Transaction matching modal
+  - Status badges and type indicators
+  - Auto-calculations (gross - deductions = net)
+
+**Transaction Enrichment:**
+When payslip is matched to transaction:
+- Category set to "Payroll Expense"
+- Subcategory set to "Salary Payment"
+- Justification includes: "Payroll payment to [Employee Name] - Payslip #[Number]"
+- Match confidence and method tracked
+
+**Migration:**
+- SQL: `migrations/add_workforce_tables.sql`
+- Python helper: `migrations/apply_workforce_migration.py`
+- Run: `python migrations/apply_workforce_migration.py`
+
+**Key Features:**
+- Full CRUD for employees and contractors
+- Payslip generation with line items and deductions
+- Automated transaction matching (reuses invoice matching logic)
+- Match confirmation/rejection workflows
+- Audit trail for all operations
+- Multi-tenant support with tenant_id filtering
+- PostgreSQL-only implementation
+
 ### Multi-Tenant Architecture
 
 **Tenant Configuration:**
