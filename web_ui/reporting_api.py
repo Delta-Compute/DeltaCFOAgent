@@ -133,6 +133,7 @@ def register_reporting_routes(app):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND amount > 0
+                AND archived = FALSE
                 GROUP BY COALESCE(accounting_category, classified_entity, 'Uncategorized Revenue')
                 ORDER BY total DESC
             """
@@ -159,6 +160,7 @@ def register_reporting_routes(app):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND amount < 0
+                AND archived = FALSE
                 AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%material%%'
                 AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%inventory%%'
                 AND LOWER(COALESCE(accounting_category, '')) NOT LIKE '%%manufacturing%%'
@@ -287,6 +289,7 @@ def register_reporting_routes(app):
                     COUNT(*) as count
                 FROM transactions
                 WHERE tenant_id = %s
+                AND archived = FALSE
                 AND (
                     LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%cash%%' OR
                     LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%asset%%' OR
@@ -326,6 +329,7 @@ def register_reporting_routes(app):
                     SELECT SUM(COALESCE(usd_equivalent, amount, 0)) as total_revenue
                     FROM transactions
                     WHERE tenant_id = %s
+                    AND archived = FALSE
                     AND amount > 0
                 """
                 revenue_result = db_manager.execute_query(revenue_query, (tenant_id,), fetch_one=True)
@@ -354,6 +358,7 @@ def register_reporting_routes(app):
                     COUNT(*) as count
                 FROM transactions
                 WHERE tenant_id = %s
+                AND archived = FALSE
                 AND (
                     LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%payable%%' OR
                     LOWER(COALESCE(accounting_category, classified_entity, '')) LIKE '%%loan%%' OR
@@ -482,6 +487,7 @@ def register_reporting_routes(app):
                     SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as cash_payments
                 FROM transactions
                 WHERE tenant_id = %s
+                AND archived = FALSE
             """
             operating_result = db_manager.execute_query(operating_query, (tenant_id,), fetch_one=True)
 
@@ -587,6 +593,7 @@ def register_reporting_routes(app):
                     SUM(CASE WHEN amount < 0 THEN ABS(COALESCE(usd_equivalent, amount, 0)) ELSE 0 END) as total_expenses
                 FROM transactions
                 WHERE tenant_id = %s
+                AND archived = FALSE
             """
             income_result = db_manager.execute_query(income_query, (tenant_id,), fetch_one=True)
 

@@ -317,9 +317,9 @@ def internal_error(error):
     }), 500
 
 if __name__ == '__main__':
-    print(f"🚀 Starting Delta CFO Analytics Service on port {PORT}")
-    print(f"📊 Database: {analytics.db.db_type} (centralized)")
-    print(f"🔧 Debug mode: {DEBUG}")
+    print(f"Starting Delta CFO Analytics Service on port {PORT}")
+    print(f"Database: {analytics.db.db_type} (centralized)")
+    print(f"Debug mode: {DEBUG}")
 
     app.run(
         host='0.0.0.0',
