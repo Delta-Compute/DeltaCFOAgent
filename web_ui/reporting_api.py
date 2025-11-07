@@ -2982,6 +2982,7 @@ def register_reporting_routes(app):
                 FROM transactions
                 WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount::text != 'NaN' AND amount IS NOT NULL
+                AND archived = FALSE
                 {date_filter}
                 {internal_filter}
                 GROUP BY COALESCE(classified_entity, accounting_category, 'Uncategorized')
@@ -3188,6 +3189,7 @@ def register_reporting_routes(app):
                             COUNT(*) as transactions
                         FROM transactions
                         WHERE COALESCE(classified_entity, accounting_category, 'Uncategorized') = %s
+                        AND archived = FALSE
                         {date_filter}
                         GROUP BY DATE_TRUNC('month', TO_DATE(date, 'MM/DD/YYYY'))
                         ORDER BY month
@@ -3203,6 +3205,7 @@ def register_reporting_routes(app):
                             COUNT(*) as transactions
                         FROM transactions
                         WHERE COALESCE(classified_entity, accounting_category, 'Uncategorized') = ?
+                        AND archived = 0
                         {date_filter}
                         GROUP BY substr(date, 7, 4), substr(date, 1, 2)
                         ORDER BY month
