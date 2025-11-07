@@ -317,59 +317,7 @@
 <body>
     <div class="container">
         <!-- Navigation -->
-        <nav class="top-nav">
-            <div class="nav-brand">
-                <h2>Delta CFO Agent</h2>
-                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
-            </div>
-            <div class="nav-links">
-                <a href="/" class="nav-link active">Home</a>
-                <a href="/dashboard" class="nav-link">Transaction Manager</a>
-                <a href="/revenue" class="nav-link">Revenue Recognition</a>
-                <a href="/reports" class="nav-link">Reports</a>
-                <a href="/invoices" class="nav-link">Invoices</a>
-                <a href="/whitelisted-accounts" class="nav-link">Accounts</a>
-                <a href="/files" class="nav-link">File Manager</a>
-            </div>
-
-            <!-- User Account Menu -->
-            <div id="userAccountMenu" style="margin-left: auto; display: flex; align-items: center; position: relative;">
-                <button id="userMenuButton" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
-                    <span id="userDisplayName">Loading...</span>
-                    <span style="font-size: 0.7rem;">▼</span>
-                </button>
-
-                <div id="userDropdown" style="display: none; position: absolute; top: calc(100% + 0.5rem); right: 0; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 280px; z-index: 1000;">
-                    <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0;">
-                        <div style="font-weight: 600; color: #1e293b;" id="dropdownUserName">User</div>
-                        <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;" id="dropdownUserEmail">email@example.com</div>
-                    </div>
-
-                    <!-- Switch Tenant Section -->
-                    <div id="tenantSwitcherSection" style="padding: 0.75rem 0.5rem; border-bottom: 1px solid #e2e8f0; display: none;">
-                        <div style="padding: 0 0.5rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
-                            Switch Tenant
-                        </div>
-                        <div id="tenantsList"></div>
-                    </div>
-
-                    <div style="padding: 0.5rem;">
-                        <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
-                            Account Settings
-                        </a>
-                        <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
-                            Manage Users
-                        </a>
-                        <button id="createTenantButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #3b82f6; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; font-weight: 600; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">
-                            + Create New Tenant
-                        </button>
-                        <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
-                            Sign Out
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </nav>
+        {% include '_navbar.html' %}
 
         <!-- Hero Section -->
         <section class="hero-business">

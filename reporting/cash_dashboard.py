@@ -100,6 +100,7 @@ class CashDashboard:
                     WHERE tenant_id = %s
                     AND date <= %s
                     AND amount::text != 'NaN' AND amount IS NOT NULL
+                    AND archived = FALSE
                     {entity_filter}
                     {internal_filter}
                     ORDER BY date, amount DESC
@@ -121,6 +122,7 @@ class CashDashboard:
                     WHERE tenant_id = ?
                     AND date <= ?
                     AND amount IS NOT NULL
+                    AND archived = 0
                     {entity_filter}
                     {internal_filter}
                     ORDER BY date, amount DESC

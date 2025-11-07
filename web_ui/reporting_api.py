@@ -2629,7 +2629,7 @@ def register_reporting_routes(app):
                         MIN(date::date) as min_date,
                         MAX(date::date) as max_date
                     FROM transactions
-                    WHERE tenant_id = %s AND date IS NOT NULL
+                    WHERE tenant_id = %s AND date IS NOT NULL AND archived = FALSE
                 """
                 date_range_result = db_manager.execute_query(date_range_query, (temp_tenant_id,), fetch_one=True)
                 if date_range_result and date_range_result.get('min_date'):
@@ -2692,6 +2692,7 @@ def register_reporting_routes(app):
                     AND amount IS NOT NULL
                     AND amount::text != 'NaN'
                     AND date IS NOT NULL
+                    AND archived = FALSE
                     {internal_filter}
                 GROUP BY EXTRACT(YEAR FROM date::date), EXTRACT(MONTH FROM date::date)
                 ORDER BY year, month_number
@@ -2757,6 +2758,7 @@ def register_reporting_routes(app):
                     AND amount > 0
                     AND amount IS NOT NULL
                     AND amount::text != 'NaN'
+                    AND archived = FALSE
                     {internal_filter}
                 GROUP BY COALESCE(accounting_category, classified_entity, 'Other Revenue')
                 HAVING SUM(amount) > 0
@@ -2796,6 +2798,7 @@ def register_reporting_routes(app):
                     AND amount < 0
                     AND amount IS NOT NULL
                     AND amount::text != 'NaN'
+                    AND archived = FALSE
                     {internal_filter}
                 GROUP BY COALESCE(accounting_category, 'Operating Expenses'),
                          COALESCE(subcategory, accounting_category, classified_entity, 'Other')
@@ -3275,9 +3278,12 @@ def register_reporting_routes(app):
             min_amount = float(request.args.get('min_amount', 1000))
             max_categories = int(request.args.get('max_categories', 8))
 
+            # Get current tenant_id
+            tenant_id = get_current_tenant_id()
+
             # Parse dates if provided
             date_filter = ""
-            params = []
+            params = [tenant_id]  # Start with tenant_id
 
             if start_date_str and end_date_str:
                 try:
@@ -3289,13 +3295,13 @@ def register_reporting_routes(app):
                             AND TO_DATE(date, 'MM/DD/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')
                             AND TO_DATE(date, 'MM/DD/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')
                         """
-                        params = [start_date_str, end_date_str]
+                        params.extend([start_date_str, end_date_str])
                     else:
                         date_filter = """
                             AND date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) >= date(?)
                             AND date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) <= date(?)
                         """
-                        params = [start_date_str, end_date_str]
+                        params.extend([start_date_str, end_date_str])
                 except ValueError:
                     return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
@@ -3306,7 +3312,9 @@ def register_reporting_routes(app):
                     SUM(amount) as total_amount,
                     COUNT(*) as transaction_count
                 FROM transactions
-                WHERE amount > 0
+                WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
+                AND amount > 0
+                AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
                 {date_filter}
                 GROUP BY COALESCE(accounting_category, classified_entity, 'Other Revenue')
                 HAVING SUM(amount) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
@@ -3324,7 +3332,9 @@ def register_reporting_routes(app):
                     SUM(ABS(amount)) as total_amount,
                     COUNT(*) as transaction_count
                 FROM transactions
-                WHERE amount < 0
+                WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
+                AND amount < 0
+                AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
                 {date_filter}
                 GROUP BY COALESCE(accounting_category, classified_entity, 'Other Expenses')
                 HAVING SUM(ABS(amount)) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}

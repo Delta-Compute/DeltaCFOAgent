@@ -272,6 +272,10 @@ class FinancialStatementsGenerator:
             start_date_str = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else str(start_date)
             end_date_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else str(end_date)
 
+            # Get current tenant_id
+            from tenant_context import get_current_tenant_id
+            tenant_id = get_current_tenant_id()
+
             # Query all revenue transactions (positive amounts)
             # Use proper date conversion for MM/DD/YYYY format
             query = """
@@ -288,6 +292,8 @@ class FinancialStatementsGenerator:
                 WHERE TO_DATE(date, 'MM/DD/YYYY'::text) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                 AND TO_DATE(date, 'MM/DD/YYYY'::text) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                 AND amount > 0
+                AND archived = FALSE
+                AND tenant_id = %s
                 ORDER BY date, amount DESC
             """ if self.db.db_type == 'postgresql' else """
                 SELECT
@@ -303,10 +309,12 @@ class FinancialStatementsGenerator:
                 WHERE date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) >= date(?)
                 AND date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) <= date(?)
                 AND amount > 0
+                AND archived = 0
+                AND tenant_id = ?
                 ORDER BY date, amount DESC
             """
 
-            transactions = self.db.execute_query(query, (start_date_str, end_date_str), fetch_all=True)
+            transactions = self.db.execute_query(query, (start_date_str, end_date_str, tenant_id), fetch_all=True)
 
             # Categorize revenue
             categories = defaultdict(lambda: {'amount': Decimal('0'), 'count': 0, 'transactions': []})
@@ -359,6 +367,10 @@ class FinancialStatementsGenerator:
             start_date_str = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else str(start_date)
             end_date_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else str(end_date)
 
+            # Get current tenant_id
+            from tenant_context import get_current_tenant_id
+            tenant_id = get_current_tenant_id()
+
             # For now, we'll identify COGS based on specific categories
             # In a full implementation, this would use the chart of accounts mapping
             cogs_keywords = ['material', 'inventory', 'manufacturing', 'production', 'supplier']
@@ -377,6 +389,8 @@ class FinancialStatementsGenerator:
                 WHERE TO_DATE(date, 'MM/DD/YYYY'::text) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                 AND TO_DATE(date, 'MM/DD/YYYY'::text) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                 AND amount < 0
+                AND archived = FALSE
+                AND tenant_id = %s
                 AND (
                     LOWER(accounting_category) LIKE %s OR
                     LOWER(accounting_category) LIKE %s OR
@@ -399,6 +413,8 @@ class FinancialStatementsGenerator:
                 WHERE date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) >= date(?)
                 AND date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) <= date(?)
                 AND amount < 0
+                AND archived = 0
+                AND tenant_id = ?
                 AND (
                     LOWER(accounting_category) LIKE ? OR
                     LOWER(accounting_category) LIKE ? OR
@@ -409,7 +425,7 @@ class FinancialStatementsGenerator:
                 ORDER BY date, amount
             """
 
-            params = [start_date_str, end_date_str] + [f'%{kw}%' for kw in cogs_keywords]
+            params = [start_date_str, end_date_str, tenant_id] + [f'%{kw}%' for kw in cogs_keywords]
             transactions = self.db.execute_query(query, tuple(params), fetch_all=True)
 
             # Categorize COGS
@@ -461,6 +477,10 @@ class FinancialStatementsGenerator:
             start_date_str = start_date.strftime('%Y-%m-%d') if isinstance(start_date, date) else str(start_date)
             end_date_str = end_date.strftime('%Y-%m-%d') if isinstance(end_date, date) else str(end_date)
 
+            # Get current tenant_id
+            from tenant_context import get_current_tenant_id
+            tenant_id = get_current_tenant_id()
+
             # Get all negative transactions that aren't COGS
             cogs_keywords = ['material', 'inventory', 'manufacturing', 'production', 'supplier']
 
@@ -485,6 +505,8 @@ class FinancialStatementsGenerator:
                     WHERE TO_DATE(date, 'MM/DD/YYYY'::text) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                     AND TO_DATE(date, 'MM/DD/YYYY'::text) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
                     AND amount < 0
+                    AND archived = FALSE
+                    AND tenant_id = %s
                     AND ({exclusion_conditions})
                     ORDER BY date, amount
                 """
@@ -503,11 +525,13 @@ class FinancialStatementsGenerator:
                     WHERE date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) >= date(?)
                     AND date(substr(date, 7, 4) || '-' || substr(date, 1, 2) || '-' || substr(date, 4, 2)) <= date(?)
                     AND amount < 0
+                    AND archived = 0
+                    AND tenant_id = ?
                     AND ({exclusion_conditions})
                     ORDER BY date, amount
                 """
 
-            params = [start_date_str, end_date_str] + [f'%{kw}%' for kw in cogs_keywords]
+            params = [start_date_str, end_date_str, tenant_id] + [f'%{kw}%' for kw in cogs_keywords]
             transactions = self.db.execute_query(query, tuple(params), fetch_all=True)
 
             # Categorize operating expenses
