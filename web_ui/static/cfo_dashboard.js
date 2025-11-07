@@ -717,6 +717,9 @@ async function loadDREPreviewData() {
         // Show modal first to ensure it exists
         openDREModal();
 
+        // Get company name from statement data or use default
+        const companyName = data.statement?.company_name || 'Delta CFO Agent';
+
         // Then populate modal with data with small delay to ensure DOM is ready
         setTimeout(() => {
             populateDREModal(data.statement, companyName);
@@ -1154,6 +1157,9 @@ async function loadBalanceSheetPreviewData() {
         // Show modal first to ensure it exists
         openBalanceSheetModal();
 
+        // Get company name from statement data or use default
+        const companyName = data.statement?.company_name || 'Delta CFO Agent';
+
         // Then populate modal with data with small delay to ensure DOM is ready
         setTimeout(() => {
             populateBalanceSheetModal(data.statement, companyName);
@@ -1209,6 +1215,9 @@ async function loadCashFlowPreviewData() {
         // Show modal first to ensure it exists
         openCashFlowModal();
 
+        // Get company name from statement data or use default
+        const companyName = data.statement?.company_name || 'Delta CFO Agent';
+
         // Then populate modal with data with small delay to ensure DOM is ready
         setTimeout(() => {
             populateCashFlowModal(data.statement, companyName);
@@ -1263,6 +1272,9 @@ async function loadDMPLPreviewData() {
 
         // Show modal first to ensure it exists
         openDMPLModal();
+
+        // Get company name from statement data or use default
+        const companyName = data.statement?.company_name || 'Delta CFO Agent';
 
         // Then populate modal with data with small delay to ensure DOM is ready
         setTimeout(() => {
