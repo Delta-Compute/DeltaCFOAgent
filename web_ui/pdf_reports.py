@@ -483,6 +483,7 @@ class DREReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -502,6 +503,7 @@ class DREReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
                 GROUP BY accounting_category, classified_entity
                 ORDER BY revenue DESC, expenses DESC
@@ -855,6 +857,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -866,6 +869,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -877,6 +881,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -906,6 +911,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date < %s
+                AND archived = FALSE
                 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%cash%', '%bank%', '%deposit%'])
                 {entity_filter_condition}
             """
@@ -1200,6 +1206,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date <= %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -1210,6 +1217,7 @@ class BalanceSheetReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date <= %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -1519,6 +1527,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -1530,6 +1539,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -1541,6 +1551,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date BETWEEN %s AND %s
+                AND archived = FALSE
                 {entity_filter_condition}
             """
 
@@ -1570,6 +1581,7 @@ class CashFlowReport(DeltaCFOReportTemplate):
                 FROM transactions
                 WHERE tenant_id = %s
                 AND date::date < %s
+                AND archived = FALSE
                 AND LOWER(COALESCE(description, classified_entity, '')) LIKE ANY(ARRAY['%cash%', '%bank%', '%deposit%'])
                 {entity_filter_condition}
             """
