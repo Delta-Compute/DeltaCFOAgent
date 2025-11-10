@@ -2772,6 +2772,20 @@ function createSankeyDiagram() {
             // Render the Sankey diagram
             Plotly.newPlot(container, data, layout, config);
 
+            // Add click handler for nodes
+            container.on('plotly_click', function(eventData) {
+                if (eventData.points && eventData.points.length > 0) {
+                    const point = eventData.points[0];
+                    const nodeIndex = point.pointNumber;
+                    const node = sankeyData.nodes[nodeIndex];
+
+                    // Only show details for revenue and expense nodes (not hub)
+                    if (node.type === 'revenue' || node.type === 'expense') {
+                        showSankeyTransactions(node.name, node.type, node.value);
+                    }
+                }
+            });
+
             console.log('Sankey diagram created with subcategories (excl. Internal Transfers):', {
                 totalRevenue: summary.total_revenue,
                 totalExpenses: summary.total_expenses,
@@ -2784,4 +2798,140 @@ function createSankeyDiagram() {
             console.error('Error loading Sankey data:', error);
             container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 2rem;">Error loading Sankey diagram. Please try again.</div>';
         });
+}
+
+/**
+ * Show transactions for a specific Sankey node (subcategory)
+ */
+function showSankeyTransactions(subcategory, type, totalAmount) {
+    // Create modal
+    const modal = document.createElement('div');
+    modal.id = 'sankeyTransactionsModal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = 'background: white; border-radius: 12px; padding: 2rem; max-width: 90%; max-height: 90%; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);';
+
+    modalContent.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1.5rem;">
+            <div>
+                <h2 style="margin: 0; font-size: 1.5rem; color: #1e293b;">${subcategory}</h2>
+                <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
+                    <span style="padding: 0.25rem 0.75rem; border-radius: 6px; font-size: 0.85rem; background: ${type === 'revenue' ? '#dcfce7' : '#fee2e2'}; color: ${type === 'revenue' ? '#166534' : '#991b1b'};">
+                        ${type === 'revenue' ? 'Revenue' : 'Expense'}
+                    </span>
+                    <span style="font-size: 1.25rem; font-weight: 600; color: #475569;">
+                        ${formatCurrency(totalAmount)}
+                    </span>
+                </div>
+            </div>
+            <button onclick="document.getElementById('sankeyTransactionsModal').remove()" style="background: transparent; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; padding: 0; line-height: 1;">
+                ×
+            </button>
+        </div>
+        <div id="sankeyTransactionsContent" style="min-height: 200px;">
+            <div style="text-align: center; padding: 3rem; color: #94a3b8;">
+                <div style="font-size: 2rem; margin-bottom: 1rem;">⏳</div>
+                Loading transactions...
+            </div>
+        </div>
+    `;
+
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+
+    // Close modal when clicking outside
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+
+    // Fetch transactions
+    fetch(`/api/reports/sankey-transactions?subcategory=${encodeURIComponent(subcategory)}&type=${type}&limit=100`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success && result.data && result.data.transactions) {
+                displaySankeyTransactions(result.data);
+            } else {
+                document.getElementById('sankeyTransactionsContent').innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: #ef4444;">
+                        Error loading transactions: ${result.error || 'Unknown error'}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching Sankey transactions:', error);
+            document.getElementById('sankeyTransactionsContent').innerHTML = `
+                <div style="text-align: center; padding: 3rem; color: #ef4444;">
+                    Error loading transactions. Please try again.
+                </div>
+            `;
+        });
+}
+
+/**
+ * Display transactions in the modal
+ */
+function displaySankeyTransactions(data) {
+    const transactions = data.transactions;
+    const summary = data.summary;
+
+    if (transactions.length === 0) {
+        document.getElementById('sankeyTransactionsContent').innerHTML = `
+            <div style="text-align: center; padding: 3rem; color: #64748b;">
+                No transactions found for this category.
+            </div>
+        `;
+        return;
+    }
+
+    let html = `
+        <div style="margin-bottom: 1rem; padding: 1rem; background: #f1f5f9; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #475569; font-weight: 500;">Total: ${summary.transaction_count} transaction(s)</span>
+                <span style="font-size: 1.125rem; font-weight: 600; color: #1e293b;">${formatCurrency(summary.total_amount)}</span>
+            </div>
+        </div>
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #475569;">Date</th>
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #475569;">Description</th>
+                        <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #475569;">Entity</th>
+                        <th style="padding: 0.75rem; text-align: right; font-weight: 600; color: #475569;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    transactions.forEach((txn, index) => {
+        const bgColor = index % 2 === 0 ? '#ffffff' : '#f8fafc';
+        const amount = parseFloat(txn.amount);
+        const amountColor = amount >= 0 ? '#059669' : '#dc2626';
+
+        html += `
+            <tr style="background: ${bgColor}; border-bottom: 1px solid #e2e8f0;">
+                <td style="padding: 0.75rem; color: #64748b; font-size: 0.875rem;">${txn.date}</td>
+                <td style="padding: 0.75rem; color: #1e293b; font-size: 0.875rem;">
+                    ${txn.description}
+                    ${txn.justification ? `<br><span style="color: #64748b; font-size: 0.75rem;">${txn.justification}</span>` : ''}
+                </td>
+                <td style="padding: 0.75rem; color: #64748b; font-size: 0.875rem;">${txn.classified_entity || '-'}</td>
+                <td style="padding: 0.75rem; text-align: right; font-weight: 600; color: ${amountColor}; font-size: 0.875rem;">
+                    ${formatCurrency(Math.abs(amount))}
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+    `;
+
+    document.getElementById('sankeyTransactionsContent').innerHTML = html;
 }

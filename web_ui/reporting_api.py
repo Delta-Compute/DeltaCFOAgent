@@ -3475,6 +3475,111 @@ def register_reporting_routes(app):
                 'error': str(e)
             }), 500
 
+    @app.route('/api/reports/sankey-transactions', methods=['GET'])
+    def api_sankey_transactions():
+        """
+        Get transactions for a specific Sankey node (subcategory)
+
+        GET Parameters:
+            - subcategory: The subcategory name to filter by (required)
+            - type: 'revenue' or 'expense' (required)
+            - start_date: Start date for analysis (YYYY-MM-DD) (optional)
+            - end_date: End date for analysis (YYYY-MM-DD) (optional)
+            - limit: Maximum number of transactions (default: 100)
+
+        Returns:
+            JSON with transactions matching the subcategory
+        """
+        try:
+            # Parse parameters
+            subcategory = request.args.get('subcategory')
+            transaction_type = request.args.get('type')  # 'revenue' or 'expense'
+            start_date_str = request.args.get('start_date')
+            end_date_str = request.args.get('end_date')
+            limit = int(request.args.get('limit', 100))
+
+            if not subcategory or not transaction_type:
+                return jsonify({'error': 'subcategory and type parameters are required'}), 400
+
+            # Get current tenant_id
+            tenant_id = get_current_tenant_id()
+
+            # Build date filter
+            date_filter = ""
+            params = [tenant_id, subcategory]
+
+            if start_date_str and end_date_str:
+                try:
+                    start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                    end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+
+                    if db_manager.db_type == 'postgresql':
+                        date_filter = """
+                            AND TO_DATE(date, 'MM/DD/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')
+                            AND TO_DATE(date, 'MM/DD/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')
+                        """
+                        params.extend([start_date_str, end_date_str])
+                except ValueError:
+                    return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+            # Determine amount condition based on type
+            amount_condition = "amount > 0" if transaction_type == 'revenue' else "amount < 0"
+
+            # Query transactions
+            query = f"""
+                SELECT
+                    transaction_id,
+                    date,
+                    description,
+                    amount,
+                    accounting_category,
+                    subcategory,
+                    classified_entity,
+                    origin,
+                    destination,
+                    justification
+                FROM transactions
+                WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
+                AND COALESCE(subcategory, accounting_category, '') = {'%s' if db_manager.db_type == 'postgresql' else '?'}
+                AND {amount_condition}
+                AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
+                {date_filter}
+                ORDER BY date DESC, ABS(amount) DESC
+                LIMIT {'%s' if db_manager.db_type == 'postgresql' else '?'}
+            """
+
+            params.append(limit)
+            transactions = db_manager.execute_query(query, params, fetch_all=True)
+
+            # Calculate summary
+            total_amount = sum(float(t['amount']) for t in transactions)
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'subcategory': subcategory,
+                    'type': transaction_type,
+                    'transactions': transactions,
+                    'summary': {
+                        'total_amount': abs(total_amount),
+                        'transaction_count': len(transactions),
+                        'date_range': {
+                            'start_date': start_date_str,
+                            'end_date': end_date_str
+                        } if start_date_str and end_date_str else None
+                    }
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error fetching Sankey transactions: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
     # ============================================================================
     # CFO Financial Ratios & KPIs Report
     # ============================================================================
