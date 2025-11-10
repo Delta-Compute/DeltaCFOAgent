@@ -8203,22 +8203,23 @@ else:
             print(f" DEBUG: Database sync result: {sync_result}")
 
             if sync_result:
+                # NOTE: Auto-matching disabled for performance - run manually from Revenue page
                 # Auto-trigger revenue matching after successful transaction upload
-                try:
-                    print(f" AUTO-TRIGGER: Starting automatic revenue matching...")
-                    from robust_revenue_matcher import RobustRevenueInvoiceMatcher
-
-                    matcher = RobustRevenueInvoiceMatcher()
-                    matches_result = matcher.run_robust_matching(auto_apply=False)
-
-                    if matches_result and matches_result.get('matches_found', 0) > 0:
-                        print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
-                    else:
-                        print("ℹ AUTO-TRIGGER: No new matches found after transaction upload")
-
-                except Exception as e:
-                    print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
-                    # Don't fail the upload if matching fails
+                # try:
+                #     print(f" AUTO-TRIGGER: Starting automatic revenue matching...")
+                #     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
+                #
+                #     matcher = RobustRevenueInvoiceMatcher()
+                #     matches_result = matcher.run_robust_matching(auto_apply=False)
+                #
+                #     if matches_result and matches_result.get('matches_found', 0) > 0:
+                #         print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
+                #     else:
+                #         print("ℹ AUTO-TRIGGER: No new matches found after transaction upload")
+                #
+                # except Exception as e:
+                #     print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
+                #     # Don't fail the upload if matching fails
 
                 return jsonify({
                     'success': True,
