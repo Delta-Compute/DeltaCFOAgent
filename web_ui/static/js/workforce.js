@@ -127,9 +127,9 @@ function renderWorkforceMembers(members) {
                     ${member.employment_type === 'employee' ? 'Employee' : 'Contractor'}
                 </span>
             </td>
-            <td>${escapeHtml(member.job_title || '-')}</td>
+            <td style="word-wrap: break-word;">${escapeHtml(member.job_title || '-')}</td>
             <td>${formatDate(member.date_of_hire)}</td>
-            <td>${member.currency || 'USD'} ${formatNumber(member.pay_rate)} ${member.pay_frequency}</td>
+            <td>${member.currency || 'USD'} ${formatNumber(member.pay_rate)} / ${member.pay_frequency}</td>
             <td>
                 <span class="status-badge status-${member.status}">
                     ${member.status.charAt(0).toUpperCase() + member.status.slice(1)}
