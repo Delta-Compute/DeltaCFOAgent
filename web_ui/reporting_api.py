@@ -3316,6 +3316,7 @@ def register_reporting_routes(app):
                     return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
             # Get revenue categories (sources)
+            # Exclude all transfer-type categories (Internal, Exchange, Intercompany, Blockchain)
             revenue_query = f"""
                 SELECT
                     COALESCE(subcategory, accounting_category, classified_entity, 'Other Revenue') as category,
@@ -3325,8 +3326,9 @@ def register_reporting_routes(app):
                 WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount > 0
                 AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
-                AND COALESCE(accounting_category, '') != 'Internal Transfer'
-                AND COALESCE(subcategory, '') != 'Internal Transfer'
+                AND COALESCE(accounting_category, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
+                AND COALESCE(subcategory, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
+                AND COALESCE(subcategory, accounting_category, '') != ''
                 {date_filter}
                 GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Revenue')
                 HAVING SUM(amount) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
@@ -3338,6 +3340,7 @@ def register_reporting_routes(app):
             revenue_data = db_manager.execute_query(revenue_query, revenue_params, fetch_all=True)
 
             # Get expense categories (targets)
+            # Exclude all transfer-type categories (Internal, Exchange, Intercompany, Blockchain)
             expense_query = f"""
                 SELECT
                     COALESCE(subcategory, accounting_category, classified_entity, 'Other Expenses') as category,
@@ -3347,8 +3350,9 @@ def register_reporting_routes(app):
                 WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount < 0
                 AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
-                AND COALESCE(accounting_category, '') != 'Internal Transfer'
-                AND COALESCE(subcategory, '') != 'Internal Transfer'
+                AND COALESCE(accounting_category, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
+                AND COALESCE(subcategory, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
+                AND COALESCE(subcategory, accounting_category, '') != ''
                 {date_filter}
                 GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Expenses')
                 HAVING SUM(ABS(amount)) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
