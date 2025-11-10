@@ -1,0 +1,126 @@
+{% extends "_detail_base.html" %}
+
+{% block title %}Payslip {{ payslip_id }}{% endblock %}
+
+{% block record_id %}{{ payslip_id }}{% endblock %}
+{% block record_type %}payslip{% endblock %}
+{% block record_type_plural %}payslips{% endblock %}
+
+{% block breadcrumb %}
+<a href="/workforce" class="breadcrumb-link">Workforce</a>
+<span class="breadcrumb-separator">/</span>
+<span class="breadcrumb-current" id="payslip-number-breadcrumb">Loading...</span>
+{% endblock %}
+
+{% block page_title %}
+    <span id="payslip-title">Payslip Details</span>
+{% endblock %}
+
+{% block page_subtitle %}
+    <span id="payslip-subtitle">Loading payslip information...</span>
+{% endblock %}
+
+{% block header_actions %}
+<div class="header-action-buttons">
+    <button class="btn btn-secondary" id="btn-edit-payslip">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+        </svg>
+        Edit
+    </button>
+    <button class="btn btn-primary" id="btn-mark-paid">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/>
+        </svg>
+        Mark as Paid
+    </button>
+    <button class="btn btn-secondary" id="btn-download-pdf">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        Download
+    </button>
+</div>
+{% endblock %}
+
+{% block status_bar %}
+<div class="status-badge-container">
+    <span class="status-badge" id="payslip-status-badge">Loading...</span>
+    <span class="match-badge" id="payslip-match-badge">Loading...</span>
+</div>
+{% endblock %}
+
+{% block quick_info %}
+<div class="quick-info-grid">
+    <div class="info-item">
+        <span class="info-label">Payslip Number</span>
+        <span class="info-value" id="info-payslip-number">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Employee</span>
+        <span class="info-value" id="info-employee-name">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Net Amount</span>
+        <span class="info-value info-amount" id="info-net-amount">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Pay Period</span>
+        <span class="info-value" id="info-pay-period">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Payment Date</span>
+        <span class="info-value" id="info-payment-date">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Status</span>
+        <span class="info-value" id="info-status">Loading...</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_overview %}
+<div class="detail-card">
+    <h3 class="card-title">Payslip Summary</h3>
+    <div class="payslip-summary" id="payslip-summary">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Earnings & Deductions</h3>
+    <div class="line-items-table" id="line-items-table">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_details %}
+<div class="detail-card">
+    <h3 class="card-title">Employee Information</h3>
+    <div class="employee-info" id="employee-info">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_matches %}
+<div class="detail-card">
+    <h3 class="card-title">Linked Transaction</h3>
+    <div id="linked-transaction-section">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Potential Transaction Matches</h3>
+    <div id="potential-matches-section">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block custom_js %}
+<script src="/static/js/payslip_detail.js?v={{ cache_bust }}"></script>
+{% endblock %}

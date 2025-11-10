@@ -1,0 +1,127 @@
+{% extends "_detail_base.html" %}
+
+{% block title %}Transaction {{ transaction_id }}{% endblock %}
+
+{% block record_id %}{{ transaction_id }}{% endblock %}
+{% block record_type %}transaction{% endblock %}
+{% block record_type_plural %}transactions{% endblock %}
+
+{% block breadcrumb %}
+<a href="/transactions" class="breadcrumb-link">Transactions</a>
+<span class="breadcrumb-separator">/</span>
+<span class="breadcrumb-current" id="transaction-id-breadcrumb">Loading...</span>
+{% endblock %}
+
+{% block page_title %}
+    <span id="transaction-title">Transaction Details</span>
+{% endblock %}
+
+{% block page_subtitle %}
+    <span id="transaction-subtitle">Loading transaction information...</span>
+{% endblock %}
+
+{% block header_actions %}
+<div class="header-action-buttons">
+    <button class="btn btn-secondary" id="btn-edit-transaction">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+        </svg>
+        Edit
+    </button>
+    <button class="btn btn-secondary" id="btn-export-transaction">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        Export
+    </button>
+</div>
+{% endblock %}
+
+{% block status_bar %}
+<div class="status-badge-container">
+    <span class="status-badge" id="transaction-status-badge">Loading...</span>
+    <span class="match-badge" id="transaction-match-badge">Loading...</span>
+</div>
+{% endblock %}
+
+{% block quick_info %}
+<div class="quick-info-grid">
+    <div class="info-item">
+        <span class="info-label">Date</span>
+        <span class="info-value" id="info-transaction-date">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Amount</span>
+        <span class="info-value info-amount" id="info-amount">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Category</span>
+        <span class="info-value" id="info-category">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Origin</span>
+        <span class="info-value" id="info-origin">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Destination</span>
+        <span class="info-value" id="info-destination">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Business Unit</span>
+        <span class="info-value" id="info-business-unit">Loading...</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_overview %}
+<div class="detail-card">
+    <h3 class="card-title">Transaction Details</h3>
+    <div class="transaction-details" id="transaction-details">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Classification</h3>
+    <div class="classification-details" id="classification-details">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_details %}
+<div class="detail-card">
+    <h3 class="card-title">Additional Information</h3>
+    <div class="additional-info" id="additional-info">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_matches %}
+<div class="detail-card">
+    <h3 class="card-title">Linked Invoice</h3>
+    <div id="linked-invoice-section">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Linked Payslip</h3>
+    <div id="linked-payslip-section">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Potential Matches</h3>
+    <div id="potential-matches-section">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block custom_js %}
+<script src="/static/js/transaction_detail.js?v={{ cache_bust }}"></script>
+{% endblock %}

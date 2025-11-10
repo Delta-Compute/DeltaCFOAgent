@@ -4468,6 +4468,253 @@ def api_transactions_export():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/transactions/<transaction_id>/details')
+def api_get_transaction_details(transaction_id):
+    """Get comprehensive transaction details with related records"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        from services.activity_logger import ActivityLogger
+
+        # Get transaction data
+        transaction_row = db_manager.execute_query(
+            "SELECT * FROM transactions WHERE tenant_id = %s AND id = %s",
+            (tenant_id, transaction_id),
+            fetch_one=True
+        )
+
+        if not transaction_row:
+            return jsonify({'success': False, 'error': 'Transaction not found'}), 404
+
+        transaction = dict(transaction_row)
+
+        # Format date field
+        if transaction.get('date'):
+            transaction['date'] = transaction['date'].isoformat() if hasattr(transaction['date'], 'isoformat') else str(transaction['date'])
+
+        # Get linked invoice if exists
+        linked_invoice = None
+        try:
+            # Check if transaction is linked to an invoice
+            invoice_match_row = db_manager.execute_query(
+                """SELECT i.*, pim.score, pim.match_type, pim.status as match_status
+                   FROM invoices i
+                   JOIN pending_invoice_matches pim ON i.id = pim.invoice_id
+                   WHERE pim.transaction_id = %s AND pim.status = 'confirmed'
+                   LIMIT 1""",
+                (transaction_id,),
+                fetch_one=True
+            )
+            if invoice_match_row:
+                linked_invoice = dict(invoice_match_row)
+                # Format dates
+                if linked_invoice.get('invoice_date'):
+                    linked_invoice['invoice_date'] = linked_invoice['invoice_date'].isoformat() if hasattr(linked_invoice['invoice_date'], 'isoformat') else str(linked_invoice['invoice_date'])
+                if linked_invoice.get('due_date'):
+                    linked_invoice['due_date'] = linked_invoice['due_date'].isoformat() if hasattr(linked_invoice['due_date'], 'isoformat') else str(linked_invoice['due_date'])
+            else:
+                # Also check direct linked_transaction_id field in invoices
+                direct_invoice_row = db_manager.execute_query(
+                    "SELECT * FROM invoices WHERE tenant_id = %s AND linked_transaction_id = %s",
+                    (tenant_id, transaction_id),
+                    fetch_one=True
+                )
+                if direct_invoice_row:
+                    linked_invoice = dict(direct_invoice_row)
+                    # Format dates
+                    if linked_invoice.get('invoice_date'):
+                        linked_invoice['invoice_date'] = linked_invoice['invoice_date'].isoformat() if hasattr(linked_invoice['invoice_date'], 'isoformat') else str(linked_invoice['invoice_date'])
+                    if linked_invoice.get('due_date'):
+                        linked_invoice['due_date'] = linked_invoice['due_date'].isoformat() if hasattr(linked_invoice['due_date'], 'isoformat') else str(linked_invoice['due_date'])
+        except Exception as e:
+            print(f"Error fetching linked invoice: {e}")
+
+        # Get linked payslip if exists
+        linked_payslip = None
+        try:
+            # Check if transaction is linked to a payslip
+            payslip_match_row = db_manager.execute_query(
+                """SELECT p.*, ppm.score, ppm.match_type, ppm.status as match_status,
+                          w.full_name as employee_name, w.employment_type
+                   FROM payslips p
+                   JOIN pending_payslip_matches ppm ON p.id = ppm.payslip_id
+                   LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+                   WHERE ppm.transaction_id = %s AND ppm.status = 'confirmed'
+                   LIMIT 1""",
+                (transaction_id,),
+                fetch_one=True
+            )
+            if payslip_match_row:
+                linked_payslip = dict(payslip_match_row)
+                # Format dates
+                date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
+                for field in date_fields:
+                    if linked_payslip.get(field):
+                        linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
+            else:
+                # Also check direct linked_transaction_id field in payslips
+                direct_payslip_row = db_manager.execute_query(
+                    """SELECT p.*, w.full_name as employee_name, w.employment_type
+                       FROM payslips p
+                       LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+                       WHERE p.tenant_id = %s AND p.linked_transaction_id = %s""",
+                    (tenant_id, transaction_id),
+                    fetch_one=True
+                )
+                if direct_payslip_row:
+                    linked_payslip = dict(direct_payslip_row)
+                    # Format dates
+                    date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
+                    for field in date_fields:
+                        if linked_payslip.get(field):
+                            linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
+        except Exception as e:
+            print(f"Error fetching linked payslip: {e}")
+
+        # Get pending invoice matches (top 5)
+        pending_invoice_matches = []
+        try:
+            invoice_matches_rows = db_manager.execute_query(
+                """SELECT pim.*, i.invoice_number, i.vendor_name, i.total_amount, i.invoice_date
+                   FROM pending_invoice_matches pim
+                   JOIN invoices i ON pim.invoice_id = i.id
+                   WHERE pim.transaction_id = %s AND pim.status = 'pending'
+                   ORDER BY pim.score DESC
+                   LIMIT 5""",
+                (transaction_id,),
+                fetch_all=True
+            )
+            if invoice_matches_rows:
+                for row in invoice_matches_rows:
+                    match = dict(row)
+                    if match.get('invoice_date'):
+                        match['invoice_date'] = match['invoice_date'].isoformat() if hasattr(match['invoice_date'], 'isoformat') else str(match['invoice_date'])
+                    if match.get('created_at'):
+                        match['created_at'] = match['created_at'].isoformat() if hasattr(match['created_at'], 'isoformat') else str(match['created_at'])
+                    pending_invoice_matches.append(match)
+        except Exception as e:
+            print(f"Error fetching pending invoice matches: {e}")
+
+        # Get pending payslip matches (top 5)
+        pending_payslip_matches = []
+        try:
+            payslip_matches_rows = db_manager.execute_query(
+                """SELECT ppm.*, p.payslip_number, w.full_name as employee_name, p.net_amount, p.payment_date
+                   FROM pending_payslip_matches ppm
+                   JOIN payslips p ON ppm.payslip_id = p.id
+                   LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+                   WHERE ppm.transaction_id = %s AND ppm.status = 'pending'
+                   ORDER BY ppm.score DESC
+                   LIMIT 5""",
+                (transaction_id,),
+                fetch_all=True
+            )
+            if payslip_matches_rows:
+                for row in payslip_matches_rows:
+                    match = dict(row)
+                    if match.get('payment_date'):
+                        match['payment_date'] = match['payment_date'].isoformat() if hasattr(match['payment_date'], 'isoformat') else str(match['payment_date'])
+                    if match.get('created_at'):
+                        match['created_at'] = match['created_at'].isoformat() if hasattr(match['created_at'], 'isoformat') else str(match['created_at'])
+                    pending_payslip_matches.append(match)
+        except Exception as e:
+            print(f"Error fetching pending payslip matches: {e}")
+
+        # Get related transactions (same origin/destination, similar amounts, nearby dates)
+        related_transactions = []
+        try:
+            # Find transactions with same origin or destination within 30 days
+            related_rows = db_manager.execute_query(
+                """SELECT id, date, description, amount, currency, origin, destination,
+                          accounting_category, subcategory
+                   FROM transactions
+                   WHERE tenant_id = %s
+                   AND id != %s
+                   AND (
+                       (origin = %s AND origin IS NOT NULL AND origin != '')
+                       OR (destination = %s AND destination IS NOT NULL AND destination != '')
+                   )
+                   AND ABS(EXTRACT(EPOCH FROM (date - %s::date))/86400) <= 30
+                   ORDER BY date DESC
+                   LIMIT 10""",
+                (tenant_id, transaction_id,
+                 transaction.get('origin'), transaction.get('destination'),
+                 transaction.get('date')),
+                fetch_all=True
+            )
+            if related_rows:
+                for row in related_rows:
+                    rel_tx = dict(row)
+                    if rel_tx.get('date'):
+                        rel_tx['date'] = rel_tx['date'].isoformat() if hasattr(rel_tx['date'], 'isoformat') else str(rel_tx['date'])
+                    related_transactions.append(rel_tx)
+        except Exception as e:
+            print(f"Error fetching related transactions: {e}")
+
+        # Get activity history (last 50 activities)
+        activity_history = []
+        try:
+            activity_history = ActivityLogger.get_activity_history(
+                record_type='transaction',
+                record_id=transaction_id,
+                tenant_id=tenant_id,
+                limit=50
+            )
+        except Exception as e:
+            print(f"Error fetching activity history: {e}")
+
+        # Track this view (optional)
+        try:
+            ActivityLogger.track_view(
+                tenant_id=tenant_id,
+                record_type='transaction',
+                record_id=transaction_id,
+                user_id=session.get('user_id') if session else None
+            )
+        except Exception as e:
+            print(f"Error tracking view: {e}")
+
+        # Format additional date fields in transaction
+        date_fields = ['created_at', 'updated_at', 'last_viewed_at']
+        for field in date_fields:
+            if transaction.get(field):
+                transaction[field] = transaction[field].isoformat() if hasattr(transaction[field], 'isoformat') else str(transaction[field])
+
+        # Build comprehensive response
+        response_data = {
+            'success': True,
+            'transaction': transaction,
+            'linked_invoice': linked_invoice,
+            'linked_payslip': linked_payslip,
+            'pending_invoice_matches': pending_invoice_matches,
+            'pending_payslip_matches': pending_payslip_matches,
+            'related_transactions': related_transactions,
+            'activity_history': activity_history,
+            'statistics': {
+                'view_count': transaction.get('view_count', 0),
+                'last_viewed_at': transaction.get('last_viewed_at'),
+                'last_viewed_by': transaction.get('last_viewed_by'),
+                'total_activities': len(activity_history),
+                'has_invoice_matches': len(pending_invoice_matches) > 0,
+                'has_payslip_matches': len(pending_payslip_matches) > 0,
+                'is_matched_to_invoice': linked_invoice is not None,
+                'is_matched_to_payslip': linked_payslip is not None,
+                'related_transactions_count': len(related_transactions),
+                'is_internal': transaction.get('is_internal_transfer', False),
+                'needs_review': transaction.get('confidence', 0) < 0.7
+            }
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Error getting transaction details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/stats')
 def api_stats():
     """API endpoint to get dashboard statistics"""
@@ -8665,6 +8912,17 @@ def invoices_page():
     except Exception as e:
         return f"Error loading invoices page: {str(e)}", 500
 
+
+@app.route('/invoices/<invoice_id>')
+def invoice_detail_page(invoice_id):
+    """Invoice detail page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('invoice_detail.html', invoice_id=invoice_id, cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading invoice detail page: {str(e)}", 500
+
+
 @app.route('/invoices/create-preview')
 def create_invoice_preview():
     """Preview of crypto invoice creation template"""
@@ -9302,6 +9560,168 @@ def api_get_invoice(invoice_id):
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/invoices/<invoice_id>/details')
+def api_get_invoice_details(invoice_id):
+    """Get comprehensive invoice details with related records"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+
+        # Import ActivityLogger with multiple fallback strategies
+        ActivityLogger = None
+        try:
+            from services.activity_logger import ActivityLogger
+        except ModuleNotFoundError:
+            try:
+                import sys
+                import os
+                # Get the web_ui directory path
+                web_ui_path = os.path.dirname(os.path.abspath(__file__))
+                services_path = os.path.join(web_ui_path, 'services')
+
+                # Add to path temporarily
+                if web_ui_path not in sys.path:
+                    sys.path.insert(0, web_ui_path)
+
+                from services.activity_logger import ActivityLogger
+            except ModuleNotFoundError:
+                # Final fallback - import directly from file
+                import sys
+                import os
+                import importlib.util
+
+                activity_logger_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'services', 'activity_logger.py')
+                spec = importlib.util.spec_from_file_location("activity_logger", activity_logger_path)
+                activity_logger_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(activity_logger_module)
+                ActivityLogger = activity_logger_module.ActivityLogger
+
+        # Get invoice data
+        invoice_row = db_manager.execute_query(
+            "SELECT * FROM invoices WHERE tenant_id = %s AND id = %s",
+            (tenant_id, invoice_id),
+            fetch_one=True
+        )
+
+        if not invoice_row:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        invoice = dict(invoice_row)
+
+        # Parse JSON fields
+        if invoice.get('line_items'):
+            try:
+                invoice['line_items'] = json.loads(invoice['line_items'])
+            except:
+                invoice['line_items'] = []
+
+        # Get linked transaction if exists
+        linked_transaction = None
+        if invoice.get('linked_transaction_id'):
+            tx_row = db_manager.execute_query(
+                "SELECT * FROM transactions WHERE tenant_id = %s AND transaction_id = %s",
+                (tenant_id, invoice['linked_transaction_id']),
+                fetch_one=True
+            )
+            if tx_row:
+                linked_transaction = dict(tx_row)
+
+        # Get pending matches
+        pending_matches = []
+        matches_rows = db_manager.execute_query(
+            """SELECT pm.*, t.date, t.description, t.amount, t.origin, t.destination
+               FROM pending_invoice_matches pm
+               JOIN transactions t ON pm.transaction_id = t.transaction_id
+               WHERE pm.invoice_id = %s AND pm.status = 'pending'
+               ORDER BY pm.score DESC
+               LIMIT 10""",
+            (invoice_id,),
+            fetch_all=True
+        )
+        if matches_rows:
+            for row in matches_rows:
+                pending_matches.append(dict(row))
+
+        # Get payment history (from invoice_payments table if exists)
+        payments = []
+        try:
+            payment_rows = db_manager.execute_query(
+                """SELECT * FROM invoice_payments
+                   WHERE invoice_id = %s
+                   ORDER BY payment_date DESC""",
+                (invoice_id,),
+                fetch_all=True
+            )
+            if payment_rows:
+                for row in payment_rows:
+                    payments.append(dict(row))
+        except:
+            pass  # Table might not exist yet
+
+        # Get attachments
+        attachments = []
+        try:
+            attachment_rows = db_manager.execute_query(
+                """SELECT id, file_name, file_path, file_size, uploaded_at
+                   FROM invoice_attachments
+                   WHERE invoice_id = %s
+                   ORDER BY uploaded_at DESC""",
+                (invoice_id,),
+                fetch_all=True
+            )
+            if attachment_rows:
+                for row in attachment_rows:
+                    attachments.append(dict(row))
+        except:
+            pass
+
+        # Get activity history
+        activity_history = ActivityLogger.get_activity_history(
+            record_type='invoice',
+            record_id=invoice_id,
+            tenant_id=tenant_id,
+            limit=50
+        )
+
+        # Track this view (user_id optional for now)
+        try:
+            ActivityLogger.track_view(
+                tenant_id=tenant_id,
+                record_type='invoice',
+                record_id=invoice_id,
+                user_id=session.get('user_id') if session else None
+            )
+        except:
+            pass  # View tracking is optional
+
+        # Build comprehensive response
+        response_data = {
+            'success': True,
+            'invoice': invoice,
+            'linked_transaction': linked_transaction,
+            'pending_matches': pending_matches,
+            'payments': payments,
+            'attachments': attachments,
+            'activity_history': activity_history,
+            'statistics': {
+                'view_count': invoice.get('view_count', 0),
+                'last_viewed_at': invoice.get('last_viewed_at'),
+                'last_viewed_by': invoice.get('last_viewed_by'),
+                'total_activities': len(activity_history),
+                'has_matches': len(pending_matches) > 0,
+                'is_matched': linked_transaction is not None,
+                'payment_count': len(payments)
+            }
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Error getting invoice details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def extract_compressed_file(file_path: str, extract_dir: str) -> List[str]:
     """
@@ -17189,6 +17609,192 @@ def api_get_payslip(payslip_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/payslips/<payslip_id>/details')
+def api_get_payslip_details(payslip_id):
+    """Get comprehensive payslip details with related records"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        from services.activity_logger import ActivityLogger
+
+        # Get payslip data with workforce member info
+        query = """
+            SELECT p.*,
+                   w.full_name as employee_name,
+                   w.employment_type,
+                   w.job_title,
+                   w.email as employee_email,
+                   w.phone as employee_phone,
+                   w.department,
+                   w.pay_rate,
+                   w.pay_frequency
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.id = %s AND p.tenant_id = %s
+        """
+        payslip_row = db_manager.execute_query(query, (payslip_id, tenant_id), fetch_one=True)
+
+        if not payslip_row:
+            return jsonify({'success': False, 'error': 'Payslip not found'}), 404
+
+        payslip = dict(payslip_row)
+
+        # Parse JSON fields
+        if payslip.get('line_items'):
+            try:
+                payslip['line_items'] = json.loads(payslip['line_items']) if isinstance(payslip['line_items'], str) else payslip['line_items']
+            except:
+                payslip['line_items'] = []
+
+        if payslip.get('deductions_items'):
+            try:
+                payslip['deductions_items'] = json.loads(payslip['deductions_items']) if isinstance(payslip['deductions_items'], str) else payslip['deductions_items']
+            except:
+                payslip['deductions_items'] = []
+
+        # Get workforce member full details
+        workforce_member = None
+        try:
+            member_row = db_manager.execute_query(
+                "SELECT * FROM workforce_members WHERE id = %s AND tenant_id = %s",
+                (payslip.get('workforce_member_id'), tenant_id),
+                fetch_one=True
+            )
+            if member_row:
+                workforce_member = dict(member_row)
+                # Format dates
+                if workforce_member.get('date_of_hire'):
+                    workforce_member['date_of_hire'] = workforce_member['date_of_hire'].isoformat() if hasattr(workforce_member['date_of_hire'], 'isoformat') else str(workforce_member['date_of_hire'])
+                if workforce_member.get('termination_date'):
+                    workforce_member['termination_date'] = workforce_member['termination_date'].isoformat() if hasattr(workforce_member['termination_date'], 'isoformat') else str(workforce_member['termination_date'])
+        except Exception as e:
+            print(f"Error fetching workforce member: {e}")
+
+        # Get linked transaction if exists
+        linked_transaction = None
+        if payslip.get('linked_transaction_id'):
+            try:
+                tx_row = db_manager.execute_query(
+                    "SELECT * FROM transactions WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, payslip['linked_transaction_id']),
+                    fetch_one=True
+                )
+                if tx_row:
+                    linked_transaction = dict(tx_row)
+                    # Format transaction dates
+                    if linked_transaction.get('date'):
+                        linked_transaction['date'] = linked_transaction['date'].isoformat() if hasattr(linked_transaction['date'], 'isoformat') else str(linked_transaction['date'])
+            except Exception as e:
+                print(f"Error fetching linked transaction: {e}")
+
+        # Get pending matches (top 10 by score)
+        pending_matches = []
+        try:
+            matches_rows = db_manager.execute_query(
+                """SELECT pm.*,
+                          t.date, t.description, t.amount, t.origin, t.destination, t.currency
+                   FROM pending_payslip_matches pm
+                   JOIN transactions t ON pm.transaction_id = t.id
+                   WHERE pm.payslip_id = %s AND pm.status = 'pending'
+                   ORDER BY pm.score DESC
+                   LIMIT 10""",
+                (payslip_id,),
+                fetch_all=True
+            )
+            if matches_rows:
+                for row in matches_rows:
+                    match = dict(row)
+                    # Format dates
+                    if match.get('date'):
+                        match['date'] = match['date'].isoformat() if hasattr(match['date'], 'isoformat') else str(match['date'])
+                    if match.get('created_at'):
+                        match['created_at'] = match['created_at'].isoformat() if hasattr(match['created_at'], 'isoformat') else str(match['created_at'])
+                    pending_matches.append(match)
+        except Exception as e:
+            print(f"Error fetching pending matches: {e}")
+
+        # Get match history (confirmed and rejected matches)
+        match_history = []
+        try:
+            history_rows = db_manager.execute_query(
+                """SELECT * FROM payslip_match_log
+                   WHERE payslip_id = %s
+                   ORDER BY timestamp DESC
+                   LIMIT 20""",
+                (payslip_id,),
+                fetch_all=True
+            )
+            if history_rows:
+                for row in history_rows:
+                    history_item = dict(row)
+                    if history_item.get('timestamp'):
+                        history_item['timestamp'] = history_item['timestamp'].isoformat() if hasattr(history_item['timestamp'], 'isoformat') else str(history_item['timestamp'])
+                    match_history.append(history_item)
+        except Exception as e:
+            print(f"Error fetching match history: {e}")
+
+        # Get activity history (last 50 activities)
+        activity_history = []
+        try:
+            activity_history = ActivityLogger.get_activity_history(
+                record_type='payslip',
+                record_id=payslip_id,
+                tenant_id=tenant_id,
+                limit=50
+            )
+        except Exception as e:
+            print(f"Error fetching activity history: {e}")
+
+        # Track this view (optional)
+        try:
+            ActivityLogger.track_view(
+                tenant_id=tenant_id,
+                record_type='payslip',
+                record_id=payslip_id,
+                user_id=session.get('user_id') if session else None
+            )
+        except Exception as e:
+            print(f"Error tracking view: {e}")
+
+        # Format date fields in payslip
+        date_fields = ['pay_period_start', 'pay_period_end', 'payment_date', 'created_at',
+                       'updated_at', 'approved_at', 'sent_to_employee_at', 'employee_viewed_at',
+                       'last_viewed_at']
+        for field in date_fields:
+            if payslip.get(field):
+                payslip[field] = payslip[field].isoformat() if hasattr(payslip[field], 'isoformat') else str(payslip[field])
+
+        # Build comprehensive response
+        response_data = {
+            'success': True,
+            'payslip': payslip,
+            'workforce_member': workforce_member,
+            'linked_transaction': linked_transaction,
+            'pending_matches': pending_matches,
+            'match_history': match_history,
+            'activity_history': activity_history,
+            'statistics': {
+                'view_count': payslip.get('view_count', 0),
+                'last_viewed_at': payslip.get('last_viewed_at'),
+                'last_viewed_by': payslip.get('last_viewed_by'),
+                'total_activities': len(activity_history),
+                'has_matches': len(pending_matches) > 0,
+                'is_matched': linked_transaction is not None,
+                'match_history_count': len(match_history),
+                'is_paid': payslip.get('status') == 'paid',
+                'is_approved': payslip.get('status') in ['approved', 'paid']
+            }
+        }
+
+        return jsonify(response_data)
+
+    except Exception as e:
+        print(f"Error getting payslip details: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/payslips/<payslip_id>', methods=['PUT'])
 def api_update_payslip(payslip_id):
     """Update a payslip"""
@@ -17576,6 +18182,35 @@ def api_get_payroll_stats():
     except Exception as e:
         logger.error(f"Error fetching payroll stats: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# TRANSACTION AND PAYSLIP DETAIL PAGES
+# ============================================================================
+
+@app.route('/transactions/<transaction_id>')
+def transaction_detail_page(transaction_id):
+    """Transaction detail page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('transaction_detail.html', transaction_id=transaction_id, cache_bust=cache_buster)
+    except Exception as e:
+        return f"Error loading transaction detail page: {str(e)}", 500
+
+
+# Note: /api/transactions/<transaction_id>/details endpoint already exists at line 4472
+
+@app.route('/payslips/<payslip_id>')
+def payslip_detail_page(payslip_id):
+    """Payslip detail page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('payslip_detail.html', payslip_id=payslip_id, cache_bust=cache_buster)
+    except Exception as e:
+        return f"Error loading payslip detail page: {str(e)}", 500
+
+
+# Note: /api/payslips/<payslip_id>/details endpoint already exists at line 17612
 
 
 if __name__ == '__main__':

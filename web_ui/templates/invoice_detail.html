@@ -1,0 +1,192 @@
+{% extends "_detail_base.html" %}
+
+{% block title %}Invoice {{ invoice_id }}{% endblock %}
+
+{% block record_id %}{{ invoice_id }}{% endblock %}
+{% block record_type %}invoice{% endblock %}
+{% block record_type_plural %}invoices{% endblock %}
+
+{% block breadcrumb %}
+<a href="/invoices" class="breadcrumb-link">Invoices</a>
+<span class="breadcrumb-separator">/</span>
+<span class="breadcrumb-current" id="invoice-number-breadcrumb">Loading...</span>
+{% endblock %}
+
+{% block page_title %}
+    <span id="invoice-title">Invoice Details</span>
+{% endblock %}
+
+{% block page_subtitle %}
+    <span id="invoice-subtitle">Loading invoice information...</span>
+{% endblock %}
+
+{% block header_actions %}
+<div class="header-action-buttons">
+    <button class="btn btn-secondary" id="btn-edit-invoice">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z"/>
+        </svg>
+        Edit
+    </button>
+    <button class="btn btn-primary" id="btn-mark-paid">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022Z"/>
+        </svg>
+        Mark as Paid
+    </button>
+    <button class="btn btn-secondary" id="btn-download-pdf">
+        <svg class="btn-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+            <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+        </svg>
+        Download
+    </button>
+</div>
+{% endblock %}
+
+{% block status_bar %}
+<div class="status-badge-container">
+    <span class="status-badge" id="invoice-status-badge">Loading...</span>
+    <span class="match-badge" id="invoice-match-badge">Loading...</span>
+</div>
+{% endblock %}
+
+{% block quick_info %}
+<div class="quick-info-grid">
+    <div class="info-item">
+        <span class="info-label">Invoice Number</span>
+        <span class="info-value" id="info-invoice-number">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Vendor</span>
+        <span class="info-value" id="info-vendor-name">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Amount</span>
+        <span class="info-value info-amount" id="info-total-amount">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Invoice Date</span>
+        <span class="info-value" id="info-invoice-date">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Due Date</span>
+        <span class="info-value" id="info-due-date">Loading...</span>
+    </div>
+    <div class="info-item">
+        <span class="info-label">Status</span>
+        <span class="info-value" id="info-status">Loading...</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_overview %}
+<div class="detail-card">
+    <h3 class="card-title">Invoice Summary</h3>
+    <div class="invoice-summary" id="invoice-summary">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Line Items</h3>
+    <div class="line-items-table" id="line-items-table">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_details %}
+<div class="detail-card">
+    <h3 class="card-title">Complete Invoice Details</h3>
+    <div class="details-grid" id="invoice-details-grid">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">Payment Information</h3>
+    <div class="payment-info" id="payment-info">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block tab_matches %}
+<div class="detail-card">
+    <h3 class="card-title">
+        Linked Transaction
+        <span class="card-subtitle" id="linked-status">No transaction linked</span>
+    </h3>
+    <div class="linked-transaction" id="linked-transaction-container">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+
+<div class="detail-card">
+    <h3 class="card-title">
+        Potential Matches
+        <span class="card-subtitle" id="matches-count">0 pending matches</span>
+    </h3>
+    <div class="pending-matches" id="pending-matches-container">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block sidebar_stats %}
+<div class="stat-item">
+    <span class="stat-label">Views</span>
+    <span class="stat-value" id="stat-view-count">0</span>
+</div>
+<div class="stat-item">
+    <span class="stat-label">Activities</span>
+    <span class="stat-value" id="stat-activity-count">0</span>
+</div>
+<div class="stat-item">
+    <span class="stat-label">Last Viewed</span>
+    <span class="stat-value" id="stat-last-viewed">Never</span>
+</div>
+<div class="stat-item">
+    <span class="stat-label">Match Status</span>
+    <span class="stat-value" id="stat-match-status">Unmatched</span>
+</div>
+{% endblock %}
+
+{% block quick_actions %}
+<button class="action-button" id="action-find-matches">
+    <svg class="action-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+    </svg>
+    Find Matching Transactions
+</button>
+<button class="action-button" id="action-send-reminder">
+    <svg class="action-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M.05 3.555A2 2 0 0 1 2 2h12a2 2 0 0 1 1.95 1.555L8 8.414.05 3.555ZM0 4.697v7.104l5.803-3.558L0 4.697ZM6.761 8.83l-6.57 4.027A2 2 0 0 0 2 14h12a2 2 0 0 0 1.808-1.144l-6.57-4.027L8 9.586l-1.239-.757Zm3.436-.586L16 11.801V4.697l-5.803 3.546Z"/>
+    </svg>
+    Send Payment Reminder
+</button>
+<button class="action-button" id="action-duplicate">
+    <svg class="action-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2Zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6ZM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2Z"/>
+    </svg>
+    Duplicate Invoice
+</button>
+<button class="action-button action-button-danger" id="action-delete">
+    <svg class="action-icon" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+        <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/>
+        <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z"/>
+    </svg>
+    Delete Invoice
+</button>
+{% endblock %}
+
+{% block related_records %}
+<div id="related-records-container">
+    <!-- Populated by JavaScript -->
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/invoice_detail.js') }}?v={{ cache_buster }}"></script>
+{% endblock %}

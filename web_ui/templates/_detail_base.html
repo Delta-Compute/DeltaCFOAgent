@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>{% block title %}Detail Page{% endblock %} - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/detail_pages.css') }}?v={{ cache_buster }}">
+    {% block extra_styles %}{% endblock %}
+</head>
+<body>
+    {% include '_navbar.html' %}
+
+    <div class="detail-page-container">
+        <!-- Breadcrumb Navigation -->
+        <nav class="breadcrumb-nav">
+            <a href="/" class="breadcrumb-link">Home</a>
+            <span class="breadcrumb-separator">/</span>
+            {% block breadcrumb %}{% endblock %}
+        </nav>
+
+        <!-- Page Header -->
+        <div class="detail-page-header">
+            <div class="header-left">
+                <h1 class="page-title">{% block page_title %}Record Details{% endblock %}</h1>
+                <p class="page-subtitle">{% block page_subtitle %}{% endblock %}</p>
+            </div>
+            <div class="header-right">
+                {% block header_actions %}{% endblock %}
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="detail-status-bar">
+            {% block status_bar %}{% endblock %}
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="detail-content-grid">
+            <!-- Left Column: Main Info + Tabs -->
+            <div class="detail-main-column">
+                <!-- Quick Info Card -->
+                <div class="detail-card quick-info-card">
+                    {% block quick_info %}{% endblock %}
+                </div>
+
+                <!-- Tab Navigation -->
+                <div class="detail-tabs">
+                    <div class="tab-nav">
+                        {% block tab_nav %}
+                        <button class="tab-button active" data-tab="overview">Overview</button>
+                        <button class="tab-button" data-tab="details">Details</button>
+                        <button class="tab-button" data-tab="matches">Matches</button>
+                        <button class="tab-button" data-tab="activity">Activity</button>
+                        {% endblock %}
+                    </div>
+
+                    <div class="tab-content-container">
+                        <!-- Overview Tab -->
+                        <div id="tab-overview" class="tab-content active">
+                            {% block tab_overview %}{% endblock %}
+                        </div>
+
+                        <!-- Details Tab -->
+                        <div id="tab-details" class="tab-content">
+                            {% block tab_details %}{% endblock %}
+                        </div>
+
+                        <!-- Matches Tab -->
+                        <div id="tab-matches" class="tab-content">
+                            {% block tab_matches %}{% endblock %}
+                        </div>
+
+                        <!-- Activity Tab -->
+                        <div id="tab-activity" class="tab-content">
+                            <div class="activity-timeline" id="activity-timeline-container">
+                                <!-- Activity timeline will be populated by JavaScript -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Sidebar -->
+            <div class="detail-sidebar">
+                <!-- Statistics Card -->
+                <div class="detail-card sidebar-card">
+                    <h3 class="sidebar-card-title">Statistics</h3>
+                    <div class="sidebar-stats">
+                        {% block sidebar_stats %}{% endblock %}
+                    </div>
+                </div>
+
+                <!-- Quick Actions Card -->
+                <div class="detail-card sidebar-card">
+                    <h3 class="sidebar-card-title">Quick Actions</h3>
+                    <div class="quick-actions">
+                        {% block quick_actions %}{% endblock %}
+                    </div>
+                </div>
+
+                <!-- Related Records Card -->
+                <div class="detail-card sidebar-card">
+                    <h3 class="sidebar-card-title">Related</h3>
+                    <div class="related-records">
+                        {% block related_records %}{% endblock %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">Loading...</p>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast-notification" class="toast-notification"></div>
+
+    <!-- Modals -->
+    {% block modals %}{% endblock %}
+
+    <!-- Scripts -->
+    <script>
+        // Global configuration
+        const RECORD_ID = '{% block record_id %}{% endblock %}';
+        const RECORD_TYPE = '{% block record_type %}{% endblock %}';
+        const API_ENDPOINT = '/api/{% block record_type_plural %}{% endblock %}/' + RECORD_ID + '/details';
+    </script>
+    <script src="{{ url_for('static', filename='js/activity_timeline.js') }}?v={{ cache_buster }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
