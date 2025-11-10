@@ -2671,234 +2671,117 @@ function createSankeyDiagram() {
         return;
     }
 
-    // Get financial data for the diagram
-    const plData = dashboardData.monthlyPL?.summary?.period_totals;
-    if (!plData) {
-        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">No financial data available for Sankey diagram</div>';
-        return;
-    }
+    // Show loading message
+    container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Loading Sankey diagram...</div>';
 
-    // Prepare data for Sankey diagram
-    const totalRevenue = Math.max(plData.total_revenue || 0, 0);
-    const totalExpenses = Math.max(plData.total_expenses || 0, 0);
-    const netProfit = (plData.total_profit || 0);
-
-    // Get category data from API
-    const revenueCategories = dashboardData.monthlyPL?.summary?.revenue_categories || [];
-    const expenseCategories = dashboardData.monthlyPL?.summary?.expense_categories || [];
-
-    // If no significant data, show placeholder
-    if (totalRevenue < 1) {
-        container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Insufficient revenue data to generate meaningful flow visualization</div>';
-        return;
-    }
-
-    // Build Plotly Sankey structure
-    const nodeLabels = [];
-    const nodeValues = []; // Store actual values for each node
-    const nodeColors = [];
-    const nodeMap = {};
-    let nodeIndex = 0;
-
-    // Level 0: Revenue categories (only show categories > 2% of revenue)
-    const significantRevenueCategories = revenueCategories.filter(cat => {
-        return cat.amount > totalRevenue * 0.02 &&
-               cat.category &&
-               cat.category.trim().length > 0;
-    });
-
-    // Add significant revenue category nodes (green)
-    significantRevenueCategories.forEach(cat => {
-        nodeLabels.push(`${cat.category}<br>${formatCurrency(cat.amount)}`);
-        nodeValues.push(cat.amount);
-        nodeColors.push('#86efac'); // Light green
-        nodeMap[`revenue_${cat.category}`] = nodeIndex++;
-    });
-
-    // Add "Other Revenue" node if needed (green)
-    const otherRevenueAmount = totalRevenue - significantRevenueCategories.reduce((sum, cat) => sum + cat.amount, 0);
-    if (otherRevenueAmount > totalRevenue * 0.01) {
-        nodeLabels.push(`Other Revenue<br>${formatCurrency(otherRevenueAmount)}`);
-        nodeValues.push(otherRevenueAmount);
-        nodeColors.push('#86efac'); // Light green
-        nodeMap['other_revenue'] = nodeIndex++;
-    }
-
-    // Level 1: Total Revenue aggregation node (gray)
-    nodeLabels.push(`Total Revenue<br>${formatCurrency(totalRevenue)}`);
-    nodeValues.push(totalRevenue);
-    nodeColors.push('#d1d5db'); // Gray
-    nodeMap['total_revenue'] = nodeIndex++;
-
-    // Level 2: Top expense subcategories (only show > 1% of expenses, pink/red)
-    const expenseNodesList = [];
-    expenseCategories.slice(0, 3).forEach(cat => {
-        const topSubcategories = cat.subcategories
-            .filter(subcat => {
-                return subcat.amount > totalExpenses * 0.01 &&
-                       subcat.name &&
-                       subcat.name.length < 100;
-            })
-            .slice(0, 5);
-
-        topSubcategories.forEach(subcat => {
-            const nodeName = `${cat.category}: ${subcat.name}<br>${formatCurrency(subcat.amount)}`;
-            nodeLabels.push(nodeName);
-            nodeValues.push(subcat.amount);
-            nodeColors.push('#fca5a5'); // Light pink/red
-            expenseNodesList.push({
-                index: nodeIndex,
-                category: cat.category,
-                subcategory: subcat.name,
-                amount: subcat.amount
-            });
-            nodeMap[`expense_${cat.category}_${subcat.name}`] = nodeIndex++;
-        });
-
-        // Add "Other" node for remaining subcategories
-        const otherSubcatsAmount = cat.total - topSubcategories.reduce((sum, sub) => sum + sub.amount, 0);
-        if (otherSubcatsAmount > totalExpenses * 0.01) {
-            const nodeName = `${cat.category}: Other<br>${formatCurrency(otherSubcatsAmount)}`;
-            nodeLabels.push(nodeName);
-            nodeValues.push(otherSubcatsAmount);
-            nodeColors.push('#fca5a5'); // Light pink/red
-            expenseNodesList.push({
-                index: nodeIndex,
-                category: cat.category,
-                subcategory: 'Other',
-                amount: otherSubcatsAmount
-            });
-            nodeMap[`expense_${cat.category}_Other`] = nodeIndex++;
-        }
-    });
-
-    // Level 3: Net Profit node (only if positive, dark green)
-    if (netProfit > 0) {
-        nodeLabels.push(`Net Profit<br>${formatCurrency(netProfit)}`);
-        nodeValues.push(netProfit);
-        nodeColors.push('#22c55e'); // Dark green
-        nodeMap['net_profit'] = nodeIndex++;
-    }
-
-    // Build links array
-    const linkSources = [];
-    const linkTargets = [];
-    const linkValues = [];
-    const linkColors = [];
-
-    // Links from revenue categories to Total Revenue
-    significantRevenueCategories.forEach(cat => {
-        linkSources.push(nodeMap[`revenue_${cat.category}`]);
-        linkTargets.push(nodeMap['total_revenue']);
-        linkValues.push(cat.amount);
-        linkColors.push('rgba(134, 239, 172, 0.4)'); // Light green with transparency
-    });
-
-    // Link from Other Revenue to Total Revenue
-    if (otherRevenueAmount > totalRevenue * 0.01) {
-        linkSources.push(nodeMap['other_revenue']);
-        linkTargets.push(nodeMap['total_revenue']);
-        linkValues.push(otherRevenueAmount);
-        linkColors.push('rgba(134, 239, 172, 0.4)'); // Light green with transparency
-    }
-
-    // Links from Total Revenue to expense categories
-    expenseNodesList.forEach(expense => {
-        linkSources.push(nodeMap['total_revenue']);
-        linkTargets.push(expense.index);
-        linkValues.push(expense.amount);
-        linkColors.push('rgba(252, 165, 165, 0.4)'); // Light pink with transparency
-    });
-
-    // Link from Total Revenue to Net Profit (if positive)
-    if (netProfit > 0) {
-        linkSources.push(nodeMap['total_revenue']);
-        linkTargets.push(nodeMap['net_profit']);
-        linkValues.push(netProfit);
-        linkColors.push('rgba(34, 197, 94, 0.4)'); // Dark green with transparency
-    }
-
-    // Create Plotly Sankey trace
-    const data = [{
-        type: "sankey",
-        orientation: "h",
-        node: {
-            pad: 15,
-            thickness: 20,
-            line: {
-                color: "white",
-                width: 2
-            },
-            label: nodeLabels,
-            color: nodeColors,
-            customdata: nodeValues.map(val => formatCurrency(val)),
-            hovertemplate: '<b>%{label}</b><extra></extra>'
-        },
-        link: {
-            source: linkSources,
-            target: linkTargets,
-            value: linkValues,
-            color: linkColors,
-            customdata: linkSources.map((src, i) => {
-                return {
-                    from: nodeLabels[src],
-                    to: nodeLabels[linkTargets[i]],
-                    value: formatCurrency(linkValues[i])
-                };
-            }),
-            hovertemplate: '<b>%{customdata.from}</b> → <b>%{customdata.to}</b><br>Flow: %{customdata.value}<extra></extra>'
-        }
-    }];
-
-    // Layout configuration
-    const layout = {
-        title: {
-            text: 'Financial Flow',
-            font: {
-                family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                size: 18,
-                color: '#1f2937'
+    // Fetch Sankey data from the new API endpoint (uses subcategories, excludes Internal Transfers)
+    fetch('/api/reports/sankey-flow?min_amount=500&max_categories=15')
+        .then(response => response.json())
+        .then(result => {
+            if (!result.success || !result.data || !result.data.sankey) {
+                container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">No financial data available for Sankey diagram</div>';
+                return;
             }
-        },
-        font: {
-            family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            size: 12,
-            color: '#4a5568'
-        },
-        plot_bgcolor: 'rgba(0,0,0,0)',
-        paper_bgcolor: 'rgba(0,0,0,0)',
-        margin: {
-            l: 10,
-            r: 10,
-            t: 50,
-            b: 10
-        },
-        height: 500
-    };
 
-    // Configuration
-    const config = {
-        displayModeBar: false,
-        responsive: true
-    };
+            const sankeyData = result.data.sankey;
+            const summary = result.data.summary;
 
-    // Render the Sankey diagram
-    Plotly.newPlot(container, data, layout, config);
+            // Build node labels with formatted currency
+            const nodeLabels = sankeyData.nodes.map(node => {
+                return `${node.name}<br>${formatCurrency(node.value)}`;
+            });
 
-    console.log('Plotly Sankey diagram created successfully with data:', {
-        totalRevenue,
-        totalExpenses,
-        netProfit,
-        revenueCategories: revenueCategories.length,
-        expenseCategories: expenseCategories.length,
-        significantRevenueCategories: significantRevenueCategories.length,
-        nodes: nodeLabels.length,
-        links: linkSources.length,
-        nodeLabels,
-        linkFlows: linkSources.map((src, i) => ({
-            from: nodeLabels[src],
-            to: nodeLabels[linkTargets[i]],
-            value: linkValues[i]
-        }))
-    });
+            // Assign colors based on node type
+            const nodeColors = sankeyData.nodes.map(node => {
+                if (node.type === 'revenue') return '#86efac'; // Light green for revenue
+                if (node.type === 'expense') return '#fca5a5'; // Light red for expenses
+                return '#d1d5db'; // Gray for hub
+            });
+
+            // Build link colors with transparency
+            const linkColors = sankeyData.links.map(link => {
+                const sourceNode = sankeyData.nodes[link.source];
+                if (sourceNode.type === 'revenue') return 'rgba(134, 239, 172, 0.4)'; // Green
+                if (sourceNode.type === 'hub') return 'rgba(252, 165, 165, 0.4)'; // Red
+                return 'rgba(209, 213, 219, 0.4)'; // Gray
+            });
+
+            // Create Plotly Sankey trace
+            const data = [{
+                type: "sankey",
+                orientation: "h",
+                node: {
+                    pad: 15,
+                    thickness: 20,
+                    line: {
+                        color: "white",
+                        width: 2
+                    },
+                    label: nodeLabels,
+                    color: nodeColors,
+                    hovertemplate: '<b>%{label}</b><extra></extra>'
+                },
+                link: {
+                    source: sankeyData.links.map(l => l.source),
+                    target: sankeyData.links.map(l => l.target),
+                    value: sankeyData.links.map(l => l.value),
+                    color: linkColors,
+                    customdata: sankeyData.links.map((link, i) => {
+                        return {
+                            from: sankeyData.nodes[link.source].name,
+                            to: sankeyData.nodes[link.target].name,
+                            value: formatCurrency(link.value)
+                        };
+                    }),
+                    hovertemplate: '<b>%{customdata.from}</b> → <b>%{customdata.to}</b><br>Flow: %{customdata.value}<extra></extra>'
+                }
+            }];
+
+            // Layout configuration
+            const layout = {
+                title: {
+                    text: 'Financial Flow (Subcategories, excl. Internal Transfers)',
+                    font: {
+                        family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        size: 18,
+                        color: '#1f2937'
+                    }
+                },
+                font: {
+                    family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    size: 12,
+                    color: '#4a5568'
+                },
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)',
+                margin: {
+                    l: 10,
+                    r: 10,
+                    t: 50,
+                    b: 10
+                },
+                height: 500
+            };
+
+            // Configuration
+            const config = {
+                displayModeBar: false,
+                responsive: true
+            };
+
+            // Render the Sankey diagram
+            Plotly.newPlot(container, data, layout, config);
+
+            console.log('Sankey diagram created with subcategories (excl. Internal Transfers):', {
+                totalRevenue: summary.total_revenue,
+                totalExpenses: summary.total_expenses,
+                netFlow: summary.net_flow,
+                nodes: sankeyData.nodes.length,
+                links: sankeyData.links.length
+            });
+        })
+        .catch(error => {
+            console.error('Error loading Sankey data:', error);
+            container.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 2rem;">Error loading Sankey diagram. Please try again.</div>';
+        });
 }

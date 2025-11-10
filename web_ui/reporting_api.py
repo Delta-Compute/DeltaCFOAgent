@@ -3318,15 +3318,17 @@ def register_reporting_routes(app):
             # Get revenue categories (sources)
             revenue_query = f"""
                 SELECT
-                    COALESCE(accounting_category, classified_entity, 'Other Revenue') as category,
+                    COALESCE(subcategory, accounting_category, classified_entity, 'Other Revenue') as category,
                     SUM(amount) as total_amount,
                     COUNT(*) as transaction_count
                 FROM transactions
                 WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount > 0
                 AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
+                AND COALESCE(accounting_category, '') != 'Internal Transfer'
+                AND COALESCE(subcategory, '') != 'Internal Transfer'
                 {date_filter}
-                GROUP BY COALESCE(accounting_category, classified_entity, 'Other Revenue')
+                GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Revenue')
                 HAVING SUM(amount) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 ORDER BY total_amount DESC
                 LIMIT {'%s' if db_manager.db_type == 'postgresql' else '?'}
@@ -3338,15 +3340,17 @@ def register_reporting_routes(app):
             # Get expense categories (targets)
             expense_query = f"""
                 SELECT
-                    COALESCE(accounting_category, classified_entity, 'Other Expenses') as category,
+                    COALESCE(subcategory, accounting_category, classified_entity, 'Other Expenses') as category,
                     SUM(ABS(amount)) as total_amount,
                     COUNT(*) as transaction_count
                 FROM transactions
                 WHERE tenant_id = {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 AND amount < 0
                 AND archived = {'FALSE' if db_manager.db_type == 'postgresql' else '0'}
+                AND COALESCE(accounting_category, '') != 'Internal Transfer'
+                AND COALESCE(subcategory, '') != 'Internal Transfer'
                 {date_filter}
-                GROUP BY COALESCE(accounting_category, classified_entity, 'Other Expenses')
+                GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Expenses')
                 HAVING SUM(ABS(amount)) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 ORDER BY total_amount DESC
                 LIMIT {'%s' if db_manager.db_type == 'postgresql' else '?'}
