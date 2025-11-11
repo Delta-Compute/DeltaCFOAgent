@@ -224,13 +224,13 @@ def login():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.id as tenant_id,
+                tc.tenant_id,
                 tc.company_name,
-                tc.description as company_description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -240,7 +240,7 @@ def login():
             tenants.append({
                 'id': t['tenant_id'],
                 'company_name': t['company_name'],
-                'description': t['company_description'],
+                'description': t.get('company_description', ''),
                 'role': t['role'],
                 'permissions': t['permissions']
             })
@@ -336,13 +336,13 @@ def get_me():
         # Get user's tenants
         tenants_query = """
             SELECT
-                tc.id as tenant_id,
+                tc.tenant_id,
                 tc.company_name,
-                tc.description as company_description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         tenant_results = db_manager.execute_query(tenants_query, (user['id'],), fetch_all=True)
@@ -352,7 +352,7 @@ def get_me():
             tenants.append({
                 'id': t['tenant_id'],
                 'company_name': t['company_name'],
-                'description': t['company_description'],
+                'description': t.get('company_description', ''),
                 'role': t['role'],
                 'permissions': t['permissions']
             })
@@ -561,13 +561,13 @@ def switch_tenant(tenant_id):
         # Check if user has access to this tenant
         query = """
             SELECT
-                tc.id as tenant_id,
+                tc.tenant_id,
                 tc.company_name,
-                tc.description as company_description,
+                tc.company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.tenant_id = %s AND tu.is_active = true
         """
         result = db_manager.execute_query(query, (user['id'], tenant_id), fetch_one=True)
@@ -582,15 +582,13 @@ def switch_tenant(tenant_id):
         tenant = {
             'id': result['tenant_id'],
             'company_name': result['company_name'],
-            'description': result['company_description'],
+            'description': result.get('company_description', ''),
             'role': result['role'],
             'permissions': result['permissions']
         }
 
-        # Update session using both tenant_context module and session key
-        # This ensures compatibility with both tenant_context.py and auth_middleware.py
+        # Update session using tenant_context module
         set_tenant_id(tenant_id)
-        session['current_tenant_id'] = tenant_id
 
         logger.info(f"User {user['email']} switched to tenant {tenant['company_name']}")
 

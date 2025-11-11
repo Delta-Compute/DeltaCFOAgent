@@ -264,7 +264,7 @@ def complete_tenant_setup():
         """, (
             tenant_id,
             len(entities) > 0,
-            coa.get('template') or coa.get('custom_categories'),
+            bool(coa.get('template') or coa.get('custom_categories')),
             len(bank_accounts) > 0 or len(crypto_wallets) > 0
         ))
 

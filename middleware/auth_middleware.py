@@ -95,14 +95,14 @@ def get_user_tenants(user_id: str) -> List[Dict[str, Any]]:
 
         query = """
             SELECT
-                tc.id,
+                tc.tenant_id,
                 tc.company_name,
-                tc.description as company_description,
+                tc.company_description,
                 tu.role,
                 tu.permissions,
                 tu.is_active
             FROM tenant_users tu
-            JOIN tenant_configuration tc ON tu.tenant_id = tc.id
+            JOIN tenant_configuration tc ON tu.tenant_id = tc.tenant_id
             WHERE tu.user_id = %s AND tu.is_active = true
         """
         results = db_manager.execute_query(query, (user_id,), fetch_all=True)
@@ -111,9 +111,9 @@ def get_user_tenants(user_id: str) -> List[Dict[str, Any]]:
         if results:
             for row in results:
                 tenants.append({
-                    'id': row['id'],
+                    'id': row['tenant_id'],
                     'company_name': row['company_name'],
-                    'description': row['company_description'],
+                    'description': row.get('company_description', ''),
                     'role': row['role'],
                     'permissions': row['permissions'],
                     'is_active': row['is_active']
@@ -221,30 +221,23 @@ def require_auth(f):
         g.user_tenants = tenants
 
         # Set current tenant from session or default to first tenant
-        current_tenant_id = session.get('current_tenant_id')
-        if current_tenant_id:
+        from web_ui.tenant_context import get_current_tenant_id, set_tenant_id
+        current_tenant_id = get_current_tenant_id()
+
+        if current_tenant_id and current_tenant_id != 'delta':
             # Find tenant in user's tenants
             current_tenant = next((t for t in tenants if t['id'] == current_tenant_id), None)
             if current_tenant:
                 # User has access to session tenant - use it
                 set_current_tenant(current_tenant)
-                # Also sync tenant_context.py session key
-                from web_ui.tenant_context import set_tenant_id
-                set_tenant_id(current_tenant_id)
             else:
                 # Session tenant not in user's list - reset to first tenant
                 if tenants:
                     set_current_tenant(tenants[0])
-                    session['current_tenant_id'] = tenants[0]['id']
-                    # Also sync tenant_context.py session key
-                    from web_ui.tenant_context import set_tenant_id
                     set_tenant_id(tenants[0]['id'])
         elif tenants:
             # No session tenant - default to first tenant
             set_current_tenant(tenants[0])
-            session['current_tenant_id'] = tenants[0]['id']
-            # Also sync tenant_context.py session key
-            from web_ui.tenant_context import set_tenant_id
             set_tenant_id(tenants[0]['id'])
 
         return f(*args, **kwargs)
