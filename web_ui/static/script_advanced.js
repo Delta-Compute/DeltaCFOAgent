@@ -1179,9 +1179,14 @@ function renderTransactionTable(transactions) {
                     <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
                         View
                     </button>
-                    <button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
-                        🗄️ Archive
-                    </button>
+                    ${transaction.is_archived
+                        ? `<button class="btn-secondary btn-sm" onclick="unarchiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
+                            📤 Unarchive
+                           </button>`
+                        : `<button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
+                            🗄️ Archive
+                           </button>`
+                    }
                 </td>
             </tr>
         `;
@@ -3349,6 +3354,26 @@ async function archiveTransaction(transactionId) {
         }
     } catch (error) {
         showToast('Error archiving transaction: ' + error.message, 'error');
+    }
+}
+
+async function unarchiveTransaction(transactionId) {
+    try {
+        const response = await fetch('/api/unarchive_transactions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_ids: [transactionId]})
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            showToast('Transaction unarchived successfully', 'success');
+            loadTransactions();
+        } else {
+            showToast('Error unarchiving transaction: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        showToast('Error unarchiving transaction: ' + error.message, 'error');
     }
 }
 
