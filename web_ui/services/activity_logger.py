@@ -202,7 +202,7 @@ class ActivityLogger:
                             SET last_viewed_at = CURRENT_TIMESTAMP,
                                 last_viewed_by = %s,
                                 view_count = COALESCE(view_count, 0) + 1
-                            WHERE id = %s AND tenant_id = %s
+                            WHERE transaction_id = %s AND tenant_id = %s
                         """, (user_id, record_id, tenant_id))
                     else:
                         cursor.execute(f"""

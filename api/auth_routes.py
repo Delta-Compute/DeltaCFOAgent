@@ -561,9 +561,9 @@ def switch_tenant(tenant_id):
         # Check if user has access to this tenant
         query = """
             SELECT
-                tc.id,
+                tc.id as tenant_id,
                 tc.company_name,
-                tc.description,
+                tc.description as company_description,
                 tu.role,
                 tu.permissions
             FROM tenant_users tu

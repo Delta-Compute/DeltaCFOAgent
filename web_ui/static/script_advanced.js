@@ -3046,19 +3046,12 @@ function updatePaginationControls() {
 }
 
 function viewTransactionDetails(id) {
-    // Find the transaction
-    const transaction = currentTransactions.find(t => t.transaction_id === id);
-    if (transaction) {
-        // Create a detailed view (could be a modal or new page)
-        const details = Object.entries(transaction)
-            .filter(([key, value]) => value != null && value !== '')
-            .map(([key, value]) => `${key}: ${value}`)
-            .join('\n');
-
-        // Show transaction details in console for debugging
-        console.log(`Transaction Details:\n\n${details}`);
-        showToast('Transaction details logged to console (F12)', 'info');
+    if (!id) {
+        showToast('Transaction ID not found', 'error');
+        return;
     }
+    // Redirect to transaction detail page
+    window.location.href = `/transactions/${id}`;
 }
 
 function quickSuggest(transactionId, fieldType) {

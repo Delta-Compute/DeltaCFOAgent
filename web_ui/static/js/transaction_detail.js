@@ -151,10 +151,17 @@
     function renderQuickInfo(transaction) {
         document.getElementById('info-transaction-date').textContent = formatDate(transaction.date);
         document.getElementById('info-amount').textContent = formatCurrency(transaction.amount, transaction.currency || 'USD');
-        document.getElementById('info-category').textContent = transaction.category || 'Uncategorized';
-        document.getElementById('info-origin').textContent = transaction.origin || 'N/A';
-        document.getElementById('info-destination').textContent = transaction.destination || 'N/A';
-        document.getElementById('info-business-unit').textContent = transaction.business_unit || 'N/A';
+
+        // Category: Show accounting_category and subcategory
+        const category = transaction.subcategory || transaction.accounting_category || 'Uncategorized';
+        document.getElementById('info-category').textContent = category;
+
+        // Origin and destination with display names if available
+        document.getElementById('info-origin').textContent = transaction.origin_display || transaction.origin || 'N/A';
+        document.getElementById('info-destination').textContent = transaction.destination_display || transaction.destination || 'N/A';
+
+        // Business Unit is classified_entity
+        document.getElementById('info-business-unit').textContent = transaction.classified_entity || 'N/A';
     }
 
     /**

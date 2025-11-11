@@ -4475,11 +4475,11 @@ def api_get_transaction_details(transaction_id):
     try:
         tenant_id = get_current_tenant_id()
         from database import db_manager
-        from services.activity_logger import ActivityLogger
+        from web_ui.services.activity_logger import ActivityLogger
 
         # Get transaction data
         transaction_row = db_manager.execute_query(
-            "SELECT * FROM transactions WHERE tenant_id = %s AND id = %s",
+            "SELECT * FROM transactions WHERE tenant_id = %s AND transaction_id = %s",
             (tenant_id, transaction_id),
             fetch_one=True
         )
@@ -4531,52 +4531,54 @@ def api_get_transaction_details(transaction_id):
             print(f"Error fetching linked invoice: {e}")
 
         # Get linked payslip if exists
+        # TODO: Schema issue - pending_payslip_matches.transaction_id is INTEGER but should be TEXT
+        # Temporarily disabled until migration is applied
         linked_payslip = None
-        try:
-            # Check if transaction is linked to a payslip
-            payslip_match_row = db_manager.execute_query(
-                """SELECT p.*, ppm.score, ppm.match_type, ppm.status as match_status,
-                          w.full_name as employee_name, w.employment_type
-                   FROM payslips p
-                   JOIN pending_payslip_matches ppm ON p.id = ppm.payslip_id
-                   LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
-                   WHERE ppm.transaction_id = %s AND ppm.status = 'confirmed'
-                   LIMIT 1""",
-                (transaction_id,),
-                fetch_one=True
-            )
-            if payslip_match_row:
-                linked_payslip = dict(payslip_match_row)
-                # Format dates
-                date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
-                for field in date_fields:
-                    if linked_payslip.get(field):
-                        linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
-            else:
-                # Also check direct linked_transaction_id field in payslips
-                direct_payslip_row = db_manager.execute_query(
-                    """SELECT p.*, w.full_name as employee_name, w.employment_type
-                       FROM payslips p
-                       LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
-                       WHERE p.tenant_id = %s AND p.linked_transaction_id = %s""",
-                    (tenant_id, transaction_id),
-                    fetch_one=True
-                )
-                if direct_payslip_row:
-                    linked_payslip = dict(direct_payslip_row)
-                    # Format dates
-                    date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
-                    for field in date_fields:
-                        if linked_payslip.get(field):
-                            linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
-        except Exception as e:
-            print(f"Error fetching linked payslip: {e}")
+        # try:
+        #     # Check if transaction is linked to a payslip
+        #     payslip_match_row = db_manager.execute_query(
+        #         """SELECT p.*, ppm.score, ppm.match_type, ppm.status as match_status,
+        #                   w.full_name as employee_name, w.employment_type
+        #            FROM payslips p
+        #            JOIN pending_payslip_matches ppm ON p.id = ppm.payslip_id
+        #            LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+        #            WHERE ppm.transaction_id = %s AND ppm.status = 'confirmed'
+        #            LIMIT 1""",
+        #         (transaction_id,),
+        #         fetch_one=True
+        #     )
+        #     if payslip_match_row:
+        #         linked_payslip = dict(payslip_match_row)
+        #         # Format dates
+        #         date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
+        #         for field in date_fields:
+        #             if linked_payslip.get(field):
+        #                 linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
+        #     else:
+        #         # Also check direct linked_transaction_id field in payslips
+        #         direct_payslip_row = db_manager.execute_query(
+        #             """SELECT p.*, w.full_name as employee_name, w.employment_type
+        #                FROM payslips p
+        #                LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+        #                WHERE p.tenant_id = %s AND p.linked_transaction_id = %s""",
+        #             (tenant_id, transaction_id),
+        #             fetch_one=True
+        #         )
+        #         if direct_payslip_row:
+        #             linked_payslip = dict(direct_payslip_row)
+        #             # Format dates
+        #             date_fields = ['pay_period_start', 'pay_period_end', 'payment_date']
+        #             for field in date_fields:
+        #                 if linked_payslip.get(field):
+        #                     linked_payslip[field] = linked_payslip[field].isoformat() if hasattr(linked_payslip[field], 'isoformat') else str(linked_payslip[field])
+        # except Exception as e:
+        #     print(f"Error fetching linked payslip: {e}")
 
         # Get pending invoice matches (top 5)
         pending_invoice_matches = []
         try:
             invoice_matches_rows = db_manager.execute_query(
-                """SELECT pim.*, i.invoice_number, i.vendor_name, i.total_amount, i.invoice_date
+                """SELECT pim.*, i.invoice_number, i.vendor_name, i.total_amount, i.date as invoice_date
                    FROM pending_invoice_matches pim
                    JOIN invoices i ON pim.invoice_id = i.id
                    WHERE pim.transaction_id = %s AND pim.status = 'pending'
@@ -4597,45 +4599,47 @@ def api_get_transaction_details(transaction_id):
             print(f"Error fetching pending invoice matches: {e}")
 
         # Get pending payslip matches (top 5)
+        # TODO: Schema issue - pending_payslip_matches.transaction_id is INTEGER but should be TEXT
+        # Temporarily disabled until migration is applied
         pending_payslip_matches = []
-        try:
-            payslip_matches_rows = db_manager.execute_query(
-                """SELECT ppm.*, p.payslip_number, w.full_name as employee_name, p.net_amount, p.payment_date
-                   FROM pending_payslip_matches ppm
-                   JOIN payslips p ON ppm.payslip_id = p.id
-                   LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
-                   WHERE ppm.transaction_id = %s AND ppm.status = 'pending'
-                   ORDER BY ppm.score DESC
-                   LIMIT 5""",
-                (transaction_id,),
-                fetch_all=True
-            )
-            if payslip_matches_rows:
-                for row in payslip_matches_rows:
-                    match = dict(row)
-                    if match.get('payment_date'):
-                        match['payment_date'] = match['payment_date'].isoformat() if hasattr(match['payment_date'], 'isoformat') else str(match['payment_date'])
-                    if match.get('created_at'):
-                        match['created_at'] = match['created_at'].isoformat() if hasattr(match['created_at'], 'isoformat') else str(match['created_at'])
-                    pending_payslip_matches.append(match)
-        except Exception as e:
-            print(f"Error fetching pending payslip matches: {e}")
+        # try:
+        #     payslip_matches_rows = db_manager.execute_query(
+        #         """SELECT ppm.*, p.payslip_number, w.full_name as employee_name, p.net_amount, p.payment_date
+        #            FROM pending_payslip_matches ppm
+        #            JOIN payslips p ON ppm.payslip_id = p.id
+        #            LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+        #            WHERE ppm.transaction_id = %s AND ppm.status = 'pending'
+        #            ORDER BY ppm.score DESC
+        #            LIMIT 5""",
+        #         (transaction_id,),
+        #         fetch_all=True
+        #     )
+        #     if payslip_matches_rows:
+        #         for row in payslip_matches_rows:
+        #             match = dict(row)
+        #             if match.get('payment_date'):
+        #                 match['payment_date'] = match['payment_date'].isoformat() if hasattr(match['payment_date'], 'isoformat') else str(match['payment_date'])
+        #             if match.get('created_at'):
+        #                 match['created_at'] = match['created_at'].isoformat() if hasattr(match['created_at'], 'isoformat') else str(match['created_at'])
+        #             pending_payslip_matches.append(match)
+        # except Exception as e:
+        #     print(f"Error fetching pending payslip matches: {e}")
 
         # Get related transactions (same origin/destination, similar amounts, nearby dates)
         related_transactions = []
         try:
             # Find transactions with same origin or destination within 30 days
             related_rows = db_manager.execute_query(
-                """SELECT id, date, description, amount, currency, origin, destination,
+                """SELECT transaction_id, date, description, amount, currency, origin, destination,
                           accounting_category, subcategory
                    FROM transactions
                    WHERE tenant_id = %s
-                   AND id != %s
+                   AND transaction_id != %s
                    AND (
                        (origin = %s AND origin IS NOT NULL AND origin != '')
                        OR (destination = %s AND destination IS NOT NULL AND destination != '')
                    )
-                   AND ABS(EXTRACT(EPOCH FROM (date - %s::date))/86400) <= 30
+                   AND ABS(EXTRACT(EPOCH FROM (date::timestamp - %s::timestamp))/86400) <= 30
                    ORDER BY date DESC
                    LIMIT 10""",
                 (tenant_id, transaction_id,
@@ -9571,7 +9575,7 @@ def api_get_invoice_details(invoice_id):
         # Import ActivityLogger with multiple fallback strategies
         ActivityLogger = None
         try:
-            from services.activity_logger import ActivityLogger
+            from web_ui.services.activity_logger import ActivityLogger
         except ModuleNotFoundError:
             try:
                 import sys
@@ -9584,7 +9588,7 @@ def api_get_invoice_details(invoice_id):
                 if web_ui_path not in sys.path:
                     sys.path.insert(0, web_ui_path)
 
-                from services.activity_logger import ActivityLogger
+                from web_ui.services.activity_logger import ActivityLogger
             except ModuleNotFoundError:
                 # Final fallback - import directly from file
                 import sys
@@ -17615,7 +17619,7 @@ def api_get_payslip_details(payslip_id):
     try:
         tenant_id = get_current_tenant_id()
         from database import db_manager
-        from services.activity_logger import ActivityLogger
+        from web_ui.services.activity_logger import ActivityLogger
 
         # Get payslip data with workforce member info
         query = """
