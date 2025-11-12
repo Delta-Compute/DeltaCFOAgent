@@ -230,27 +230,12 @@ CREATE INDEX IF NOT EXISTS idx_polling_logs_invoice_id ON polling_logs(invoice_i
 CREATE INDEX IF NOT EXISTS idx_polling_logs_created_at ON polling_logs(created_at);
 
 -- ========================================
--- INITIAL DATA INSERTION
+-- SYSTEM CONFIGURATION DATA
 -- ========================================
+-- Note: Tenant-specific seed data has been moved to migrations/delta_tenant_seed_data.sql
+-- This schema file only contains generic system configuration applicable to all tenants
 
--- Default business entities
-INSERT INTO business_entities (name, description, entity_type) VALUES
-    ('Delta LLC', 'Main business entity', 'subsidiary'),
-    ('Delta Prop Shop LLC', 'Trading operations', 'subsidiary'),
-    ('Infinity Validator', 'Validator operations', 'subsidiary'),
-    ('MMIW LLC', 'Investment management', 'subsidiary'),
-    ('DM Mining LLC', 'Mining operations', 'subsidiary'),
-    ('Delta Mining Paraguay S.A.', 'Paraguay mining operations', 'subsidiary')
-ON CONFLICT (name) DO NOTHING;
-
--- Default crypto invoice clients
-INSERT INTO clients (name, contact_email, billing_address, notes) VALUES
-    ('Alps Blockchain', 'billing@alpsblockchain.com', 'Paraguay Mining Facility', 'Primary mining client'),
-    ('Exos Capital', 'accounting@exoscapital.com', 'Paraguay Mining Facility', 'Investment fund client'),
-    ('GM Data Centers', 'billing@gmdatacenters.com', 'Paraguay Mining Facility', 'Colocation services'),
-    ('Other', null, null, 'Miscellaneous clients')
-ON CONFLICT DO NOTHING;
-
+-- System-wide configuration (applies to all tenants)
 -- Default system configuration
 INSERT INTO system_config (key, value, description) VALUES
     ('invoice_overdue_days', '7', 'Days after due date to mark invoice as overdue'),
@@ -469,45 +454,20 @@ CREATE TRIGGER update_homepage_content_updated_at BEFORE UPDATE ON homepage_cont
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ========================================
--- SEED DATA FOR DELTA TENANT
+-- TENANT-SPECIFIC SEED DATA
 -- ========================================
-
--- Insert Delta tenant configuration
-INSERT INTO tenant_configuration (
-    tenant_id, company_name, company_tagline, company_description,
-    industry, default_currency, timezone
-) VALUES (
-    'delta',
-    'Delta Capital Holdings',
-    'Diversified Technology & Innovation Portfolio',
-    'A strategic holding company focused on emerging technologies, artificial intelligence, and digital transformation solutions. We build, acquire, and scale innovative businesses that shape the future of technology and commerce.',
-    'Technology & Investment',
-    'USD',
-    'America/New_York'
-) ON CONFLICT (tenant_id) DO UPDATE SET
-    company_name = EXCLUDED.company_name,
-    company_tagline = EXCLUDED.company_tagline,
-    company_description = EXCLUDED.company_description,
-    updated_at = CURRENT_TIMESTAMP;
-
--- Insert sample Delta wallet addresses
-INSERT INTO wallet_addresses (
-    tenant_id, wallet_address, entity_name, wallet_type, blockchain, purpose, created_by
-) VALUES
-    ('delta', '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb', 'Coinbase Exchange', 'exchange', 'ethereum', 'Primary CEX wallet for trading', 'system'),
-    ('delta', '0x8f5832e8b0b0c8b8c9f0e5e3a2b1c0d9e8f7a6b5', 'Delta Internal Wallet', 'internal', 'ethereum', 'Company owned wallet for operations', 'system'),
-    ('delta', 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh', 'Cold Storage BTC', 'internal', 'bitcoin', 'Long-term BTC holdings', 'system')
-ON CONFLICT (tenant_id, wallet_address) DO NOTHING;
-
--- Insert sample Delta bank accounts (with masked account numbers)
-INSERT INTO bank_accounts (
-    tenant_id, account_name, institution_name, account_number,
-    account_type, status, is_primary, created_by
-) VALUES
-    ('delta', 'Operating Account', 'Chase Bank', '****1234', 'checking', 'active', TRUE, 'system'),
-    ('delta', 'Savings Reserve', 'Chase Bank', '****5678', 'savings', 'active', FALSE, 'system'),
-    ('delta', 'Business Credit', 'American Express', '****9012', 'credit', 'active', FALSE, 'system')
-ON CONFLICT (tenant_id, institution_name, account_number) DO NOTHING;
+-- NOTE: Tenant-specific seed data has been removed from this schema file.
+-- This ensures new tenant databases start with a clean slate.
+--
+-- For existing tenant 'delta', run the following migration file separately:
+--   migrations/delta_tenant_seed_data.sql
+--
+-- For new tenants, use the onboarding flow at /api/onboarding to set up:
+--   - Company/tenant configuration
+--   - Business entities
+--   - Wallet addresses
+--   - Bank accounts
+--   - Initial classification patterns
 
 -- ========================================
 -- COMPLETION MESSAGE
@@ -525,7 +485,10 @@ BEGIN
     RAISE NOTICE '- Multi-Tenant: tenant_configuration, wallet_addresses, bank_accounts, homepage_content';
     RAISE NOTICE '- Analytics Views: monthly_transaction_summary, entity_performance, invoice_status_summary';
     RAISE NOTICE '';
-    RAISE NOTICE 'Default tenant "delta" configured with sample data';
-    RAISE NOTICE 'System is ready for production use!';
+    RAISE NOTICE '⚠️  IMPORTANT: No tenant-specific seed data inserted.';
+    RAISE NOTICE '   - For Delta tenant: Run migrations/delta_tenant_seed_data.sql';
+    RAISE NOTICE '   - For new tenants: Use /api/onboarding flow';
+    RAISE NOTICE '';
+    RAISE NOTICE 'Schema is ready for multi-tenant production use!';
     RAISE NOTICE '==============================================';
 END $$;

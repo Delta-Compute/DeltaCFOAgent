@@ -49,15 +49,24 @@ python invoice_processing/test_full_pipeline.py  # Full pipeline with Flask UI
 
 ### Database Operations
 ```bash
-# Create database tables
-python create_tables.py
+# Apply unified schema (for all tenants - contains no tenant-specific data)
+psql -h <host> -U <user> -d <database> -f postgres_unified_schema.sql
 
-# Apply schema (multiple regional options)
-python apply_schema_sa.py  # South America region
+# For Delta tenant ONLY - apply Delta-specific seed data
+python migrations/apply_delta_seed_data.py --verify
+
+# For new tenants - use onboarding flow (no seed data needed)
+# Navigate to /api/onboarding in web interface
 
 # Validate database setup
 python validate_simple.py
 ```
+
+**Important Schema Changes (Nov 2024):**
+- Tenant-specific seed data removed from `postgres_unified_schema.sql`
+- Delta business entities, clients, wallets moved to `migrations/delta_tenant_seed_data.sql`
+- New databases start with clean slate for multi-tenant SaaS
+- See `migrations/README_TENANT_SETUP.md` for detailed setup guide
 
 ## Architecture Overview
 
@@ -415,7 +424,9 @@ python test_postgresql_migration.py --component=main
 
 ### Migration Resources:
 
-- **Schema**: `postgres_unified_schema.sql` (unified schema for all components)
+- **Schema**: `postgres_unified_schema.sql` (unified schema for all components, no tenant-specific data)
+- **Delta Seed Data**: `migrations/delta_tenant_seed_data.sql` (Delta tenant only - DO NOT use for new tenants)
+- **Tenant Setup Guide**: `migrations/README_TENANT_SETUP.md` (comprehensive multi-tenant setup documentation)
 - **Data Migration**: `migrate_data_to_postgresql.py` (SQLite → PostgreSQL)
 - **Testing**: `test_postgresql_migration.py` (comprehensive validation)
 - **Guide**: `POSTGRESQL_MIGRATION_GUIDE.md` (step-by-step instructions)
