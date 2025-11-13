@@ -44,6 +44,66 @@ def get_token_from_request() -> Optional[str]:
     return None
 
 
+def auto_register_firebase_user(decoded_token: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Automatically register a new Firebase user in the database.
+
+    This is called when a Firebase user authenticates but doesn't exist in the database yet.
+    Creates a new user record with default permissions.
+
+    Args:
+        decoded_token: Decoded Firebase token with user info
+
+    Returns:
+        User dict if registration successful, None otherwise
+    """
+    try:
+        from web_ui.database import db_manager
+        import uuid
+
+        firebase_uid = decoded_token.get('uid')
+        email = decoded_token.get('email', '')
+        display_name = decoded_token.get('name', email.split('@')[0] if email else 'User')
+
+        # Generate new user ID
+        user_id = str(uuid.uuid4())
+
+        # Default user type: tenant_admin (business owner creating their first tenant)
+        # CFOs are created through invitation, not self-registration
+        user_type = 'tenant_admin'
+
+        # Create user record
+        insert_query = """
+            INSERT INTO users (id, firebase_uid, email, display_name, user_type, is_active, created_at)
+            VALUES (%s, %s, %s, %s, %s, true, CURRENT_TIMESTAMP)
+            RETURNING id, firebase_uid, email, display_name, user_type, is_active
+        """
+
+        result = db_manager.execute_query(
+            insert_query,
+            (user_id, firebase_uid, email, display_name, user_type),
+            fetch_one=True
+        )
+
+        if result:
+            logger.info(f"Auto-registered new user: {email} (Firebase UID: {firebase_uid})")
+            return {
+                'id': result['id'],
+                'firebase_uid': result['firebase_uid'],
+                'email': result['email'],
+                'display_name': result['display_name'],
+                'user_type': result['user_type'],
+                'is_active': result['is_active']
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"Error auto-registering user: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return None
+
+
 def get_current_user_from_db(firebase_uid: str) -> Optional[Dict[str, Any]]:
     """
     Fetch user from database by Firebase UID.
@@ -205,13 +265,18 @@ def require_auth(f):
         firebase_uid = decoded_token.get('uid')
         user = get_current_user_from_db(firebase_uid)
 
+        # Auto-register new Firebase users
         if not user:
-            logger.warning(f"User not found in database for Firebase UID: {firebase_uid}")
-            return jsonify({
-                'success': False,
-                'error': 'user_not_found',
-                'message': 'User not found in system. Please complete registration.'
-            }), 404
+            logger.info(f"User not found in database, attempting auto-registration for Firebase UID: {firebase_uid}")
+            user = auto_register_firebase_user(decoded_token)
+
+            if not user:
+                logger.error(f"Auto-registration failed for Firebase UID: {firebase_uid}")
+                return jsonify({
+                    'success': False,
+                    'error': 'registration_failed',
+                    'message': 'Failed to register user. Please try again or contact support.'
+                }), 500
 
         # Set current user in Flask g object
         set_current_user(user)
@@ -457,6 +522,11 @@ def optional_auth(f):
             if decoded_token:
                 firebase_uid = decoded_token.get('uid')
                 user = get_current_user_from_db(firebase_uid)
+
+                # Auto-register if user doesn't exist
+                if not user:
+                    user = auto_register_firebase_user(decoded_token)
+
                 if user:
                     set_current_user(user)
                     tenants = get_user_tenants(user['id'])

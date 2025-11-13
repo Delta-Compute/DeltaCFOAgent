@@ -377,8 +377,11 @@
     </div>
 
     <!-- Onboarding Bot Widget -->
-    <button id="onboardingBotToggle" style="position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; font-size: 24px; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); z-index: 1000; display: flex; align-items: center; justify-content: center; transition: all 0.3s;">
-        💬
+    <button id="onboardingBotToggle" style="position: fixed; bottom: 20px; right: 20px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); z-index: 1000; display: flex; align-items: center; justify-content: center; transition: all 0.3s;">
+        <svg style="width: 28px; height: 28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            <path d="M8 10h.01M12 10h.01M16 10h.01"></path>
+        </svg>
     </button>
 
     <div id="onboardingBotWindow" style="display: none; position: fixed !important; bottom: 90px !important; right: 20px !important; width: 400px; height: 600px; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15); z-index: 1001; overflow: hidden;">
@@ -774,6 +777,17 @@
             createTenantButton?.addEventListener('click', () => {
                 // Close dropdown
                 dropdown.style.display = 'none';
+
+                // Clear tenant context globally to ensure bot starts fresh
+                window.currentTenantId = null;
+                window.currentTenantName = null;
+
+                // Also remove from any data attributes
+                const accountMenu = document.querySelector('[data-current-tenant]');
+                if (accountMenu) {
+                    accountMenu.removeAttribute('data-current-tenant');
+                    accountMenu.removeAttribute('data-tenant-name');
+                }
 
                 // Open onboarding bot in CREATE mode (force new tenant creation)
                 if (window.OnboardingBot) {

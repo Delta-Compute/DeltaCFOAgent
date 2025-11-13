@@ -20,7 +20,8 @@
         entityData: {}, // Temporary entity data being collected
         entityStep: 0, // Current step in entity creation (0: name, 1: description, 2: type)
         conversationMode: false, // Tracking if in AI conversation mode
-        conversationHistory: [] // Chat history for AI context
+        conversationHistory: [], // Chat history for AI context (kept for compatibility)
+        sessionId: null // OnboardingBot session ID for backend tracking
     };
 
     // Steps for creating a NEW tenant
@@ -220,28 +221,19 @@
             }
 
             if (tenant && tenant.id) {
-                // User is in an existing tenant - configure mode
+                // User is in an existing tenant - start AI conversation with context-aware greeting
                 botState.mode = 'configure_tenant';
                 botState.currentTenant = tenant.id;
+                botState.conversationMode = true;
+                botState.sessionId = null;
                 console.log('[OnboardingBot] Configure mode for tenant:', tenant.id);
 
-                addBotMessage(`Welcome! You're currently managing "${tenant.name}".`);
-                setTimeout(() => {
-                    addBotMessage(configureTenantSteps[0].message);
-                    setTimeout(() => {
-                        addBotMessage('Choose what you would like to configure:');
-                        // Add option buttons
-                        const options = [
-                            { value: '1', icon: '🏢', label: 'Add Business Entities' },
-                            { value: '2', icon: '🏦', label: 'Add Bank Accounts' },
-                            { value: '3', icon: '📄', label: 'Upload Documents' },
-                            { value: '4', icon: '💬', label: 'Talk About Business' },
-                            { value: '5', icon: '✅', label: 'Exit' }
-                        ];
-                        addOptionButtons(options);
-                        updateProgress();
-                    }, 800);
-                }, 1000);
+                // Show progress bar with initial value
+                updateProgress(0);
+
+                // Start new session to get contextual greeting from backend
+                showLoading(true);
+                startConfigureTenantSession();
             } else {
                 // User is not in a tenant - create mode
                 botState.mode = 'create_tenant';
@@ -358,78 +350,52 @@
         botState.isProcessing = true;
         showLoading(true);
 
-        // Handle AI conversation mode
+        // Handle AI conversation mode (now the default for configure_tenant)
         if (botState.conversationMode) {
             await handleConversationInput(input);
             return;
         }
 
-        // Handle document upload yes/no response
-        if (botState.awaitingDocumentResponse) {
-            await handleDocumentUploadResponse(input);
-            return;
-        }
+        // If not in conversation mode, check if we're in create_tenant mode
+        if (botState.mode === 'create_tenant') {
+            // Handle tenant creation flow
+            const steps = createTenantSteps;
+            const currentStep = steps[botState.currentStep];
 
-        // Handle entity creation yes/no response
-        if (botState.awaitingEntityResponse) {
-            await handleEntityCreationResponse(input);
-            return;
-        }
+            // Save user data
+            if (currentStep && currentStep.field) {
+                botState.userData[currentStep.field] = input;
+            }
 
-        // Handle entity creation flow
-        if (botState.creatingEntity) {
-            await handleEntityCreationInput(input);
-            return;
-        }
+            // Move to next step
+            botState.currentStep++;
 
-        // Get the appropriate steps array based on mode
-        const steps = botState.mode === 'configure_tenant' ? configureTenantSteps : createTenantSteps;
-        const currentStep = steps[botState.currentStep];
-
-        // Save user data
-        if (currentStep.field) {
-            botState.userData[currentStep.field] = input;
-        }
-
-        // Handle configure mode options
-        if (botState.mode === 'configure_tenant' && currentStep.id === 'welcome_existing') {
-            await handleConfigureOption(input);
-            return;
-        }
-
-        // Move to next step
-        botState.currentStep++;
-
-        // Check if we're done
-        if (botState.currentStep >= steps.length) {
-            if (botState.mode === 'create_tenant') {
+            // Check if we're done
+            if (botState.currentStep >= steps.length) {
                 await completeTenantSetup();
             } else {
-                showLoading(false);
-                addBotMessage('All done! Anything else you need?');
-                botState.isProcessing = false;
+                const nextStep = steps[botState.currentStep];
+
+                setTimeout(() => {
+                    showLoading(false);
+                    addBotMessage(nextStep.message);
+
+                    if (!nextStep.final) {
+                        setTimeout(() => {
+                            addBotMessage(nextStep.question);
+                            updateProgress();
+                            botState.isProcessing = false;
+                        }, 800);
+                    } else {
+                        completeTenantSetup();
+                    }
+                }, 1000);
             }
         } else {
-            const nextStep = steps[botState.currentStep];
-
-            setTimeout(() => {
-                showLoading(false);
-                addBotMessage(nextStep.message);
-
-                if (!nextStep.final) {
-                    setTimeout(() => {
-                        addBotMessage(nextStep.question);
-                        updateProgress();
-                        botState.isProcessing = false;
-                    }, 800);
-                } else {
-                    if (botState.mode === 'create_tenant') {
-                        completeTenantSetup();
-                    } else {
-                        botState.isProcessing = false;
-                    }
-                }
-            }, 1000);
+            // Unknown state - should not happen since conversation mode is handled above
+            showLoading(false);
+            addBotMessage('I\'m not sure what to do. Please try again or refresh the page.');
+            botState.isProcessing = false;
         }
     }
 
@@ -608,6 +574,107 @@
         }
     }
 
+    // Start configure tenant session with context-aware greeting
+    async function startConfigureTenantSession() {
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                throw new Error('Not authenticated');
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+
+            // Call backend to start a new session (will create context-aware greeting)
+            const response = await fetch('/api/onboarding/start-session', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                }
+            });
+
+            const data = await response.json();
+            showLoading(false);
+
+            if (data.success) {
+                botState.sessionId = data.session_id;
+
+                // Display the context-aware greeting from backend
+                addBotMessage(data.greeting);
+
+                // Update progress bar with current completion
+                if (data.completion_percentage !== undefined) {
+                    updateProgress(data.completion_percentage);
+                }
+
+                botState.isProcessing = false;
+            } else {
+                addBotMessage('Error starting session. Please try again.');
+                botState.isProcessing = false;
+            }
+        } catch (error) {
+            showLoading(false);
+            console.error('Start session error:', error);
+            addBotMessage('Sorry, there was an error. Please try again.');
+            botState.isProcessing = false;
+        }
+    }
+
+    // Send initial message to AI to start conversation
+    async function sendInitialAIMessage(initialMessage) {
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                throw new Error('Not authenticated');
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+
+            // Call chat API with OnboardingBot backend
+            const response = await fetch('/api/onboarding/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({
+                    message: initialMessage,
+                    session_id: botState.sessionId
+                })
+            });
+
+            const data = await response.json();
+            showLoading(false);
+
+            if (data.success) {
+                // Store session ID
+                if (data.session_id) {
+                    botState.sessionId = data.session_id;
+                }
+
+                // Display AI response
+                addBotMessage(data.response);
+
+                // Update progress bar with completion percentage
+                if (data.completion_percentage !== undefined) {
+                    updateProgress(data.completion_percentage);
+                }
+
+                botState.isProcessing = false;
+
+            } else {
+                addBotMessage(`Error: ${data.message || 'Failed to start conversation'}`);
+                botState.isProcessing = false;
+            }
+
+        } catch (error) {
+            showLoading(false);
+            console.error('Initial AI message error:', error);
+            addBotMessage('Sorry, there was an error starting the conversation. Please try again.');
+            botState.isProcessing = false;
+        }
+    }
+
     // Handle AI conversation input
     async function handleConversationInput(input) {
         const normalizedInput = input.trim().toLowerCase();
@@ -616,6 +683,7 @@
         if (normalizedInput === 'exit' || normalizedInput === 'done' || normalizedInput === 'stop' || normalizedInput === 'menu') {
             botState.conversationMode = false;
             botState.conversationHistory = [];
+            botState.sessionId = null;
             showLoading(false);
             addBotMessage('Thanks for sharing! The information you provided will help improve transaction classification.');
             setTimeout(() => {
@@ -641,13 +709,7 @@
 
             const idToken = await auth.currentUser.getIdToken();
 
-            // Add user message to history
-            botState.conversationHistory.push({
-                role: 'user',
-                content: input
-            });
-
-            // Call chat API
+            // Call chat API with OnboardingBot backend
             const response = await fetch('/api/onboarding/chat', {
                 method: 'POST',
                 headers: {
@@ -656,7 +718,7 @@
                 },
                 body: JSON.stringify({
                     message: input,
-                    conversation_history: botState.conversationHistory.slice(-6) // Send last 6 messages
+                    session_id: botState.sessionId // Send session ID if we have one
                 })
             });
 
@@ -664,28 +726,24 @@
             showLoading(false);
 
             if (data.success) {
-                // Add AI response to history
-                botState.conversationHistory.push({
-                    role: 'assistant',
-                    content: data.response
-                });
+                // Store session ID for subsequent messages
+                if (data.session_id) {
+                    botState.sessionId = data.session_id;
+                }
 
                 // Display AI response
                 addBotMessage(data.response);
 
-                // If knowledge was extracted, show notification
-                if (data.knowledge_extracted && data.knowledge_extracted.length > 0) {
-                    setTimeout(() => {
-                        const knowledgeMsg = `I extracted ${data.knowledge_extracted.length} insight(s) from our conversation that will help improve your transaction classification.`;
-                        addBotMessage(knowledgeMsg);
-                    }, 1000);
+                // Update progress bar with completion percentage (silently, no chat message)
+                if (data.completion_percentage !== undefined) {
+                    updateProgress(data.completion_percentage);
                 }
 
-                // After 5 messages, remind user they can exit
+                // After 10 messages, remind user they can exit
                 if (botState.conversationHistory.length >= 10) {
                     setTimeout(() => {
                         addBotMessage('(Type "exit" anytime to return to the main menu)');
-                    }, 1500);
+                    }, 2500);
                 }
 
                 botState.isProcessing = false;
@@ -709,38 +767,36 @@
 
         showLoading(false);
 
-        if (normalizedOption === '1' || normalizedOption.includes('entit')) {
-            addBotMessage('Perfect! Let\'s add a new business entity.');
-            setTimeout(() => {
-                addBotMessage('What is the name of the entity?');
-                botState.creatingEntity = true;
-                botState.entityStep = 0;
-                botState.entityData = {};
-                botState.isProcessing = false;
-            }, 800);
-        } else if (normalizedOption === '2' || normalizedOption.includes('bank') || normalizedOption.includes('account')) {
+        // Check if user typed a number (1-5) - handle as menu selection
+        if (normalizedOption === '1') {
+            // Start AI conversation mode for entity setup - fully AI driven
+            botState.conversationMode = true;
+            botState.conversationHistory = [];
+            botState.sessionId = null; // Will be created on first message
+
+            // Send initial context to AI to start conversation
+            showLoading(true);
+            sendInitialAIMessage('I want to set up business entities for my company. Can you help me?');
+        } else if (normalizedOption === '2') {
             addBotMessage('Perfect! Let me take you to the Bank Accounts page.');
             setTimeout(() => {
                 window.location.href = '/whitelisted-accounts';
             }, 1500);
-        } else if (normalizedOption === '3' || normalizedOption.includes('upload') || normalizedOption.includes('document')) {
+        } else if (normalizedOption === '3') {
             addBotMessage('Perfect! Upload your business documents here (contracts, reports, statements, etc.).');
             addBotMessage('I\'ll analyze them with AI to learn about your business and improve transaction classification.');
             setTimeout(() => {
                 showDocumentUploadInterface();
             }, 1000);
-        } else if (normalizedOption === '4' || normalizedOption.includes('talk') || normalizedOption.includes('conversation') || normalizedOption.includes('chat')) {
-            // Start AI conversation mode
+        } else if (normalizedOption === '4') {
+            // Start AI conversation mode - fully AI driven
             botState.conversationMode = true;
             botState.conversationHistory = [];
-            addBotMessage('Great! I\'d love to learn more about your business.');
-            setTimeout(() => {
-                addBotMessage('Tell me about your company, your vendors, typical expenses, or any financial patterns I should know about.');
-                setTimeout(() => {
-                    addBotMessage('(Type "exit" anytime to return to the main menu)');
-                    botState.isProcessing = false;
-                }, 800);
-            }, 1000);
+            botState.sessionId = null; // Will be created on first message
+
+            // Send initial context to AI to start conversation
+            showLoading(true);
+            sendInitialAIMessage('I want to tell you about my business to help improve transaction classification. What would you like to know?');
         } else if (normalizedOption === '5' || normalizedOption.includes('exit') || normalizedOption.includes('cancel')) {
             addBotMessage('No problem! Feel free to reach out anytime you need help.');
             botState.isProcessing = false;
@@ -748,8 +804,12 @@
                 closeBot();
             }, 1500);
         } else {
-            addBotMessage('I didn\'t understand that. Please type 1, 2, 3, 4, or 5.');
-            botState.isProcessing = false;
+            // User typed natural language instead of a number - start AI conversation with their actual message
+            botState.conversationMode = true;
+            botState.conversationHistory = [];
+            botState.sessionId = null;
+            showLoading(true);
+            sendInitialAIMessage(option); // Send the user's actual message to AI
         }
     }
 
@@ -1009,25 +1069,29 @@
 
     // Update progress bar
     function updateProgress(customPercent) {
-        // Only show progress bar during tenant creation, not in configure mode
-        if (botState.mode === 'configure_tenant') {
-            if (progressContainer) {
-                progressContainer.style.display = 'none';
-            }
-            return;
-        }
-
-        // Show progress bar in create_tenant mode
+        // Always show progress bar
         if (progressContainer) {
             progressContainer.style.display = 'block';
         }
 
-        const steps = botState.mode === 'configure_tenant' ? configureTenantSteps : createTenantSteps;
-        const percent = customPercent !== undefined ? customPercent :
-            Math.round((botState.currentStep / steps.length) * 100);
+        // Calculate percentage based on mode
+        let percent = 0;
+        if (customPercent !== undefined) {
+            percent = customPercent;
+        } else if (botState.mode === 'configure_tenant') {
+            // In configure mode, percentage should come from backend (completion_percentage)
+            // This will be updated when we receive data from the bot
+            percent = 0; // Default to 0, will be updated from API response
+        } else {
+            // In create mode, use step-based progress
+            const steps = createTenantSteps;
+            percent = Math.round((botState.currentStep / steps.length) * 100);
+        }
 
-        progressBar.style.width = `${percent}%`;
-        progressText.textContent = `${percent}%`;
+        if (progressBar && progressText) {
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `${percent}%`;
+        }
     }
 
     // Show/hide loading indicator
@@ -1051,7 +1115,7 @@
         return now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
-    // Check URL for ?openBot parameter
+    // Check URL for ?openBot parameter and auto-open on homepage
     function checkAutoOpen() {
         const urlParams = new URLSearchParams(window.location.search);
         const openBotParam = urlParams.get('openBot');
@@ -1071,14 +1135,32 @@
                     openBot();
                 }
             }, 500);
+        } else if (window.location.pathname === '/' || window.location.pathname === '') {
+            // Auto-open on homepage by default
+            setTimeout(() => {
+                openBot();
+            }, 500);
         }
     }
 
     // Expose public API for external scripts to open bot in create mode
     window.OnboardingBot = {
         openCreateTenant: function() {
-            // Reset bot state to force new session
+            // FULLY reset bot state to force new session (no tenant context)
             botState.currentStep = 0;
+            botState.userData = {};
+            botState.isProcessing = false;
+            botState.mode = null;
+            botState.currentTenant = null;
+            botState.conversationMode = false;
+            botState.conversationHistory = [];
+            botState.sessionId = null;
+            botState.awaitingDocumentResponse = false;
+            botState.awaitingEntityResponse = false;
+            botState.creatingEntity = false;
+            botState.entityData = {};
+            botState.entityStep = 0;
+
             messagesContainer.innerHTML = '';
 
             // Open bot in create_tenant mode

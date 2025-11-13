@@ -696,19 +696,68 @@ def get_tenant_knowledge():
         }), 500
 
 
+@onboarding_bp.route('/start-session', methods=['POST'])
+@require_auth
+def start_session():
+    """
+    Start a new onboarding session with context-aware greeting.
+
+    Returns the session_id, greeting message, and current completion percentage.
+    The greeting is context-aware based on how much data has been collected.
+    """
+    try:
+        from web_ui.services.onboarding_bot import OnboardingBot
+
+        tenant_id = get_current_tenant_id()
+
+        # Create OnboardingBot instance
+        bot = OnboardingBot(db_manager, tenant_id)
+
+        # Start new session (creates context-aware greeting)
+        session_id = bot.start_new_session()
+
+        # Get the greeting from the conversation history
+        history = bot.get_conversation_history(session_id)
+        greeting = history[0]['content'] if history else "Hi! How can I help you?"
+
+        # Get completion status
+        status = bot.get_onboarding_status()
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'greeting': greeting,
+            'completion_percentage': status.get('completion_percentage', 0)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Start session error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': 'server_error',
+            'message': 'An error occurred starting the session'
+        }), 500
+
+
 @onboarding_bp.route('/chat', methods=['POST'])
 @require_auth
 def chat():
     """
-    AI conversational chat to extract business knowledge from user conversations.
+    AI conversational onboarding chat using OnboardingBot service.
 
-    Allows users to freely describe their business and automatically extracts
-    knowledge for improving transaction classification.
+    Uses the OnboardingBot class for natural conversation that:
+    - Extracts tenant configuration data (company info, etc.)
+    - Extracts business entities with revenue/description
+    - Learns business knowledge from conversation
     """
     try:
+        from web_ui.services.onboarding_bot import OnboardingBot
+
         data = request.get_json()
         user_message = data.get('message', '').strip()
-        conversation_history = data.get('conversation_history', [])
+        session_id = data.get('session_id')
 
         if not user_message:
             return jsonify({
@@ -718,135 +767,31 @@ def chat():
             }), 400
 
         tenant_id = get_current_tenant_id()
-        user_id = get_current_user_id()
 
-        # Get tenant context for personalized responses
-        tenant = db_manager.execute_query("""
-            SELECT company_name, description, industry
-            FROM tenant_configuration
-            WHERE tenant_id = %s
-        """, (tenant_id,), fetch_one=True)
+        # Create OnboardingBot instance
+        bot = OnboardingBot(db_manager, tenant_id)
 
-        company_name = tenant.get('company_name', 'your company') if tenant else 'your company'
-        industry = tenant.get('industry', 'general') if tenant else 'general'
+        # Create new session if not provided
+        if not session_id:
+            session_id = bot.start_new_session()
 
-        # Build conversation prompt
-        system_prompt = f"""You are an AI assistant helping {company_name} set up their financial management system.
+        # Process message through bot
+        result = bot.chat(session_id, user_message)
 
-Your goals:
-1. Have a natural, friendly conversation about their business
-2. Ask relevant follow-up questions to understand their operations
-3. Extract useful information about vendors, transaction patterns, business rules, and entity relationships
-
-Keep responses concise (2-3 sentences) and conversational.
-Focus on understanding:
-- Key vendors and service providers they work with
-- Typical transaction patterns (frequencies, amounts, purposes)
-- Business rules for expense categorization
-- Relationships between different business entities
-- Industry-specific financial patterns
-
-Be helpful and encouraging. Make the user feel comfortable sharing details about their business."""
-
-        # Build messages array with history
-        messages = []
-
-        # Add conversation history
-        for msg in conversation_history[-6:]:  # Keep last 6 messages for context
-            messages.append({
-                'role': msg.get('role', 'user'),
-                'content': msg.get('content', '')
-            })
-
-        # Add current user message
-        messages.append({
-            'role': 'user',
-            'content': user_message
-        })
-
-        # Call Claude AI
-        client = get_claude_client()
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
-            max_tokens=500,
-            system=system_prompt,
-            messages=messages
-        )
-
-        ai_response = response.content[0].text
-
-        # Extract knowledge from the conversation
-        knowledge_extracted = []
-        if len(conversation_history) >= 2:  # Only extract after some conversation
-            try:
-                knowledge_extraction_prompt = f"""Analyze this conversation and extract any useful business knowledge.
-
-Conversation:
-User: {user_message}
-Assistant: {ai_response}
-
-Recent context:
-{chr(10).join([f"{msg['role']}: {msg['content']}" for msg in conversation_history[-4:]])}
-
-Extract structured knowledge in JSON format for each insight:
-{{
-  "knowledge_type": "vendor_info" | "transaction_pattern" | "business_rule" | "entity_relationship" | "general",
-  "title": "Brief summary (max 50 chars)",
-  "content": "Detailed description",
-  "confidence": 0.0-1.0
-}}
-
-ONLY return insights that are factual business information (vendors, rules, patterns).
-DO NOT extract greetings, questions, or non-factual statements.
-Return JSON array or empty array [] if no extractable knowledge."""
-
-                extraction_response = client.messages.create(
-                    model="claude-3-haiku-20240307",
-                    max_tokens=1000,
-                    messages=[{
-                        'role': 'user',
-                        'content': knowledge_extraction_prompt
-                    }]
-                )
-
-                # Parse extracted knowledge
-                extraction_text = extraction_response.content[0].text.strip()
-
-                # Try to extract JSON from the response
-                import re
-                json_match = re.search(r'\[.*\]', extraction_text, re.DOTALL)
-                if json_match:
-                    import json
-                    knowledge_items = json.loads(json_match.group())
-
-                    # Save each knowledge item to database
-                    for item in knowledge_items:
-                        if isinstance(item, dict) and item.get('title') and item.get('content'):
-                            db_manager.execute_query("""
-                                INSERT INTO tenant_knowledge
-                                (tenant_id, knowledge_type, title, content, confidence_score, is_active)
-                                VALUES (%s, %s, %s, %s, %s, true)
-                            """, (
-                                tenant_id,
-                                item.get('knowledge_type', 'general'),
-                                item.get('title', ''),
-                                item.get('content', ''),
-                                item.get('confidence', 0.8)
-                            ))
-
-                            knowledge_extracted.append({
-                                'type': item.get('knowledge_type'),
-                                'title': item.get('title')
-                            })
-
-            except Exception as e:
-                logger.warning(f"Knowledge extraction error: {e}")
-                # Don't fail the request if extraction fails
+        if result.get('error'):
+            return jsonify({
+                'success': False,
+                'error': result.get('error'),
+                'message': result.get('response', 'An error occurred')
+            }), 500
 
         return jsonify({
             'success': True,
-            'response': ai_response,
-            'knowledge_extracted': knowledge_extracted
+            'session_id': session_id,
+            'response': result.get('response'),
+            'extracted_data': result.get('extracted_data'),
+            'entities_saved': result.get('entities_saved', []),
+            'completion_percentage': result.get('completion_percentage', 0)
         }), 200
 
     except Exception as e:
