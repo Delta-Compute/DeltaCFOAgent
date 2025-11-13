@@ -197,8 +197,8 @@ init_tenant_context(app)
 # Register CFO reporting routes
 register_reporting_routes(app)
 
-# Initialize CFO Agent for transaction classification
-cfo_agent = DeltaCFOAgent()
+# NOTE: Global cfo_agent removed - DeltaCFOAgent instances are created
+# per-request with proper tenant_id context in route handlers
 
 # ====================================================================
 # Diagnostic Routes
@@ -8072,8 +8072,9 @@ Important:
 
 
 @app.route('/api/upload', methods=['POST'])
+@require_auth
 def upload_file():
-    """Handle file upload and processing"""
+    """Handle file upload and processing - requires authentication"""
     import sys
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.write("UPLOAD ENDPOINT HIT - Starting file upload processing\n")
@@ -8310,13 +8311,28 @@ def upload_file():
         # STEP 1: Process file with smart ingestion FIRST (always process to get latest business logic)
         print(f" DEBUG: Step 1 - Processing file with smart ingestion: {filename}")
 
+        # Get tenant_id from authenticated user's current tenant
+        from middleware.auth_middleware import get_current_tenant
+        tenant = get_current_tenant()
+        if not tenant:
+            logger.error(f"[UPLOAD] No tenant context - user must complete onboarding")
+            return jsonify({
+                'success': False,
+                'error': 'no_tenant_context',
+                'message': 'Please complete onboarding to create a tenant before uploading files'
+            }), 400
+
+        tenant_id = tenant['id']
+        print(f" DEBUG: Using tenant_id: {tenant_id} (from authenticated user)")
+
         # Process the file to get enriched transactions
         try:
             # Use a subprocess to run the processing in a separate Python instance
             # Convert Windows backslashes to forward slashes (works on all platforms)
             parent_dir_safe = parent_dir.replace(chr(92), '/')
             filename_safe = filename.replace(chr(92), '/')
-            
+            tenant_id_safe = tenant_id.replace("'", "\\'")  # Escape single quotes
+
             processing_script = f"""
 import sys
 import os
@@ -8325,7 +8341,7 @@ os.chdir('{parent_dir_safe}')
 
 from main import DeltaCFOAgent
 
-agent = DeltaCFOAgent()
+agent = DeltaCFOAgent(tenant_id='{tenant_id_safe}')
 result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
 
 if result is not None:
@@ -8770,8 +8786,9 @@ def download_file(filename):
         return f"Error downloading file: {str(e)}", 500
 
 @app.route('/api/process-duplicates', methods=['POST'])
+@require_auth
 def process_duplicates():
-    """Process a file that was already uploaded with specific duplicate handling"""
+    """Process a file that was already uploaded with specific duplicate handling - requires authentication"""
     try:
         duplicate_handling = request.form.get('duplicateHandling', 'overwrite')
         filename = request.form.get('filename', '')
@@ -8788,11 +8805,26 @@ def process_duplicates():
         if not os.path.exists(filepath):
             return jsonify({'error': 'File not found'}), 400
 
+        # Get tenant_id from authenticated user's current tenant
+        from middleware.auth_middleware import get_current_tenant
+        tenant = get_current_tenant()
+        if not tenant:
+            logger.error(f"[PROCESS-DUPLICATES] No tenant context - user must complete onboarding")
+            return jsonify({
+                'success': False,
+                'error': 'no_tenant_context',
+                'message': 'Please complete onboarding to create a tenant before processing files'
+            }), 400
+
+        tenant_id = tenant['id']
+        print(f"[PROCESS] Using tenant_id: {tenant_id} (from authenticated user)")
+
         # Use same processing logic as upload_file but force the duplicate handling
         # Convert Windows backslashes to forward slashes (works on all platforms)
         parent_dir_safe = parent_dir.replace(chr(92), '/')
         filename_safe = filename.replace(chr(92), '/')
-        
+        tenant_id_safe = tenant_id.replace("'", "\\'")  # Escape single quotes
+
         processing_script = f"""
 import sys
 import os
@@ -8801,7 +8833,7 @@ os.chdir('{parent_dir_safe}')
 
 from main import DeltaCFOAgent
 
-agent = DeltaCFOAgent()
+agent = DeltaCFOAgent(tenant_id='{tenant_id_safe}')
 result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
 
 if result is not None:

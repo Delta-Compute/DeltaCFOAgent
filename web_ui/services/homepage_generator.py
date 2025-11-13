@@ -23,14 +23,23 @@ logger = logging.getLogger(__name__)
 class HomepageContentGenerator:
     """Generates homepage content using Claude AI based on company data"""
 
-    def __init__(self, db_manager, tenant_id: str = 'delta'):
+    def __init__(self, db_manager, tenant_id: str):
         """
         Initialize the homepage content generator
 
         Args:
             db_manager: DatabaseManager instance
-            tenant_id: Tenant identifier
+            tenant_id: Tenant identifier (REQUIRED - no default for security)
+
+        Raises:
+            ValueError: If tenant_id is not provided or is empty
         """
+        if not tenant_id:
+            raise ValueError(
+                "tenant_id is required for HomepageContentGenerator. "
+                "This prevents accidental data leakage between tenants."
+            )
+
         self.db_manager = db_manager
         self.tenant_id = tenant_id
         self.data_service = DataQueryService(db_manager, tenant_id)

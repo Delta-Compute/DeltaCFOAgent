@@ -20,13 +20,22 @@ import argparse
 import re
 
 class DeltaCFOAgent:
-    def __init__(self, tenant_id='delta'):
+    def __init__(self, tenant_id: str):
         """
         Initialize the CFO Agent with business knowledge
 
         Args:
-            tenant_id (str): Tenant identifier for multi-tenant support (default: 'delta')
+            tenant_id (str): Tenant identifier for multi-tenant support (REQUIRED - no default)
+
+        Raises:
+            ValueError: If tenant_id is not provided or is empty
         """
+        if not tenant_id:
+            raise ValueError(
+                "tenant_id is required for DeltaCFOAgent. "
+                "This prevents accidental data leakage between tenants."
+            )
+
         self.tenant_id = tenant_id
         self.business_knowledge_file = 'business_knowledge.md'
         self.master_file = 'MASTER_TRANSACTIONS.csv'  # SINGLE SOURCE OF TRUTH - NEVER CREATE DUPLICATES
@@ -2383,84 +2392,10 @@ class DeltaCFOAgent:
         self.consolidate_to_master()
 
 
-def main():
-    """Main entry point for the Delta CFO Agent"""
-
-    print("=" * 60)
-    print("DELTA CFO AGENT - Transaction Classification System")
-    print("=" * 60)
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Delta CFO Agent - Transaction Classification System')
-    parser.add_argument('files', nargs='*', help='CSV or Excel files to process')
-    parser.add_argument('--enhance', action='store_true',
-                       help='Enable enhanced processing (crypto prices, USD conversion, keywords, Origin/Destination)')
-    parser.add_argument('--merge', action='store_true',
-                       help='Automatically merge to MASTER_TRANSACTIONS.csv after processing')
-    parser.add_argument('--backup', action='store_true',
-                       help='Create backup before any operations')
-
-    args = parser.parse_args()
-
-    agent = DeltaCFOAgent()
-
-    # Create backup if requested
-    if args.backup:
-        agent.create_backup()
-
-    if args.files:
-        # Process specific files
-        processed_files = []
-        for file_path in args.files:
-            if os.path.exists(file_path):
-                result_df = agent.process_file(file_path, enhance=args.enhance)
-                if result_df is not None:
-                    processed_files.append(f"classified_{os.path.splitext(os.path.basename(file_path))[0]}.csv")
-            else:
-                print(f" File not found: {file_path}")
-
-        # Merge to master if requested
-        if args.merge and processed_files:
-            for processed_file in processed_files:
-                full_path = os.path.join(agent.classified_dir, processed_file)
-                if os.path.exists(full_path):
-                    agent.safe_merge_to_master(full_path)
-        elif processed_files:
-            # Standard consolidation
-            agent.consolidate_to_master()
-    else:
-        # Interactive mode
-        print("\nUsage:")
-        print("  python main.py file.csv --enhance           # Process with enhancements")
-        print("  python main.py file.csv --enhance --merge   # Process and merge to master")
-        print("  python main.py file1.csv file2.csv         # Process multiple files")
-        print("  python main.py                             # Process all files in incoming_files/")
-        print("")
-
-        # Check for incoming_files directory
-        if os.path.exists('incoming_files'):
-            response = input("Process all files in incoming_files/? (y/n): ")
-            if response.lower() == 'y':
-                enhance_response = input("Use enhanced processing? (y/n): ")
-                enhance = enhance_response.lower() == 'y'
-
-                # Process all files
-                files = glob.glob(os.path.join('incoming_files', '*.csv'))
-                files.extend(glob.glob(os.path.join('incoming_files', '*.xlsx')))
-
-                for file_path in files:
-                    agent.process_file(file_path, enhance=enhance)
-
-                agent.consolidate_to_master()
-        else:
-            print("\n Create an 'incoming_files' directory and add your transaction files there.")
-            print("   Or specify files directly: python main.py file.csv --enhance")
-
-    print("\n Processing complete!")
-    if os.path.exists(agent.master_file):
-        df = pd.read_csv(agent.master_file)
-        print(f" Master file now contains {len(df)} transactions")
-
-
-if __name__ == "__main__":
-    main()
+# CLI REMOVED: This file is now a library-only module for the web UI.
+# The DeltaCFOAgent class is imported by web_ui/app_db.py for transaction processing.
+# All user interactions should go through the web interface at http://localhost:5001
+#
+# Historical note: The CLI (lines 2395-2475) was removed as part of the multi-tenant
+# security refactoring to prevent tenant isolation bypass and ensure all operations
+# go through proper authentication and tenant context validation.

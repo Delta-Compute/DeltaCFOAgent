@@ -196,9 +196,10 @@ class MainSystemIntegrator:
             }
 
             # Save to main transactions table
-            agent = DeltaCFOAgent()
-            # This would integrate with main system - implement later
+            # NOTE: DeltaCFOAgent instantiation removed - this integration is not implemented yet
+            # TODO: When implementing, pass tenant_id parameter: agent = DeltaCFOAgent(tenant_id=...)
             print(f"🔗 Integration point: Would create transaction for invoice {invoice_dict['invoice_number']}")
+            print("⚠️  Invoice-to-transaction integration not yet implemented")
             return None
 
         except Exception as e:

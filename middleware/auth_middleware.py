@@ -285,25 +285,33 @@ def require_auth(f):
         tenants = get_user_tenants(user['id'])
         g.user_tenants = tenants
 
-        # Set current tenant from session or default to first tenant
+        # Set current tenant from session
         from web_ui.tenant_context import get_current_tenant_id, set_tenant_id
-        current_tenant_id = get_current_tenant_id()
+        current_tenant_id = get_current_tenant_id(strict=False)  # Non-strict for backward compatibility
 
-        if current_tenant_id and current_tenant_id != 'delta':
+        if current_tenant_id:
             # Find tenant in user's tenants
             current_tenant = next((t for t in tenants if t['id'] == current_tenant_id), None)
             if current_tenant:
                 # User has access to session tenant - use it
                 set_current_tenant(current_tenant)
             else:
-                # Session tenant not in user's list - reset to first tenant
+                # Session tenant not accessible - reset to first tenant or None
                 if tenants:
                     set_current_tenant(tenants[0])
                     set_tenant_id(tenants[0]['id'])
+                else:
+                    # User has NO tenants - they must create one through onboarding
+                    set_current_tenant(None)
+                    logger.warning(f"User {user['email']} has no accessible tenants - onboarding required")
         elif tenants:
-            # No session tenant - default to first tenant
+            # No session tenant - default to first available tenant
             set_current_tenant(tenants[0])
             set_tenant_id(tenants[0]['id'])
+        else:
+            # User has no tenants at all
+            set_current_tenant(None)
+            logger.warning(f"User {user['email']} has no tenants - onboarding required")
 
         return f(*args, **kwargs)
 

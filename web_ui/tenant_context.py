@@ -6,35 +6,50 @@ Handles tenant identification and session management
 
 from flask import session, g, request
 from functools import wraps
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Default tenant (for backward compatibility)
-DEFAULT_TENANT_ID = 'delta'
+# DEPRECATED: Default tenant removed for security
+# Previously: DEFAULT_TENANT_ID = 'delta'
+# Now: Tenant context must be explicitly set via authentication or headers
+# This prevents accidental data leakage between tenants
 
-def get_current_tenant_id() -> str:
+def get_current_tenant_id(strict: bool = False) -> Optional[str]:
     """
-    Get the current tenant ID from session or default to 'delta'
+    Get the current tenant ID from session or context.
 
     Priority:
-    1. Flask g object (set per request)
+    1. Flask g object (set per request by middleware)
     2. Flask session (persists across requests)
     3. Request header (X-Tenant-ID for API calls)
-    4. Default tenant 'delta'
+
+    Args:
+        strict: If True, raises ValueError when no tenant context exists.
+                If False, returns None (for backward compatibility during migration).
+                Default: False (will become True in future versions)
 
     Returns:
-        str: Tenant ID
+        str: Tenant ID if found
+        None: If no tenant context and strict=False
+
+    Raises:
+        ValueError: If strict=True and no tenant context exists
+
+    Security Note:
+        In production, all authenticated endpoints should have tenant context.
+        Missing tenant context indicates a configuration error or security issue.
     """
     try:
-        # Check Flask g object first (set per request)
-        if hasattr(g, 'tenant_id'):
+        # Check Flask g object first (set per request by auth middleware)
+        if hasattr(g, 'tenant_id') and g.tenant_id:
             return g.tenant_id
 
-        # Check session
-        if 'tenant_id' in session:
+        # Check session (persists across requests)
+        if 'tenant_id' in session and session['tenant_id']:
             tenant_id = session['tenant_id']
-            g.tenant_id = tenant_id  # Cache in g
+            g.tenant_id = tenant_id  # Cache in g for this request
             return tenant_id
 
         # Check request header for API calls
@@ -44,14 +59,31 @@ def get_current_tenant_id() -> str:
                 g.tenant_id = tenant_id
                 return tenant_id
 
-        # Default to 'delta' for backward compatibility
-        tenant_id = DEFAULT_TENANT_ID
-        g.tenant_id = tenant_id
-        return tenant_id
+        # NO DEFAULT - Tenant context must be explicit
+        if strict:
+            raise ValueError(
+                "Tenant context not set. User must be authenticated with a valid tenant "
+                "or X-Tenant-ID header must be provided. This prevents accidental data "
+                "leakage between tenants."
+            )
+
+        # Non-strict mode for backward compatibility (logs warning)
+        logger.warning(
+            f"[TENANT_CONTEXT] No tenant context found | "
+            f"Endpoint: {request.method if request else 'N/A'} "
+            f"{request.path if request else 'N/A'} | "
+            f"This should be fixed - all authenticated requests need tenant context"
+        )
+        return None
 
     except RuntimeError:
-        # Outside of Flask application context - return default
-        return DEFAULT_TENANT_ID
+        # Outside of Flask application context
+        if strict:
+            raise ValueError(
+                "Cannot get tenant context outside of Flask application context"
+            )
+        logger.warning("[TENANT_CONTEXT] Called outside Flask context")
+        return None
 
 def set_tenant_id(tenant_id: str):
     """
