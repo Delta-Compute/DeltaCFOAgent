@@ -80,8 +80,15 @@ from historical_currency_converter import HistoricalCurrencyConverter
 # Import tenant context manager
 from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
 
-# Import file storage service for GCS uploads
-from services.file_storage_service import file_storage
+# Import file storage service for GCS uploads (optional - graceful degradation)
+try:
+    from services.file_storage_service import file_storage
+    GCS_AVAILABLE = True
+    logger.info("Google Cloud Storage service initialized successfully")
+except Exception as e:
+    logger.warning(f"Google Cloud Storage not available - file uploads will use local storage: {e}")
+    file_storage = None
+    GCS_AVAILABLE = False
 
 # Import authentication middleware
 from middleware.auth_middleware import require_auth, optional_auth, get_current_user, get_current_tenant
