@@ -34,6 +34,121 @@ from tenant_context import get_current_tenant_id
 logger = logging.getLogger(__name__)
 
 
+def extract_keywords_from_transactions(transactions, node_type='expense'):
+    """
+    Extract and group transactions by keywords found in justification/destination fields.
+
+    This function analyzes transaction justifications to identify key entities (vendors,
+    employees, partners) and groups transactions by these entities to show what makes up
+    a particular expense or revenue category.
+
+    Args:
+        transactions: List of transaction dictionaries
+        node_type: 'revenue' or 'expense' (affects how amounts are treated)
+
+    Returns:
+        List of keyword groups sorted by total amount, each containing:
+            - keyword: The entity/vendor name
+            - amount: Total amount for this keyword
+            - count: Number of transactions
+            - percentage: Percentage of total
+            - sample_transactions: Up to 3 example transactions
+    """
+    import re
+    from collections import defaultdict
+
+    keyword_groups = defaultdict(lambda: {'amount': 0, 'count': 0, 'transactions': []})
+
+    for txn in transactions:
+        keywords = []
+
+        # Strategy 1: Extract from justification field (most detailed)
+        justification = str(txn.get('justification') or '')
+        if justification:
+            # Pattern: "payment to X" or "invoice from X"
+            matches = re.findall(r'(?:payment|invoice|bill|transfer|salary|wage)\s+(?:to|from|for)\s+([A-Z][A-Za-z0-9\s&\.\-]{2,40})', justification, re.IGNORECASE)
+            keywords.extend(matches)
+
+            # Pattern: Person names (capitalized first and last name)
+            name_matches = re.findall(r'\b([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', justification)
+            keywords.extend(name_matches)
+
+            # Pattern: All-caps entities (company names like ANDE, AWS, etc.)
+            company_matches = re.findall(r'\b([A-Z]{2,}(?:\s+[A-Z]{2,})?)\b', justification)
+            keywords.extend(company_matches)
+
+        # Strategy 2: Use destination field (for expenses) or origin (for revenue)
+        if node_type == 'expense' and txn.get('destination'):
+            dest = str(txn.get('destination', '')).strip()
+            if dest and len(dest) > 1:
+                keywords.append(dest)
+        elif node_type == 'revenue' and txn.get('origin'):
+            orig = str(txn.get('origin', '')).strip()
+            if orig and len(orig) > 1:
+                keywords.append(orig)
+
+        # Strategy 3: Parse description field as fallback
+        if not keywords:
+            description = str(txn.get('description') or '')
+            # Extract capitalized words/phrases
+            desc_matches = re.findall(r'\b([A-Z][A-Za-z\s]{3,30})\b', description)
+            keywords.extend(desc_matches)
+
+        # Default to "Uncategorized" if no keywords found
+        if not keywords:
+            keywords = ['Uncategorized']
+
+        # Clean and deduplicate keywords
+        cleaned_keywords = set()
+        for kw in keywords:
+            kw = kw.strip()
+            # Remove common noise words
+            if kw.lower() not in ['the', 'and', 'for', 'with', 'from', 'payment', 'invoice', 'bill']:
+                # Limit length and clean up
+                kw = kw[:50]
+                if len(kw) >= 2:  # At least 2 characters
+                    cleaned_keywords.add(kw)
+
+        if not cleaned_keywords:
+            cleaned_keywords = {'Other'}
+
+        # Group by keyword
+        amount = float(txn.get('amount', 0))
+        for keyword in cleaned_keywords:
+            keyword_groups[keyword]['amount'] += amount
+            keyword_groups[keyword]['count'] += 1
+            # Store up to 3 example transactions per keyword
+            if len(keyword_groups[keyword]['transactions']) < 3:
+                keyword_groups[keyword]['transactions'].append({
+                    'date': str(txn.get('date', '')),
+                    'amount': amount,
+                    'description': str(txn.get('description', ''))[:80]
+                })
+
+    # Sort by total amount (absolute value)
+    sorted_groups = sorted(
+        keyword_groups.items(),
+        key=lambda x: abs(x[1]['amount']),
+        reverse=True
+    )[:15]  # Top 15 keywords
+
+    # Calculate total for percentage
+    total_amount = sum(abs(grp[1]['amount']) for grp in sorted_groups)
+
+    # Format output
+    breakdown = []
+    for keyword, data in sorted_groups:
+        breakdown.append({
+            'keyword': keyword,
+            'amount': abs(data['amount']) if node_type == 'expense' else data['amount'],
+            'count': data['count'],
+            'percentage': (abs(data['amount']) / total_amount * 100) if total_amount > 0 else 0,
+            'sample_transactions': data['transactions']
+        })
+
+    return breakdown
+
+
 def register_reporting_routes(app):
     """Register all CFO reporting routes with the Flask app"""
 
@@ -3368,9 +3483,15 @@ def register_reporting_routes(app):
             links = []
             node_index = 0
 
-            # Add revenue source nodes
-            revenue_nodes = {}
+            # Filter out "Investor Equity" from revenue nodes (will be shown in separate chart)
+            filtered_revenue_data = []
             for rev in revenue_data:
+                if 'investor equity' not in rev['category'].lower():
+                    filtered_revenue_data.append(rev)
+
+            # Add revenue source nodes (excluding Investor Equity)
+            revenue_nodes = {}
+            for rev in filtered_revenue_data:
                 category = rev['category']
                 nodes.append({
                     'id': node_index,
@@ -3383,7 +3504,8 @@ def register_reporting_routes(app):
                 node_index += 1
 
             # Add central hub node
-            total_revenue = sum(float(rev['total_amount']) for rev in revenue_data)
+            # Use filtered revenue data (excluding Investor Equity)
+            total_revenue = sum(float(rev['total_amount']) for rev in filtered_revenue_data)
             total_expenses = sum(float(exp['total_amount']) for exp in expense_data)
 
             hub_node_id = node_index
@@ -3410,8 +3532,8 @@ def register_reporting_routes(app):
                 expense_nodes[category] = node_index
                 node_index += 1
 
-            # Create links from revenue to hub
-            for rev in revenue_data:
+            # Create links from revenue to hub (excluding Investor Equity)
+            for rev in filtered_revenue_data:
                 links.append({
                     'source': revenue_nodes[rev['category']],
                     'target': hub_node_id,
@@ -3437,7 +3559,7 @@ def register_reporting_routes(app):
                 'total_expenses': total_expenses,
                 'net_flow': net_flow,
                 'flow_efficiency_percent': round(flow_efficiency, 2),
-                'revenue_categories_count': len(revenue_data),
+                'revenue_categories_count': len(filtered_revenue_data),
                 'expense_categories_count': len(expense_data),
                 'date_range': {
                     'start_date': start_date_str,
@@ -3573,6 +3695,154 @@ def register_reporting_routes(app):
 
         except Exception as e:
             logger.error(f"Error fetching Sankey transactions: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    # ============================================================================
+    # Sankey Node Breakdown (Hover Details)
+    # ============================================================================
+    @app.route('/api/reports/sankey-breakdown', methods=['POST'])
+    def api_sankey_breakdown():
+        """
+        Get detailed breakdown of a Sankey diagram node with keyword analysis.
+
+        This endpoint analyzes transactions within a subcategory and extracts
+        key entities/vendors from the justification field to show what makes up
+        that category (e.g., "ANDE" within "Utilities", employees within "Salary Payment").
+
+        POST JSON Parameters:
+            - node_name: The subcategory name (e.g., "Salary Payment", "Utilities")
+            - node_type: "revenue" or "expense" (default: "expense")
+            - start_date: Optional date filter (YYYY-MM-DD)
+            - end_date: Optional date filter (YYYY-MM-DD)
+
+        Returns:
+            JSON with keyword breakdown showing top entities within the category
+        """
+        try:
+            # Get tenant context (REQUIRED - no default)
+            tenant_id = get_current_tenant_id(strict=True)
+
+            # Parse request
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'Missing JSON body'}), 400
+
+            node_name = data.get('node_name')
+            node_type = data.get('node_type', 'expense')
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
+
+            if not node_name:
+                return jsonify({'success': False, 'error': 'Missing node_name parameter'}), 400
+
+            logger.info(f"[SANKEY-BREAKDOWN] Analyzing node: {node_name} (type: {node_type}, tenant: {tenant_id})")
+
+            # Build query to fetch transactions for this subcategory
+            date_filter = ""
+            params = [tenant_id, node_name]
+
+            if start_date and end_date:
+                date_filter = "AND date::date >= %s::date AND date::date <= %s::date"
+                params.extend([start_date, end_date])
+
+            # Query transactions - using same aggregation logic as Sankey
+            if node_type == 'revenue':
+                amount_filter = "AND amount > 0"
+            else:
+                amount_filter = "AND amount < 0"
+
+            # First, get total count and amount (without LIMIT)
+            count_query = f"""
+                SELECT
+                    COUNT(*) as count,
+                    SUM(ABS(amount)) as total
+                FROM transactions
+                WHERE tenant_id = %s
+                  AND COALESCE(subcategory, accounting_category, classified_entity,
+                       CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s
+                  {amount_filter}
+                  AND archived = FALSE
+                  {date_filter}
+            """
+
+            count_result = db_manager.execute_query(count_query, tuple(params), fetch_all=True)
+            if count_result and len(count_result) > 0:
+                result_row = count_result[0]
+                total_transaction_count = int(result_row['count']) if result_row.get('count') else 0
+                total_amount_sum = float(result_row['total']) if result_row.get('total') else 0
+            else:
+                total_transaction_count = 0
+                total_amount_sum = 0
+
+            # Then get transactions with LIMIT for keyword extraction
+            query = f"""
+                SELECT
+                    transaction_id,
+                    date,
+                    description,
+                    amount,
+                    justification,
+                    destination,
+                    origin,
+                    subcategory,
+                    accounting_category
+                FROM transactions
+                WHERE tenant_id = %s
+                  AND COALESCE(subcategory, accounting_category, classified_entity,
+                       CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s
+                  {amount_filter}
+                  AND archived = FALSE
+                  {date_filter}
+                ORDER BY ABS(amount) DESC
+                LIMIT 1000
+            """
+
+            transactions = db_manager.execute_query(query, tuple(params), fetch_all=True)
+
+            if not transactions:
+                return jsonify({
+                    'success': True,
+                    'node_name': node_name,
+                    'node_type': node_type,
+                    'total_amount': 0,
+                    'transaction_count': 0,
+                    'breakdown': [],
+                    'top_transactions': []
+                })
+
+            # Extract keywords and create breakdown
+            breakdown_data = extract_keywords_from_transactions(transactions, node_type)
+
+            # Get top 5 transaction examples
+            top_transactions = []
+            for i, txn in enumerate(transactions[:5]):
+                top_transactions.append({
+                    'date': str(txn.get('date', '')),
+                    'description': str(txn.get('description', ''))[:100],
+                    'amount': float(txn.get('amount', 0)),
+                    'justification': str(txn.get('justification', ''))[:150]
+                })
+
+            logger.info(f"[SANKEY-BREAKDOWN] Found {len(breakdown_data)} keyword groups in {total_transaction_count} transactions")
+
+            return jsonify({
+                'success': True,
+                'node_name': node_name,
+                'node_type': node_type,
+                'total_amount': total_amount_sum,
+                'transaction_count': total_transaction_count,
+                'breakdown': breakdown_data,
+                'top_transactions': top_transactions,
+                'tenant_id': tenant_id  # For debugging
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating Sankey breakdown: {e}")
             import traceback
             traceback.print_exc()
             return jsonify({

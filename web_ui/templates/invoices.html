@@ -385,6 +385,15 @@
             background: #059669;
         }
 
+        .btn-success {
+            background: #22c55e;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #16a34a;
+        }
+
         .btn-delete {
             background: #ef4444;
             color: white;
@@ -1257,6 +1266,59 @@
         </div>
     </div>
 
+    <!-- Mark as Paid Modal -->
+    <div class="modal" id="mark-paid-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">Mark Invoice as Paid</div>
+                <button class="close-modal" onclick="closeModal('mark-paid-modal')">&times;</button>
+            </div>
+            <form class="modal-form" id="mark-paid-form" onsubmit="handleMarkPaid(event)">
+                <div style="background: #f1f5f9; padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
+                    <div style="font-size: 0.9rem; color: #64748b; margin-bottom: 0.5rem;">Invoice Number</div>
+                    <div style="font-weight: 600; font-size: 1.1rem;" id="mark-paid-invoice-number"></div>
+                    <div style="font-size: 0.9rem; color: #64748b; margin-top: 0.5rem;">Amount</div>
+                    <div style="font-weight: 600; font-size: 1.1rem; color: #22c55e;" id="mark-paid-amount"></div>
+                </div>
+
+                <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem;">
+                    This feature is for external payments (e.g., triangular payments where a client paid a supplier directly on your behalf).
+                    The system will try to auto-match existing transactions or create a new virtual transaction.
+                </p>
+
+                <div class="form-group">
+                    <label for="mark-paid-date">Payment Date *</label>
+                    <input type="date" id="mark-paid-date" name="payment_date" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="mark-paid-payer">Payer (Who Made the Payment)</label>
+                    <input type="text" id="mark-paid-payer" name="payer" placeholder="e.g., Client ABC">
+                    <small style="color: #64748b;">Optional: Specify who paid (useful for triangular payments)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="mark-paid-recipient">Recipient (Who Received the Payment)</label>
+                    <input type="text" id="mark-paid-recipient" name="recipient" placeholder="e.g., Supplier XYZ">
+                    <small style="color: #64748b;">Optional: Specify who received the payment</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="mark-paid-notes">Notes / Justification</label>
+                    <textarea id="mark-paid-notes" name="notes" rows="3" placeholder="Explain the payment arrangement..."></textarea>
+                    <small style="color: #64748b;">Optional: Add context about this external payment</small>
+                </div>
+
+                <input type="hidden" id="mark-paid-invoice-id" name="invoice_id">
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeModal('mark-paid-modal')">Cancel</button>
+                    <button type="submit" class="btn-save" id="mark-paid-submit-btn">Mark as Paid</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         let currentPage = 1;
         let totalPages = 1;
@@ -1940,6 +2002,7 @@
                                 <div class="action-buttons">
                                     <button class="action-btn btn-view" onclick="viewInvoice('${invoice.id}')">View</button>
                                     <button class="action-btn btn-edit" onclick="openEditModal('${invoice.id}')">Edit</button>
+                                    ${(invoice.payment_status !== 'paid') ? '<button class="action-btn btn-success" onclick="openMarkPaidModal(\'' + invoice.id + '\', \'' + invoice.invoice_number + '\', ' + invoice.total_amount + ', \'' + (invoice.currency || 'USD') + '\')">Mark Paid</button>' : ''}
                                     <button class="action-btn btn-delete" onclick="deleteInvoice('${invoice.id}')">Delete</button>
                                 </div>
                             </td>
@@ -2604,6 +2667,71 @@
                 }
             } catch (error) {
                 alert('Delete error: ' + error.message);
+            }
+        }
+
+        // Mark as Paid Modal Functions
+        function openMarkPaidModal(invoiceId, invoiceNumber, totalAmount, currency) {
+            // Set invoice details in modal
+            document.getElementById('mark-paid-invoice-id').value = invoiceId;
+            document.getElementById('mark-paid-invoice-number').textContent = invoiceNumber;
+            document.getElementById('mark-paid-amount').textContent = `${currency} ${parseFloat(totalAmount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+            // Set default payment date to today
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('mark-paid-date').value = today;
+
+            // Clear other fields
+            document.getElementById('mark-paid-payer').value = '';
+            document.getElementById('mark-paid-recipient').value = '';
+            document.getElementById('mark-paid-notes').value = '';
+
+            // Show modal
+            document.getElementById('mark-paid-modal').classList.add('active');
+        }
+
+        async function handleMarkPaid(event) {
+            event.preventDefault();
+
+            const invoiceId = document.getElementById('mark-paid-invoice-id').value;
+            const submitBtn = document.getElementById('mark-paid-submit-btn');
+            const originalBtnText = submitBtn.textContent;
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            try {
+                const formData = {
+                    payment_date: document.getElementById('mark-paid-date').value,
+                    payer: document.getElementById('mark-paid-payer').value,
+                    recipient: document.getElementById('mark-paid-recipient').value,
+                    notes: document.getElementById('mark-paid-notes').value
+                };
+
+                const response = await fetch(`/api/invoices/${invoiceId}/mark-paid`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    alert(result.message || 'Invoice marked as paid successfully!');
+                    closeModal('mark-paid-modal');
+                    loadStats();
+                    loadInvoices(currentPage);
+                } else {
+                    alert('Error: ' + (result.error || 'Failed to mark invoice as paid'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+                console.error('Mark paid error:', error);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
             }
         }
     </script>

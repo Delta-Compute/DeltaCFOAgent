@@ -38,14 +38,16 @@ def sanitize_numeric(value):
 class DataQueryService:
     """Service for querying company and financial data from the database"""
 
-    def __init__(self, db_manager, tenant_id: str = 'delta'):
+    def __init__(self, db_manager, tenant_id: str):
         """
         Initialize the data query service
 
         Args:
             db_manager: DatabaseManager instance
-            tenant_id: Tenant identifier (default 'delta')
+            tenant_id: Tenant identifier (REQUIRED - no default)
         """
+        if not tenant_id:
+            raise ValueError("tenant_id is required for DataQueryService")
         self.db_manager = db_manager
         self.tenant_id = tenant_id
 
@@ -404,25 +406,25 @@ class DataQueryService:
 
 
 # Convenience function for backward compatibility
-def get_company_overview(db_manager, tenant_id: str = 'delta') -> Dict[str, Any]:
-    """Get company overview (standalone function)"""
+def get_company_overview(db_manager, tenant_id: str) -> Dict[str, Any]:
+    """Get company overview (standalone function) - tenant_id REQUIRED"""
     service = DataQueryService(db_manager, tenant_id)
     return service.get_company_overview()
 
 
-def get_company_kpis(db_manager, tenant_id: str = 'delta') -> Dict[str, Any]:
-    """Get company KPIs (standalone function)"""
+def get_company_kpis(db_manager, tenant_id: str) -> Dict[str, Any]:
+    """Get company KPIs (standalone function) - tenant_id REQUIRED"""
     service = DataQueryService(db_manager, tenant_id)
     return service.get_company_kpis()
 
 
-def get_business_entities(db_manager, tenant_id: str = 'delta') -> List[Dict[str, Any]]:
-    """Get business entities (standalone function)"""
+def get_business_entities(db_manager, tenant_id: str) -> List[Dict[str, Any]]:
+    """Get business entities (standalone function) - tenant_id REQUIRED"""
     service = DataQueryService(db_manager, tenant_id)
     return service.get_business_entities()
 
 
-def get_portfolio_stats(db_manager, tenant_id: str = 'delta') -> Dict[str, Any]:
-    """Get portfolio statistics (standalone function)"""
+def get_portfolio_stats(db_manager, tenant_id: str) -> Dict[str, Any]:
+    """Get portfolio statistics (standalone function) - tenant_id REQUIRED"""
     service = DataQueryService(db_manager, tenant_id)
     return service.get_portfolio_stats()

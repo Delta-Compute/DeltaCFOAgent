@@ -55,7 +55,15 @@
       "Bash(ping:*)",
       "Bash(nul)",
       "Bash(del:*)",
-      "Bash(timeout /t 2 /nobreak)"
+      "Bash(timeout /t 2 /nobreak)",
+      "Bash(find:*)",
+      "Bash(gsutil mb:*)",
+      "Bash(echo:*)",
+      "Bash(chmod:*)",
+      "Bash(kill:*)",
+      "Bash(cat:*)",
+      "Bash(FLASK_DEBUG=1 python:*)",
+      "Bash(export FLASK_DEBUG=1)"
     ],
     "deny": [],
     "ask": []

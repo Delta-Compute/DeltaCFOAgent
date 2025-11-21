@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delta CFO Agent - Tenant Management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="top-nav">
+            <div class="nav-brand">
+                <h2>Delta CFO Agent</h2>
+                <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
+            </div>
+            <div class="nav-links">
+                <a href="/" class="nav-link">Home</a>
+                <a href="/dashboard" class="nav-link">Transaction Manager</a>
+                <a href="/revenue" class="nav-link">Revenue Recognition</a>
+                <a href="/reports" class="nav-link">Reports</a>
+                <a href="/invoices" class="nav-link">Invoices</a>
+                <a href="/whitelisted-accounts" class="nav-link">Accounts</a>
+                <a href="/files" class="nav-link">File Manager</a>
+                <a href="/tenants" class="nav-link active">Tenants</a>
+            </div>
+
+            <!-- User Account Menu -->
+            <div id="userAccountMenu" style="margin-left: auto; display: flex; align-items: center;">
+                <button id="userMenuButton" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                    <span id="userDisplayName">Loading...</span>
+                    <span style="font-size: 0.7rem;">▼</span>
+                </button>
+
+                <div id="userDropdown" style="display: none; position: absolute; top: calc(100% + 0.5rem); right: 1rem; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 200px; z-index: 1000;">
+                    <div style="padding: 1rem; border-bottom: 1px solid #e2e8f0;">
+                        <div style="font-weight: 600; color: #1e293b;" id="dropdownUserName">User</div>
+                        <div style="font-size: 0.85rem; color: #64748b; margin-top: 0.25rem;" id="dropdownUserEmail">email@example.com</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.25rem;" id="dropdownUserType">user_type</div>
+                    </div>
+                    <div style="padding: 0.5rem;">
+                        <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            Account Settings
+                        </a>
+                        <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                            Manage Users
+                        </a>
+                        <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
+                            Sign Out
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="main-layout">
+            <div class="dashboard-content">
+                <!-- Header -->
+                <header>
+                    <h1>🏢 Tenant Management</h1>
+                    <div class="date-range">
+                        Manage your client tenants
+                    </div>
+                </header>
+
+                <!-- Tenant Switcher Section -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>🔄 Current Tenant</h2>
+                        <div class="table-info">
+                            <span>Switch between your client tenants</span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 2rem;">
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); max-width: 500px;">
+                            <label for="tenantSelector" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
+                                Active Tenant:
+                            </label>
+                            <select id="tenantSelector" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem; cursor: pointer;">
+                                <option value="">Loading tenants...</option>
+                            </select>
+                            <p style="margin-top: 0.5rem; font-size: 0.85rem; color: #718096;">
+                                All data and operations will be scoped to the selected tenant
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Create New Tenant Section (CFO Only) -->
+                <div class="table-section" id="createTenantSection" style="display: none;">
+                    <div class="table-header">
+                        <h2>➕ Create New Tenant</h2>
+                        <div class="table-info">
+                            <span>Add a new client to manage with the AI CFO Agent</span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 2rem;">
+                        <div style="background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); max-width: 600px;">
+                            <form id="createTenantForm">
+                                <div style="margin-bottom: 1.5rem;">
+                                    <label for="companyName" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
+                                        Company Name <span style="color: #e53e3e;">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="companyName"
+                                        name="companyName"
+                                        required
+                                        placeholder="Client Company Inc."
+                                        style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem;">
+                                </div>
+
+                                <div style="margin-bottom: 1.5rem;">
+                                    <label for="companyDescription" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
+                                        Description <span style="font-size: 0.85rem; font-weight: normal; color: #718096;">(optional)</span>
+                                    </label>
+                                    <textarea
+                                        id="companyDescription"
+                                        name="companyDescription"
+                                        rows="3"
+                                        placeholder="Brief description of the client's business..."
+                                        style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem; resize: vertical;"></textarea>
+                                </div>
+
+                                <div style="margin-bottom: 1.5rem;">
+                                    <label for="adminEmail" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
+                                        Admin Email <span style="font-size: 0.85rem; font-weight: normal; color: #718096;">(optional)</span>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        id="adminEmail"
+                                        name="adminEmail"
+                                        placeholder="admin@clientcompany.com"
+                                        style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem;">
+                                    <p style="margin-top: 0.5rem; font-size: 0.85rem; color: #718096;">
+                                        If provided, an invitation will be sent to this email to join as tenant admin
+                                    </p>
+                                </div>
+
+                                <div style="display: flex; gap: 1rem;">
+                                    <button
+                                        type="submit"
+                                        id="createTenantBtn"
+                                        style="flex: 1; padding: 0.75rem 1.5rem; background-color: #667eea; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s;"
+                                        onmouseover="this.style.backgroundColor='#5a67d8'"
+                                        onmouseout="this.style.backgroundColor='#667eea'">
+                                        Create Tenant
+                                    </button>
+                                    <button
+                                        type="reset"
+                                        style="padding: 0.75rem 1.5rem; background-color: #e2e8f0; color: #4a5568; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s;"
+                                        onmouseover="this.style.backgroundColor='#cbd5e0'"
+                                        onmouseout="this.style.backgroundColor='#e2e8f0'">
+                                        Clear
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tenant List Section -->
+                <div class="table-section">
+                    <div class="table-header">
+                        <h2>📋 Your Tenants</h2>
+                        <div class="table-info">
+                            <span>All client tenants you have access to</span>
+                        </div>
+                    </div>
+
+                    <div style="padding: 2rem;">
+                        <div id="tenantListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem;">
+                            <!-- Tenant cards will be populated by JavaScript -->
+                            <div style="text-align: center; padding: 2rem; color: #718096;">
+                                Loading tenants...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="messageContainer" style="position: fixed; top: 1rem; right: 1rem; z-index: 2000;"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: none; justify-content: center; align-items: center; z-index: 1000;">
+        <div style="background: white; padding: 2rem; border-radius: 12px; text-align: center;">
+            <div style="width: 40px; height: 40px; border: 4px solid #f1f5f9; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-overlay.show {
+            display: flex !important;
+        }
+    </style>
+
+    <!-- Firebase Authentication -->
+    <script type="module">
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { auth } from '/static/js/firebase_client.js';
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = '/auth/login';
+            } else {
+                const displayName = user.displayName || user.email?.split('@')[0] || 'User';
+                const email = user.email || '';
+
+                document.getElementById('userDisplayName').textContent = displayName;
+                document.getElementById('dropdownUserName').textContent = displayName;
+                document.getElementById('dropdownUserEmail').textContent = email;
+
+                // Fetch user data to get user_type
+                fetchUserData(user);
+            }
+        });
+
+        async function fetchUserData(user) {
+            try {
+                const token = await user.getIdToken();
+                const response = await fetch('/api/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success && data.user) {
+                        document.getElementById('dropdownUserType').textContent = data.user.user_type || 'employee';
+
+                        // Show create tenant section if user is fractional_cfo
+                        if (data.user.user_type === 'fractional_cfo') {
+                            document.getElementById('createTenantSection').style.display = 'block';
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching user data:', error);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const menuButton = document.getElementById('userMenuButton');
+            const dropdown = document.getElementById('userDropdown');
+            const logoutButton = document.getElementById('logoutButton');
+
+            menuButton?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('userAccountMenu')?.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            logoutButton?.addEventListener('click', async () => {
+                try {
+                    await window.FirebaseAuth.signOutUser();
+                    window.location.href = '/auth/login';
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    alert('Error signing out. Please try again.');
+                }
+            });
+        });
+    </script>
+
+    <script src="{{ url_for('static', filename='js/tenant_management.js') }}?v={{ cache_buster }}"></script>
+</body>
+</html>

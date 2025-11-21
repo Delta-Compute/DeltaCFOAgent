@@ -986,6 +986,11 @@
                 </div>
             `;
 
+            // Translate the dynamically generated content
+            if (window.i18n && window.i18n.loaded) {
+                window.i18n.updateDOM();
+            }
+
             // Update badges
             document.getElementById('pending-count').textContent = stats.pending_matches || 0;
             document.getElementById('confirmed-count').textContent = stats.matched_invoices || 0;
@@ -3556,5 +3561,8 @@
             to { transform: translateX(100%); }
         }
     </style>
+
+    <!-- i18n Internationalization -->
+    <script src="{{ url_for('static', filename='js/i18n.js') }}?v={{ cache_buster }}"></script>
 </body>
 </html>

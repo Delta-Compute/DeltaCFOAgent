@@ -19,98 +19,96 @@
             <div class="dashboard-content">
                 <!-- Financial Reports Header - Updated -->
                 <header>
-                    <h1>📊 Financial Reports</h1>
+                    <h1 data-i18n="reports.pageTitle">📊 Financial Reports</h1>
+                    <p style="color: #718096; font-size: 1rem; margin-top: -1rem; margin-bottom: 2rem;" data-i18n="reports.tagline">Real-time Financial Analytics Dashboard</p>
                     <div class="stats-summary">
                         <div class="stat-card">
-                            <h3>Total Revenue</h3>
-                            <div class="stat-number positive" id="totalRevenue">Loading...</div>
+                            <h3 data-i18n="reports.stats.totalRevenue">Total Revenue</h3>
+                            <div class="stat-number positive" id="totalRevenue" data-i18n="common.loading">Loading...</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Total Expenses</h3>
-                            <div class="stat-number negative" id="totalExpenses">Loading...</div>
+                            <h3 data-i18n="reports.stats.totalExpenses">Total Expenses</h3>
+                            <div class="stat-number negative" id="totalExpenses" data-i18n="common.loading">Loading...</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Net Profit</h3>
-                            <div class="stat-number" id="netProfit">Loading...</div>
+                            <h3 data-i18n="reports.stats.netProfit">Net Profit</h3>
+                            <div class="stat-number" id="netProfit" data-i18n="common.loading">Loading...</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Cash Position</h3>
-                            <div class="stat-number" id="cashPosition">Loading...</div>
+                            <h3 data-i18n="reports.stats.cashPosition">Cash Position</h3>
+                            <div class="stat-number" id="cashPosition" data-i18n="common.loading">Loading...</div>
                         </div>
-                    </div>
-                    <div class="date-range">
-                        📅 Real-time Financial Analytics Dashboard
                     </div>
                 </header>
 
                 <!-- Filter Controls -->
                 <div class="filter-section">
-                    <h2>🔍 Report Filters</h2>
+                    <h2 data-i18n="reports.filters.title">🔍 Report Filters</h2>
                     <div class="filter-grid">
                         <div class="filter-group">
-                            <label for="periodSelector">Time Period:</label>
+                            <label for="periodSelector" data-i18n="reports.filters.periodLabel">Time Period:</label>
                             <select id="periodSelector">
-                                <option value="all_time" selected>All Time</option>
-                                <option value="monthly">Monthly</option>
-                                <option value="quarterly">Quarterly</option>
-                                <option value="yearly">Yearly</option>
-                                <option value="custom">Custom Range</option>
+                                <option value="all_time" selected data-i18n="reports.filters.periodAllTime">All Time</option>
+                                <option value="monthly" data-i18n="reports.filters.periodMonthly">Monthly</option>
+                                <option value="quarterly" data-i18n="reports.filters.periodQuarterly">Quarterly</option>
+                                <option value="yearly" data-i18n="reports.filters.periodYearly">Yearly</option>
+                                <option value="custom" data-i18n="reports.filters.periodCustom">Custom Range</option>
                             </select>
                         </div>
 
                         <div class="filter-group">
-                            <label for="entityFilter">Business Entity:</label>
+                            <label for="entityFilter" data-i18n="reports.filters.entityLabel">Business Entity:</label>
                             <select id="entityFilter">
-                                <option value="">All Entities</option>
+                                <option value="" data-i18n="reports.filters.entityAll">All Entities</option>
                             </select>
                         </div>
 
                         <div class="filter-group">
                             <label for="internalFilter">
-                                Transaction Type:
-                                <span class="info-tooltip" title="External Only: Real business revenue/expenses (recommended for financial reports). All Transactions: Includes internal transfers between accounts (may show imbalanced totals).">ℹ️</span>
+                                <span data-i18n="reports.filters.typeLabel">Transaction Type:</span>
+                                <span class="info-tooltip" data-i18n-attr="title" data-i18n="reports.filters.typeTooltip" title="External Only: Real business revenue/expenses (recommended for financial reports). All Transactions: Includes internal transfers between accounts (may show imbalanced totals).">ℹ️</span>
                             </label>
                             <select id="internalFilter">
-                                <option value="">All Transactions</option>
-                                <option value="false" selected>External Only (Recommended)</option>
-                                <option value="true">Internal Only</option>
+                                <option value="" data-i18n="reports.filters.typeAll">All Transactions</option>
+                                <option value="false" selected data-i18n="reports.filters.typeExternal">External Only (Recommended)</option>
+                                <option value="true" data-i18n="reports.filters.typeInternal">Internal Only</option>
                             </select>
                         </div>
 
                         <div class="filter-group" id="customDateRange" style="display: none;">
-                            <label for="startDateInput">Start Date:</label>
+                            <label for="startDateInput" data-i18n="reports.filters.startDate">Start Date:</label>
                             <input type="date" id="startDateInput">
                         </div>
 
                         <div class="filter-group" id="customDateRangeEnd" style="display: none;">
-                            <label for="endDateInput">End Date:</label>
+                            <label for="endDateInput" data-i18n="reports.filters.endDate">End Date:</label>
                             <input type="date" id="endDateInput">
                         </div>
                     </div>
 
                     <div class="quick-filters">
-                        <h3>🔍 Quick Filters:</h3>
-                        <button id="filterYTD" class="btn-quick">2025 YTD</button>
-                        <button id="filter2024" class="btn-quick">2024 Full Year</button>
-                        <button id="filterQ4" class="btn-quick">Q4 2024</button>
-                        <button id="filterLastMonth" class="btn-quick">Last Month</button>
+                        <h3 data-i18n="reports.filters.quickFiltersTitle">🔍 Quick Filters:</h3>
+                        <button id="filterYTD" class="btn-quick" data-i18n="reports.filters.ytd">2025 YTD</button>
+                        <button id="filter2024" class="btn-quick" data-i18n="reports.filters.year2024">2024 Full Year</button>
+                        <button id="filterQ4" class="btn-quick" data-i18n="reports.filters.q4">Q4 2024</button>
+                        <button id="filterLastMonth" class="btn-quick" data-i18n="reports.filters.lastMonth">Last Month</button>
                     </div>
 
-                    <button id="refreshDashboard" class="btn-primary">🔄 Refresh Dashboard</button>
-                    <button id="resetFilters" class="btn-secondary">Clear Filters</button>
+                    <button id="refreshDashboard" class="btn-primary" data-i18n="reports.filters.refreshDashboard">🔄 Refresh Dashboard</button>
+                    <button id="resetFilters" class="btn-secondary" data-i18n="reports.filters.resetFilters">Clear Filters</button>
 
                     <!-- Warning for All Transactions -->
                     <div id="allTransactionsWarning" style="display: none; margin-top: 1rem; padding: 1rem; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
-                        <strong>⚠️ Notice:</strong> "All Transactions" includes internal transfers which may show imbalanced totals. Use "External Only" for accurate financial reporting.
+                        <strong>⚠️ <span data-i18n="common.warning">Notice</span>:</strong> <span data-i18n="reports.filters.allTransactionsWarning">"All Transactions" includes internal transfers which may show imbalanced totals. Use "External Only" for accurate financial reporting.</span>
                     </div>
                 </div>
 
                 <!-- Financial Reports Section - Moved to top for better UX -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>📄 Financial Reports</h2>
+                        <h2 data-i18n="reports.section.financialReports">📄 Financial Reports</h2>
                         <div class="table-info">
-                            <span>Generate professional financial statements in PDF format</span>
+                            <span data-i18n="reports.section.generatePDFInfo">Generate professional financial statements in PDF format</span>
                         </div>
                     </div>
 
@@ -119,70 +117,62 @@
 
                         <!-- DRE Report -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-left: 4px solid #667eea;">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748; display: flex; align-items: center;">
-                                <span style="margin-right: 0.5rem;">💼</span>
-                                DRE - Demonstração do Resultado do Exercício
-                            </h3>
-                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.dre.title">DRE - Demonstração do Resultado do Exercício</h3>
+                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;" data-i18n="reports.dre.description">
                                 Income Statement following Brazilian accounting standards
                             </p>
                             <button
                                 id="generateDRE"
                                 class="btn-primary"
                                 style="width: 100%; padding: 0.75rem 1rem; font-size: 0.9rem;"
-                                onclick="generateDREReport()">
-                                📊 Generate DRE Report
+                                onclick="generateDREReport()"
+                                data-i18n="reports.dre.generateButton">
+                                Generate DRE Report
                             </button>
                         </div>
 
                         <!-- Balanço Patrimonial -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-left: 4px solid #48bb78;">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748; display: flex; align-items: center;">
-                                <span style="margin-right: 0.5rem;">⚖️</span>
-                                Balanço Patrimonial
-                            </h3>
-                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.balanceSheet.title">Balanço Patrimonial</h3>
+                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;" data-i18n="reports.balanceSheet.description">
                                 Balance Sheet following Brazilian accounting standards
                             </p>
                             <button
                                 class="btn-primary"
                                 style="width: 100%; padding: 0.75rem 1rem; font-size: 0.9rem;"
-                                onclick="generateBalanceSheetReport()">
-                                ⚖️ Generate Balance Sheet
+                                onclick="generateBalanceSheetReport()"
+                                data-i18n="reports.balanceSheet.generateButton">
+                                Generate Balance Sheet
                             </button>
                         </div>
 
                         <!-- DFC - Demonstração de Fluxo de Caixa -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-left: 4px solid #ed8936;">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748; display: flex; align-items: center;">
-                                <span style="margin-right: 0.5rem;">💰</span>
-                                DFC - Demonstração de Fluxo de Caixa
-                            </h3>
-                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.cashFlow.title">DFC - Demonstração de Fluxo de Caixa</h3>
+                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;" data-i18n="reports.cashFlow.description">
                                 Cash Flow Statement following Brazilian accounting standards
                             </p>
                             <button
                                 class="btn-primary"
                                 style="width: 100%; padding: 0.75rem 1rem; font-size: 0.9rem;"
-                                onclick="generateCashFlowReport()">
-                                💰 Generate Cash Flow Report
+                                onclick="generateCashFlowReport()"
+                                data-i18n="reports.cashFlow.generateButton">
+                                Generate Cash Flow Report
                             </button>
                         </div>
 
                         <!-- DMPL -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); border-left: 4px solid #9f7aea;">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748; display: flex; align-items: center;">
-                                <span style="margin-right: 0.5rem;">📈</span>
-                                DMPL - Demonstração das Mutações do PL
-                            </h3>
-                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;">
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.dmpl.title">DMPL - Demonstração das Mutações do PL</h3>
+                            <p style="color: #666; margin-bottom: 1rem; font-size: 0.9rem;" data-i18n="reports.dmpl.description">
                                 Statement of Changes in Equity following Brazilian accounting standards
                             </p>
                             <button
                                 class="btn-primary"
                                 style="width: 100%; padding: 0.75rem 1rem; font-size: 0.9rem;"
-                                onclick="generateDMPLReport()">
-                                📈 Generate DMPL Report
+                                onclick="generateDMPLReport()"
+                                data-i18n="reports.dmpl.generateButton">
+                                Generate DMPL Report
                             </button>
                         </div>
 
@@ -192,10 +182,7 @@
                 <!-- Charts Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>📊 Financial Analytics Charts</h2>
-                        <div class="table-info">
-                            <span>Real-time Financial Data Visualization</span>
-                        </div>
+                        <h2 data-i18n="reports.section.chartsTitle">📊 Financial Analytics Charts</h2>
                     </div>
 
                     <!-- Main Charts Grid -->
@@ -203,7 +190,7 @@
 
                         <!-- Revenue vs Expenses Chart -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📊 Revenue vs Expenses</h3>
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.charts.revenueVsExpenses">Revenue vs Expenses</h3>
                             <div style="height: 300px; position: relative;">
                                 <canvas id="revenueExpensesChart"></canvas>
                             </div>
@@ -211,7 +198,7 @@
 
                         <!-- Monthly P&L Trend -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">📈 Monthly P&L Trend</h3>
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.charts.monthlyPL">Monthly P&L Trend</h3>
                             <div style="height: 300px; position: relative;">
                                 <canvas id="monthlyPLChart"></canvas>
                             </div>
@@ -219,7 +206,7 @@
 
                         <!-- Entity Performance -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">🏢 Entity Performance</h3>
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.charts.entityPerformance">Entity Performance</h3>
                             <div style="height: 300px; position: relative;">
                                 <canvas id="entityChart"></canvas>
                             </div>
@@ -227,9 +214,22 @@
 
                         <!-- Cash Flow -->
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
-                            <h3 style="margin-bottom: 1rem; color: #2d3748;">💵 Cash Flow Trend</h3>
+                            <h3 style="margin-bottom: 1rem; color: #2d3748;" data-i18n="reports.charts.cashFlowTrend">Cash Flow Trend</h3>
                             <div style="height: 300px; position: relative;">
                                 <canvas id="cashFlowChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Shareholder Equity -->
+                        <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); grid-column: 1 / -1;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                                <h3 style="margin: 0; color: #2d3748;">Shareholder Equity Distribution</h3>
+                                <button id="manageShareholdersBtn" class="btn-primary" style="padding: 0.5rem 1rem;" onclick="window.location.href='/shareholders'">
+                                    Manage Shareholders
+                                </button>
+                            </div>
+                            <div style="height: 400px; position: relative;">
+                                <canvas id="shareholderEquityChart"></canvas>
                             </div>
                         </div>
 
@@ -239,18 +239,15 @@
                 <!-- Sankey Financial Flow Diagram -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>🌊 Financial Flow Analysis</h2>
+                        <h2 data-i18n="reports.section.sankeyTitle">Financial Flow Analysis</h2>
                         <div class="table-info">
-                            <span>Interactive Sankey diagram showing money flow between categories</span>
+                            <span data-i18n="reports.section.sankeyInfo">Interactive Sankey diagram showing money flow between categories</span>
                         </div>
                     </div>
 
                     <!-- Sankey Diagram Container -->
                     <div style="padding: 2rem; background: white; margin: 0 2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);">
                         <div id="sankeyDiagram" style="width: 100%; height: 500px; overflow: hidden;"></div>
-                        <div id="sankeyLegend" style="margin-top: 1rem; text-align: center; font-size: 0.9rem; color: #666;">
-                            <p><strong>Flow Analysis:</strong> This diagram shows how revenue flows through different expense categories to net profit</p>
-                        </div>
                     </div>
                 </div>
 
@@ -262,7 +259,7 @@
     <div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); display: none; justify-content: center; align-items: center; z-index: 1000;">
         <div style="background: white; padding: 2rem; border-radius: 12px; text-align: center;">
             <div style="width: 40px; height: 40px; border: 4px solid #f1f5f9; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem;"></div>
-            <p>Loading financial data...</p>
+            <p data-i18n="reports.loading.data">Loading financial data...</p>
         </div>
     </div>
 
@@ -270,38 +267,38 @@
     <div id="drePreviewModal" class="modal" style="display: none;">
         <div class="modal-content" style="max-width: 800px; width: 90%;">
             <div class="modal-header">
-                <h3>📊 Demonstração do Resultado do Exercício (DRE)</h3>
+                <h3 data-i18n="reports.dre.modalTitle">📊 Demonstração do Resultado do Exercício (DRE)</h3>
                 <span class="close" onclick="closeDREModal()">&times;</span>
             </div>
             <div class="modal-body">
                 <div id="drePreviewContent">
                     <div class="dre-summary" style="margin-bottom: 2rem;">
-                        <h4 style="color: #2d3748; margin-bottom: 1rem;">📋 Resumo do Período</h4>
+                        <h4 style="color: #2d3748; margin-bottom: 1rem;" data-i18n="reports.dre.summaryTitle">📋 Period Summary</h4>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.9rem; color: #666;">Receita Total</div>
+                                <div style="font-size: 0.9rem; color: #666;" data-i18n="reports.dre.totalRevenue">Total Revenue</div>
                                 <div id="drePreviewRevenue" style="font-size: 1.2rem; font-weight: bold; color: #48bb78;">R$ 0,00</div>
                             </div>
                             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.9rem; color: #666;">Lucro Bruto</div>
+                                <div style="font-size: 0.9rem; color: #666;" data-i18n="reports.dre.grossProfit">Gross Profit</div>
                                 <div id="drePreviewGrossProfit" style="font-size: 1.2rem; font-weight: bold; color: #4299e1;">R$ 0,00</div>
                             </div>
                             <div style="background: #f8f9fa; padding: 1rem; border-radius: 8px; text-align: center;">
-                                <div style="font-size: 0.9rem; color: #666;">Resultado Líquido</div>
+                                <div style="font-size: 0.9rem; color: #666;" data-i18n="reports.dre.netIncome">Net Income</div>
                                 <div id="drePreviewNetIncome" style="font-size: 1.2rem; font-weight: bold;">R$ 0,00</div>
                             </div>
                         </div>
                     </div>
 
                     <div class="dre-details" style="margin-bottom: 2rem;">
-                        <h4 style="color: #2d3748; margin-bottom: 1rem;">📈 Detalhes Financeiros</h4>
+                        <h4 style="color: #2d3748; margin-bottom: 1rem;" data-i18n="reports.dre.detailsTitle">📈 Financial Details</h4>
                         <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1.5rem;">
                             <table style="width: 100%; border-collapse: collapse;">
                                 <thead>
                                     <tr style="border-bottom: 2px solid #e2e8f0;">
-                                        <th style="text-align: left; padding: 0.75rem 0; color: #4a5568;">Item</th>
-                                        <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;">Valor</th>
-                                        <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;">% da Receita</th>
+                                        <th style="text-align: left; padding: 0.75rem 0; color: #4a5568;" data-i18n="reports.dre.tableItem">Item</th>
+                                        <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;" data-i18n="reports.dre.tableValue">Value</th>
+                                        <th style="text-align: right; padding: 0.75rem 0; color: #4a5568;" data-i18n="reports.dre.tablePercent">% of Revenue</th>
                                     </tr>
                                 </thead>
                                 <tbody id="dreDetailsList">
@@ -314,24 +311,24 @@
                     <div class="dre-period-info" style="background: #edf2f7; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                             <div>
-                                <strong>Período:</strong> <span id="drePeriodInfo">-</span>
+                                <strong data-i18n="reports.dre.periodLabel">Period:</strong> <span id="drePeriodInfo">-</span>
                             </div>
                             <div>
-                                <strong>Empresa:</strong> <span id="dreCompanyInfo">-</span>
+                                <strong data-i18n="reports.dre.companyLabel">Company:</strong> <span id="dreCompanyInfo">-</span>
                             </div>
                             <div>
-                                <strong>Gerado em:</strong> <span id="dreGeneratedAt">-</span>
+                                <strong data-i18n="reports.dre.generatedLabel">Generated on:</strong> <span id="dreGeneratedAt">-</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer" style="display: flex; gap: 1rem; justify-content: flex-end; padding: 1.5rem; border-top: 1px solid #e2e8f0;">
-                <button onclick="closeDREModal()" class="btn-secondary" style="padding: 0.75rem 1.5rem;">
-                    ❌ Fechar
+                <button onclick="closeDREModal()" class="btn-secondary" style="padding: 0.75rem 1.5rem;" data-i18n="reports.dre.closeButton">
+                    ❌ Close
                 </button>
-                <button onclick="downloadDREPDF()" class="btn-primary" style="padding: 0.75rem 1.5rem;">
-                    📄 Baixar PDF
+                <button onclick="downloadDREPDF()" class="btn-primary" style="padding: 0.75rem 1.5rem;" data-i18n="reports.dre.downloadButton">
+                    📄 Download PDF
                 </button>
             </div>
         </div>
@@ -341,7 +338,7 @@
     <div id="errorModal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>⚠️ Error</h3>
+                <h3 data-i18n="reports.error.title">⚠️ Error</h3>
                 <span class="close">&times;</span>
             </div>
             <div class="modal-body">

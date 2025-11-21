@@ -37,7 +37,7 @@ class DeltaCFOAgent:
             )
 
         self.tenant_id = tenant_id
-        self.business_knowledge_file = 'business_knowledge.md'
+        # Note: business_knowledge.md deprecated - all patterns now in database with tenant_id
         self.master_file = 'MASTER_TRANSACTIONS.csv'  # SINGLE SOURCE OF TRUTH - NEVER CREATE DUPLICATES
         self.classified_dir = 'classified_transactions'
 
@@ -156,28 +156,19 @@ class DeltaCFOAgent:
             return
 
         except Exception as e:
-            print(f" Could not load from database: {e}")
-            print(f"   Falling back to business_knowledge.md file...")
-
-            # Fallback to file-based loading if database fails
-            import re
-
-            if not os.path.exists(self.business_knowledge_file):
-                print(f" {self.business_knowledge_file} not found - using basic rules")
-                return
-
-            with open(self.business_knowledge_file, 'r') as f:
-                content = f.read()
-
-            # Parse account mappings (card numbers to entities)
-            account_section = re.search(r'### \*\*BANK ACCOUNT MAPPING\*\*(.*?)###', content, re.DOTALL)
-            if account_section:
-                rows = re.findall(r'\| ([\w\s\.]+) \| (\d{4}) \| ([\w\s/]+) \|', account_section.group(1))
-                for account, ending, entity in rows:
-                    if ending.isdigit():
-                        self.account_mapping[ending] = entity.strip()
-
-            print(f" Loaded business knowledge: {len(self.account_mapping)} accounts, {sum(len(p) for p in self.patterns.values())} patterns, {len(self.wallets)} wallets")
+            # NO FALLBACK - Multi-tenant SaaS requires database connectivity
+            # Falling back to a shared file would leak Delta's business patterns to all tenants
+            raise ValueError(
+                f"Failed to load classification patterns from database for tenant '{self.tenant_id}'.\n"
+                f"Database error: {e}\n\n"
+                f"Multi-tenant SaaS requires PostgreSQL database connectivity.\n"
+                f"Solutions:\n"
+                f"  1. Fix database connection (check DB_HOST, DB_PASSWORD environment variables)\n"
+                f"  2. Run tenant onboarding to populate classification_patterns table\n"
+                f"  3. Ensure tenant '{self.tenant_id}' exists in tenant_configuration table\n\n"
+                f"IMPORTANT: business_knowledge.md fallback has been removed for security.\n"
+                f"All classification patterns must be tenant-specific in the database."
+            )
 
     def enforce_single_master_file(self):
         """Enforce single master file rule - remove any duplicates"""
@@ -239,8 +230,8 @@ class DeltaCFOAgent:
 
         # Core files that should NEVER be deleted
         protected_files = {
-            'main.py',              # Main entry point
-            'business_knowledge.md'  # Knowledge base (not Python but important)
+            'main.py'  # Main entry point
+            # Note: business_knowledge.md moved to docs/examples/ (deprecated for multi-tenant)
         }
 
         temp_files_found = []
@@ -586,7 +577,22 @@ class DeltaCFOAgent:
                     df.at[idx, 'Conversion_Note'] = f"{crypto_amount} {currency} @ ${price:,.2f}"
                     crypto_converted += 1
                 else:
-                    df.at[idx, 'USD_Equivalent'] = amount  # Fallback to original amount
+                    # Use CryptoPricingDB for historic crypto prices (more reliable than price_db)
+                    try:
+                        from crypto_pricing import CryptoPricingDB
+                        from web_ui.app_db import convert_currency_to_usd
+                        usd_amount, original_currency, conversion_note = convert_currency_to_usd(
+                            crypto_amount,
+                            currency,
+                            date_str  # Pass transaction date for historic crypto pricing
+                        )
+                        df.at[idx, 'USD_Equivalent'] = round(usd_amount, 2)
+                        df.at[idx, 'Conversion_Note'] = conversion_note
+                        crypto_converted += 1
+                        print(f"   Crypto conversion: {crypto_amount} {currency} -> ${usd_amount:.2f} on {date_str}")
+                    except Exception as e:
+                        print(f"   WARNING: Could not convert {currency} to USD: {e}")
+                        df.at[idx, 'USD_Equivalent'] = amount  # Fallback to original amount only if conversion fails
             else:
                 df.at[idx, 'USD_Equivalent'] = amount  # USD transactions
 
@@ -1874,7 +1880,35 @@ class DeltaCFOAgent:
                     print(f"   Examples: {long_dates}")
 
         try:
-            df.to_csv(output_file, index=False)
+            # Clean up NaN values before saving to prevent "nan" strings in database
+            # Replace NaN with appropriate defaults
+            df_clean = df.copy()
+
+            # Replace NaN in classified_entity with "Unknown Entity" (required in DB schema)
+            if 'classified_entity' in df_clean.columns:
+                df_clean['classified_entity'] = df_clean['classified_entity'].fillna('Unknown Entity')
+                df_clean['classified_entity'] = df_clean['classified_entity'].replace(['nan', 'NaN', 'None', ''], 'Unknown Entity')
+            # Also check for 'entity' column (legacy support)
+            elif 'entity' in df_clean.columns:
+                df_clean['entity'] = df_clean['entity'].fillna('Unknown Entity')
+                df_clean['entity'] = df_clean['entity'].replace(['nan', 'NaN', 'None', ''], 'Unknown Entity')
+
+            # Replace NaN in origin/destination with "Unknown"
+            if 'Origin' in df_clean.columns:
+                df_clean['Origin'] = df_clean['Origin'].fillna('Unknown')
+                df_clean['Origin'] = df_clean['Origin'].replace(['nan', 'NaN', 'None', ''], 'Unknown')
+
+            if 'Destination' in df_clean.columns:
+                df_clean['Destination'] = df_clean['Destination'].fillna('Unknown')
+                df_clean['Destination'] = df_clean['Destination'].replace(['nan', 'NaN', 'None', ''], 'Unknown')
+
+            # Replace NaN in other string columns with empty string
+            for col in df_clean.columns:
+                if df_clean[col].dtype == 'object':  # String columns
+                    df_clean[col] = df_clean[col].fillna('')
+                    df_clean[col] = df_clean[col].replace(['nan', 'NaN'], '')
+
+            df_clean.to_csv(output_file, index=False)
             print(f" DEBUG: Successfully saved classified file: {output_file}")
             print(f" DEBUG: File size: {os.path.getsize(output_file)} bytes")
             print(f" DEBUG: File exists after save: {os.path.exists(output_file)}")
@@ -2100,7 +2134,35 @@ class DeltaCFOAgent:
 
         # Save classified file
         output_file = os.path.join(self.classified_dir, f"classified_{os.path.splitext(os.path.basename(file_path))[0]}.csv")
-        df.to_csv(output_file, index=False)
+
+        # Clean up NaN values before saving to prevent "nan" strings in database
+        df_clean = df.copy()
+
+        # Replace NaN in classified_entity with "Unknown Entity" (required in DB schema)
+        if 'classified_entity' in df_clean.columns:
+            df_clean['classified_entity'] = df_clean['classified_entity'].fillna('Unknown Entity')
+            df_clean['classified_entity'] = df_clean['classified_entity'].replace(['nan', 'NaN', 'None', ''], 'Unknown Entity')
+        # Also check for 'entity' column (legacy support)
+        elif 'entity' in df_clean.columns:
+            df_clean['entity'] = df_clean['entity'].fillna('Unknown Entity')
+            df_clean['entity'] = df_clean['entity'].replace(['nan', 'NaN', 'None', ''], 'Unknown Entity')
+
+        # Replace NaN in origin/destination with "Unknown"
+        if 'Origin' in df_clean.columns:
+            df_clean['Origin'] = df_clean['Origin'].fillna('Unknown')
+            df_clean['Origin'] = df_clean['Origin'].replace(['nan', 'NaN', 'None', ''], 'Unknown')
+
+        if 'Destination' in df_clean.columns:
+            df_clean['Destination'] = df_clean['Destination'].fillna('Unknown')
+            df_clean['Destination'] = df_clean['Destination'].replace(['nan', 'NaN', 'None', ''], 'Unknown')
+
+        # Replace NaN in other string columns with empty string
+        for col in df_clean.columns:
+            if df_clean[col].dtype == 'object':  # String columns
+                df_clean[col] = df_clean[col].fillna('')
+                df_clean[col] = df_clean[col].replace(['nan', 'NaN'], '')
+
+        df_clean.to_csv(output_file, index=False)
 
         # Print summary
         print(f"\n    Classification Summary:")

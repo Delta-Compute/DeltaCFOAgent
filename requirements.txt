@@ -9,6 +9,7 @@ gunicorn>=20.1.0
 Werkzeug>=2.0.0
 Flask-Limiter>=3.5.0     # Rate limiting for API routes
 Flask-WTF>=1.2.1         # CSRF protection and form handling
+Flask-Babel>=4.0.0       # Internationalization (i18n) support
 
 # ============================================
 # Data Processing & Analysis
@@ -94,6 +95,7 @@ flask-cors>=4.0.0        # CORS support for web APIs
 # ============================================
 # Google Cloud Dependencies
 # ============================================
+google-cloud-storage>=2.10.0           # Google Cloud Storage for file uploads
 google-cloud-secret-manager>=2.16.4    # Secret management
 cloud-sql-python-connector>=1.4.0      # Cloud SQL connector
 

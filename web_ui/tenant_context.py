@@ -27,8 +27,8 @@ def get_current_tenant_id(strict: bool = False) -> Optional[str]:
 
     Args:
         strict: If True, raises ValueError when no tenant context exists.
-                If False, returns None (for backward compatibility during migration).
-                Default: False (will become True in future versions)
+                If False, returns None and logs error.
+                Default: False
 
     Returns:
         str: Tenant ID if found
@@ -37,9 +37,16 @@ def get_current_tenant_id(strict: bool = False) -> Optional[str]:
     Raises:
         ValueError: If strict=True and no tenant context exists
 
-    Security Note:
-        In production, all authenticated endpoints should have tenant context.
-        Missing tenant context indicates a configuration error or security issue.
+    CRITICAL Security Note:
+        NO DEFAULT TENANT - Not even in development mode.
+        All authenticated endpoints MUST have tenant context set via:
+        - Authentication middleware (@optional_auth or @require_auth decorators)
+        - X-Tenant-ID request header (for API calls)
+
+        Missing tenant context will cause queries to return empty results or fail.
+        This is intentional to prevent cross-tenant data leakage.
+
+        NEVER add fallback logic to default to any tenant ID.
     """
     try:
         # Check Flask g object first (set per request by auth middleware)
@@ -60,6 +67,8 @@ def get_current_tenant_id(strict: bool = False) -> Optional[str]:
                 return tenant_id
 
         # NO DEFAULT - Tenant context must be explicit
+        # SECURITY: Never fallback to any default tenant (not even in development)
+        # This prevents accidental cross-tenant data leakage
         if strict:
             raise ValueError(
                 "Tenant context not set. User must be authenticated with a valid tenant "
@@ -67,12 +76,12 @@ def get_current_tenant_id(strict: bool = False) -> Optional[str]:
                 "leakage between tenants."
             )
 
-        # Non-strict mode for backward compatibility (logs warning)
-        logger.warning(
-            f"[TENANT_CONTEXT] No tenant context found | "
+        # Log critical security warning when tenant context is missing
+        logger.error(
+            f"[SECURITY] Tenant context missing - Request will fail | "
             f"Endpoint: {request.method if request else 'N/A'} "
             f"{request.path if request else 'N/A'} | "
-            f"This should be fixed - all authenticated requests need tenant context"
+            f"User must be authenticated or provide X-Tenant-ID header"
         )
         return None
 

@@ -38,12 +38,12 @@ invoice_dir = str(Path(__file__).parent.parent / 'invoice_processing')
 # api_dir removed - no longer needed since we're not importing from /api
 # api_dir = str(Path(__file__).parent.parent / 'api')
 
-# Insert parent_dir FIRST to ensure root/services has priority over web_ui/services
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-# web_ui_dir added but after parent for correct module resolution
+# Insert web_ui_dir FIRST so services/ can be found
 if web_ui_dir not in sys.path:
-    sys.path.append(web_ui_dir)
+    sys.path.insert(0, web_ui_dir)
+# Insert parent_dir second for root-level imports
+if parent_dir not in sys.path:
+    sys.path.insert(1, parent_dir)
 if invoice_dir not in sys.path:
     sys.path.append(invoice_dir)
 # api_dir path no longer added to avoid import issues
@@ -79,6 +79,12 @@ from historical_currency_converter import HistoricalCurrencyConverter
 
 # Import tenant context manager
 from tenant_context import init_tenant_context, get_current_tenant_id, set_tenant_id
+
+# Import file storage service for GCS uploads
+from services.file_storage_service import file_storage
+
+# Import authentication middleware
+from middleware.auth_middleware import require_auth, optional_auth, get_current_user, get_current_tenant
 
 # Import DeltaCFOAgent for transaction classification
 from main import DeltaCFOAgent
@@ -1541,10 +1547,39 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
                 params.append(filters['end_date'])
 
             if filters.get('keyword'):
-                where_conditions.append("(description ILIKE %s OR classification_reason ILIKE %s)" if is_postgresql
-                                      else "(description LIKE ? OR classification_reason LIKE ?)")
+                # EXPANDED SEARCH: Search across multiple fields for better matching
+                if is_postgresql:
+                    where_conditions.append(
+                        "(description ILIKE %s OR classification_reason ILIKE %s OR "
+                        "justification ILIKE %s OR origin ILIKE %s OR destination ILIKE %s)"
+                    )
+                else:
+                    where_conditions.append(
+                        "(description LIKE ? OR classification_reason LIKE ? OR "
+                        "justification LIKE ? OR origin LIKE ? OR destination LIKE ?)"
+                    )
                 keyword_pattern = f"%{filters['keyword']}%"
-                params.extend([keyword_pattern, keyword_pattern])
+                params.extend([keyword_pattern] * 5)  # 5 fields to search
+
+            # SANKEY INTEGRATION: Filter by category (matches Sankey COALESCE logic)
+            # The category parameter should match: COALESCE(subcategory, accounting_category, classified_entity)
+            if filters.get('accounting_category'):
+                if is_postgresql:
+                    where_conditions.append(
+                        "COALESCE(subcategory, accounting_category, classified_entity, "
+                        "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s"
+                    )
+                else:
+                    where_conditions.append(
+                        "COALESCE(subcategory, accounting_category, classified_entity, "
+                        "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = ?"
+                    )
+                params.append(filters['accounting_category'])
+
+            # SANKEY INTEGRATION: Filter by specific subcategory (exact match)
+            if filters.get('subcategory'):
+                where_conditions.append("subcategory = %s" if is_postgresql else "subcategory = ?")
+                params.append(filters['subcategory'])
 
             # Handle archived filter
             archived_filter = filters.get('show_archived')
@@ -1566,6 +1601,13 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
                 # Show only non-internal transactions
                 where_conditions.append("(is_internal_transaction = FALSE OR is_internal_transaction IS NULL)")
             # If not specified, show all (both internal and non-internal)
+
+            # Handle exclude internal transfers filter (based on entity name)
+            exclude_internal_filter = filters.get('exclude_internal')
+            if exclude_internal_filter == 'true':
+                # Exclude transactions where entity is "Internal Transfer"
+                where_conditions.append("(classified_entity != %s AND classified_entity IS NOT NULL)" if is_postgresql else "(classified_entity != ? AND classified_entity IS NOT NULL)")
+                params.append('Internal Transfer')
 
         where_clause = " AND ".join(where_conditions)
 
@@ -1666,18 +1708,67 @@ def get_dashboard_stats():
             needs_review = result['needs_review'] if is_postgresql else result[0]
 
             # Date range (exclude archived)
-            cursor.execute(f"SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions WHERE tenant_id = {placeholder} AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
-            date_range_result = cursor.fetchone()
+            # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
+            # Since date is stored as VARCHAR, we need to convert to proper date type for MIN/MAX
             if is_postgresql:
-                date_range = {
-                    'min': date_range_result['min_date'] or 'N/A',
-                    'max': date_range_result['max_date'] or 'N/A'
-                }
+                cursor.execute(f"""
+                    SELECT
+                        MIN(
+                            CASE
+                                WHEN date ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                WHEN date ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                ELSE NULL
+                            END
+                        ) as min_date,
+                        MAX(
+                            CASE
+                                WHEN date ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                WHEN date ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                ELSE NULL
+                            END
+                        ) as max_date
+                    FROM transactions
+                    WHERE tenant_id = {placeholder}
+                    AND (archived = FALSE OR archived IS NULL)
+                """, (tenant_id,))
             else:
-                date_range = {
-                    'min': date_range_result[0] or 'N/A',
-                    'max': date_range_result[1] or 'N/A'
-                }
+                # SQLite fallback - simpler text-based MIN/MAX
+                cursor.execute(f"SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions WHERE tenant_id = {placeholder} AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+
+            date_range_result = cursor.fetchone()
+
+            # Format dates properly
+            from datetime import date, datetime
+            if is_postgresql:
+                min_date = date_range_result['min_date']
+                max_date = date_range_result['max_date']
+            else:
+                min_date = date_range_result[0]
+                max_date = date_range_result[1]
+
+            # Convert to string format MM/DD/YYYY
+            def format_date(d):
+                if d is None:
+                    return 'N/A'
+                if isinstance(d, str):
+                    # Parse string date and reformat
+                    try:
+                        if 'T' in d:
+                            dt = datetime.fromisoformat(d.replace('Z', '+00:00'))
+                            return dt.strftime('%m/%d/%Y')
+                        else:
+                            dt = datetime.strptime(d, '%Y-%m-%d')
+                            return dt.strftime('%m/%d/%Y')
+                    except:
+                        return d
+                elif isinstance(d, (date, datetime)):
+                    return d.strftime('%m/%d/%Y')
+                return str(d)
+
+            date_range = {
+                'min': format_date(min_date),
+                'max': format_date(max_date)
+            }
 
             # Top entities (exclude archived)
             cursor.execute(f"""
@@ -1739,6 +1830,149 @@ def get_dashboard_stats():
             'source_files': []
         }
 
+def validate_entity_value(value: str, tenant_id: str, cursor, placeholder: str) -> str:
+    """
+    Validate entity field value to prevent corrupted data
+    Returns validated value or None if invalid
+    """
+    if not value or value.strip() == '':
+        return None
+
+    value = value.strip()
+
+    # Check for maximum length (corrupted values are often very long)
+    if len(value) > 200:
+        logging.error(f"Entity value too long ({len(value)} chars): {value[:100]}...")
+        return None
+
+    # Check for HTML tags or suspicious characters (sign of UI corruption)
+    if '<' in value or '>' in value or 'option' in value.lower():
+        logging.error(f"Entity contains HTML or suspicious content: {value[:100]}...")
+        return None
+
+    # Check for special UI values that shouldn't be saved as entities
+    special_values = ['__ai_assistant__', '__custom__']
+    if value in special_values:
+        logging.error(f"Attempted to save special UI value as entity: {value}")
+        return None
+
+    # Check for emoji or special characters that indicate UI element corruption
+    if '🤖' in value or '+ Add' in value or 'Ask AI' in value:
+        logging.error(f"Entity contains UI element text: {value[:100]}...")
+        return None
+
+    # Allow certain special values
+    allowed_special = ['N/A', 'Unknown', 'Unknown Entity', 'Internal Transfer', 'Personal']
+    if value in allowed_special:
+        return value
+
+    # Query database to get valid entities for this tenant
+    try:
+        cursor.execute(f"""
+            SELECT DISTINCT classified_entity
+            FROM transactions
+            WHERE tenant_id = {placeholder}
+              AND classified_entity IS NOT NULL
+              AND classified_entity != 'N/A'
+              AND classified_entity != 'nan'
+              AND classified_entity != ''
+              AND LENGTH(classified_entity) < 100
+        """, (tenant_id,))
+
+        valid_entities = set([row[0] for row in cursor.fetchall()])
+
+        # Also check business_entities table if it exists
+        try:
+            cursor.execute(f"""
+                SELECT name FROM business_entities
+                WHERE tenant_id = {placeholder} AND active = true
+            """, (tenant_id,))
+            valid_entities.update([row[0] for row in cursor.fetchall()])
+        except:
+            # Table might not exist or might not have tenant_id column
+            pass
+
+        # If value is in the valid set, allow it
+        if value in valid_entities:
+            return value
+
+        # If it's a new entity (not in valid set), allow it but log it
+        # This supports creating new entities via transaction classification
+        logging.info(f"NEW ENTITY created via transaction update: '{value}' for tenant {tenant_id}")
+        return value
+
+    except Exception as e:
+        logging.error(f"Error validating entity: {e}")
+        # If validation query fails, be permissive but still block obviously bad values
+        return value
+
+def validate_category_value(value: str) -> str:
+    """
+    Validate accounting_category field
+    Returns validated value or None if invalid
+    """
+    if not value or value.strip() == '':
+        return None
+
+    value = value.strip()
+
+    # Maximum length check
+    if len(value) > 100:
+        return None
+
+    # HTML check
+    if '<' in value or '>' in value:
+        return None
+
+    # Valid accounting categories
+    valid_categories = [
+        'REVENUE', 'COGS', 'OPERATING_EXPENSE', 'INTEREST_EXPENSE',
+        'OTHER_INCOME', 'OTHER_EXPENSE', 'INCOME_TAX_EXPENSE',
+        'ASSET', 'LIABILITY', 'EQUITY', 'INTERCOMPANY_ELIMINATION',
+        'N/A', 'Unknown'
+    ]
+
+    if value in valid_categories:
+        return value
+
+    # Allow new categories but log them
+    logging.info(f"NEW CATEGORY used: '{value}'")
+    return value
+
+def sanitize_text_field(value: str, field_name: str) -> str:
+    """
+    Sanitize general text fields (subcategory, justification, description, etc.)
+    Returns sanitized value or None if invalid
+    """
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    # Field-specific max lengths
+    max_lengths = {
+        'subcategory': 100,
+        'justification': 500,
+        'description': 1000,
+        'origin': 200,
+        'destination': 200
+    }
+
+    max_len = max_lengths.get(field_name, 500)
+
+    if len(value) > max_len:
+        logging.warning(f"{field_name} value truncated from {len(value)} to {max_len} chars")
+        value = value[:max_len]
+
+    # Remove HTML tags (basic sanitization)
+    import re
+    value = re.sub(r'<[^>]+>', '', value)
+
+    # Remove null bytes
+    value = value.replace('\x00', '')
+
+    return value
+
 def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user') -> bool:
     """Update a single field in a transaction with history tracking"""
     try:
@@ -1793,10 +2027,74 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
         }
         current_value = current_dict.get(field) if field in current_dict else None
 
-        # Update the field
+        # CRITICAL: Validate value before saving to prevent corrupted data
+        validated_value = value
+
+        if field == 'classified_entity':
+            # Entity field validation
+            validated_value = validate_entity_value(value, tenant_id, cursor, placeholder)
+            if validated_value is None:
+                logger.error(f"VALIDATION FAILED: Invalid entity value '{value}' for transaction {transaction_id}")
+                conn.close()
+                return (False, None)
+
+        elif field == 'accounting_category':
+            # Category validation - ensure it's a valid accounting category
+            validated_value = validate_category_value(value)
+            if validated_value is None:
+                logger.error(f"VALIDATION FAILED: Invalid category value '{value}' for transaction {transaction_id}")
+                conn.close()
+                return (False, None)
+
+        elif field in ['subcategory', 'justification', 'description', 'origin', 'destination']:
+            # General text field validation - prevent HTML injection and excessive length
+            validated_value = sanitize_text_field(value, field)
+            if validated_value is None:
+                logger.error(f"VALIDATION FAILED: Invalid {field} value for transaction {transaction_id}")
+                conn.close()
+                return (False, None)
+
+        # Update the field with validated value
         update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}"
-        cursor.execute(update_query, (value, tenant_id, transaction_id))
-        logger.info(f" Updated field '{field}' to '{value}' for transaction {transaction_id}")
+        cursor.execute(update_query, (validated_value, tenant_id, transaction_id))
+        logger.info(f" Updated field '{field}' to '{validated_value}' for transaction {transaction_id}")
+
+        # DYNAMIC ENTITY-BASED AUTO-CATEGORIZATION: Apply tenant-specific entity rules from settings
+        if field == 'classified_entity' and validated_value:
+            # Fetch entity rules from tenant settings
+            cursor.execute("""
+                SELECT settings FROM tenant_configuration WHERE tenant_id = %s
+            """, (tenant_id,))
+
+            settings_row = cursor.fetchone()
+            entity_rules = []
+
+            if settings_row and settings_row[0]:
+                entity_rules = settings_row[0].get('entity_rules', [])
+
+            # Find matching rule for this entity
+            matching_rule = None
+            for rule in entity_rules:
+                if rule.get('entity') == validated_value:
+                    matching_rule = rule
+                    break
+
+            # Apply the rule if found
+            if matching_rule:
+                category = matching_rule.get('category')
+                subcategory = matching_rule.get('subcategory', '')
+
+                logger.info(f" AUTO-CATEGORIZATION: Entity '{validated_value}' matched rule - applying category '{category}' and subcategory '{subcategory}'")
+
+                if category:
+                    category_update_query = f"UPDATE transactions SET accounting_category = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}"
+                    cursor.execute(category_update_query, (category, tenant_id, transaction_id))
+                    logger.info(f" AUTO-CATEGORIZATION: Set accounting_category to '{category}'")
+
+                if subcategory:
+                    subcategory_update_query = f"UPDATE transactions SET subcategory = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}"
+                    cursor.execute(subcategory_update_query, (subcategory, tenant_id, transaction_id))
+                    logger.info(f" AUTO-CATEGORIZATION: Set subcategory to '{subcategory}'")
 
         # If user is manually updating a classification field, boost confidence to indicate manual verification
         classification_fields = ['classified_entity', 'accounting_category', 'subcategory', 'justification', 'description']
@@ -1869,6 +2167,59 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
                 conn.rollback()
             except:
                 pass
+
+        # Track manual classification changes for auto-learning (50 classification threshold)
+        # Only track changes to: entity, category, subcategory, justification
+        tracking_fields = {
+            'classified_entity': 'entity',
+            'accounting_category': 'category',
+            'subcategory': 'subcategory',
+            'justification': 'justification'
+        }
+
+        if field in tracking_fields:
+            try:
+                # Get transaction description, origin, and destination for pattern detection
+                cursor.execute(
+                    f"SELECT description, origin, destination FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                    (tenant_id, transaction_id)
+                )
+                txn_row = cursor.fetchone()
+                description = txn_row[0] if txn_row else ''
+                origin = txn_row[1] if txn_row and len(txn_row) > 1 else None
+                destination = txn_row[2] if txn_row and len(txn_row) > 2 else None
+
+                # Generate pattern signature for grouping identical patterns
+                # MD5(description + field + value) - matches the SQL function
+                import hashlib
+                pattern_signature = hashlib.md5(
+                    f"{description.lower().strip()}::{tracking_fields[field]}::{value.lower().strip()}".encode()
+                ).hexdigest()
+
+                # Insert tracking record with origin/destination for similarity matching
+                cursor.execute(f"""
+                    INSERT INTO user_classification_tracking
+                    (tenant_id, user_id, transaction_id, field_changed, old_value, new_value,
+                     description_pattern, pattern_signature, origin, destination)
+                    VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder},
+                            {placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})
+                """, (tenant_id, user, transaction_id, tracking_fields[field], current_value,
+                      value, description, pattern_signature, origin, destination))
+
+                conn.commit()
+                logger.info(f"📊 TRACKING: Recorded {tracking_fields[field]} change for auto-learning system (origin: {origin}, dest: {destination})")
+
+                # Trigger async pattern processing if configured
+                # Note: PostgreSQL trigger will handle 3-occurrence detection
+                # Pattern suggestions will be processed by background task or on-demand
+
+            except Exception as track_error:
+                logger.warning(f"Could not record classification tracking: {track_error}")
+                # Don't fail the main update if tracking fails
+                try:
+                    conn.rollback()
+                except:
+                    pass
 
         # Close connection and return success with updated confidence
         conn.close()
@@ -3905,7 +4256,8 @@ def sync_csv_to_database(csv_filename=None):
                 'description': str(row.get('Description', row.get('description', ''))),
                 'amount': float(row.get('Amount', row.get('amount', 0))),
                 'currency': str(row.get('Currency', row.get('currency', 'USD'))),
-                'usd_equivalent': float(row.get('Amount_USD', row.get('USD_Equivalent', row.get('usd_equivalent', row.get('Amount', row.get('amount', 0)))))),
+                # Prioritize Amount (which has correct USD values) over USD_Equivalent (which may have crypto amounts)
+                'usd_equivalent': float(row.get('Amount', row.get('amount', row.get('Amount_USD', row.get('USD_Equivalent', row.get('usd_equivalent', 0)))))),
                 'classified_entity': str(row.get('classified_entity', '')),
                 'accounting_category': str(row.get('accounting_category', '')),
                 'subcategory': str(row.get('subcategory', '')),
@@ -3924,8 +4276,10 @@ def sync_csv_to_database(csv_filename=None):
             # AUTOMATIC CRYPTO USD CALCULATION
             # If this is a crypto transaction with crypto_amount but no usd_equivalent, calculate it automatically
             if data['crypto_amount'] is not None and data['crypto_amount'] != 0 and data['currency'] not in ['USD', 'BRL', 'EUR', 'GBP']:
-                # Only calculate if usd_equivalent wasn't already provided or is same as amount (fallback case)
-                if data['usd_equivalent'] == data['amount'] or data['usd_equivalent'] == 0:
+                # Only calculate if usd_equivalent is missing/zero OR if it contains the crypto amount (wrong value)
+                # Check if usd_equivalent is close to crypto_amount (means it has the wrong value)
+                usd_equiv_has_crypto_value = abs(abs(data['usd_equivalent']) - abs(data['crypto_amount'])) < 0.0001
+                if data['usd_equivalent'] == 0 or usd_equiv_has_crypto_value:
                     try:
                         # Import DeltaCFOAgent for crypto USD calculation
                         from main import DeltaCFOAgent
@@ -3949,12 +4303,102 @@ def sync_csv_to_database(csv_filename=None):
                     except Exception as e:
                         print(f"   WARNING: Could not auto-calculate USD for crypto transaction: {e}")
 
+            # AUTOMATIC WALLET ADDRESS EXTRACTION FROM DESCRIPTION
+            # If origin/destination are missing/Unknown, try to extract wallet addresses from description
+            import re
+            if not data.get('origin') or data['origin'] in ['', 'Unknown']:
+                # Look for "Received X from 0x..." or "from 0x..." patterns
+                from_match = re.search(r'(?:from|From)\s+(0x[a-fA-F0-9]{40}|1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{39,87})', data['description'])
+                if from_match:
+                    data['origin'] = from_match.group(1)
+                    print(f"   AUTO-EXTRACTED origin wallet from description: {data['origin'][:12]}...{data['origin'][-8:]}")
+
+            if not data.get('destination') or data['destination'] in ['', 'Unknown']:
+                # Look for "Sent X to 0x..." or "to 0x..." patterns
+                to_match = re.search(r'(?:to|To)\s+(0x[a-fA-F0-9]{40}|1[a-km-zA-HJ-NP-Z1-9]{25,34}|3[a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-zA-HJ-NP-Z0-9]{39,87})', data['description'])
+                if to_match:
+                    data['destination'] = to_match.group(1)
+                    print(f"   AUTO-EXTRACTED destination wallet from description: {data['destination'][:12]}...{data['destination'][-8:]}")
+
             # AUTOMATIC WALLET MATCHING
             # Match wallet addresses to friendly entity names from whitelisted wallets
             from wallet_matcher import enrich_transaction_with_wallet_names
             origin_display, destination_display = enrich_transaction_with_wallet_names(data, tenant_id)
             data['origin_display'] = origin_display
             data['destination_display'] = destination_display
+
+            # AUTOMATIC WALLET-BASED CLASSIFICATION
+            # If we found a whitelisted wallet, use its metadata to classify the transaction
+            if origin_display or destination_display:
+                # Get wallet metadata for classification
+                wallet_address = data.get('destination') if destination_display else data.get('origin')
+                wallet_entity_name = destination_display or origin_display
+
+                if wallet_address:
+                    # Query wallet metadata
+                    wallet_query = """
+                    SELECT entity_name, wallet_type, purpose
+                    FROM wallet_addresses
+                    WHERE tenant_id = %s
+                    AND LOWER(wallet_address) = LOWER(%s)
+                    AND is_active = TRUE
+                    LIMIT 1
+                    """
+                    wallet_info = db_manager.execute_query(wallet_query, (tenant_id, wallet_address), fetch_one=True)
+
+                    if wallet_info:
+                        wallet_type = wallet_info.get('wallet_type', '')
+                        purpose = wallet_info.get('purpose', '')
+
+                        # Map wallet_type to accounting categories
+                        wallet_category_mapping = {
+                            'vendor': ('OPERATING_EXPENSE', 'Vendor Payments'),
+                            'customer': ('REVENUE', 'Customer Payments'),
+                            'employee': ('OPERATING_EXPENSE', 'Payroll Expense'),
+                            'exchange': ('ASSET', 'Exchange Transfer'),
+                            'internal': ('INTERCOMPANY_ELIMINATION', 'Internal Transfer'),
+                            'partner': ('OTHER_EXPENSE', 'Partner Distributions')
+                        }
+
+                        # Only auto-classify if current classification is empty/unknown/low confidence
+                        should_classify = (
+                            not data.get('classified_entity') or
+                            data.get('classified_entity') in ['', 'Unknown', 'Unknown Entity'] or
+                            data.get('confidence', 0) < 0.70
+                        )
+
+                        if should_classify and wallet_type in wallet_category_mapping:
+                            accounting_category, subcategory = wallet_category_mapping[wallet_type]
+
+                            # Update classification based on wallet data
+                            data['accounting_category'] = accounting_category
+                            data['subcategory'] = subcategory
+
+                            # Build justification
+                            direction = "from" if origin_display else "to"
+                            data['justification'] = f"Payment {direction} {wallet_entity_name}"
+                            if purpose:
+                                data['justification'] += f" - {purpose}"
+
+                            # Clean description to use entity name instead of wallet hash
+                            # Replace wallet address with entity name in description
+                            if wallet_address in data['description']:
+                                data['description'] = data['description'].replace(wallet_address, wallet_entity_name)
+                            # Also handle shortened versions
+                            shortened = f"{wallet_address[:6]}...{wallet_address[-8:]}"
+                            if shortened in data['description']:
+                                data['description'] = data['description'].replace(shortened, wallet_entity_name)
+
+                            # Set confidence to 0.90 (high confidence for whitelisted wallets)
+                            data['confidence'] = 0.90
+
+                            print(f"   AUTO-CLASSIFIED based on whitelisted wallet:")
+                            print(f"     - Entity: {wallet_entity_name}")
+                            print(f"     - Type: {wallet_type}")
+                            print(f"     - Category: {accounting_category}")
+                            print(f"     - Subcategory: {subcategory}")
+                            print(f"     - Justification: {data['justification']}")
+                            print(f"     - Clean Description: {data['description']}")
 
             # SMART ENRICHMENT: Insert transaction or enrich existing one
             if is_postgresql:
@@ -4370,7 +4814,10 @@ def api_transactions():
             'end_date': request.args.get('end_date'),
             'keyword': request.args.get('keyword'),
             'show_archived': request.args.get('show_archived'),
-            'is_internal': request.args.get('is_internal')
+            'is_internal': request.args.get('is_internal'),
+            'exclude_internal': request.args.get('exclude_internal'),
+            'accounting_category': request.args.get('category'),  # SANKEY INTEGRATION
+            'subcategory': request.args.get('subcategory')  # SANKEY INTEGRATION
         }
 
         # Remove None values
@@ -4994,6 +5441,34 @@ def api_update_transaction():
             # Include updated confidence if it was calculated
             if updated_confidence is not None:
                 response_data['updated_confidence'] = updated_confidence
+
+            # If entity was set to "Personal" or "Internal Transfer", return the auto-updated category and subcategory
+            if field == 'classified_entity' and value in ['Personal', 'Internal Transfer']:
+                try:
+                    tenant_id = get_current_tenant_id()
+                    from database import db_manager
+                    conn = db_manager._get_postgresql_connection()
+                    cursor = conn.cursor()
+                    is_postgresql = hasattr(cursor, 'mogrify')
+                    placeholder = '%s' if is_postgresql else '?'
+
+                    cursor.execute(
+                        f"SELECT accounting_category, subcategory FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                        (tenant_id, transaction_id)
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        accounting_category = row.get('accounting_category', '') if isinstance(row, dict) else row[0]
+                        subcategory = row.get('subcategory', '') if isinstance(row, dict) else row[1]
+                        response_data['updated_fields'] = {
+                            'accounting_category': accounting_category,
+                            'subcategory': subcategory
+                        }
+                        logger.info(f"Returning auto-updated fields: category={accounting_category}, subcategory={subcategory}")
+                    conn.close()
+                except Exception as e:
+                    logger.warning(f"Failed to fetch auto-updated fields: {e}")
+
             return jsonify(response_data)
         else:
             return jsonify({'error': 'Failed to update transaction'}), 500
@@ -5216,9 +5691,10 @@ def api_get_wallets():
     """Get all wallet addresses for the current tenant"""
     try:
         from database import db_manager
+        from tenant_context import get_current_tenant_id
 
-        # Hardcoded tenant for now (Delta)
-        tenant_id = 'delta'
+        # Get tenant from session/context (REQUIRED - no default)
+        tenant_id = get_current_tenant_id(strict=True)
 
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
@@ -5283,10 +5759,11 @@ def api_add_wallet():
         notes = data.get('notes', '').strip()
         created_by = data.get('created_by', 'user').strip()
 
-        # Hardcoded tenant for now (Delta)
-        tenant_id = 'delta'
-
         from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        # Get tenant from session/context (REQUIRED - no default)
+        tenant_id = get_current_tenant_id(strict=True)
 
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
@@ -5549,6 +6026,32 @@ def api_get_homepage_data():
         from data_queries import DataQueryService
 
         tenant_id = get_current_tenant_id()
+
+        # If no tenant context, try to get user's first tenant from session
+        if not tenant_id and 'user_id' in session:
+            user_id = session['user_id']
+            # Query user's first tenant
+            tenant_query = """
+                SELECT tenant_id FROM tenant_users
+                WHERE user_id = %s AND is_active = TRUE
+                ORDER BY created_at ASC
+                LIMIT 1
+            """
+            result = db_manager.execute_query(tenant_query, (user_id,), fetch_one=True)
+            if result:
+                tenant_id = result['tenant_id']
+                # Set tenant context for this and future requests
+                set_tenant_id(tenant_id)
+                logger.info(f"Auto-set tenant context to {tenant_id} for user {user_id}")
+
+        # If still no tenant_id, return error asking user to select tenant
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'error': 'no_tenant_context',
+                'message': 'Please select a tenant to continue'
+            }), 400
+
         homepage_service = DataQueryService(db_manager, tenant_id)
 
         # Get complete homepage data with exact database fields
@@ -5817,6 +6320,62 @@ def api_get_user_profile():
 
     except Exception as e:
         logger.error(f"Error getting user profile: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/user/language', methods=['POST'])
+def api_update_user_language():
+    """Update user's preferred language preference"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        language = data.get('language')
+
+        # Validate language
+        if not language:
+            return jsonify({'error': 'Language is required'}), 400
+        if language not in ['en', 'pt']:
+            return jsonify({'error': 'Invalid language. Must be "en" or "pt"'}), 400
+
+        # Get firebase_uid from session
+        firebase_uid = session.get('firebase_uid')
+        if not firebase_uid:
+            # Try from request data as fallback
+            firebase_uid = data.get('firebase_uid')
+
+        if not firebase_uid:
+            return jsonify({'error': 'User not authenticated'}), 401
+
+        # Update database
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                UPDATE users
+                SET preferred_language = %s
+                WHERE firebase_uid = %s
+                RETURNING id, preferred_language
+            """, (language, firebase_uid))
+
+            result = cursor.fetchone()
+            conn.commit()
+
+            if not result:
+                return jsonify({'error': 'User not found'}), 404
+
+        logger.info(f"Updated language preference for user {firebase_uid} to {language}")
+        return jsonify({
+            'success': True,
+            'language': language,
+            'message': f'Language preference updated to {language}'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating user language: {e}")
         return jsonify({'error': str(e)}), 500
 
 
@@ -6121,6 +6680,1329 @@ def api_delete_bank_account(account_id):
     except Exception as e:
         logger.error(f"Error deleting bank account: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# TENANT KNOWLEDGE API ENDPOINTS
+# ========================================
+
+@app.route('/api/classification-patterns', methods=['GET'])
+def api_get_classification_patterns():
+    """Get all classification patterns for the current tenant"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        query = """
+            SELECT
+                pattern_id, tenant_id, pattern_type, description_pattern,
+                entity, accounting_category, confidence_score,
+                usage_count, success_count, last_used,
+                created_at, updated_at, pattern_data
+            FROM classification_patterns
+            WHERE tenant_id = %s
+            ORDER BY created_at DESC
+        """
+
+        cursor.execute(query, (tenant_id,))
+        results = cursor.fetchall()
+
+        patterns = [dict(row) for row in results]
+
+        # Convert timestamps to ISO format
+        for pattern in patterns:
+            if pattern.get('created_at'):
+                pattern['created_at'] = pattern['created_at'].isoformat()
+            if pattern.get('updated_at'):
+                pattern['updated_at'] = pattern['updated_at'].isoformat()
+            if pattern.get('last_used'):
+                pattern['last_used'] = pattern['last_used'].isoformat()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'patterns': patterns
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching classification patterns: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/classification-patterns', methods=['POST'])
+def api_create_classification_pattern():
+    """Create a new classification pattern"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        required_fields = ['description_pattern', 'pattern_type', 'entity', 'accounting_category', 'confidence_score']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'success': False, 'message': f'Missing required field: {field}'}), 400
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        query = """
+            INSERT INTO classification_patterns
+            (tenant_id, pattern_type, description_pattern, entity, accounting_category,
+             confidence_score, pattern_data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING pattern_id
+        """
+
+        pattern_data = data.get('pattern_data', {})
+
+        cursor.execute(query, (
+            tenant_id,
+            data['pattern_type'],
+            data['description_pattern'],
+            data['entity'],
+            data['accounting_category'],
+            data['confidence_score'],
+            json.dumps(pattern_data)
+        ))
+
+        pattern_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Classification pattern created successfully',
+            'pattern_id': pattern_id
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating classification pattern: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/classification-patterns/<int:pattern_id>', methods=['PUT'])
+def api_update_classification_pattern(pattern_id):
+    """Update an existing classification pattern"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        query = """
+            UPDATE classification_patterns
+            SET pattern_type = %s,
+                description_pattern = %s,
+                entity = %s,
+                accounting_category = %s,
+                confidence_score = %s,
+                pattern_data = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE pattern_id = %s AND tenant_id = %s
+            RETURNING pattern_id
+        """
+
+        pattern_data = data.get('pattern_data', {})
+
+        cursor.execute(query, (
+            data.get('pattern_type'),
+            data.get('description_pattern'),
+            data.get('entity'),
+            data.get('accounting_category'),
+            data.get('confidence_score'),
+            json.dumps(pattern_data),
+            pattern_id,
+            tenant_id
+        ))
+
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Pattern not found'}), 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Classification pattern updated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating classification pattern: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/classification-patterns/<int:pattern_id>', methods=['DELETE'])
+def api_delete_classification_pattern(pattern_id):
+    """Delete a classification pattern"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        query = "DELETE FROM classification_patterns WHERE pattern_id = %s AND tenant_id = %s RETURNING pattern_id"
+        cursor.execute(query, (pattern_id, tenant_id))
+
+        result = cursor.fetchone()
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Pattern not found'}), 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': 'Classification pattern deleted successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting classification pattern: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/classification-patterns/<int:pattern_id>/test', methods=['GET'])
+def api_test_classification_pattern(pattern_id):
+    """Test a classification pattern against existing transactions"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Get the pattern
+        cursor.execute(
+            "SELECT description_pattern FROM classification_patterns WHERE pattern_id = %s AND tenant_id = %s",
+            (pattern_id, tenant_id)
+        )
+        result = cursor.fetchone()
+
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Pattern not found'}), 404
+
+        description_pattern = result[0]
+
+        # Count matching transactions
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM transactions
+            WHERE tenant_id = %s
+              AND description ILIKE %s
+        """, (tenant_id, description_pattern))
+
+        match_count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'matches': match_count
+        })
+
+    except Exception as e:
+        logger.error(f"Error testing classification pattern: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/pattern-suggestions', methods=['GET'])
+def api_get_pattern_suggestions():
+    """Get pending pattern suggestions awaiting user approval (50 classification threshold)"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Get all pending suggestions
+        cursor.execute("""
+            SELECT
+                id, description_pattern, pattern_type, entity,
+                accounting_category, accounting_subcategory, justification,
+                occurrence_count, confidence_score, pattern_signature,
+                supporting_classifications, created_at
+            FROM pattern_suggestions
+            WHERE tenant_id = %s
+              AND status = 'pending'
+            ORDER BY occurrence_count DESC, created_at DESC
+        """, (tenant_id,))
+
+        rows = cursor.fetchall()
+        suggestions = []
+
+        for row in rows:
+            suggestions.append({
+                'id': row[0],
+                'description_pattern': row[1],
+                'pattern_type': row[2],
+                'entity': row[3],
+                'accounting_category': row[4],
+                'accounting_subcategory': row[5],
+                'justification': row[6],
+                'occurrence_count': row[7],
+                'confidence_score': float(row[8]) if row[8] else 0,
+                'pattern_signature': row[9],
+                'supporting_classifications': row[10],
+                'created_at': row[11].isoformat() if row[11] else None
+            })
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'suggestions': suggestions,
+            'count': len(suggestions)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting pattern suggestions: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/pattern-suggestions/<int:suggestion_id>/approve', methods=['POST'])
+def api_approve_pattern_suggestion(suggestion_id):
+    """Approve a pattern suggestion and create the classification pattern"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        # Get user_id from session or default
+        user_id = session.get('user_email', 'web_user')
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Get the suggestion
+        cursor.execute("""
+            SELECT description_pattern, pattern_type, entity,
+                   accounting_category, accounting_subcategory, justification,
+                   confidence_score, occurrence_count
+            FROM pattern_suggestions
+            WHERE id = %s AND tenant_id = %s AND status = 'pending'
+        """, (suggestion_id, tenant_id))
+
+        suggestion = cursor.fetchone()
+
+        if not suggestion:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Suggestion not found or already processed'}), 404
+
+        # Create the classification pattern
+        cursor.execute("""
+            INSERT INTO classification_patterns
+            (tenant_id, description_pattern, pattern_type, entity, accounting_category,
+             accounting_subcategory, justification, confidence_score, priority, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING pattern_id
+        """, (tenant_id, suggestion[0], suggestion[1], suggestion[2], suggestion[3],
+              suggestion[4], suggestion[5], suggestion[6], 500, user_id))
+
+        pattern_id = cursor.fetchone()[0]
+
+        # Update suggestion status
+        cursor.execute("""
+            UPDATE pattern_suggestions
+            SET status = 'approved',
+                reviewed_by = %s,
+                reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (user_id, suggestion_id))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"✅ APPROVED: Pattern suggestion {suggestion_id} approved by {user_id}, created pattern {pattern_id}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Pattern suggestion approved and pattern created',
+            'pattern_id': pattern_id
+        })
+
+    except Exception as e:
+        logger.error(f"Error approving pattern suggestion: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/pattern-suggestions/<int:suggestion_id>/reject', methods=['POST'])
+def api_reject_pattern_suggestion(suggestion_id):
+    """Reject a pattern suggestion"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        # Get user_id from session or default
+        user_id = session.get('user_email', 'web_user')
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Update suggestion status
+        cursor.execute("""
+            UPDATE pattern_suggestions
+            SET status = 'rejected',
+                reviewed_by = %s,
+                reviewed_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND tenant_id = %s AND status = 'pending'
+            RETURNING id
+        """, (user_id, suggestion_id, tenant_id))
+
+        result = cursor.fetchone()
+
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Suggestion not found or already processed'}), 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"❌ REJECTED: Pattern suggestion {suggestion_id} rejected by {user_id}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Pattern suggestion rejected'
+        })
+
+    except Exception as e:
+        logger.error(f"Error rejecting pattern suggestion: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ============================================================================
+# PATTERN NOTIFICATIONS API (LLM-Validated Auto-Created Patterns)
+# ============================================================================
+
+@app.route('/api/pattern-notifications', methods=['GET'])
+def api_get_pattern_notifications():
+    """Get pattern notifications for current tenant"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        # Get filter parameters
+        unread_only = request.args.get('unread_only', 'true').lower() == 'true'
+        limit = int(request.args.get('limit', 50))
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Build query
+        query = """
+            SELECT
+                pn.id,
+                pn.pattern_id,
+                pn.notification_type,
+                pn.title,
+                pn.message,
+                pn.metadata,
+                pn.is_read,
+                pn.priority,
+                pn.created_at,
+                pn.read_at,
+                cp.description_pattern,
+                cp.entity,
+                cp.accounting_category,
+                cp.confidence_score,
+                cp.risk_assessment
+            FROM pattern_notifications pn
+            LEFT JOIN classification_patterns cp ON pn.pattern_id = cp.pattern_id
+            WHERE pn.tenant_id = %s
+        """
+
+        params = [tenant_id]
+
+        if unread_only:
+            query += " AND pn.is_read = FALSE"
+
+        query += " ORDER BY pn.created_at DESC LIMIT %s"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+
+        notifications = []
+        for row in rows:
+            notifications.append({
+                'id': row[0],
+                'pattern_id': row[1],
+                'notification_type': row[2],
+                'title': row[3],
+                'message': row[4],
+                'metadata': row[5],
+                'is_read': row[6],
+                'priority': row[7],
+                'created_at': row[8].isoformat() if row[8] else None,
+                'read_at': row[9].isoformat() if row[9] else None,
+                'pattern': {
+                    'description': row[10],
+                    'entity': row[11],
+                    'category': row[12],
+                    'subcategory': None,
+                    'confidence': float(row[13]) if row[13] else None,
+                    'risk': row[14]
+                } if row[10] else None
+            })
+
+        # Get unread count
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM pattern_notifications
+            WHERE tenant_id = %s AND is_read = FALSE
+        """, (tenant_id,))
+
+        unread_count = cursor.fetchone()[0]
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'notifications': notifications,
+            'unread_count': unread_count,
+            'total': len(notifications)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching pattern notifications: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/pattern-notifications/<int:notification_id>/mark-read', methods=['POST'])
+def api_mark_notification_read(notification_id):
+    """Mark a pattern notification as read"""
+    try:
+        from database import db_manager
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE pattern_notifications
+            SET is_read = TRUE,
+                read_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND tenant_id = %s
+            RETURNING id
+        """, (notification_id, tenant_id))
+
+        result = cursor.fetchone()
+
+        if not result:
+            cursor.close()
+            conn.close()
+            return jsonify({'success': False, 'message': 'Notification not found'}), 404
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"📬 MARKED READ: Notification {notification_id} marked as read")
+
+        return jsonify({
+            'success': True,
+            'message': 'Notification marked as read'
+        })
+
+    except Exception as e:
+        logger.error(f"Error marking notification as read: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/pattern-learning/process', methods=['POST'])
+def api_process_pattern_learning():
+    """Manually trigger LLM validation of pending pattern suggestions"""
+    try:
+        import anthropic
+        from database import db_manager
+        import asyncio
+
+        # Import the pattern learning module
+        try:
+            from pattern_learning import process_pending_pattern_suggestions
+        except ImportError:
+            logger.error("pattern_learning module not found")
+            return jsonify({'success': False, 'message': 'Pattern learning module not available'}), 500
+
+        tenant_id = get_current_tenant_id()
+
+        # Get API key
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'success': False, 'message': 'Claude API key not configured'}), 500
+
+        # Create Claude client
+        claude_client = anthropic.Anthropic(api_key=api_key)
+
+        # Run async processing
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            results = loop.run_until_complete(
+                process_pending_pattern_suggestions(tenant_id, claude_client)
+            )
+        finally:
+            loop.close()
+
+        logger.info(f"🤖 LLM VALIDATION: Processed {results['processed']} suggestions, created {results['created']} patterns")
+
+        return jsonify({
+            'success': True,
+            'message': f"Processed {results['processed']} pattern suggestions",
+            'results': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error processing pattern learning: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/business-entities', methods=['GET'])
+def api_get_business_entities():
+    """Get all business entities for the current tenant"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Get distinct entities from transactions with transaction counts
+        query = """
+            SELECT
+                classified_entity as name,
+                COUNT(*) as transaction_count
+            FROM transactions
+            WHERE tenant_id = %s
+              AND classified_entity IS NOT NULL
+              AND classified_entity != 'N/A'
+              AND classified_entity != ''
+              AND classified_entity != 'Unknown'
+              AND classified_entity != 'Unknown Entity'
+            GROUP BY classified_entity
+            ORDER BY classified_entity
+        """
+
+        cursor.execute(query, (tenant_id,))
+        results = cursor.fetchall()
+
+        entities = [
+            {
+                'name': row[0],
+                'transaction_count': row[1],
+                'type': None,
+                'description': None
+            }
+            for row in results
+        ]
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'entities': entities
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching business entities: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/business-entities', methods=['POST'])
+def api_create_business_entity():
+    """Create a new business entity (stub for future implementation)"""
+    try:
+        data = request.get_json()
+        name = data.get('name')
+
+        if not name:
+            return jsonify({'success': False, 'message': 'Entity name is required'}), 400
+
+        # For now, just return success - entity will be created when first used in a transaction
+        return jsonify({
+            'success': True,
+            'message': 'Entity will be created when first used in a transaction'
+        })
+
+    except Exception as e:
+        logger.error(f"Error creating business entity: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/business-entities/<entity_name>', methods=['PUT'])
+def api_update_business_entity(entity_name):
+    """Update a business entity (name, type, description) and all associated data"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+        new_name = data.get('name', '').strip()
+        entity_type = data.get('type', None)
+        description = data.get('description', None)
+
+        # If name is being changed
+        if new_name and new_name != entity_name:
+            conn = db_manager._get_postgresql_connection()
+            cursor = conn.cursor()
+
+            # Check if new name already exists in business_entities
+            cursor.execute("""
+                SELECT COUNT(*) FROM business_entities
+                WHERE tenant_id = %s AND name = %s AND name != %s
+            """, (tenant_id, new_name, entity_name))
+
+            if cursor.fetchone()[0] > 0:
+                cursor.close()
+                conn.close()
+                return jsonify({
+                    'success': False,
+                    'message': f'Entity "{new_name}" already exists. Please use merge instead.'
+                }), 400
+
+            # Update business_entities table (primary source)
+            entity_update_query = """
+                UPDATE business_entities
+                SET name = %s,
+                    entity_type = %s,
+                    description = %s,
+                    updated_at = NOW()
+                WHERE tenant_id = %s
+                  AND name = %s
+            """
+
+            cursor.execute(entity_update_query, (new_name, entity_type, description, tenant_id, entity_name))
+            entities_updated = cursor.rowcount
+
+            # Update all transactions with this entity
+            transaction_query = """
+                UPDATE transactions
+                SET classified_entity = %s
+                WHERE tenant_id = %s
+                  AND classified_entity = %s
+            """
+
+            cursor.execute(transaction_query, (new_name, tenant_id, entity_name))
+            transactions_updated = cursor.rowcount
+
+            # Update classification patterns that reference this entity
+            pattern_query = """
+                UPDATE classification_patterns
+                SET entity = %s
+                WHERE tenant_id = %s
+                  AND entity = %s
+            """
+
+            cursor.execute(pattern_query, (new_name, tenant_id, entity_name))
+            patterns_updated = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            logger.info(f"Renamed entity '{entity_name}' to '{new_name}': {entities_updated} entities, {transactions_updated} transactions, {patterns_updated} patterns updated")
+
+            return jsonify({
+                'success': True,
+                'message': f'Entity renamed successfully. {transactions_updated} transactions and {patterns_updated} patterns updated.',
+                'entities_updated': entities_updated,
+                'transactions_updated': transactions_updated,
+                'patterns_updated': patterns_updated
+            })
+        else:
+            # Just updating type/description without changing name
+            update_query = """
+                UPDATE business_entities
+                SET entity_type = %s,
+                    description = %s,
+                    updated_at = NOW()
+                WHERE tenant_id = %s
+                  AND name = %s
+            """
+
+            db_manager.execute_query(update_query, (entity_type, description, tenant_id, entity_name))
+
+            return jsonify({
+                'success': True,
+                'message': 'Entity updated successfully.'
+            })
+
+    except Exception as e:
+        logger.error(f"Error updating business entity: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/business-entities/<entity_name>', methods=['DELETE'])
+def api_delete_business_entity(entity_name):
+    """Delete a business entity (sets all matching transactions to 'Unknown Entity')"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Update all transactions with this entity
+        query = """
+            UPDATE transactions
+            SET classified_entity = 'Unknown Entity',
+                confidence = 0.1
+            WHERE tenant_id = %s
+              AND classified_entity = %s
+        """
+
+        cursor.execute(query, (tenant_id, entity_name))
+        rows_updated = cursor.rowcount
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Entity deleted successfully. {rows_updated} transactions set to Unknown Entity.'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting business entity: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/business-entities/<source_entity>/merge', methods=['POST'])
+def api_merge_business_entities(source_entity):
+    """Merge one business entity into another and update all associated transactions"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        target_entity = data.get('target_entity')
+
+        if not target_entity:
+            return jsonify({
+                'success': False,
+                'message': 'Target entity is required'
+            }), 400
+
+        if source_entity == target_entity:
+            return jsonify({
+                'success': False,
+                'message': 'Source and target entities cannot be the same'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Verify target entity exists
+        cursor.execute("""
+            SELECT COUNT(*) FROM transactions
+            WHERE tenant_id = %s AND classified_entity = %s
+        """, (tenant_id, target_entity))
+
+        # Update all transactions from source entity to target entity
+        update_query = """
+            UPDATE transactions
+            SET classified_entity = %s
+            WHERE tenant_id = %s
+              AND classified_entity = %s
+        """
+
+        cursor.execute(update_query, (target_entity, tenant_id, source_entity))
+        transactions_updated = cursor.rowcount
+
+        # Update classification patterns that reference the source entity
+        pattern_update_query = """
+            UPDATE classification_patterns
+            SET entity = %s
+            WHERE tenant_id = %s
+              AND entity = %s
+        """
+
+        cursor.execute(pattern_update_query, (target_entity, tenant_id, source_entity))
+        patterns_updated = cursor.rowcount
+
+        # Delete the source entity from business_entities table after merge
+        delete_entity_query = """
+            DELETE FROM business_entities
+            WHERE tenant_id = %s AND name = %s
+        """
+        cursor.execute(delete_entity_query, (tenant_id, source_entity))
+        entities_deleted = cursor.rowcount
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        logger.info(f"Merged entity '{source_entity}' into '{target_entity}': {transactions_updated} transactions, {patterns_updated} patterns updated, {entities_deleted} entities deleted")
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully merged "{source_entity}" into "{target_entity}"',
+            'transactions_updated': transactions_updated,
+            'patterns_updated': patterns_updated
+        })
+
+    except Exception as e:
+        logger.error(f"Error merging business entities: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/categories-with-counts', methods=['GET'])
+def api_get_categories_with_counts():
+    """Get all distinct categories with transaction counts"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT accounting_category, COUNT(*) as count
+            FROM transactions
+            WHERE tenant_id = %s
+            AND accounting_category IS NOT NULL
+            AND accounting_category != ''
+            GROUP BY accounting_category
+            ORDER BY accounting_category
+        """, (tenant_id,))
+
+        rows = cursor.fetchall()
+        categories = []
+        for row in rows:
+            categories.append({
+                'name': row[0] if isinstance(row, tuple) else row['accounting_category'],
+                'count': row[1] if isinstance(row, tuple) else row['count']
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'categories': categories
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching categories with counts: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/subcategories-with-counts', methods=['GET'])
+def api_get_subcategories_with_counts():
+    """Get all distinct subcategories with transaction counts"""
+    try:
+        tenant_id = get_current_tenant_id()
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT subcategory, COUNT(*) as count
+            FROM transactions
+            WHERE tenant_id = %s
+            AND subcategory IS NOT NULL
+            AND subcategory != ''
+            GROUP BY subcategory
+            ORDER BY subcategory
+        """, (tenant_id,))
+
+        rows = cursor.fetchall()
+        subcategories = []
+        for row in rows:
+            subcategories.append({
+                'name': row[0] if isinstance(row, tuple) else row['subcategory'],
+                'count': row[1] if isinstance(row, tuple) else row['count']
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'subcategories': subcategories
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching subcategories with counts: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/categories/<source_category>/merge', methods=['POST'])
+def api_merge_categories(source_category):
+    """Merge one category into another and update all associated transactions"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        target_category = data.get('target_category')
+
+        if not target_category:
+            return jsonify({
+                'success': False,
+                'message': 'Target category is required'
+            }), 400
+
+        if source_category == target_category:
+            return jsonify({
+                'success': False,
+                'message': 'Source and target categories cannot be the same'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update all transactions with the source category to the target category
+            cursor.execute("""
+                UPDATE transactions
+                SET accounting_category = %s
+                WHERE tenant_id = %s
+                AND accounting_category = %s
+            """, (target_category, tenant_id, source_category))
+
+            transactions_updated = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"Merged category '{source_category}' into '{target_category}': {transactions_updated} transactions updated")
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully merged "{source_category}" into "{target_category}"',
+            'transactions_updated': transactions_updated
+        })
+
+    except Exception as e:
+        logger.error(f"Error merging categories: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/subcategories/<source_subcategory>/merge', methods=['POST'])
+def api_merge_subcategories(source_subcategory):
+    """Merge one subcategory into another and update all associated transactions"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        target_subcategory = data.get('target_subcategory')
+
+        if not target_subcategory:
+            return jsonify({
+                'success': False,
+                'message': 'Target subcategory is required'
+            }), 400
+
+        if source_subcategory == target_subcategory:
+            return jsonify({
+                'success': False,
+                'message': 'Source and target subcategories cannot be the same'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update all transactions with the source subcategory to the target subcategory
+            cursor.execute("""
+                UPDATE transactions
+                SET subcategory = %s
+                WHERE tenant_id = %s
+                AND subcategory = %s
+            """, (target_subcategory, tenant_id, source_subcategory))
+
+            transactions_updated = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"Merged subcategory '{source_subcategory}' into '{target_subcategory}': {transactions_updated} transactions updated")
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully merged "{source_subcategory}" into "{target_subcategory}"',
+            'transactions_updated': transactions_updated
+        })
+
+    except Exception as e:
+        logger.error(f"Error merging subcategories: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/categories/<category_name>/rename', methods=['POST'])
+def api_rename_category(category_name):
+    """Rename a category and update all associated transactions"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        new_name = data.get('new_name')
+
+        if not new_name:
+            return jsonify({
+                'success': False,
+                'message': 'New name is required'
+            }), 400
+
+        if category_name == new_name:
+            return jsonify({
+                'success': False,
+                'message': 'New name must be different from current name'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update all transactions with this category
+            cursor.execute("""
+                UPDATE transactions
+                SET accounting_category = %s
+                WHERE tenant_id = %s
+                AND accounting_category = %s
+            """, (new_name, tenant_id, category_name))
+
+            transactions_updated = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"Renamed category '{category_name}' to '{new_name}': {transactions_updated} transactions updated")
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully renamed "{category_name}" to "{new_name}"',
+            'transactions_updated': transactions_updated
+        })
+
+    except Exception as e:
+        logger.error(f"Error renaming category: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/subcategories/<subcategory_name>/rename', methods=['POST'])
+def api_rename_subcategory(subcategory_name):
+    """Rename a subcategory and update all associated transactions"""
+    try:
+        from database import db_manager
+
+        data = request.get_json()
+        new_name = data.get('new_name')
+
+        if not new_name:
+            return jsonify({
+                'success': False,
+                'message': 'New name is required'
+            }), 400
+
+        if subcategory_name == new_name:
+            return jsonify({
+                'success': False,
+                'message': 'New name must be different from current name'
+            }), 400
+
+        tenant_id = get_current_tenant_id()
+
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Update all transactions with this subcategory
+            cursor.execute("""
+                UPDATE transactions
+                SET subcategory = %s
+                WHERE tenant_id = %s
+                AND subcategory = %s
+            """, (new_name, tenant_id, subcategory_name))
+
+            transactions_updated = cursor.rowcount
+
+            conn.commit()
+            cursor.close()
+
+        logger.info(f"Renamed subcategory '{subcategory_name}' to '{new_name}': {transactions_updated} transactions updated")
+
+        return jsonify({
+            'success': True,
+            'message': f'Successfully renamed "{subcategory_name}" to "{new_name}"',
+            'transactions_updated': transactions_updated
+        })
+
+    except Exception as e:
+        logger.error(f"Error renaming subcategory: {e}")
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/tenant-settings', methods=['GET'])
+def api_get_tenant_settings():
+    """Get tenant settings from tenant_configuration table"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # TEMPORARY FALLBACK FOR DEVELOPMENT: Use 'delta' if no tenant context
+        # TODO: Remove this once authentication is fully implemented
+        if not tenant_id:
+            logger.warning("[DEVELOPMENT] No tenant context - falling back to 'delta'")
+            tenant_id = 'delta'
+
+        # Use context manager properly
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            try:
+                # Get settings from tenant_configuration JSONB field
+                cursor.execute("""
+                    SELECT settings
+                    FROM tenant_configuration
+                    WHERE tenant_id = %s
+                """, (tenant_id,))
+
+                row = cursor.fetchone()
+
+                # Extract settings from JSONB or use defaults
+                if row and row[0]:
+                    stored_settings = row[0]
+                else:
+                    stored_settings = {}
+
+                # Merge with defaults
+                settings = {
+                    'min_confidence_threshold': stored_settings.get('min_confidence_threshold', 0.5),
+                    'auto_learning_enabled': stored_settings.get('auto_learning_enabled', False),
+                    'pattern_min_occurrences': stored_settings.get('pattern_min_occurrences', 3),
+                    'entity_rules': stored_settings.get('entity_rules', [])
+                }
+            finally:
+                cursor.close()
+
+        return jsonify({
+            'success': True,
+            'settings': settings
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching tenant settings: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/tenant-settings', methods=['PUT'])
+def api_update_tenant_settings():
+    """Update tenant settings in tenant_configuration table"""
+    try:
+        tenant_id = get_current_tenant_id()
+
+        # TEMPORARY FALLBACK FOR DEVELOPMENT: Use 'delta' if no tenant context
+        # TODO: Remove this once authentication is fully implemented
+        if not tenant_id:
+            logger.warning("[DEVELOPMENT] No tenant context - falling back to 'delta'")
+            tenant_id = 'delta'
+
+        data = request.get_json()
+
+        # Build settings object
+        settings = {
+            'min_confidence_threshold': data.get('min_confidence_threshold', 0.5),
+            'auto_learning_enabled': data.get('auto_learning_enabled', False),
+            'pattern_min_occurrences': data.get('pattern_min_occurrences', 3),
+            'entity_rules': data.get('entity_rules', [])
+        }
+
+        # Use context manager properly
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            try:
+                # Check if tenant configuration exists
+                cursor.execute("""
+                    SELECT company_name FROM tenant_configuration WHERE tenant_id = %s
+                """, (tenant_id,))
+
+                result = cursor.fetchone()
+
+                if result:
+                    # Tenant exists - just update settings
+                    cursor.execute("""
+                        UPDATE tenant_configuration
+                        SET settings = %s::jsonb,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE tenant_id = %s
+                    """, (json.dumps(settings), tenant_id))
+                else:
+                    # Tenant doesn't exist - insert with default company_name
+                    cursor.execute("""
+                        INSERT INTO tenant_configuration (tenant_id, company_name, settings)
+                        VALUES (%s, %s, %s::jsonb)
+                    """, (tenant_id, tenant_id, json.dumps(settings)))
+
+                conn.commit()
+            finally:
+                cursor.close()
+
+        logger.info(f"Updated tenant settings for {tenant_id}: {settings}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Settings updated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating tenant settings: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 @app.route('/api/suggestions')
@@ -6611,14 +8493,19 @@ def api_ask_accounting_category():
 
         # Get known wallets for wallet matching context
         from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        # Get tenant from session/context (REQUIRED - no default)
+        tenant_id = get_current_tenant_id(strict=True)
+
         wallet_conn = db_manager._get_postgresql_connection()
         wallet_cursor = wallet_conn.cursor()
         wallet_cursor.execute("""
             SELECT wallet_address, entity_name, wallet_type, purpose
             FROM wallet_addresses
-            WHERE tenant_id = 'delta' AND is_active = true
+            WHERE tenant_id = %s AND is_active = true
             ORDER BY wallet_type, entity_name
-        """)
+        """, (tenant_id,))
         known_wallets = wallet_cursor.fetchall()
         wallet_conn.close()
 
@@ -6930,36 +8817,24 @@ def api_get_subcategories():
 def api_get_entities():
     """API endpoint to fetch distinct business entities from database"""
     try:
-        tenant_id = get_current_tenant_id()
         from database import db_manager
-        conn = db_manager._get_postgresql_connection()
-        cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
+        tenant_id = get_current_tenant_id()
 
-        # Get distinct classified_entity values that are not NULL, 'N/A', 'nan', or empty
+        # Query from business_entities table
         query = """
-            SELECT DISTINCT classified_entity
-            FROM transactions
+            SELECT name, entity_type, id
+            FROM business_entities
             WHERE tenant_id = %s
-            AND classified_entity IS NOT NULL
-            AND classified_entity != 'N/A'
-            AND classified_entity != 'nan'
-            AND classified_entity != ''
-            AND classified_entity != 'Unknown'
-            ORDER BY classified_entity
+            AND active = true
+            ORDER BY name
         """
 
-        cursor.execute(query, (tenant_id,))
-        rows = cursor.fetchall()
-        conn.close()
+        entities = db_manager.execute_query(query, (tenant_id,), fetch_all=True)
 
-        # Extract entities from rows
-        if is_postgresql:
-            entities = [row['classified_entity'] if isinstance(row, dict) else row[0] for row in rows]
-        else:
-            entities = [row[0] for row in rows]
+        # Return just the names as strings for backward compatibility
+        entity_names = [e['name'] for e in entities] if entities else []
 
-        return jsonify({'entities': entities})
+        return jsonify({'entities': entity_names})
 
     except Exception as e:
         logging.error(f"Failed to fetch entities: {e}")
@@ -7227,12 +9102,18 @@ def api_update_similar_descriptions():
 
 @app.route('/whitelisted-accounts')
 def whitelisted_accounts():
-    """White Listed Accounts page - manage bank accounts and crypto wallets"""
+    """Redirect to Tenant Knowledge page - accounts now managed there"""
+    return redirect(url_for('tenant_knowledge'))
+
+@app.route('/tenant-knowledge')
+def tenant_knowledge():
+    """Tenant Knowledge page - manage classification patterns, entities, and settings"""
     try:
-        cache_buster = str(random.randint(1000, 9999))
-        return render_template('whitelisted_accounts.html', cache_buster=cache_buster)
+        # Use timestamp for cache buster to ensure fresh JavaScript loads
+        cache_buster = str(int(time.time()))
+        return render_template('tenant_knowledge.html', cache_buster=cache_buster)
     except Exception as e:
-        return f"Error loading whitelisted accounts page: {str(e)}", 500
+        return f"Error loading tenant knowledge page: {str(e)}", 500
 
 @app.route('/files')
 def files_page():
@@ -7833,9 +9714,15 @@ def check_file_duplicates(filepath):
     return check_processed_file_duplicates(filepath, filepath)
 
 
-def convert_currency_to_usd(amount: float, from_currency: str) -> tuple:
+def convert_currency_to_usd(amount: float, from_currency: str, transaction_date: str = None) -> tuple:
     """
     Convert amount from given currency to USD
+    Supports both fiat currencies and cryptocurrencies
+
+    Args:
+        amount: Amount to convert
+        from_currency: Currency code (e.g., 'USD', 'BTC', 'ETH')
+        transaction_date: Date of transaction for historic crypto pricing (format: YYYY-MM-DD)
 
     Returns:
         tuple: (usd_amount, original_currency, conversion_note)
@@ -7844,6 +9731,44 @@ def convert_currency_to_usd(amount: float, from_currency: str) -> tuple:
     if from_currency == 'USD':
         return (amount, 'USD', None)
 
+    # Cryptocurrency symbols
+    CRYPTO_SYMBOLS = ['BTC', 'ETH', 'BNB', 'TAO', 'USDC', 'USDT']
+
+    # Check if this is a cryptocurrency
+    if from_currency.upper() in CRYPTO_SYMBOLS:
+        try:
+            # Import crypto pricing module
+            import sys
+            from pathlib import Path
+            parent_dir = Path(__file__).parent.parent
+            sys.path.append(str(parent_dir))
+            from crypto_pricing import CryptoPricingDB
+
+            crypto_db = CryptoPricingDB()
+
+            # Get historic price for the transaction date
+            if transaction_date:
+                price_per_token = crypto_db.get_price_on_date(from_currency.upper(), transaction_date)
+            else:
+                print(f" WARNING: No transaction date provided for {from_currency} conversion")
+                price_per_token = None
+
+            if price_per_token:
+                usd_amount = amount * price_per_token
+                conversion_note = f"Converted {amount} {from_currency} at ${price_per_token:,.2f} per token on {transaction_date}"
+                print(f" Crypto conversion: {amount} {from_currency} = ${usd_amount:,.2f} USD (rate: ${price_per_token:,.2f}/token on {transaction_date})")
+                return (usd_amount, from_currency, conversion_note)
+            else:
+                # No historic price data available
+                print(f" ERROR: No historic price data for {from_currency} on {transaction_date}")
+                print(f" INFO: Run 'python crypto_pricing.py' to populate historical prices from Binance")
+                return (amount, from_currency, f"No historic price data for {from_currency} on {transaction_date}")
+
+        except Exception as e:
+            print(f" ERROR: Crypto conversion failed for {from_currency}: {e}")
+            return (amount, from_currency, f"Crypto conversion error: {str(e)}")
+
+    # Fiat currency conversion
     # Simple conversion rates (you can replace with live API later)
     # These are approximate rates as of 2025
     EXCHANGE_RATES = {
@@ -8208,10 +10133,11 @@ def upload_file():
 
                     print(f" DEBUG: About to convert: amount={original_amount}, from_currency={txn_currency}")
 
-                    # Convert currency to USD
+                    # Convert currency to USD (including cryptocurrency)
                     usd_amount, original_currency, conversion_note = convert_currency_to_usd(
                         original_amount,
-                        txn_currency
+                        txn_currency,
+                        txn_date  # Pass transaction date for historic crypto pricing
                     )
 
                     # Check for duplicates: same date, description, and amount
@@ -8431,6 +10357,7 @@ else:
                 def sanitize_for_json(obj):
                     """Convert numpy and decimal types to JSON-serializable types"""
                     import numpy as np
+                    import math
                     from decimal import Decimal
 
                     if isinstance(obj, dict):
@@ -8438,29 +10365,36 @@ else:
                     elif isinstance(obj, list):
                         return [sanitize_for_json(item) for item in obj]
                     elif isinstance(obj, (np.integer, np.floating)):
-                        return float(obj)
+                        val = float(obj)
+                        # Convert NaN/Infinity to None for valid JSON
+                        if math.isnan(val) or math.isinf(val):
+                            return None
+                        return val
                     elif isinstance(obj, Decimal):
                         return float(obj)
                     elif isinstance(obj, np.ndarray):
                         return obj.tolist()
+                    elif isinstance(obj, float):
+                        # Handle regular Python float NaN/Infinity
+                        if math.isnan(obj) or math.isinf(obj):
+                            return None
+                        return obj
                     else:
                         return obj
 
                 # Sanitize duplicate_info for JSON serialization
                 sanitized_duplicate_info = sanitize_for_json(duplicate_info)
 
-                # Store processed file info in session for later resolution
-                session['pending_upload'] = {
-                    'filename': filename,
-                    'filepath': filepath,
-                    'processed_file': duplicate_info.get('processed_file'),
-                    'duplicate_info': sanitized_duplicate_info,
-                    'transactions_processed': transactions_processed
-                }
+                # Return duplicate info directly in response (don't use session - causes cookie overflow)
+                # Frontend will handle the duplicate resolution UI
                 return jsonify({
                     'success': False,
                     'duplicate_confirmation_needed': True,
                     'duplicate_info': sanitized_duplicate_info,
+                    'filename': filename,
+                    'filepath': filepath,
+                    'processed_file': duplicate_info.get('processed_file'),
+                    'transactions_processed': transactions_processed,
                     'message': f'Found {duplicate_info["duplicate_count"]} duplicate transactions. {duplicate_info["new_count"]} new transactions found.'
                 })
 
@@ -8762,6 +10696,191 @@ def resolve_duplicates():
             return jsonify({
                 'success': False,
                 'error': f'Invalid action: {action}. Must be "overwrite" or "discard".'
+            }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+@app.route('/api/upload/handle-duplicates', methods=['POST'])
+@require_auth
+def handle_duplicates():
+    """
+    Handle user's choice for duplicate transactions.
+    This endpoint doesn't use session storage - all data is passed in the request body.
+    """
+    import os
+    import pandas as pd
+
+    try:
+        data = request.json
+        choice = data.get('choice')  # 'skip' or 'replace'
+        filename = data.get('filename')
+        filepath = data.get('filepath')
+        processed_file = data.get('processed_file')
+        duplicate_info = data.get('duplicate_info', {})
+
+        # Get current tenant_id for multi-tenant isolation
+        tenant_id = get_current_tenant_id()
+
+        print(f" DEBUG: Handling duplicates with choice: {choice}")
+        print(f" DEBUG: File: {filename}, Duplicates: {duplicate_info.get('duplicate_count', 0)}")
+
+        if choice == 'skip':
+            # SKIP: Only import new transactions, skip duplicates
+            print(f" User chose to SKIP {duplicate_info.get('duplicate_count', 0)} duplicates, import {duplicate_info.get('new_count', 0)} new transactions")
+
+            # Filter the processed CSV to only include new transactions
+            if processed_file and os.path.exists(processed_file):
+                df = pd.read_csv(processed_file)
+
+                # Get list of duplicate transaction identifiers
+                duplicates = duplicate_info.get('duplicates', [])
+
+                # Create a set of duplicate identifiers (date + amount + description)
+                duplicate_identifiers = set()
+                for dup in duplicates:
+                    date = dup.get('date', '')
+                    amount = float(dup.get('new_amount', 0))
+                    desc = dup.get('description', '')
+                    duplicate_identifiers.add((date, amount, desc))
+
+                # Filter DataFrame to exclude duplicates
+                def is_duplicate(row):
+                    try:
+                        row_id = (str(row['Date']), float(row['Amount']), str(row['Description']))
+                        return row_id in duplicate_identifiers
+                    except:
+                        return False
+
+                # Keep only non-duplicate rows
+                df_filtered = df[~df.apply(is_duplicate, axis=1)]
+
+                # Save filtered CSV
+                df_filtered.to_csv(processed_file, index=False)
+                print(f" Filtered CSV: kept {len(df_filtered)} new transactions, skipped {len(df) - len(df_filtered)} duplicates")
+
+            # Sync filtered file to database
+            sync_result = sync_csv_to_database(filename)
+
+            if sync_result:
+                return jsonify({
+                    'success': True,
+                    'action': 'skip',
+                    'message': f'Successfully imported {duplicate_info.get("new_count", 0)} new transactions',
+                    'transactions_processed': duplicate_info.get('new_count', 0),
+                    'duplicates_skipped': duplicate_info.get('duplicate_count', 0)
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to sync new transactions to database'
+                }), 500
+
+        elif choice == 'replace' or choice == 'replace-selected':
+            # REPLACE: Delete old duplicates and insert all transactions from new file
+            # REPLACE-SELECTED: Delete only selected duplicates and insert corresponding new transactions
+
+            selected_indices = data.get('selected_indices', [])
+            duplicates = duplicate_info.get('duplicates', [])
+
+            if choice == 'replace-selected':
+                print(f" User chose to REPLACE {len(selected_indices)} selected duplicate(s)")
+                # Filter duplicates to only selected ones
+                duplicate_ids = []
+                for idx in selected_indices:
+                    if 0 <= idx < len(duplicates):
+                        dup = duplicates[idx]
+                        if 'existing_id' in dup:
+                            duplicate_ids.append(dup['existing_id'])
+            else:
+                print(f" User chose to REPLACE {duplicate_info.get('duplicate_count', 0)} duplicates with new data")
+                # Get all duplicate IDs to delete
+                duplicate_ids = [dup['existing_id'] for dup in duplicates if 'existing_id' in dup]
+
+            from database import db_manager
+
+            if duplicate_ids:
+                # Deduplicate the ID list
+                duplicate_ids = list(set(duplicate_ids))
+
+                print(f" Deleting {len(duplicate_ids)} duplicate transactions...")
+
+                with db_manager.get_connection() as conn:
+                    if db_manager.db_type == 'postgresql':
+                        cursor = conn.cursor()
+
+                        # Delete foreign key references first
+                        delete_matches_query = "DELETE FROM pending_invoice_matches WHERE transaction_id = ANY(%s)"
+                        cursor.execute(delete_matches_query, (duplicate_ids,))
+                        print(f" Deleted {cursor.rowcount} invoice match references")
+
+                        delete_patterns_query = "DELETE FROM entity_patterns WHERE transaction_id = ANY(%s)"
+                        cursor.execute(delete_patterns_query, (duplicate_ids,))
+                        print(f" Deleted {cursor.rowcount} entity pattern references")
+
+                        # Delete the duplicate transactions
+                        delete_query = "DELETE FROM transactions WHERE tenant_id = %s AND transaction_id = ANY(%s)"
+                        cursor.execute(delete_query, (tenant_id, duplicate_ids))
+                        conn.commit()
+                        print(f" Deleted {cursor.rowcount} duplicate transactions")
+                    else:
+                        cursor = conn.cursor()
+                        placeholders = ','.join('?' * len(duplicate_ids))
+                        delete_query = f"DELETE FROM transactions WHERE tenant_id = ? AND transaction_id IN ({placeholders})"
+                        cursor.execute(delete_query, [tenant_id] + duplicate_ids)
+                        conn.commit()
+                        print(f" Deleted {cursor.rowcount} duplicate transactions")
+
+            # Sync the complete new file to database
+            print(f" DEBUG: About to sync file to database", flush=True)
+            print(f" DEBUG: filename = '{filename}'", flush=True)
+            print(f" DEBUG: processed_file = '{processed_file}'", flush=True)
+
+            # Verify classified file exists
+            parent_dir = os.path.dirname(os.path.dirname(__file__))
+            expected_classified_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{filename}')
+            print(f" DEBUG: Expected classified file path: {expected_classified_path}", flush=True)
+            print(f" DEBUG: Classified file exists: {os.path.exists(expected_classified_path)}", flush=True)
+
+            sync_result = sync_csv_to_database(filename)
+            print(f" DEBUG: sync_csv_to_database returned: {sync_result}", flush=True)
+
+            if sync_result:
+                # Calculate transactions processed based on choice
+                # Note: sync_csv_to_database imports ALL transactions (new + duplicates)
+                new_count = duplicate_info.get('new_count', 0)
+
+                if choice == 'replace-selected':
+                    # For selective replace: selected duplicates + all new transactions
+                    transactions_processed = len(selected_indices) + new_count
+                    message = f'Successfully replaced {len(duplicate_ids)} selected duplicate transaction(s) and imported {new_count} new transaction(s)'
+                else:
+                    # For replace all: all duplicates + new transactions
+                    transactions_processed = duplicate_info.get('duplicate_count', 0) + new_count
+                    message = f'Successfully replaced {len(duplicate_ids)} duplicate transaction(s) and imported {new_count} new transaction(s)'
+
+                return jsonify({
+                    'success': True,
+                    'action': choice,
+                    'message': message,
+                    'transactions_processed': transactions_processed,
+                    'duplicates_replaced': len(duplicate_ids),
+                    'new_added': duplicate_info.get('new_count', 0)
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Failed to sync transactions to database'
+                }), 500
+
+        else:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid choice: {choice}. Must be "skip", "replace", or "replace-selected".'
             }), 400
 
     except Exception as e:
@@ -10500,176 +12619,66 @@ def api_upload_payment_proof_auto_match():
         if file.filename == '':
             return jsonify({'error': 'No file selected'}), 400
 
-        # Save temporarily
-        filename = secure_filename(file.filename)
-        temp_path = os.path.join('/tmp' if os.name != 'nt' else os.environ.get('TEMP', 'C:\\temp'), filename)
-        file.save(temp_path)
-
+        # Save to Google Cloud Storage
         try:
-            # Step 1: Extract payment data with Claude AI
-            processor = PaymentProofProcessor()
-            payment_data = processor.process_payment_proof(temp_path, invoice_data=None)
-
-            if not payment_data.get('success'):
-                return jsonify({
-                    'success': False,
-                    'error': payment_data.get('error', 'Failed to extract payment data'),
-                    'payment_data': payment_data
-                }), 400
-
-            # Step 2: Find matching invoice
-            matcher = ReceiptInvoiceMatcher(db_manager)
-            best_match = matcher.get_best_match(payment_data, tenant_id)
-
-            if not best_match:
-                # No match found - return extracted data for manual selection with debug info
-                print(f"[MATCHER DEBUG] No match found for payment:")
-                print(f"  Amount: {payment_data.get('payment_amount')} {payment_data.get('payment_currency')}")
-                print(f"  Date: {payment_data.get('payment_date')}")
-                print(f"  Tenant: {tenant_id}")
-
-                # Show all candidate invoices for debugging
-                all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
-                print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices")
-                for idx, match in enumerate(all_matches[:5]):  # Show top 5
-                    inv = match['invoice']
-                    print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Status: {inv.get('payment_status')} - Score: {match['score']}")
-
-                return jsonify({
-                    'success': False,
-                    'error': 'No matching invoice found',
-                    'payment_data': {
-                        'date': payment_data.get('payment_date'),
-                        'amount': payment_data.get('payment_amount'),
-                        'currency': payment_data.get('payment_currency'),
-                        'method': payment_data.get('payment_method'),
-                        'confirmation_number': payment_data.get('confirmation_number'),
-                        'confidence': payment_data.get('confidence')
-                    },
-                    'debug': {
-                        'candidates_found': len(all_matches),
-                        'top_candidates': [
-                            {
-                                'invoice_number': m['invoice']['invoice_number'],
-                                'amount': float(m['invoice']['total_amount']),
-                                'currency': m['invoice']['currency'],
-                                'status': m['invoice']['payment_status'],
-                                'score': m['score'],
-                                'confidence': m['confidence']
-                            } for m in all_matches[:5]
-                        ]
-                    },
-                    'message': 'Please select invoice manually or check payment details'
-                }), 404
-
-            invoice = best_match['invoice']
-            invoice_id = invoice['id']
-            match_confidence = best_match['confidence']
-            match_score = best_match['score']
-
-            # If score < 80, require manual confirmation
-            if match_score < 80:
-                print(f"[MATCHER DEBUG] Match score {match_score} < 80, requiring manual confirmation")
-
-                # Get all candidates for manual selection
-                all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
-                print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices for manual selection")
-                for idx, match in enumerate(all_matches[:5]):
-                    inv = match['invoice']
-                    print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Score: {match['score']}")
-
-                return jsonify({
-                    'success': False,
-                    'error': 'Manual confirmation required',
-                    'payment_data': {
-                        'date': payment_data.get('payment_date'),
-                        'amount': payment_data.get('payment_amount'),
-                        'currency': payment_data.get('payment_currency'),
-                        'method': payment_data.get('payment_method'),
-                        'confirmation_number': payment_data.get('confirmation_number'),
-                        'confidence': payment_data.get('confidence')
-                    },
-                    'debug': {
-                        'candidates_found': len(all_matches),
-                        'top_candidates': [
-                            {
-                                'invoice_number': m['invoice']['invoice_number'],
-                                'invoice_id': m['invoice']['id'],
-                                'customer_name': m['invoice'].get('customer_name') or m['invoice'].get('vendor_name'),
-                                'invoice_date': str(m['invoice'].get('date', '')),
-                                'amount': float(m['invoice']['total_amount']),
-                                'currency': m['invoice']['currency'],
-                                'status': m['invoice']['payment_status'],
-                                'score': m['score'],
-                                'confidence': m['confidence'],
-                                'score_breakdown': m['score_breakdown']
-                            } for m in all_matches[:5]
-                        ]
-                    },
-                    'message': 'Please select the correct invoice to confirm the match'
-                }), 404
-
-            # Step 3: Validate against matched invoice
-            validator = PaymentValidator()
-            is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
-
-            # Step 4: Store payment proof file
-            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
-
-            # Step 5: Update invoice with payment information
-            payment_status = 'paid' if is_valid and match_confidence in ['very_high', 'high'] else 'pending_review'
-
-            update_query = """
-                UPDATE invoices
-                SET
-                    payment_date = %s,
-                    payment_proof_path = %s,
-                    payment_method = %s,
-                    payment_confirmation_number = %s,
-                    payment_notes = %s,
-                    payment_proof_uploaded_at = NOW(),
-                    payment_proof_uploaded_by = %s,
-                    payment_status = %s
-                WHERE id = %s AND tenant_id = %s
-            """
-
-            payment_notes = f"Auto-matched with {match_confidence} confidence (score: {match_score}/100)"
-            if warnings:
-                payment_notes += f"\nWarnings: {', '.join(warnings)}"
-
-            db_manager.execute_query(
-                update_query,
-                (
-                    payment_data.get('payment_date'),
-                    stored_path,
-                    payment_data.get('payment_method'),
-                    payment_data.get('confirmation_number'),
-                    payment_notes,
-                    'system_auto_match',  # uploaded_by
-                    payment_status,
-                    invoice_id,
-                    tenant_id
-                )
+            gcs_uri, document_info = file_storage.save_file(
+                file_obj=file,
+                document_type='receipts',
+                user_id=session.get('user_id', 'system'),
+                metadata={
+                    'description': 'Payment proof - auto-match',
+                    'source': 'payment_proof_upload'
+                }
             )
 
-            # Format validation report
-            validation_report = validator.format_validation_report(is_valid, errors, warnings)
+            # Get file bytes for processing
+            file_bytes = file_storage.get_file(document_info['id'])
+
+            # Create temporary file for processor (processor expects file path)
+            import tempfile
+            temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
+            try:
+                with os.fdopen(temp_fd, 'wb') as f:
+                    f.write(file_bytes)
+
+                # Step 1: Extract payment data with Claude AI
+                processor = PaymentProofProcessor()
+                payment_data = processor.process_payment_proof(temp_path, invoice_data=None)
+            finally:
+                # Clean up temporary processing file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except ValueError as e:
+            return jsonify({'error': f'File upload failed: {str(e)}'}), 400
+
+        if not payment_data.get('success'):
+            return jsonify({
+                'success': False,
+                'error': payment_data.get('error', 'Failed to extract payment data'),
+                'payment_data': payment_data
+            }), 400
+
+        # Step 2: Find matching invoice
+        matcher = ReceiptInvoiceMatcher(db_manager)
+        best_match = matcher.get_best_match(payment_data, tenant_id)
+
+        if not best_match:
+            # No match found - return extracted data for manual selection with debug info
+            print(f"[MATCHER DEBUG] No match found for payment:")
+            print(f"  Amount: {payment_data.get('payment_amount')} {payment_data.get('payment_currency')}")
+            print(f"  Date: {payment_data.get('payment_date')}")
+            print(f"  Tenant: {tenant_id}")
+
+            # Show all candidate invoices for debugging
+            all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
+            print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices")
+            for idx, match in enumerate(all_matches[:5]):  # Show top 5
+                inv = match['invoice']
+                print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Status: {inv.get('payment_status')} - Score: {match['score']}")
 
             return jsonify({
-                'success': True,
-                'message': f'Payment proof uploaded and matched to invoice (confidence: {match_confidence})',
-                'matched_invoice': {
-                    'id': invoice_id,
-                    'invoice_number': invoice.get('invoice_number'),
-                    'customer_name': invoice.get('customer_name') or invoice.get('vendor_name'),
-                    'amount': float(invoice.get('total_amount', 0)),
-                    'currency': invoice.get('currency')
-                },
-                'match_info': {
-                    'confidence': match_confidence,
-                    'score': match_score,
-                    'score_breakdown': best_match['score_breakdown']
-                },
+                'success': False,
+                'error': 'No matching invoice found',
                 'payment_data': {
                     'date': payment_data.get('payment_date'),
                     'amount': payment_data.get('payment_amount'),
@@ -10678,20 +12687,147 @@ def api_upload_payment_proof_auto_match():
                     'confirmation_number': payment_data.get('confirmation_number'),
                     'confidence': payment_data.get('confidence')
                 },
-                'payment_status': payment_status,
-                'stored_path': stored_path,
-                'validation': {
-                    'is_valid': is_valid,
-                    'errors': errors,
-                    'warnings': warnings,
-                    'report': validation_report
-                }
-            }), 200
+                'debug': {
+                    'candidates_found': len(all_matches),
+                    'top_candidates': [
+                        {
+                            'invoice_number': m['invoice']['invoice_number'],
+                            'amount': float(m['invoice']['total_amount']),
+                            'currency': m['invoice']['currency'],
+                            'status': m['invoice']['payment_status'],
+                            'score': m['score'],
+                            'confidence': m['confidence']
+                        } for m in all_matches[:5]
+                    ]
+                },
+                'message': 'Please select invoice manually or check payment details'
+            }), 404
 
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        invoice = best_match['invoice']
+        invoice_id = invoice['id']
+        match_confidence = best_match['confidence']
+        match_score = best_match['score']
+
+        # If score < 80, require manual confirmation
+        if match_score < 80:
+            print(f"[MATCHER DEBUG] Match score {match_score} < 80, requiring manual confirmation")
+
+            # Get all candidates for manual selection
+            all_matches = matcher.find_matching_invoices(payment_data, tenant_id)
+            print(f"[MATCHER DEBUG] Found {len(all_matches)} candidate invoices for manual selection")
+            for idx, match in enumerate(all_matches[:5]):
+                inv = match['invoice']
+                print(f"  {idx+1}. Invoice #{inv.get('invoice_number')} - ${inv.get('total_amount')} {inv.get('currency')} - Score: {match['score']}")
+
+            return jsonify({
+                'success': False,
+                'error': 'Manual confirmation required',
+                'payment_data': {
+                    'date': payment_data.get('payment_date'),
+                    'amount': payment_data.get('payment_amount'),
+                    'currency': payment_data.get('payment_currency'),
+                    'method': payment_data.get('payment_method'),
+                    'confirmation_number': payment_data.get('confirmation_number'),
+                    'confidence': payment_data.get('confidence')
+                },
+                'debug': {
+                    'candidates_found': len(all_matches),
+                    'top_candidates': [
+                        {
+                            'invoice_number': m['invoice']['invoice_number'],
+                            'invoice_id': m['invoice']['id'],
+                            'customer_name': m['invoice'].get('customer_name') or m['invoice'].get('vendor_name'),
+                            'invoice_date': str(m['invoice'].get('date', '')),
+                            'amount': float(m['invoice']['total_amount']),
+                            'currency': m['invoice']['currency'],
+                            'status': m['invoice']['payment_status'],
+                            'score': m['score'],
+                            'confidence': m['confidence'],
+                            'score_breakdown': m['score_breakdown']
+                        } for m in all_matches[:5]
+                    ]
+                },
+                'message': 'Please select the correct invoice to confirm the match'
+            }), 404
+
+        # Step 3: Validate against matched invoice
+        validator = PaymentValidator()
+        is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
+
+        # Step 4: File already stored in GCS - use GCS URI as stored_path
+        stored_path = gcs_uri
+
+        # Step 5: Update invoice with payment information
+        payment_status = 'paid' if is_valid and match_confidence in ['very_high', 'high'] else 'pending_review'
+
+        update_query = """
+            UPDATE invoices
+            SET
+                payment_date = %s,
+                payment_proof_path = %s,
+                payment_method = %s,
+                payment_confirmation_number = %s,
+                payment_notes = %s,
+                payment_proof_uploaded_at = NOW(),
+                payment_proof_uploaded_by = %s,
+                payment_status = %s
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        payment_notes = f"Auto-matched with {match_confidence} confidence (score: {match_score}/100)"
+        if warnings:
+            payment_notes += f"\nWarnings: {', '.join(warnings)}"
+
+        db_manager.execute_query(
+            update_query,
+            (
+                payment_data.get('payment_date'),
+                stored_path,
+                payment_data.get('payment_method'),
+                payment_data.get('confirmation_number'),
+                payment_notes,
+                'system_auto_match',  # uploaded_by
+                payment_status,
+                invoice_id,
+                tenant_id
+            )
+        )
+
+        # Format validation report
+        validation_report = validator.format_validation_report(is_valid, errors, warnings)
+
+        return jsonify({
+            'success': True,
+            'message': f'Payment proof uploaded and matched to invoice (confidence: {match_confidence})',
+            'matched_invoice': {
+                'id': invoice_id,
+                'invoice_number': invoice.get('invoice_number'),
+                'customer_name': invoice.get('customer_name') or invoice.get('vendor_name'),
+                'amount': float(invoice.get('total_amount', 0)),
+                'currency': invoice.get('currency')
+            },
+            'match_info': {
+                'confidence': match_confidence,
+                'score': match_score,
+                'score_breakdown': best_match['score_breakdown']
+            },
+            'payment_data': {
+                'date': payment_data.get('payment_date'),
+                'amount': payment_data.get('payment_amount'),
+                'currency': payment_data.get('payment_currency'),
+                'method': payment_data.get('payment_method'),
+                'confirmation_number': payment_data.get('confirmation_number'),
+                'confidence': payment_data.get('confidence')
+            },
+            'payment_status': payment_status,
+            'stored_path': stored_path,
+            'validation': {
+                'is_valid': is_valid,
+                'errors': errors,
+                'warnings': warnings,
+                'report': validation_report
+            }
+        }), 200
 
     except Exception as e:
         import traceback
@@ -10765,200 +12901,204 @@ def api_confirm_payment_proof_match():
         if not invoice:
             return jsonify({'error': 'Invoice not found'}), 404
 
-        # Save file temporarily
-        filename = secure_filename(file.filename)
-        temp_path = os.path.join('/tmp' if os.name != 'nt' else os.environ.get('TEMP', 'C:\\temp'), filename)
-        file.save(temp_path)
-
+        # Save to Google Cloud Storage
         try:
-            # Step 1: Store payment proof as attachment
-            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
-
-            # Step 2: Save attachment record to database
-            attachment_id = str(uuid.uuid4())
-            attachment_query = """
-                INSERT INTO invoice_attachments (
-                    id, invoice_id, tenant_id, file_name, file_path,
-                    file_size, attachment_type, ai_extracted_data, uploaded_by, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            """
-
-            file_size = os.path.getsize(temp_path)
-
-            db_manager.execute_query(
-                attachment_query,
-                (
-                    attachment_id, invoice_id, tenant_id, filename, stored_path,
-                    file_size, 'payment_proof', json.dumps(payment_data),
-                    'system',
-                )
+            gcs_uri, document_info = file_storage.save_file(
+                file_obj=file,
+                document_type='receipts',
+                user_id=session.get('user_id', 'system'),
+                metadata={
+                    'description': f'Payment proof for invoice {invoice_id}',
+                    'source': 'payment_proof_confirm_match',
+                    'invoice_id': invoice_id
+                }
             )
+            stored_path = gcs_uri
+            file_size = document_info['file_size']
+            filename = document_info['original_filename']
+        except ValueError as e:
+            return jsonify({'error': f'File upload failed: {str(e)}'}), 400
 
-            # Step 3: Create payment record using PaymentManager
-            payment_manager = PaymentManager(db_manager)
+        # Step 1: File already stored in GCS
 
-            # Handle both formats: with and without 'payment_' prefix
-            payment_amount_value = payment_data.get('payment_amount') or payment_data.get('amount', 0)
-            payment_date_value = payment_data.get('payment_date') or payment_data.get('date')
-            payment_currency_value = payment_data.get('payment_currency') or payment_data.get('currency', 'USD')
-            payment_method_value = payment_data.get('payment_method') or payment_data.get('method')
-            payment_reference_value = payment_data.get('confirmation_number')
+        # Step 2: Save attachment record to database
+        attachment_id = str(uuid.uuid4())
+        attachment_query = """
+            INSERT INTO invoice_attachments (
+                id, invoice_id, tenant_id, file_name, file_path,
+                file_size, attachment_type, ai_extracted_data, uploaded_by, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        """
 
-            success, message, payment_record = payment_manager.add_payment(
-                invoice_id=invoice_id,
-                tenant_id=tenant_id,
-                payment_amount=float(payment_amount_value),
-                payment_date=payment_date_value,
-                payment_currency=payment_currency_value,
-                payment_method=payment_method_value,
-                payment_reference=payment_reference_value,
-                payment_notes=f"From payment proof - Confidence: {payment_data.get('confidence', 0)}",
-                attachment_id=attachment_id,
-                recorded_by='system'
+        db_manager.execute_query(
+            attachment_query,
+            (
+                attachment_id, invoice_id, tenant_id, filename, stored_path,
+                file_size, 'payment_proof', json.dumps(payment_data),
+                'system',
             )
+        )
 
-            if not success:
-                return jsonify({
-                    'success': False,
-                    'error': f'Failed to create payment record: {message}'
-                }), 400
+        # Step 3: Create payment record using PaymentManager
+        payment_manager = PaymentManager(db_manager)
 
-            # Step 4: Try to auto-link with transaction (same logic as attachment upload)
-            payment_amount = float(payment_amount_value)
-            payment_date = payment_date_value
-            payment_currency = payment_currency_value
+        # Handle both formats: with and without 'payment_' prefix
+        payment_amount_value = payment_data.get('payment_amount') or payment_data.get('amount', 0)
+        payment_date_value = payment_data.get('payment_date') or payment_data.get('date')
+        payment_currency_value = payment_data.get('payment_currency') or payment_data.get('currency', 'USD')
+        payment_method_value = payment_data.get('payment_method') or payment_data.get('method')
+        payment_reference_value = payment_data.get('confirmation_number')
 
-            # Search for matching transactions
-            matching_txns = db_manager.execute_query("""
-                SELECT transaction_id, date, description, amount, accounting_category,
-                       classified_entity, confidence
-                FROM transactions
-                WHERE tenant_id = %s
-                AND ABS(amount - %s) <= (%s * 0.05)
-                AND currency = %s
-                AND (
-                    date::date BETWEEN %s::date - INTERVAL '14 days'
-                                AND %s::date + INTERVAL '14 days'
-                    OR date::date BETWEEN (SELECT date FROM invoices WHERE id = %s)::date - INTERVAL '14 days'
-                                    AND (SELECT date FROM invoices WHERE id = %s)::date + INTERVAL '14 days'
-                )
-                AND (invoice_id IS NULL OR invoice_id = %s)
-                ORDER BY ABS(amount - %s) ASC, ABS(date::date - %s::date) ASC
-                LIMIT 10
-            """, (
-                tenant_id, payment_amount, payment_amount, payment_currency,
-                payment_date, payment_date, invoice_id, invoice_id,
-                invoice_id, payment_amount, payment_date
-            ), fetch_all=True)
+        success, message, payment_record = payment_manager.add_payment(
+            invoice_id=invoice_id,
+            tenant_id=tenant_id,
+            payment_amount=float(payment_amount_value),
+            payment_date=payment_date_value,
+            payment_currency=payment_currency_value,
+            payment_method=payment_method_value,
+            payment_reference=payment_reference_value,
+            payment_notes=f"From payment proof - Confidence: {payment_data.get('confidence', 0)}",
+            attachment_id=attachment_id,
+            recorded_by='system'
+        )
 
-            transaction_linked = None
-
-            if matching_txns:
-                # Calculate match score for each
-                from dateutil import parser as date_parser
-                best_match = None
-                best_score = 0
-
-                for txn in matching_txns:
-                    txn_amount = abs(float(txn['amount']))
-                    amount_diff = abs(txn_amount - payment_amount)
-                    amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
-
-                    try:
-                        txn_date = date_parser.parse(txn['date']).date()
-                        pay_date = date_parser.parse(payment_date).date()
-                        date_diff = abs((txn_date - pay_date).days)
-                    except:
-                        date_diff = 999
-
-                    match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
-
-                    if match_score > best_score:
-                        best_score = match_score
-                        best_match = txn
-
-                # Auto-link if score >= 80%
-                if best_match and best_score >= 80:
-                    transaction_id = best_match['transaction_id']
-
-                    # Get customer name
-                    customer_name = invoice.get('customer_name') or invoice.get('vendor_name', 'Unknown')
-                    invoice_number = invoice.get('invoice_number', invoice_id[:8])
-
-                    # Get original description
-                    txn_desc_result = db_manager.execute_query(
-                        "SELECT description, original_description FROM transactions WHERE transaction_id = %s",
-                        (transaction_id,),
-                        fetch_one=True
-                    )
-                    original_desc = txn_desc_result.get('original_description') or txn_desc_result.get('description', '')
-
-                    # Build enhanced description
-                    enhanced_description = f"Payment to {customer_name} - Invoice #{invoice_number} ({payment_currency} {payment_amount:.2f}) | {original_desc}"
-
-                    # Update transaction
-                    db_manager.execute_query("""
-                        UPDATE transactions
-                        SET accounting_category = 'Invoice Payment',
-                            invoice_id = %s,
-                            original_description = COALESCE(original_description, description),
-                            description = %s,
-                            classified_entity = %s
-                        WHERE transaction_id = %s AND tenant_id = %s
-                    """, (invoice_id, enhanced_description, customer_name, transaction_id, tenant_id))
-
-                    transaction_linked = {
-                        'transaction_id': transaction_id,
-                        'match_score': best_score,
-                        'description': enhanced_description
-                    }
-
-            # Prepare all transaction candidates for display
-            transaction_candidates = []
-            if matching_txns:
-                from dateutil import parser as date_parser
-                for txn in matching_txns:
-                    txn_amount = abs(float(txn['amount']))
-                    amount_diff = abs(txn_amount - payment_amount)
-                    amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
-
-                    try:
-                        txn_date = date_parser.parse(txn['date']).date()
-                        pay_date = date_parser.parse(payment_date).date()
-                        date_diff = abs((txn_date - pay_date).days)
-                    except:
-                        date_diff = 999
-
-                    match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
-
-                    transaction_candidates.append({
-                        'id': txn['transaction_id'],
-                        'description': txn['description'],
-                        'date': str(txn['date']),
-                        'amount': float(txn['amount']),
-                        'category': txn.get('accounting_category'),
-                        'entity': txn.get('classified_entity'),
-                        'match_score': round(match_score, 1),
-                        'amount_diff': round(amount_diff, 2),
-                        'date_diff_days': date_diff,
-                        'linked': txn['transaction_id'] == transaction_linked['transaction_id'] if transaction_linked else False
-                    })
-
+        if not success:
             return jsonify({
-                'success': True,
-                'message': 'Payment proof confirmed and matched successfully',
-                'invoice_id': invoice_id,
-                'attachment_id': attachment_id,
-                'payment_id': payment_record['id'] if payment_record else None,
-                'transaction_linked': transaction_linked,
-                'transaction_candidates': transaction_candidates,
-                'stored_path': stored_path
-            }), 200
+                'success': False,
+                'error': f'Failed to create payment record: {message}'
+            }), 400
 
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+        # Step 4: Try to auto-link with transaction (same logic as attachment upload)
+        payment_amount = float(payment_amount_value)
+        payment_date = payment_date_value
+        payment_currency = payment_currency_value
+
+        # Search for matching transactions
+        matching_txns = db_manager.execute_query("""
+            SELECT transaction_id, date, description, amount, accounting_category,
+                   classified_entity, confidence
+            FROM transactions
+            WHERE tenant_id = %s
+            AND ABS(amount - %s) <= (%s * 0.05)
+            AND currency = %s
+            AND (
+                date::date BETWEEN %s::date - INTERVAL '14 days'
+                            AND %s::date + INTERVAL '14 days'
+                OR date::date BETWEEN (SELECT date FROM invoices WHERE id = %s)::date - INTERVAL '14 days'
+                                AND (SELECT date FROM invoices WHERE id = %s)::date + INTERVAL '14 days'
+            )
+            AND (invoice_id IS NULL OR invoice_id = %s)
+            ORDER BY ABS(amount - %s) ASC, ABS(date::date - %s::date) ASC
+            LIMIT 10
+        """, (
+            tenant_id, payment_amount, payment_amount, payment_currency,
+            payment_date, payment_date, invoice_id, invoice_id,
+            invoice_id, payment_amount, payment_date
+        ), fetch_all=True)
+
+        transaction_linked = None
+
+        if matching_txns:
+            # Calculate match score for each
+            from dateutil import parser as date_parser
+            best_match = None
+            best_score = 0
+
+            for txn in matching_txns:
+                txn_amount = abs(float(txn['amount']))
+                amount_diff = abs(txn_amount - payment_amount)
+                amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
+
+                try:
+                    txn_date = date_parser.parse(txn['date']).date()
+                    pay_date = date_parser.parse(payment_date).date()
+                    date_diff = abs((txn_date - pay_date).days)
+                except:
+                    date_diff = 999
+
+                match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+                if match_score > best_score:
+                    best_score = match_score
+                    best_match = txn
+
+            # Auto-link if score >= 80%
+            if best_match and best_score >= 80:
+                transaction_id = best_match['transaction_id']
+
+                # Get customer name
+                customer_name = invoice.get('customer_name') or invoice.get('vendor_name', 'Unknown')
+                invoice_number = invoice.get('invoice_number', invoice_id[:8])
+
+                # Get original description
+                txn_desc_result = db_manager.execute_query(
+                    "SELECT description, original_description FROM transactions WHERE transaction_id = %s",
+                    (transaction_id,),
+                    fetch_one=True
+                )
+                original_desc = txn_desc_result.get('original_description') or txn_desc_result.get('description', '')
+
+                # Build enhanced description
+                enhanced_description = f"Payment to {customer_name} - Invoice #{invoice_number} ({payment_currency} {payment_amount:.2f}) | {original_desc}"
+
+                # Update transaction
+                db_manager.execute_query("""
+                    UPDATE transactions
+                    SET accounting_category = 'Invoice Payment',
+                        invoice_id = %s,
+                        original_description = COALESCE(original_description, description),
+                        description = %s,
+                        classified_entity = %s
+                    WHERE transaction_id = %s AND tenant_id = %s
+                """, (invoice_id, enhanced_description, customer_name, transaction_id, tenant_id))
+
+                transaction_linked = {
+                    'transaction_id': transaction_id,
+                    'match_score': best_score,
+                    'description': enhanced_description
+                }
+
+        # Prepare all transaction candidates for display
+        transaction_candidates = []
+        if matching_txns:
+            from dateutil import parser as date_parser
+            for txn in matching_txns:
+                txn_amount = abs(float(txn['amount']))
+                amount_diff = abs(txn_amount - payment_amount)
+                amount_match_pct = (1 - (amount_diff / payment_amount)) * 100 if payment_amount > 0 else 0
+
+                try:
+                    txn_date = date_parser.parse(txn['date']).date()
+                    pay_date = date_parser.parse(payment_date).date()
+                    date_diff = abs((txn_date - pay_date).days)
+                except:
+                    date_diff = 999
+
+                match_score = (amount_match_pct * 0.7) + (max(0, 100 - date_diff * 5) * 0.3)
+
+                transaction_candidates.append({
+                    'id': txn['transaction_id'],
+                    'description': txn['description'],
+                    'date': str(txn['date']),
+                    'amount': float(txn['amount']),
+                    'category': txn.get('accounting_category'),
+                    'entity': txn.get('classified_entity'),
+                    'match_score': round(match_score, 1),
+                    'amount_diff': round(amount_diff, 2),
+                    'date_diff_days': date_diff,
+                    'linked': txn['transaction_id'] == transaction_linked['transaction_id'] if transaction_linked else False
+                })
+
+        return jsonify({
+            'success': True,
+            'message': 'Payment proof confirmed and matched successfully',
+            'invoice_id': invoice_id,
+            'attachment_id': attachment_id,
+            'payment_id': payment_record['id'] if payment_record else None,
+            'transaction_linked': transaction_linked,
+            'transaction_candidates': transaction_candidates,
+            'stored_path': stored_path
+        }), 200
 
     except Exception as e:
         import traceback
@@ -11023,18 +13163,39 @@ def api_upload_payment_proof(invoice_id):
         if file_ext not in allowed_extensions:
             return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
 
-        # Save uploaded file temporarily
-        temp_dir = os.path.join(os.path.dirname(__file__), 'uploads', 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-
-        filename = secure_filename(file.filename)
-        temp_path = os.path.join(temp_dir, f"{invoice_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}")
-        file.save(temp_path)
-
+        # Save to Google Cloud Storage
         try:
-            # Process receipt with Claude Vision
-            processor = PaymentProofProcessor()
-            payment_data = processor.process_payment_proof(temp_path, invoice)
+            gcs_uri, document_info = file_storage.save_file(
+                file_obj=file,
+                document_type='receipts',
+                user_id=session.get('user_id', 'system'),
+                metadata={
+                    'description': f'Payment proof for invoice {invoice_id}',
+                    'source': 'extract_payment_data',
+                    'invoice_id': invoice_id
+                }
+            )
+
+            # Get file bytes for processing
+            file_bytes = file_storage.get_file(document_info['id'])
+
+            # Create temporary file for processor (processor expects file path)
+            import tempfile
+            temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
+            try:
+                with os.fdopen(temp_fd, 'wb') as f:
+                    f.write(file_bytes)
+
+                # Process receipt with Claude Vision
+                processor = PaymentProofProcessor()
+                payment_data = processor.process_payment_proof(temp_path, invoice)
+            finally:
+                # Clean up temporary processing file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except ValueError as e:
+            return jsonify({'error': f'File upload failed: {str(e)}'}), 400
+
 
             if not payment_data.get('success'):
                 return jsonify({
@@ -11047,8 +13208,8 @@ def api_upload_payment_proof(invoice_id):
             validator = PaymentValidator()
             is_valid, errors, warnings = validator.validate_payment_data(payment_data, invoice)
 
-            # Store receipt file
-            stored_path = store_payment_proof(temp_path, invoice_id, tenant_id)
+            # File already stored in GCS - use GCS URI as stored_path
+            stored_path = gcs_uri
 
             # Get current user (if available)
             uploaded_by = None
@@ -11123,11 +13284,6 @@ def api_upload_payment_proof(invoice_id):
                 'stored_path': stored_path
             })
 
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
     except Exception as e:
         logger.error(f"Error uploading payment proof: {e}")
         import traceback
@@ -11174,15 +13330,39 @@ def api_upload_and_confirm_payment_proof():
         if file.filename == '':
             return jsonify({'success': False, 'error': 'Empty filename'}), 400
 
-        # Save file to temp location
-        temp_path = os.path.join('temp_uploads', file.filename)
-        os.makedirs('temp_uploads', exist_ok=True)
-        file.save(temp_path)
-
+        # Save to Google Cloud Storage
         try:
-            # Extract payment data using Claude Vision API
-            processor = PaymentProofProcessor()
-            payment_data = processor.process_payment_proof(temp_path)
+            gcs_uri, document_info = file_storage.save_file(
+                file_obj=file,
+                document_type='receipts',
+                user_id=session.get('user_id', 'batch_upload'),
+                metadata={
+                    'description': 'Payment proof - batch upload',
+                    'source': 'upload_and_confirm_batch',
+                    'customer_filter': customer_filter
+                }
+            )
+
+            # Get file bytes for processing
+            file_bytes = file_storage.get_file(document_info['id'])
+
+            # Create temporary file for processor (processor expects file path)
+            import tempfile
+            temp_fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
+            try:
+                with os.fdopen(temp_fd, 'wb') as f:
+                    f.write(file_bytes)
+
+                # Extract payment data using Claude Vision API
+                processor = PaymentProofProcessor()
+                payment_data = processor.process_payment_proof(temp_path)
+            finally:
+                # Clean up temporary processing file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        except ValueError as e:
+            return jsonify({'success': False, 'error': f'File upload failed: {str(e)}'}), 400
+
 
             # Check if extraction was successful
             if not payment_data.get('success') or not payment_data.get('payment_amount'):
@@ -11240,16 +13420,8 @@ def api_upload_and_confirm_payment_proof():
             print(f"[Payment Proof] Returning response with {len(matches_data)} matches")
             return jsonify(response_data), 200
 
-            # Store the receipt file
-            receipt_dir = os.path.join('web_ui', 'uploads', 'payment_receipts', tenant_id)
-            os.makedirs(receipt_dir, exist_ok=True)
-
-            file_ext = os.path.splitext(file.filename)[1]
-            stored_filename = f"{invoice_id}_{payment_data.get('payment_date', 'unknown')}{file_ext}"
-            stored_path = os.path.join(receipt_dir, stored_filename)
-
-            # Copy temp file to permanent storage
-            shutil.copy2(temp_path, stored_path)
+            # File already stored in GCS - use GCS URI as stored_path
+            stored_path = gcs_uri
 
             # Prepare payment notes
             notes_parts = [f"Auto-matched with score: {match_score:.1f}"]
@@ -11375,11 +13547,6 @@ def api_upload_and_confirm_payment_proof():
                     'confirmation_number': payment_data.get('confirmation_number'),
                 }
             })
-
-        finally:
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
 
     except Exception as e:
         logger.error(f"Error in upload-and-confirm: {e}")
@@ -12730,6 +14897,268 @@ def api_unlink_transaction(invoice_id):
     except Exception as e:
         logger.error(f"Error unlinking transaction from invoice {invoice_id}: {e}")
         traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/invoices/<invoice_id>/mark-paid', methods=['POST'])
+def api_mark_invoice_paid(invoice_id):
+    """
+    Mark an invoice as paid with HYBRID approach:
+    1. Try to auto-match with existing transactions
+    2. If no match found, create a new virtual transaction (for external payments)
+    3. Link invoice to transaction
+    4. Update invoice payment_status to 'paid'
+
+    Supports triangular payments where Client pays Supplier directly on behalf of Tenant.
+    """
+    try:
+        from database import db_manager
+        import uuid
+        from datetime import datetime
+        from dateutil import parser as date_parser
+
+        tenant_id = get_current_tenant_id()
+        data = request.get_json() or {}
+
+        # Extract payment details from request
+        payment_date = data.get('payment_date')
+        payer = data.get('payer', '')
+        recipient = data.get('recipient', '')
+        notes = data.get('notes', '')
+
+        # Get invoice details
+        invoice_query = """
+            SELECT id, invoice_number, total_amount, date, due_date,
+                   vendor_name, customer_name, currency, payment_status
+            FROM invoices
+            WHERE id = %s AND tenant_id = %s
+        """
+        invoice = db_manager.execute_query(invoice_query, (invoice_id, tenant_id), fetch_one=True)
+
+        if not invoice:
+            return jsonify({'success': False, 'error': 'Invoice not found'}), 404
+
+        if invoice.get('payment_status') == 'paid':
+            return jsonify({'success': False, 'error': 'Invoice is already marked as paid'}), 400
+
+        transaction_id = None
+        match_method = None
+
+        # STEP 1: Try to find existing transaction match
+        logger.info(f"[MARK-PAID] Attempting auto-match for invoice {invoice['invoice_number']}")
+
+        try:
+            # Use invoice matching logic - search for matching transactions
+            search_amount = float(invoice['total_amount'])
+            search_date = payment_date if payment_date else invoice['date']
+            search_currency = invoice.get('currency', 'USD')
+
+            tolerance = 0.05
+            min_amount = search_amount * (1 - tolerance)
+            max_amount = search_amount * (1 + tolerance)
+
+            # Parse search date
+            if isinstance(search_date, str):
+                search_date_obj = date_parser.parse(search_date).date()
+            else:
+                search_date_obj = search_date
+
+            # Search for matching transactions (POSITIVE amounts for revenue)
+            transactions_query = """
+                SELECT transaction_id, date, description, amount, accounting_category,
+                       subcategory, classified_entity, origin, destination, confidence, currency
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND amount BETWEEN %s AND %s
+                    AND amount > 0
+                    AND currency = %s
+                    AND invoice_id IS NULL
+                    AND (
+                        date::date BETWEEN %s::date - INTERVAL '14 days'
+                                AND %s::date + INTERVAL '14 days'
+                    )
+                ORDER BY
+                    ABS(amount - %s) ASC,
+                    ABS(date::date - %s::date) ASC
+                LIMIT 5
+            """
+
+            matching_transactions = db_manager.execute_query(
+                transactions_query,
+                (tenant_id, min_amount, max_amount, search_currency,
+                 search_date_obj, search_date_obj,
+                 search_amount, search_date_obj),
+                fetch_all=True
+            )
+
+            # Look for high-confidence match (exact amount and within 7 days)
+            high_confidence_match = None
+            if matching_transactions:
+                for tx in matching_transactions:
+                    tx_date = date_parser.parse(str(tx['date'])).date() if isinstance(tx['date'], str) else tx['date']
+                    date_diff = abs((tx_date - search_date_obj).days)
+                    amount_diff = abs(float(tx['amount']) - search_amount) / search_amount
+
+                    # High confidence: within 2% amount and 7 days
+                    if amount_diff <= 0.02 and date_diff <= 7:
+                        high_confidence_match = tx
+                        break
+
+            if high_confidence_match:
+                transaction_id = high_confidence_match['transaction_id']
+                match_method = f"auto_matched (amount: ${high_confidence_match['amount']}, date: {high_confidence_match['date']})"
+                logger.info(f"[MARK-PAID] Found high-confidence match: transaction {transaction_id}")
+
+                # Update transaction with revenue categorization
+                update_txn_query = """
+                    UPDATE transactions
+                    SET accounting_category = 'Revenue',
+                        subcategory = 'Invoice Payment',
+                        invoice_id = %s,
+                        justification = %s,
+                        original_description = COALESCE(original_description, description)
+                    WHERE transaction_id = %s AND tenant_id = %s
+                """
+                justification = f"Revenue from invoice #{invoice['invoice_number']}"
+                if payer:
+                    justification += f" - Paid by {payer}"
+                if recipient and recipient != payer:
+                    justification += f" to {recipient}"
+                if notes:
+                    justification += f" - {notes}"
+
+                db_manager.execute_query(update_txn_query, (invoice_id, justification, transaction_id, tenant_id))
+            else:
+                logger.info(f"[MARK-PAID] No high-confidence match found, will create new transaction")
+        except Exception as e:
+            logger.warning(f"[MARK-PAID] Auto-matching failed: {e}, will create new transaction")
+
+        # STEP 2: Create new virtual transaction if no match found
+        if not transaction_id:
+            logger.info(f"[MARK-PAID] Creating new virtual transaction for invoice {invoice['invoice_number']}")
+
+            transaction_id = str(uuid.uuid4())
+            match_method = "virtual_transaction_created"
+
+            # Build description for external payment
+            if payer and recipient and payer != recipient:
+                description = f"External Payment: {payer} paid {recipient} for Invoice #{invoice['invoice_number']}"
+            elif payer:
+                description = f"Payment from {payer} for Invoice #{invoice['invoice_number']}"
+            else:
+                description = f"Payment for Invoice #{invoice['invoice_number']}"
+
+            # Use payment date or invoice date
+            txn_date = payment_date if payment_date else invoice['date']
+
+            # Create transaction record (POSITIVE amount for revenue)
+            insert_txn_query = """
+                INSERT INTO transactions (
+                    transaction_id, tenant_id, date, description, amount, currency,
+                    accounting_category, subcategory, classified_entity, origin, destination,
+                    justification, invoice_id, source_file, confidence, classification_reason,
+                    created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    CURRENT_TIMESTAMP
+                )
+            """
+
+            amount = abs(float(invoice['total_amount']))  # Positive for revenue
+            justification = f"Revenue from invoice #{invoice['invoice_number']}"
+            if notes:
+                justification += f" - {notes}"
+
+            db_manager.execute_query(insert_txn_query, (
+                transaction_id,
+                tenant_id,
+                txn_date,
+                description,
+                amount,
+                invoice.get('currency', 'USD'),
+                'Revenue',
+                'Invoice Payment',
+                tenant_id,  # Default entity to tenant
+                payer if payer else (invoice.get('customer_name') or 'Customer'),
+                recipient if recipient else (invoice.get('vendor_name') or 'Company'),
+                justification,
+                invoice_id,
+                f"invoice_{invoice['invoice_number']}_external_payment",
+                1.0,  # High confidence - explicitly marked as paid
+                'Virtual transaction for external payment'
+            ))
+
+            logger.info(f"[MARK-PAID] Created revenue transaction {transaction_id} for ${amount}")
+
+            # STEP 2B: For triangular payments, create corresponding EXPENSE transaction
+            # If recipient is specified and different from vendor, this means customer paid a third party
+            vendor_name = invoice.get('vendor_name', 'Company')
+            if recipient and recipient != vendor_name:
+                logger.info(f"[MARK-PAID] Triangular payment detected - creating expense transaction to {recipient}")
+
+                expense_txn_id = str(uuid.uuid4())
+                expense_description = f"Expense paid by {payer if payer else invoice.get('customer_name')} to {recipient} for Invoice #{invoice['invoice_number']}"
+                expense_amount = -abs(float(invoice['total_amount']))  # Negative for expense
+                expense_justification = f"Expense to {recipient} - paid on our behalf by {payer if payer else invoice.get('customer_name')} for Invoice #{invoice['invoice_number']}"
+                if notes:
+                    expense_justification += f" - {notes}"
+
+                db_manager.execute_query(insert_txn_query, (
+                    expense_txn_id,
+                    tenant_id,
+                    txn_date,
+                    expense_description,
+                    expense_amount,
+                    invoice.get('currency', 'USD'),
+                    'Expense',
+                    'Supplier Payment',
+                    tenant_id,
+                    vendor_name,  # Origin: our company
+                    recipient,  # Destination: the supplier/vendor who received payment
+                    expense_justification,
+                    invoice_id,  # Link to same invoice
+                    f"invoice_{invoice['invoice_number']}_triangular_expense",
+                    1.0,
+                    'Virtual expense transaction for triangular payment'
+                ))
+
+                logger.info(f"[MARK-PAID] Created expense transaction {expense_txn_id} for ${expense_amount} to {recipient}")
+
+        # STEP 3: Update invoice with transaction link and paid status
+        update_invoice_query = """
+            UPDATE invoices
+            SET payment_status = 'paid',
+                linked_transaction_id = %s,
+                match_method = %s,
+                payment_date = %s,
+                payment_notes = %s
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        db_manager.execute_query(update_invoice_query, (
+            transaction_id,
+            match_method,
+            payment_date if payment_date else invoice['date'],
+            notes,
+            invoice_id,
+            tenant_id
+        ))
+
+        logger.info(f"[MARK-PAID] Successfully marked invoice {invoice['invoice_number']} as paid (method: {match_method})")
+
+        return jsonify({
+            'success': True,
+            'message': 'Invoice marked as paid and linked to transaction',
+            'transaction_id': transaction_id,
+            'match_method': match_method
+        })
+
+    except Exception as e:
+        logger.error(f"Error marking invoice as paid: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -16555,6 +18984,10 @@ def api_enrich_all_pending():
     try:
         from transaction_enrichment import enricher
         from database import db_manager
+        from tenant_context import get_current_tenant_id
+
+        # Get tenant from session/context (REQUIRED - no default)
+        tenant_id = get_current_tenant_id(strict=True)
 
         data = request.get_json() or {}
         batch_size = data.get('batch_size', 100)  # Process in batches
@@ -16565,11 +18998,11 @@ def api_enrich_all_pending():
             cursor.execute("""
                 SELECT transaction_id, description, identifier
                 FROM transactions
-                WHERE tenant_id = 'delta'
+                WHERE tenant_id = %s
                   AND (enrichment_status IS NULL OR enrichment_status = 'pending')
                   AND (identifier IS NOT NULL AND identifier != 'nan' AND identifier != '')
                 ORDER BY date DESC
-            """)
+            """, (tenant_id,))
             pending_transactions = cursor.fetchall()
 
         total_pending = len(pending_transactions)
@@ -16636,25 +19069,29 @@ def api_find_duplicates():
         try:
             cursor = conn.cursor()
 
-            # Find groups of duplicates (same date, description, and amount within $0.01)
+            # Find groups of duplicates based on date + absolute amount
+            # This detects potential duplicates where:
+            # - Same date
+            # - Same absolute amount (ignoring sign - catches transfer pairs)
+            # User can review the different descriptions to determine if they're true duplicates
             cursor.execute("""
                 WITH duplicate_groups AS (
                     SELECT
                         date,
-                        description,
-                        ROUND(amount::numeric, 2) as amount_rounded,
+                        ABS(ROUND(amount::numeric, 2)) as amount_abs,
                         COUNT(*) as duplicate_count,
-                        ARRAY_AGG(transaction_id ORDER BY transaction_id) as transaction_ids
+                        ARRAY_AGG(transaction_id ORDER BY description) as transaction_ids,
+                        ARRAY_AGG(description ORDER BY description) as descriptions
                     FROM transactions
                     WHERE tenant_id = %s
                       AND archived = false
-                    GROUP BY date, description, ROUND(amount::numeric, 2)
+                    GROUP BY date, ABS(ROUND(amount::numeric, 2))
                     HAVING COUNT(*) > 1
                 )
                 SELECT
                     date,
-                    description,
-                    amount_rounded,
+                    descriptions[1] as description,
+                    amount_abs,
                     duplicate_count,
                     transaction_ids
                 FROM duplicate_groups
@@ -17908,28 +20345,147 @@ def api_delete_payslip(payslip_id):
 
 @app.route('/api/payslips/<payslip_id>/mark-paid', methods=['POST'])
 def api_mark_payslip_paid(payslip_id):
-    """Mark a payslip as paid"""
+    """
+    Mark a payslip as paid with HYBRID approach:
+    1. Try to auto-match with existing transactions
+    2. If no match found, create a new transaction
+    3. Link payslip to transaction
+    4. Update payslip status to 'paid'
+    """
     try:
         from database import db_manager
+        from payslip_matcher import PayslipMatcher
+        import uuid
+        from datetime import datetime
+
         tenant_id = get_current_tenant_id()
         data = request.get_json() or {}
 
-        query = """
+        # Get payslip details with employee info
+        payslip_query = """
+            SELECT p.*, w.full_name as employee_name, w.employment_type
+            FROM payslips p
+            JOIN workforce_members w ON p.workforce_member_id = w.id
+            WHERE p.id = %s AND p.tenant_id = %s
+        """
+        payslip = db_manager.execute_query(payslip_query, (payslip_id, tenant_id), fetch_one=True)
+
+        if not payslip:
+            return jsonify({'success': False, 'error': 'Payslip not found'}), 404
+
+        transaction_id = None
+        match_method = None
+
+        # STEP 1: Try to find existing transaction match
+        logger.info(f"[MARK-PAID] Attempting auto-match for payslip {payslip['payslip_number']}")
+
+        try:
+            matcher = PayslipMatcher()
+            matches = matcher.find_matches_for_payslips([payslip_id], tenant_id)
+
+            # Look for high-confidence match (score >= 0.80)
+            high_confidence_match = None
+            for match in matches:
+                if match.score >= 0.80:
+                    high_confidence_match = match
+                    break
+
+            if high_confidence_match:
+                transaction_id = high_confidence_match.transaction_id
+                match_method = f"auto_matched (score: {high_confidence_match.score:.2f})"
+                logger.info(f"[MARK-PAID] Found high-confidence match: transaction {transaction_id}")
+
+                # Update transaction with payroll categorization
+                update_txn_query = """
+                    UPDATE transactions
+                    SET accounting_category = 'Payroll Expense',
+                        subcategory = 'Salary Payment',
+                        justification = %s
+                    WHERE transaction_id = %s AND tenant_id = %s
+                """
+                justification = f"Payroll payment to {payslip['employee_name']} - Payslip #{payslip['payslip_number']} (Auto-matched: {high_confidence_match.explanation})"
+                db_manager.execute_query(update_txn_query, (justification, transaction_id, tenant_id))
+            else:
+                logger.info(f"[MARK-PAID] No high-confidence match found, will create new transaction")
+        except Exception as e:
+            logger.warning(f"[MARK-PAID] Auto-matching failed: {e}, will create new transaction")
+
+        # STEP 2: Create new transaction if no match found
+        if not transaction_id:
+            logger.info(f"[MARK-PAID] Creating new transaction for payslip {payslip['payslip_number']}")
+
+            transaction_id = str(uuid.uuid4())
+            match_method = "auto_created"
+
+            # Create transaction record
+            insert_txn_query = """
+                INSERT INTO transactions (
+                    transaction_id, tenant_id, date, description, amount, currency,
+                    accounting_category, subcategory, classified_entity, origin, destination,
+                    justification, source_file, confidence, classification_reason,
+                    created_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    CURRENT_TIMESTAMP
+                )
+            """
+
+            description = f"Payroll - {payslip['employee_name']} - {payslip['employment_type']}"
+            amount = -abs(float(payslip['net_amount']))  # Negative for expense
+            justification = f"Payroll payment to {payslip['employee_name']} - Payslip #{payslip['payslip_number']}"
+
+            db_manager.execute_query(insert_txn_query, (
+                transaction_id,
+                tenant_id,
+                payslip['payment_date'],
+                description,
+                amount,
+                payslip.get('currency', 'USD'),
+                'Payroll Expense',
+                'Salary Payment',
+                tenant_id,  # Default entity to tenant
+                'Company',
+                payslip['employee_name'],
+                justification,
+                f"payslip_{payslip['payslip_number']}",
+                1.0,  # High confidence - direct from payslip
+                'Automated payslip transaction creation'
+            ))
+
+            logger.info(f"[MARK-PAID] Created transaction {transaction_id} for ${amount}")
+
+        # STEP 3: Update payslip with transaction link and paid status
+        update_payslip_query = """
             UPDATE payslips
-            SET status = 'paid', approved_by = %s, approved_at = CURRENT_TIMESTAMP
+            SET status = 'paid',
+                transaction_id = %s,
+                approved_by = %s,
+                approved_at = CURRENT_TIMESTAMP
             WHERE id = %s AND tenant_id = %s
         """
 
-        db_manager.execute_query(query, (
+        db_manager.execute_query(update_payslip_query, (
+            transaction_id,
             session.get('user_id', 'api_user'),
             payslip_id,
             tenant_id
         ))
 
-        return jsonify({'success': True, 'message': 'Payslip marked as paid'})
+        logger.info(f"[MARK-PAID] Successfully marked payslip {payslip['payslip_number']} as paid (method: {match_method})")
+
+        return jsonify({
+            'success': True,
+            'message': 'Payslip marked as paid and linked to transaction',
+            'transaction_id': transaction_id,
+            'match_method': match_method
+        })
 
     except Exception as e:
         logger.error(f"Error marking payslip as paid: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -18249,6 +20805,524 @@ def payslip_detail_page(payslip_id):
 # Note: /api/payslips/<payslip_id>/details endpoint already exists at line 17612
 
 
+# ====================================================================================
+# SHAREHOLDER EQUITY MANAGEMENT
+# ====================================================================================
+
+@app.route('/shareholders')
+def shareholders_page():
+    """Render the shareholder equity management page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('shareholders.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading shareholders page: {str(e)}", 500
+
+
+# ====================================================================================
+# SHAREHOLDER EQUITY API ENDPOINTS
+# ====================================================================================
+
+@app.route('/api/shareholders', methods=['GET'])
+@optional_auth
+def api_get_shareholders():
+    """Get all shareholders with optional filtering"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        status = request.args.get('status', 'active')
+        shareholder_type = request.args.get('type')
+
+        query = """
+            SELECT
+                s.*,
+                COALESCE(SUM(ec.cash_amount + ec.non_cash_value), 0) as total_contributed
+            FROM shareholders s
+            LEFT JOIN equity_contributions ec ON s.id = ec.shareholder_id
+            WHERE s.tenant_id = %s
+        """
+        params = [tenant_id]
+
+        if status and status != 'all':
+            query += " AND s.status = %s"
+            params.append(status)
+
+        if shareholder_type:
+            query += " AND s.shareholder_type = %s"
+            params.append(shareholder_type)
+
+        query += " GROUP BY s.id ORDER BY s.ownership_percentage DESC NULLS LAST"
+
+        shareholders = db_manager.execute_query(query, params, fetch_all=True)
+
+        return jsonify({
+            'success': True,
+            'shareholders': shareholders,
+            'count': len(shareholders)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching shareholders: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders', methods=['POST'])
+@optional_auth
+def api_create_shareholder():
+    """Create a new shareholder"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.json
+
+        # Handle SAFE terms if share_class is SAFE
+        safe_terms = None
+        if data.get('share_class') == 'SAFE':
+            safe_terms = json.dumps({
+                'discount_rate': data.get('safe_discount_rate'),
+                'cap': data.get('safe_cap')
+            })
+
+        query = """
+            INSERT INTO shareholders (
+                tenant_id, shareholder_name, shareholder_type, contact_email,
+                contact_phone, tax_id, address, ownership_percentage, total_shares,
+                share_class, board_member, voting_rights, joining_date, status, notes,
+                entity, safe_terms
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            ) RETURNING id
+        """
+
+        params = [
+            tenant_id,
+            data.get('shareholder_name'),
+            data.get('shareholder_type'),
+            data.get('contact_email'),
+            data.get('contact_phone'),
+            data.get('tax_id'),
+            data.get('address'),
+            data.get('ownership_percentage'),
+            data.get('total_shares'),
+            data.get('share_class', 'common'),
+            data.get('board_member', False),
+            data.get('voting_rights', True),
+            data.get('joining_date'),
+            data.get('status', 'active'),
+            data.get('notes'),
+            data.get('entity'),
+            safe_terms
+        ]
+
+        result = db_manager.execute_query(query, params, fetch_one=True)
+        shareholder_id = result['id']
+
+        return jsonify({
+            'success': True,
+            'shareholder_id': shareholder_id,
+            'message': 'Shareholder created successfully'
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error creating shareholder: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders/<shareholder_id>', methods=['GET'])
+@optional_auth
+def api_get_shareholder(shareholder_id):
+    """Get a single shareholder with contribution details"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        # Get shareholder info
+        shareholder_query = """
+            SELECT
+                s.*,
+                COALESCE(SUM(ec.cash_amount + ec.non_cash_value), 0) as total_contributed,
+                COUNT(ec.id) as contribution_count
+            FROM shareholders s
+            LEFT JOIN equity_contributions ec ON s.id = ec.shareholder_id
+            WHERE s.id = %s AND s.tenant_id = %s
+            GROUP BY s.id
+        """
+
+        shareholder = db_manager.execute_query(
+            shareholder_query,
+            [shareholder_id, tenant_id],
+            fetch_one=True
+        )
+
+        if not shareholder:
+            return jsonify({'success': False, 'error': 'Shareholder not found'}), 404
+
+        # Get contributions
+        contributions_query = """
+            SELECT * FROM equity_contributions
+            WHERE shareholder_id = %s AND tenant_id = %s
+            ORDER BY contribution_date DESC
+        """
+
+        contributions = db_manager.execute_query(
+            contributions_query,
+            [shareholder_id, tenant_id],
+            fetch_all=True
+        )
+
+        return jsonify({
+            'success': True,
+            'shareholder': shareholder,
+            'contributions': contributions
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching shareholder: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders/<shareholder_id>', methods=['PUT'])
+@optional_auth
+def api_update_shareholder(shareholder_id):
+    """Update a shareholder"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.json
+
+        # Handle SAFE terms if share_class is SAFE
+        safe_terms = None
+        if data.get('share_class') == 'SAFE':
+            safe_terms = json.dumps({
+                'discount_rate': data.get('safe_discount_rate'),
+                'cap': data.get('safe_cap')
+            })
+
+        query = """
+            UPDATE shareholders SET
+                shareholder_name = %s,
+                shareholder_type = %s,
+                contact_email = %s,
+                contact_phone = %s,
+                tax_id = %s,
+                address = %s,
+                ownership_percentage = %s,
+                total_shares = %s,
+                share_class = %s,
+                board_member = %s,
+                voting_rights = %s,
+                status = %s,
+                notes = %s,
+                entity = %s,
+                safe_terms = %s
+            WHERE id = %s AND tenant_id = %s
+        """
+
+        params = [
+            data.get('shareholder_name'),
+            data.get('shareholder_type'),
+            data.get('contact_email'),
+            data.get('contact_phone'),
+            data.get('tax_id'),
+            data.get('address'),
+            data.get('ownership_percentage'),
+            data.get('total_shares'),
+            data.get('share_class'),
+            data.get('board_member'),
+            data.get('voting_rights'),
+            data.get('status'),
+            data.get('notes'),
+            data.get('entity'),
+            safe_terms,
+            shareholder_id,
+            tenant_id
+        ]
+
+        db_manager.execute_query(query, params)
+
+        return jsonify({
+            'success': True,
+            'message': 'Shareholder updated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating shareholder: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders/<shareholder_id>', methods=['DELETE'])
+@optional_auth
+def api_delete_shareholder(shareholder_id):
+    """Delete a shareholder"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        query = "DELETE FROM shareholders WHERE id = %s AND tenant_id = %s"
+        db_manager.execute_query(query, [shareholder_id, tenant_id])
+
+        return jsonify({
+            'success': True,
+            'message': 'Shareholder deleted successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting shareholder: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/equity-contributions', methods=['GET'])
+@optional_auth
+def api_get_equity_contributions():
+    """Get all equity contributions"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        shareholder_id = request.args.get('shareholder_id')
+
+        query = """
+            SELECT
+                ec.*,
+                s.shareholder_name,
+                s.shareholder_type
+            FROM equity_contributions ec
+            JOIN shareholders s ON ec.shareholder_id = s.id
+            WHERE ec.tenant_id = %s
+        """
+        params = [tenant_id]
+
+        if shareholder_id:
+            query += " AND ec.shareholder_id = %s"
+            params.append(shareholder_id)
+
+        query += " ORDER BY ec.contribution_date DESC"
+
+        contributions = db_manager.execute_query(query, params, fetch_all=True)
+
+        return jsonify({
+            'success': True,
+            'contributions': contributions,
+            'count': len(contributions)
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching equity contributions: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/equity-contributions', methods=['POST'])
+@optional_auth
+def api_create_equity_contribution():
+    """Create a new equity contribution"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        data = request.json
+
+        query = """
+            INSERT INTO equity_contributions (
+                tenant_id, shareholder_id, contribution_date, contribution_type,
+                cash_amount, non_cash_value, shares_issued, price_per_share,
+                share_class, valuation_at_contribution, dilution_percentage,
+                description, notes
+            ) VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            ) RETURNING id
+        """
+
+        params = [
+            tenant_id,
+            data.get('shareholder_id'),
+            data.get('contribution_date'),
+            data.get('contribution_type'),
+            data.get('cash_amount', 0),
+            data.get('non_cash_value', 0),
+            data.get('shares_issued'),
+            data.get('price_per_share'),
+            data.get('share_class', 'common'),
+            data.get('valuation_at_contribution'),
+            data.get('dilution_percentage'),
+            data.get('description'),
+            data.get('notes')
+        ]
+
+        result = db_manager.execute_query(query, params, fetch_one=True)
+        contribution_id = result['id']
+
+        return jsonify({
+            'success': True,
+            'contribution_id': contribution_id,
+            'message': 'Equity contribution created successfully'
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error creating equity contribution: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/equity-contributions/<contribution_id>', methods=['DELETE'])
+@optional_auth
+def api_delete_equity_contribution(contribution_id):
+    """Delete an equity contribution"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        query = "DELETE FROM equity_contributions WHERE id = %s AND tenant_id = %s"
+        db_manager.execute_query(query, [contribution_id, tenant_id])
+
+        return jsonify({
+            'success': True,
+            'message': 'Equity contribution deleted successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error deleting equity contribution: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders/stats', methods=['GET'])
+@optional_auth
+def api_get_shareholder_stats():
+    """Get shareholder equity statistics"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        # Total shareholders
+        total_shareholders_query = """
+            SELECT COUNT(*) as count FROM shareholders
+            WHERE tenant_id = %s AND status = 'active'
+        """
+        total_shareholders = db_manager.execute_query(
+            total_shareholders_query,
+            [tenant_id],
+            fetch_one=True
+        )['count']
+
+        # Total equity raised
+        total_equity_query = """
+            SELECT COALESCE(SUM(cash_amount + non_cash_value), 0) as total
+            FROM equity_contributions
+            WHERE tenant_id = %s
+        """
+        total_equity = db_manager.execute_query(
+            total_equity_query,
+            [tenant_id],
+            fetch_one=True
+        )['total']
+
+        # Total shares outstanding
+        total_shares_query = """
+            SELECT COALESCE(SUM(total_shares), 0) as total
+            FROM shareholders
+            WHERE tenant_id = %s AND status = 'active'
+        """
+        total_shares = db_manager.execute_query(
+            total_shares_query,
+            [tenant_id],
+            fetch_one=True
+        )['total']
+
+        # Shareholder breakdown by type
+        type_breakdown_query = """
+            SELECT
+                shareholder_type,
+                COUNT(*) as count,
+                COALESCE(SUM(ownership_percentage), 0) as total_ownership
+            FROM shareholders
+            WHERE tenant_id = %s AND status = 'active'
+            GROUP BY shareholder_type
+            ORDER BY total_ownership DESC
+        """
+        type_breakdown = db_manager.execute_query(
+            type_breakdown_query,
+            [tenant_id],
+            fetch_all=True
+        )
+
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_shareholders': total_shareholders,
+                'total_equity_raised': float(total_equity),
+                'total_shares_outstanding': total_shares,
+                'type_breakdown': type_breakdown
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching shareholder stats: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/shareholders/chart-data', methods=['GET'])
+@optional_auth
+def api_get_shareholder_chart_data():
+    """Get data for shareholder equity visualization chart"""
+    try:
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+
+        # Get ownership distribution
+        ownership_query = """
+            SELECT
+                shareholder_name,
+                shareholder_type,
+                ownership_percentage,
+                total_shares,
+                share_class
+            FROM shareholders
+            WHERE tenant_id = %s AND status = 'active'
+            ORDER BY ownership_percentage DESC
+        """
+        ownership_data = db_manager.execute_query(
+            ownership_query,
+            [tenant_id],
+            fetch_all=True
+        )
+
+        # Get contribution timeline
+        timeline_query = """
+            SELECT
+                ec.contribution_date,
+                s.shareholder_name,
+                ec.contribution_type,
+                (ec.cash_amount + ec.non_cash_value) as total_value,
+                ec.shares_issued,
+                ec.valuation_at_contribution
+            FROM equity_contributions ec
+            JOIN shareholders s ON ec.shareholder_id = s.id
+            WHERE ec.tenant_id = %s
+            ORDER BY ec.contribution_date ASC
+        """
+        timeline_data = db_manager.execute_query(
+            timeline_query,
+            [tenant_id],
+            fetch_all=True
+        )
+
+        return jsonify({
+            'success': True,
+            'ownership_distribution': ownership_data,
+            'contribution_timeline': timeline_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching chart data: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("Starting Delta CFO Agent Web Interface (Database Mode)")
     print("Database backend enabled")
@@ -18272,6 +21346,17 @@ if __name__ == '__main__':
             print("[OK] Authentication blueprints registered")
         else:
             print("[WARNING] Authentication blueprints not available")
+
+    # Start pattern validation service in background thread
+    try:
+        from pattern_validation_service import start_listener
+        import threading
+
+        pattern_thread = threading.Thread(target=start_listener, daemon=True)
+        pattern_thread.start()
+        print("[OK] Pattern validation service started in background")
+    except Exception as e:
+        print(f"[WARNING] Pattern validation service not started: {e}")
 
     # Get port from environment (Cloud Run sets PORT automatically)
     port = int(os.environ.get('PORT', 5001))

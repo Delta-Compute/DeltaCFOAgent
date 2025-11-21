@@ -186,6 +186,26 @@ REQUIRED MAPPINGS:
 OPTIONAL MAPPINGS:
 - TYPE: Transaction type/category ("Type", "Transaction Type", "Category", "Status")
 - CURRENCY: Currency info ("Currency", "Crypto", "Asset", "Symbol")
+
+  CRITICAL: CRYPTOCURRENCY CURRENCY MAPPING
+  For cryptocurrency exchanges (Coinbase, Binance, MEXC, Kraken, Gemini, etc.):
+  - The currency_column should represent THE ASSET BEING TRANSACTED (BTC, ETH, USDT, SOL, etc.)
+  - DO NOT map "Price Currency", "Quote Currency", or "Spot Price Currency" columns to currency_column
+  - These "Price Currency" columns show what the price is QUOTED in (usually USD), NOT what is being traded
+
+  Example - Coinbase CSV has multiple currency-related columns:
+  - "Asset" column contains: BTC, ETH, USDT (the crypto being transacted) ✅ CORRECT
+  - "Price Currency" column contains: USD, USD, USD (what price is quoted in) ❌ WRONG
+  - CORRECT MAPPING: currency_column = "Asset"
+  - WRONG MAPPING: currency_column = "Price Currency"
+
+  The currency_column should answer: "What asset/currency is being MOVED in this transaction?"
+  NOT "What currency is the price DISPLAYED in?"
+
+  For traditional bank statements:
+  - Map the actual currency column (USD, EUR, BRL, GBP, etc.)
+  - This is straightforward as there's usually only one currency column
+
 - REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number", "Hash")
 - BALANCE: Account balance ("Balance", "Running Balance")
 - ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Card Number", "Wallet", "Portfolio", "UID")
@@ -240,6 +260,45 @@ FILENAME ANALYSIS:
 - Use filename context to determine transaction direction (deposits vs withdrawals)
 - Example: "MEXC_withdraws_sep_-_oct_2025_-_Sheet1.csv" -> exchange_name = "MEXC", special_handling = "crypto_withdrawal"
 
+CRITICAL: ORIGIN/DESTINATION DERIVATION LOGIC
+Instead of just identifying the file type, provide EXECUTABLE LOGIC for deriving Origin and Destination per row:
+
+METHOD 1 - Direct Column Mapping (preferred when columns exist):
+If there are clear "From"/"To" or "Source"/"Destination" columns, set:
+- origin_column: "exact column name"
+- destination_column: "exact column name"
+- origin_destination_logic.method: "direct_mapping"
+
+METHOD 2 - Per-Row Conditional Logic (for mixed transaction types):
+When transactions have different types (withdrawals, deposits, buys, sends, etc.) in the SAME file:
+- Provide conditional logic in origin_destination_logic.per_row_conditions
+- Each condition should be a Python-evaluable expression using row data
+- Example for Coinbase with mixed transaction types:
+  {{
+    "condition": "row['Transaction Type'] == 'Send'",
+    "origin": "'Coinbase Exchange'",
+    "destination": "row['Notes']"  // The wallet address from Notes column
+  }}
+  {{
+    "condition": "row['Transaction Type'] in ['Buy', 'Receive', 'Convert']",
+    "origin": "row['Notes'] if 'from' in str(row['Notes']).lower() else 'External Source'",
+    "destination": "'Coinbase Exchange'"
+  }}
+
+METHOD 3 - Exchange Name Based (for uniform transaction files):
+If ALL transactions are the same type (all withdrawals OR all deposits):
+- Set exchange_name from filename
+- Set method to "exchange_name_based"
+- Set special_handling to "crypto_withdrawal" or "crypto_deposit"
+
+RULES:
+1. ALWAYS provide origin_destination_logic object, even if columns exist
+2. For mixed files, ALWAYS use per_row_conditions - don't rely on special_handling string checks
+3. Conditions are evaluated IN ORDER - first matching condition wins
+4. Use actual column names in row['Column Name'] expressions
+5. String literals must be in quotes: 'Coinbase Exchange', not Coinbase Exchange
+6. Access DataFrame columns with: row['Exact Column Name']
+
 CREATE DESCRIPTION RULES:
 If no clear description column exists, provide rules to create one from available columns.
 Example: "Combine Status + Crypto + Network" or "Use Merchant + Category"
@@ -281,6 +340,23 @@ Please respond with a JSON object containing COMPLETE PARSING AND PROCESSING INS
     "account_identifier_type": "card_number|account_number|wallet_address|portfolio_id|null",
     "description_creation_rule": "rule_for_creating_description_if_missing",
     "origin_destination_rule": "rule_for_deriving_origin_and_destination_or_null",
+    "origin_destination_logic": {{
+        "method": "direct_mapping|per_row_logic|exchange_name_based|null",
+        "exchange_name": "MEXC|Coinbase|Binance|null",
+        "logic_explanation": "Natural language explanation of how to derive Origin and Destination",
+        "per_row_conditions": [
+            {{
+                "condition": "if row['Transaction Type'] == 'Send'",
+                "origin": "'Coinbase Exchange'",
+                "destination": "row['Notes']"
+            }},
+            {{
+                "condition": "if row['Transaction Type'] in ['Buy', 'Receive', 'Convert']",
+                "origin": "'External Source'",
+                "destination": "'Coinbase Exchange'"
+            }}
+        ]
+    }},
     "exchange_name": "MEXC|Coinbase|Binance|null",
     "amount_processing": "single_column|debit_credit_split|calculate_from_quantity_price",
     "date_format": "detected_date_format_pattern",
@@ -907,103 +983,151 @@ Respond with JSON ONLY (no other text):
                     mapped_columns.append(source_col)
                     print(f" Mapped {std_name}: {source_col}")
 
-            # 4b. MAP OR DERIVE ORIGIN/DESTINATION FOR CRYPTO EXCHANGES
+            # 4b. MAP OR DERIVE ORIGIN/DESTINATION USING CLAUDE'S LOGIC
+            # NO MORE HARDCODED FORMAT CHECKS - Claude provides the exact logic!
             origin_col = structure_info.get('origin_column')
             destination_col = structure_info.get('destination_column')
             network_col = structure_info.get('network_column')
-            exchange_name = structure_info.get('exchange_name')
-            origin_destination_rule = structure_info.get('origin_destination_rule', '')
-            special_handling = structure_info.get('special_handling', 'standard')
+            origin_destination_logic = structure_info.get('origin_destination_logic', {})
 
-            # Apply crypto WITHDRAWAL logic ONLY if the ENTIRE file is withdrawals (not mixed with deposits)
-            # For files with BOTH deposits and withdrawals (like "crypto_deposit|crypto_withdrawal"),
-            # skip file-level logic and rely on per-transaction direction logic instead
-            if special_handling.lower() == 'crypto_withdrawal':
-                # Set Origin to exchange name
-                standardized_df['Origin'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+            # Get the method Claude wants us to use
+            derivation_method = origin_destination_logic.get('method', 'direct_mapping')
 
-                # For Destination, prioritize actual withdrawal address over network
-                if destination_col and destination_col in df.columns:
-                    # Use actual withdrawal address (wallet address)
+            print(f" Origin/Destination derivation method: {derivation_method}")
+
+            if derivation_method == 'direct_mapping' and origin_col and destination_col:
+                # METHOD 1: Direct column mapping
+                if origin_col in df.columns:
+                    standardized_df['Origin'] = df[origin_col].astype(str)
+                    mapped_columns.append(origin_col)
+                    print(f" Mapped Origin: {origin_col}")
+
+                if destination_col in df.columns:
                     standardized_df['Destination'] = df[destination_col].astype(str)
                     mapped_columns.append(destination_col)
-                    print(f" Mapped Destination to withdrawal address: {destination_col}")
-                elif network_col and network_col in df.columns:
-                    # Fallback to network if no specific destination address
-                    standardized_df['Destination'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip() + " Network"
-                    mapped_columns.append(network_col)
-                    print(f" Derived Destination from network: {network_col}")
+                    print(f" Mapped Destination: {destination_col}")
+
+            elif derivation_method == 'per_row_logic':
+                # METHOD 2: Per-row conditional logic (Claude-provided)
+                per_row_conditions = origin_destination_logic.get('per_row_conditions', [])
+
+                if per_row_conditions:
+                    print(f" Applying per-row Origin/Destination logic with {len(per_row_conditions)} conditions")
+
+                    # Initialize with Unknown
+                    standardized_df['Origin'] = 'Unknown'
+                    standardized_df['Destination'] = 'Unknown'
+
+                    # Apply each condition in order
+                    for idx, cond in enumerate(per_row_conditions):
+                        try:
+                            condition_expr = cond.get('condition', '')
+                            origin_expr = cond.get('origin', "'Unknown'")
+                            destination_expr = cond.get('destination', "'Unknown'")
+
+                            print(f"   Condition {idx+1}: {condition_expr}")
+
+                            # Evaluate condition for each row
+                            # Create a safe evaluation environment with row access
+                            matches = []
+                            for row_idx, row in df.iterrows():
+                                try:
+                                    # Create local namespace with row data
+                                    local_vars = {'row': row, 'pd': pd, 'str': str}
+
+                                    # Evaluate condition
+                                    if eval(condition_expr, {"__builtins__": {}}, local_vars):
+                                        matches.append(row_idx)
+                                except Exception as e:
+                                    # Skip rows that fail evaluation
+                                    continue
+
+                            if matches:
+                                # Apply Origin expression
+                                for row_idx in matches:
+                                    row = df.loc[row_idx]
+                                    local_vars = {'row': row, 'pd': pd, 'str': str}
+                                    try:
+                                        origin_value = eval(origin_expr, {"__builtins__": {}}, local_vars)
+                                        standardized_df.loc[row_idx, 'Origin'] = str(origin_value)
+                                    except Exception as e:
+                                        print(f"      Warning: Failed to evaluate origin expression for row {row_idx}: {e}")
+
+                                # Apply Destination expression
+                                for row_idx in matches:
+                                    row = df.loc[row_idx]
+                                    local_vars = {'row': row, 'pd': pd, 'str': str}
+                                    try:
+                                        dest_value = eval(destination_expr, {"__builtins__": {}}, local_vars)
+                                        standardized_df.loc[row_idx, 'Destination'] = str(dest_value)
+                                    except Exception as e:
+                                        print(f"      Warning: Failed to evaluate destination expression for row {row_idx}: {e}")
+
+                                print(f"      Applied to {len(matches)} transactions")
+
+                        except Exception as e:
+                            print(f"   ERROR: Failed to process condition {idx+1}: {e}")
+                            continue
+
+                    # Report results
+                    unknown_count = (standardized_df['Origin'] == 'Unknown').sum()
+                    if unknown_count > 0:
+                        print(f"   Warning: {unknown_count} transactions still have Unknown Origin/Destination")
                 else:
-                    # Last resort fallback
-                    standardized_df['Destination'] = 'External Wallet'
-                    print(f" Default Destination: External Wallet")
+                    print(" Warning: per_row_logic method specified but no conditions provided")
+                    # Fallback to direct mapping if available
+                    if origin_col and origin_col in df.columns:
+                        standardized_df['Origin'] = df[origin_col].astype(str)
+                        mapped_columns.append(origin_col)
+                    if destination_col and destination_col in df.columns:
+                        standardized_df['Destination'] = df[destination_col].astype(str)
+                        mapped_columns.append(destination_col)
 
-                print(f" Set Origin for withdrawal: {exchange_name} Exchange")
+            elif derivation_method == 'exchange_name_based':
+                # METHOD 3: Exchange-based (for uniform transaction files)
+                exchange_name = origin_destination_logic.get('exchange_name') or structure_info.get('exchange_name')
+                special_handling = structure_info.get('special_handling', 'standard')
 
-                # NEGATE AMOUNTS for withdrawals (money leaving = expense)
-                standardized_df['Amount'] = -standardized_df['Amount'].abs()
-                print(f" Negated amounts for withdrawal (expenses)")
+                print(f" Exchange-based logic: {exchange_name}, handling: {special_handling}")
 
-            # Apply crypto DEPOSIT logic ONLY if the ENTIRE file is deposits (not mixed with withdrawals)
-            elif special_handling.lower() == 'crypto_deposit' or (exchange_name and special_handling.lower() == 'crypto_format'):
-                if network_col and network_col in df.columns:
-                    # For deposits: Origin = blockchain network, Destination = exchange
-                    standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
+                if 'withdrawal' in special_handling.lower():
+                    # All withdrawals FROM exchange
+                    standardized_df['Origin'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+
+                    if destination_col and destination_col in df.columns:
+                        standardized_df['Destination'] = df[destination_col].astype(str)
+                        mapped_columns.append(destination_col)
+                    elif network_col and network_col in df.columns:
+                        standardized_df['Destination'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
+                        mapped_columns.append(network_col)
+                    else:
+                        standardized_df['Destination'] = 'External Wallet'
+
+                    # Negate amounts for withdrawals
+                    standardized_df['Amount'] = -standardized_df['Amount'].abs()
+                    print(" Applied withdrawal logic (negated amounts)")
+
+                elif 'deposit' in special_handling.lower():
+                    # All deposits TO exchange
+                    if network_col and network_col in df.columns:
+                        standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
+                        mapped_columns.append(network_col)
+                    else:
+                        standardized_df['Origin'] = 'Blockchain'
+
                     standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
-                    mapped_columns.append(network_col)
-                    print(f" Derived Origin from Network: {network_col}, Destination: {exchange_name} Exchange")
-                elif origin_col and origin_col in df.columns and destination_col and destination_col in df.columns:
-                    standardized_df['Origin'] = df[origin_col]
-                    standardized_df['Destination'] = df[destination_col]
-                    mapped_columns.extend([origin_col, destination_col])
-                    print(f" Mapped Origin/Destination: {origin_col}, {destination_col}")
-                else:
-                    # Default for exchange deposits
-                    standardized_df['Origin'] = 'Blockchain'
-                    standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
-                    print(f" Default Origin/Destination for crypto deposit")
-
-            # Apply crypto WALLET logic (Ledger Live, etc.) - use Direction to determine flow
-            elif 'crypto_format' in special_handling.lower() and direction_col and direction_col in df.columns:
-                # Derive Origin/Destination from Direction column
-                direction_incoming = structure_info.get('direction_incoming_values', ['in', 'incoming', 'received'])
-                direction_outgoing = structure_info.get('direction_outgoing_values', ['out', 'outgoing', 'sent'])
-
-                # Get wallet name from filename or account column
-                wallet_name = "Crypto Wallet"
-                if 'ledger' in os.path.basename(file_path).lower():
-                    wallet_name = "Ledger Wallet"
-                elif structure_info.get('account_identifier_column'):
-                    wallet_name = "Personal Wallet"
-
-                # Set Origin/Destination based on direction
-                df_direction = df[direction_col].astype(str).str.lower().str.strip()
-
-                # Initialize with default values
-                standardized_df['Origin'] = 'Unknown'
-                standardized_df['Destination'] = 'Unknown'
-
-                # For incoming transactions: Origin = External, Destination = Wallet
-                is_incoming = df_direction.isin([v.lower() for v in direction_incoming])
-                standardized_df.loc[is_incoming, 'Origin'] = 'External Source'
-                standardized_df.loc[is_incoming, 'Destination'] = wallet_name
-
-                # For outgoing transactions: Origin = Wallet, Destination = External
-                is_outgoing = df_direction.isin([v.lower() for v in direction_outgoing])
-                standardized_df.loc[is_outgoing, 'Origin'] = wallet_name
-                standardized_df.loc[is_outgoing, 'Destination'] = 'External Destination'
-
-                print(f" Derived Origin/Destination from Direction: {is_incoming.sum()} incoming, {is_outgoing.sum()} outgoing")
+                    print(" Applied deposit logic")
 
             else:
-                # Standard origin/destination mapping
+                # Fallback: Try direct column mapping even without explicit method
+                print(" Using fallback direct mapping")
                 if origin_col and origin_col in df.columns:
-                    standardized_df['Origin'] = df[origin_col]
+                    standardized_df['Origin'] = df[origin_col].astype(str)
                     mapped_columns.append(origin_col)
                     print(f" Mapped Origin: {origin_col}")
 
                 if destination_col and destination_col in df.columns:
-                    standardized_df['Destination'] = df[destination_col]
+                    standardized_df['Destination'] = df[destination_col].astype(str)
                     mapped_columns.append(destination_col)
                     print(f" Mapped Destination: {destination_col}")
 

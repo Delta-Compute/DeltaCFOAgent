@@ -466,23 +466,33 @@
     }
 
     async function handleMarkPaid() {
-        if (!confirm('Mark this invoice as paid?')) return;
+        if (!confirm('Mark this invoice as paid? (Uses invoice date as payment date)')) return;
 
         showLoading(true);
         try {
             const response = await fetch(`/api/invoices/${RECORD_ID}/mark-paid`, {
-                method: 'POST'
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    payment_date: null,
+                    payer: '',
+                    recipient: '',
+                    notes: 'Marked as paid from invoice detail page'
+                })
             });
 
             const data = await response.json();
             if (data.success) {
-                showToast('Invoice marked as paid', 'success');
+                showToast('Invoice marked as paid successfully!', 'success');
                 await loadInvoiceDetails();
             } else {
                 showToast('Failed to mark as paid: ' + data.error, 'error');
             }
         } catch (error) {
-            showToast('Error marking as paid', 'error');
+            console.error('Mark paid error:', error);
+            showToast('Error marking as paid: ' + error.message, 'error');
         } finally {
             showLoading(false);
         }

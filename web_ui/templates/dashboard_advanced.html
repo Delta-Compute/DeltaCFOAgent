@@ -30,22 +30,22 @@
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
-                    <h1>Advanced Transaction Dashboard</h1>
+                    <h1 data-i18n="dashboard.title">Advanced Transaction Dashboard</h1>
                     <div class="stats-summary">
                         <div class="stat-card">
-                            <h3>Total Transactions</h3>
+                            <h3 data-i18n="dashboard.stats.total">Total Transactions</h3>
                             <div class="stat-number">{{ stats.total_transactions }}</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Total Revenue</h3>
+                            <h3 data-i18n="dashboard.stats.revenue">Total Revenue</h3>
                             <div class="stat-number positive">${{ "%.2f"|format(stats.total_revenue) }}</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Total Expenses</h3>
+                            <h3 data-i18n="dashboard.stats.expenses">Total Expenses</h3>
                             <div class="stat-number negative">${{ "%.2f"|format(stats.total_expenses) }}</div>
                         </div>
                         <div class="stat-card">
-                            <h3>Needs Review</h3>
+                            <h3 data-i18n="dashboard.stats.needsReview">Needs Review</h3>
                             <div class="stat-number warning">{{ stats.needs_review }}</div>
                         </div>
                     </div>
@@ -56,12 +56,12 @@
 
         <!-- Filter Controls -->
         <div class="filter-section">
-            <h2>🔍 Advanced Filters</h2>
+            <h2 data-i18n="dashboard.filters.title">🔍 Advanced Filters</h2>
             <div class="filter-grid">
                 <div class="filter-group">
-                    <label for="entityFilter">Business Entity:</label>
+                    <label for="entityFilter" data-i18n="dashboard.filters.businessEntity">Business Entity:</label>
                     <select id="entityFilter">
-                        <option value="">All Entities</option>
+                        <option value="" data-i18n="dashboard.filters.allEntities">All Entities</option>
                         {% for entity, count in stats.entities %}
                         <option value="{{ entity }}">{{ entity }} ({{ count }})</option>
                         {% endfor %}
@@ -69,18 +69,18 @@
                 </div>
 
                 <div class="filter-group">
-                    <label for="transactionType">Transaction Type:</label>
+                    <label for="transactionType" data-i18n="dashboard.filters.transactionType">Transaction Type:</label>
                     <select id="transactionType">
-                        <option value="">All Types</option>
-                        <option value="Revenue">Revenue Only</option>
-                        <option value="Expense">Expenses Only</option>
+                        <option value="" data-i18n="dashboard.filters.allTypes">All Types</option>
+                        <option value="Revenue" data-i18n="dashboard.filters.revenueOnly">Revenue Only</option>
+                        <option value="Expense" data-i18n="dashboard.filters.expensesOnly">Expenses Only</option>
                     </select>
                 </div>
 
                 <div class="filter-group">
-                    <label for="sourceFile">Source File:</label>
+                    <label for="sourceFile" data-i18n="dashboard.filters.sourceFile">Source File:</label>
                     <select id="sourceFile">
-                        <option value="">All Sources</option>
+                        <option value="" data-i18n="dashboard.filters.allSources">All Sources</option>
                         {% for source, count in stats.source_files %}
                         <option value="{{ source }}">{{ source|truncate(30) }} ({{ count }})</option>
                         {% endfor %}
@@ -88,69 +88,70 @@
                 </div>
 
                 <div class="filter-group">
-                    <label for="needsReview">Review Status:</label>
+                    <label for="needsReview" data-i18n="dashboard.filters.reviewStatus">Review Status:</label>
                     <select id="needsReview">
-                        <option value="">All Transactions</option>
-                        <option value="true">Needs Review Only</option>
+                        <option value="" data-i18n="dashboard.filters.allTransactions">All Transactions</option>
+                        <option value="true" data-i18n="dashboard.filters.needsReviewOnly">Needs Review Only</option>
                     </select>
                 </div>
 
                 <div class="filter-group">
-                    <label for="minAmount">Min Amount ($):</label>
-                    <input type="number" id="minAmount" step="0.01" placeholder="0.00">
+                    <label for="minAmount" data-i18n="dashboard.filters.minAmount">Min Amount ($):</label>
+                    <input type="number" id="minAmount" step="0.01" data-i18n-placeholder="dashboard.filters.minAmountPlaceholder">
                 </div>
 
                 <div class="filter-group">
-                    <label for="maxAmount">Max Amount ($):</label>
-                    <input type="number" id="maxAmount" step="0.01" placeholder="No limit">
+                    <label for="maxAmount" data-i18n="dashboard.filters.maxAmount">Max Amount ($):</label>
+                    <input type="number" id="maxAmount" step="0.01" data-i18n-placeholder="dashboard.filters.maxAmountPlaceholder">
                 </div>
 
                 <div class="filter-group">
-                    <label for="startDate">Start Date:</label>
+                    <label for="startDate" data-i18n="dashboard.filters.startDate">Start Date:</label>
                     <input type="date" id="startDate">
                 </div>
 
                 <div class="filter-group">
-                    <label for="endDate">End Date:</label>
+                    <label for="endDate" data-i18n="dashboard.filters.endDate">End Date:</label>
                     <input type="date" id="endDate">
                 </div>
 
                 <div class="filter-group">
-                    <label for="keywordFilter">Keyword Search:</label>
-                    <input type="text" id="keywordFilter" placeholder="Search transaction descriptions...">
+                    <label for="keywordFilter" data-i18n="dashboard.filters.keywordSearch">Keyword Search:</label>
+                    <input type="text" id="keywordFilter" data-i18n-placeholder="dashboard.filters.keywordPlaceholder">
                 </div>
             </div>
 
             <div class="quick-filters">
-                <h3>🔍 Quick Filters:</h3>
-                <button id="filterTodos" class="btn-quick todo-filter">📝 To Do's Only</button>
-                <button id="filter2025" class="btn-quick">2025 Full Year</button>
-                <button id="filter2024" class="btn-quick">2024 Full Year</button>
-                <button id="filterYTD" class="btn-quick">2025 YTD</button>
+                <h3 data-i18n="dashboard.filters.quickFiltersTitle">🔍 Quick Filters:</h3>
+                <button id="filterTodos" class="btn-quick todo-filter" data-i18n="dashboard.filters.todosOnly">📝 To Do's Only</button>
+                <button id="filterExcludeTransfers" class="btn-quick" data-i18n="dashboard.filters.excludeTransfers">🚫 Exclude Internal Transfers</button>
+                <button id="filter2025" class="btn-quick" data-i18n="dashboard.filters.year2025">2025 Full Year</button>
+                <button id="filter2024" class="btn-quick" data-i18n="dashboard.filters.year2024">2024 Full Year</button>
+                <button id="filterYTD" class="btn-quick" data-i18n="dashboard.filters.ytd2025">2025 YTD</button>
             </div>
 
-            <button id="applyFilters" class="btn-primary">Apply Filters</button>
-            <button id="clearFilters" class="btn-secondary">Clear All</button>
+            <button id="applyFilters" class="btn-primary" data-i18n="dashboard.filters.applyFilters">Apply Filters</button>
+            <button id="clearFilters" class="btn-secondary" data-i18n="dashboard.filters.clearAll">Clear All</button>
         </div>
 
         <!-- Transaction Table -->
         <div class="table-section">
             <div class="table-header">
-                <h2>📋 Advanced Transaction Management</h2>
+                <h2 data-i18n="dashboard.table.title">📋 Advanced Transaction Management</h2>
                 <div class="table-info">
-                    <span id="tableInfo">Loading...</span>
-                    <button id="refreshData" class="btn-secondary">🔄 Refresh</button>
-                    <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()">💰 Run Invoice Matching</button>
-                    <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()">🔗 Enrich Blockchain Transactions</button>
-                    <button id="findDuplicates" class="btn-primary" onclick="findDuplicates()">🔍 Find Duplicates</button>
-                    <button id="exportCSV" class="btn-secondary">📥 Export CSV</button>
-                    <button id="archiveSelected" class="btn-secondary" style="display: none;">🗄️ Archive Selected</button>
-                    <button id="showArchived" class="btn-secondary">📦 Show Archived</button>
+                    <span id="tableInfo" data-i18n="dashboard.table.info">Loading...</span>
+                    <button id="refreshData" class="btn-secondary" data-i18n="dashboard.buttons.refresh">🔄 Refresh</button>
+                    <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()" data-i18n="dashboard.buttons.runInvoiceMatching">💰 Run Invoice Matching</button>
+                    <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()" data-i18n="dashboard.buttons.enrichBlockchain">🔗 Enrich Blockchain Transactions</button>
+                    <button id="findDuplicates" class="btn-primary" onclick="findDuplicates()" data-i18n="dashboard.buttons.findDuplicates">🔍 Find Duplicates</button>
+                    <button id="exportCSV" class="btn-secondary" data-i18n="dashboard.buttons.exportCSV">📥 Export CSV</button>
+                    <button id="archiveSelected" class="btn-secondary" style="display: none;" data-i18n="dashboard.buttons.archiveSelected">🗄️ Archive Selected</button>
+                    <button id="showArchived" class="btn-secondary" data-i18n="dashboard.buttons.showArchived">📦 Show Archived</button>
                     <button id="undoBtn" class="btn-secondary" disabled title="Undo last change (Ctrl+Z)">
-                        ↶ Undo <span id="undoCount">(0)</span>
+                        <span data-i18n="dashboard.buttons.undo">↶ Undo</span> <span id="undoCount">(0)</span>
                     </button>
                     <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">
-                        ↷ Redo <span id="redoCount">(0)</span>
+                        <span data-i18n="dashboard.buttons.redo">↷ Redo</span> <span id="redoCount">(0)</span>
                     </button>
                 </div>
             </div>
@@ -160,24 +161,24 @@
                     <thead>
                         <tr>
                             <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAll"></th>
-                            <th class="sortable" data-sort="date">Action ↕</th>
-                            <th class="sortable" data-sort="origin">Origin ↕</th>
-                            <th class="sortable" data-sort="destination">Destination ↕</th>
-                            <th class="sortable" data-sort="description">Description ↕</th>
-                            <th class="sortable" data-sort="amount">Amount ↕</th>
-                            <th>Crypto</th>
-                            <th class="sortable" data-sort="classified_entity">Entity ↕</th>
-                            <th class="sortable" data-sort="accounting_category">Primary Category ↕</th>
-                            <th class="sortable" data-sort="subcategory">Subcategory ↕</th>
-                            <th>Justification</th>
-                            <th class="sortable" data-sort="confidence">Confidence ↕</th>
-                            <th class="sortable" data-sort="source_file">Source ↕</th>
-                            <th>Actions</th>
+                            <th class="sortable" data-sort="date" data-i18n="dashboard.table.headers.date">Action ↕</th>
+                            <th class="sortable" data-sort="origin" data-i18n="dashboard.table.headers.origin">Origin ↕</th>
+                            <th class="sortable" data-sort="destination" data-i18n="dashboard.table.headers.destination">Destination ↕</th>
+                            <th class="sortable" data-sort="description" data-i18n="dashboard.table.headers.description">Description ↕</th>
+                            <th class="sortable" data-sort="amount" data-i18n="dashboard.table.headers.amount">Amount ↕</th>
+                            <th data-i18n="dashboard.table.headers.crypto">Crypto</th>
+                            <th class="sortable" data-sort="classified_entity" data-i18n="dashboard.table.headers.entity">Entity ↕</th>
+                            <th class="sortable" data-sort="accounting_category" data-i18n="dashboard.table.headers.primaryCategory">Primary Category ↕</th>
+                            <th class="sortable" data-sort="subcategory" data-i18n="dashboard.table.headers.subcategory">Subcategory ↕</th>
+                            <th data-i18n="dashboard.table.headers.justification">Justification</th>
+                            <th class="sortable" data-sort="confidence" data-i18n="dashboard.table.headers.confidence">Confidence ↕</th>
+                            <th class="sortable" data-sort="source_file" data-i18n="dashboard.table.headers.source">Source ↕</th>
+                            <th data-i18n="dashboard.table.headers.actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="transactionTableBody">
                         <tr>
-                            <td colspan="14" class="loading">Loading transactions...</td>
+                            <td colspan="14" class="loading" data-i18n="dashboard.table.loading">Loading transactions...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -186,12 +187,12 @@
             <!-- Pagination -->
             <div class="pagination-container">
                 <div class="pagination">
-                    <button id="prevPage" class="btn-pagination" disabled>← Previous</button>
+                    <button id="prevPage" class="btn-pagination" disabled data-i18n="dashboard.pagination.previous">← Previous</button>
                     <span id="pageInfo">Page 1 of 1</span>
-                    <button id="nextPage" class="btn-pagination" disabled>Next →</button>
+                    <button id="nextPage" class="btn-pagination" disabled data-i18n="dashboard.pagination.next">Next →</button>
                 </div>
                 <div class="pagination-size-selector">
-                    <label for="perPageSelector">Per page:</label>
+                    <label for="perPageSelector" data-i18n="dashboard.pagination.perPage">Per page:</label>
                     <div class="btn-group">
                         <button class="btn-per-page active" data-per-page="50">50</button>
                         <button class="btn-per-page" data-per-page="100">100</button>
@@ -199,7 +200,7 @@
                         <button class="btn-per-page" data-per-page="500">500</button>
                     </div>
                 </div>
-                <button id="exportAllBtn" class="btn-secondary" onclick="exportAllTransactions()" style="margin-left: 1rem;" title="Export all transactions (matching current filters) to CSV">
+                <button id="exportAllBtn" class="btn-secondary" onclick="exportAllTransactions()" style="margin-left: 1rem;" title="Export all transactions (matching current filters) to CSV" data-i18n="dashboard.buttons.exportAll">
                     📊 Export to CSV
                 </button>
             </div>
@@ -383,7 +384,7 @@
                         <button class="btn-primary" onclick="archiveAllButFirstGlobally()" style="font-size: 0.95em;">
                             🗄️ Archive All But First (All Groups)
                         </button>
-                        <button class="btn-secondary" onclick="archiveSelectedTransactions()" style="font-size: 0.95em;">
+                        <button class="btn-secondary" onclick="archiveDuplicateSelected()" style="font-size: 0.95em;">
                             🗄️ Archive Selected
                         </button>
                         <button class="btn-secondary" onclick="selectAllDuplicates()" style="font-size: 0.95em;">
@@ -735,6 +736,9 @@
     </script>
 
     <script src="{{ url_for('static', filename='script_advanced.js') }}?v={{ cache_buster }}"></script>
+
+    <!-- i18n Internationalization -->
+    <script src="{{ url_for('static', filename='js/i18n.js') }}?v={{ cache_buster }}"></script>
 
     <!-- AI CFO Assistant Chatbot -->
     {% include 'components/chatbot.html' %}

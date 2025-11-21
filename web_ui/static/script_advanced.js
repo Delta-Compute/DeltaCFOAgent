@@ -7,6 +7,7 @@ let itemsPerPage = 50;
 let perPageSize = 50;
 let totalPages = 1;
 let isLoading = false;
+let excludeInternalTransfers = false;
 
 // Cache for dynamically loaded dropdown options
 let cachedAccountingCategories = [];
@@ -47,6 +48,116 @@ function debounce(func, wait) {
         clearTimeout(timeout);
         timeout = setTimeout(later, wait);
     };
+}
+
+// Utility: Validate field values before sending to backend
+// This mirrors the backend validation in app_db.py to catch errors early
+function validateFieldValue(fieldName, value) {
+    if (!value || value.trim() === '') {
+        return { valid: true, value: null };
+    }
+
+    value = value.trim();
+
+    // Field-specific validation
+    if (fieldName === 'classified_entity') {
+        // Entity validation
+
+        // Check maximum length (corrupted values are often very long)
+        if (value.length > 200) {
+            return {
+                valid: false,
+                error: `Entity name too long (${value.length} characters). Maximum 200 characters allowed.`
+            };
+        }
+
+        // Check for HTML tags or suspicious characters (sign of UI corruption)
+        if (value.includes('<') || value.includes('>') || value.toLowerCase().includes('option')) {
+            return {
+                valid: false,
+                error: 'Entity name contains invalid HTML or suspicious content.'
+            };
+        }
+
+        // Check for special UI values that should not be saved as entities
+        const specialValues = ['__ai_assistant__', '__custom__'];
+        if (specialValues.includes(value)) {
+            return {
+                valid: false,
+                error: 'Cannot save special UI value as entity name.'
+            };
+        }
+
+        // Check for emoji or special characters that indicate UI element corruption
+        if (value.includes('🤖') || value.includes('+ Add') || value.includes('Ask AI')) {
+            return {
+                valid: false,
+                error: 'Entity name contains UI element text. Please enter a valid entity name.'
+            };
+        }
+
+        // Allow certain special values
+        const allowedSpecial = ['N/A', 'Unknown', 'Unknown Entity', 'Internal Transfer', 'Personal'];
+        if (allowedSpecial.includes(value)) {
+            return { valid: true, value };
+        }
+
+        // Check if entity name looks like it contains multiple concatenated entities
+        const multipleEntityPattern = /LLC.*LLC|Inc.*Inc|Corp.*Corp/;
+        if (multipleEntityPattern.test(value)) {
+            return {
+                valid: false,
+                error: 'Entity name appears to contain multiple concatenated entities. Please enter a single entity name.'
+            };
+        }
+
+    } else if (fieldName === 'accounting_category') {
+        // Category validation
+
+        if (value.length > 100) {
+            return {
+                valid: false,
+                error: 'Category name too long. Maximum 100 characters allowed.'
+            };
+        }
+
+        if (value.includes('<') || value.includes('>')) {
+            return {
+                valid: false,
+                error: 'Category contains invalid HTML characters.'
+            };
+        }
+
+    } else if (['subcategory', 'justification', 'description', 'origin', 'destination'].includes(fieldName)) {
+        // General text field validation
+
+        const maxLengths = {
+            'subcategory': 100,
+            'justification': 500,
+            'description': 1000,
+            'origin': 200,
+            'destination': 200
+        };
+
+        const maxLen = maxLengths[fieldName] || 500;
+
+        if (value.length > maxLen) {
+            return {
+                valid: false,
+                error: `${fieldName} too long (${value.length} characters). Maximum ${maxLen} characters allowed.`
+            };
+        }
+
+        // Check for HTML tags
+        if (value.includes('<') || value.includes('>')) {
+            return {
+                valid: false,
+                error: `${fieldName} contains invalid HTML characters.`
+            };
+        }
+    }
+
+    return { valid: true, value };
 }
 
 // Utility: Scroll to top of transactions table
@@ -334,6 +445,63 @@ function initializeFiltersFromURL() {
             console.log(`📋 Initialized needs_review filter from URL: ${needsReview}`);
         }
     }
+
+    // SANKEY BREAKDOWN INTEGRATION: Support keyword search from URL
+    const searchKeyword = urlParams.get('search');
+    const categoryFilter = urlParams.get('category');
+
+    if (searchKeyword) {
+        const keywordField = document.getElementById('keywordFilter');
+        if (keywordField) {
+            // Decode the keyword (in case it's URL-encoded like "SALDO%20TOTAL")
+            const decodedKeyword = decodeURIComponent(searchKeyword);
+            keywordField.value = decodedKeyword;
+            console.log(`🔍 Initialized keyword filter from URL: ${decodedKeyword}`);
+
+            // Visual feedback: highlight the filter field briefly
+            setTimeout(() => {
+                keywordField.style.transition = 'background-color 0.3s ease';
+                keywordField.style.backgroundColor = '#fef3c7';
+                setTimeout(() => {
+                    keywordField.style.backgroundColor = '';
+                }, 2000);
+            }, 500);
+        }
+    }
+
+    // Show category filter badge if present
+    if (categoryFilter) {
+        // Decode the category filter (in case it's URL-encoded)
+        const decodedCategory = decodeURIComponent(categoryFilter);
+        // Decode keyword for display in badge
+        const decodedKeywordForBadge = searchKeyword ? decodeURIComponent(searchKeyword) : null;
+        console.log(`📂 Category filter active: ${decodedCategory}`);
+
+        // Create a visual badge to show the category filter is active
+        setTimeout(() => {
+            const filterSection = document.querySelector('.filter-section') || document.querySelector('header');
+            if (filterSection) {
+                const badge = document.createElement('div');
+                badge.id = 'sankeyFilterBadge';
+                badge.style.cssText = `
+                    display: inline-block;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 0.5rem 1rem;
+                    border-radius: 8px;
+                    margin: 0.5rem 0;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+                `;
+                badge.innerHTML = `
+                    📂 Filtered by Category: <strong>${decodedCategory}</strong>
+                    ${decodedKeywordForBadge ? ` → <strong>${decodedKeywordForBadge}</strong>` : ''}
+                `;
+                filterSection.insertBefore(badge, filterSection.firstChild);
+            }
+        }, 300);
+    }
 }
 
 async function loadDropdownOptions() {
@@ -478,6 +646,24 @@ function setupEventListeners() {
             // Activate filter
             this.classList.add('active');
             document.getElementById('needsReview').value = 'true';
+        }
+
+        currentPage = 1;
+        loadTransactions();
+    });
+
+    // Exclude Internal Transfers filter
+    document.getElementById('filterExcludeTransfers').addEventListener('click', function() {
+        const isActive = this.classList.contains('active');
+
+        if (isActive) {
+            // Deactivate filter - show all entities
+            this.classList.remove('active');
+            excludeInternalTransfers = false;
+        } else {
+            // Activate filter - exclude Internal Transfer entity
+            this.classList.add('active');
+            excludeInternalTransfers = true;
         }
 
         currentPage = 1;
@@ -757,6 +943,15 @@ function buildFilterQuery() {
     const keyword = document.getElementById('keywordFilter')?.value;
     if (keyword) params.append('keyword', keyword);
 
+    // SANKEY INTEGRATION: Preserve category filter from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const categoryFilter = urlParams.get('category');
+    if (categoryFilter) {
+        // Decode the category value (URLSearchParams.get() does NOT auto-decode)
+        const decodedCategory = decodeURIComponent(categoryFilter);
+        params.append('category', decodedCategory);
+    }
+
     // Add archived filter
     if (showingArchived) {
         params.append('show_archived', 'true');
@@ -923,8 +1118,13 @@ async function loadTransactions() {
 
 function showLoadingState() {
     document.getElementById('transactionTableBody').innerHTML =
-        '<tr><td colspan="13" class="loading">Loading transactions...</td></tr>';
+        '<tr><td colspan="13" class="loading" data-i18n="dashboard.table.loading">Loading transactions...</td></tr>';
     document.getElementById('tableInfo').textContent = 'Loading...';
+
+    // Update translations for dynamically generated content
+    if (window.i18n && window.i18n.loaded) {
+        window.i18n.updateDOM();
+    }
 }
 
 // Helper function to determine category class based on amount
@@ -1263,6 +1463,9 @@ function renderTransactionTable(transactions) {
 let inlineEditingSetup = false;
 let checkboxDelegationSetup = false;
 
+// Track last checked checkbox for shift-click range selection
+let lastCheckedCheckbox = null;
+
 // Event delegation for checkboxes - dramatically reduces listeners
 function setupCheckboxDelegation() {
     if (checkboxDelegationSetup) {
@@ -1271,6 +1474,47 @@ function setupCheckboxDelegation() {
 
     const tbody = document.getElementById('transactionTableBody');
     if (!tbody) return;
+
+    // Single click listener for shift-click range selection
+    tbody.addEventListener('click', function(e) {
+        if (e.target.classList.contains('transaction-select-cb')) {
+            const currentCheckbox = e.target;
+
+            // Handle shift-click for range selection
+            if (e.shiftKey && lastCheckedCheckbox && lastCheckedCheckbox !== currentCheckbox) {
+                // Get all checkboxes
+                const allCheckboxes = Array.from(document.querySelectorAll('.transaction-select-cb'));
+                const startIndex = allCheckboxes.indexOf(lastCheckedCheckbox);
+                const endIndex = allCheckboxes.indexOf(currentCheckbox);
+
+                // Determine the range (could be forward or backward)
+                const minIndex = Math.min(startIndex, endIndex);
+                const maxIndex = Math.max(startIndex, endIndex);
+
+                // Select all checkboxes in the range
+                const shouldCheck = currentCheckbox.checked;
+                for (let i = minIndex; i <= maxIndex; i++) {
+                    const checkbox = allCheckboxes[i];
+                    checkbox.checked = shouldCheck;
+
+                    // Update selectedTransactionIds
+                    const txId = checkbox.dataset.transactionId;
+                    if (shouldCheck) {
+                        selectedTransactionIds.add(txId);
+                    } else {
+                        selectedTransactionIds.delete(txId);
+                    }
+                }
+
+                updateArchiveButtonVisibility();
+                updateBulkEditButtonVisibility();
+                console.log(`✅ Shift-click range selection: ${maxIndex - minIndex + 1} transactions ${shouldCheck ? 'selected' : 'deselected'}`);
+            }
+
+            // Remember this checkbox for next shift-click
+            lastCheckedCheckbox = currentCheckbox;
+        }
+    });
 
     // Single change listener for all checkboxes via event delegation
     tbody.addEventListener('change', function(e) {
@@ -1287,7 +1531,7 @@ function setupCheckboxDelegation() {
     });
 
     checkboxDelegationSetup = true;
-    console.log('✅ Checkbox event delegation setup complete (1 listener for all checkboxes)');
+    console.log('✅ Checkbox event delegation setup complete (1 listener for all checkboxes + shift-click support)');
 }
 
 function setupInlineEditing() {
@@ -1564,6 +1808,14 @@ async function createSmartDropdown(field, currentValue, fieldName) {
             const saveCustomEdit = async () => {
                 const newValue = input.value.trim();
                 if (newValue) { // Only save if there's a value
+                    // VALIDATION: Check for corrupted or invalid values before saving
+                    const validationResult = validateFieldValue(fieldName, newValue);
+                    if (!validationResult.valid) {
+                        console.error('❌ Validation failed:', validationResult.error);
+                        alert(`Invalid value: ${validationResult.error}`);
+                        input.focus();
+                        return;
+                    }
                     await updateTransactionField(transactionId, fieldName, newValue, field);
                 } else {
                     // Cancel if empty
@@ -1597,6 +1849,22 @@ async function createSmartDropdown(field, currentValue, fieldName) {
             const newValue = this.value;
 
             console.log('🔵 Transaction ID:', transactionId, 'Field:', fieldName, 'Value:', newValue);
+
+            // VALIDATION: Check for corrupted or invalid values before saving
+            const validationResult = validateFieldValue(fieldName, newValue);
+            if (!validationResult.valid) {
+                console.error('❌ Validation failed:', validationResult.error);
+                alert(`Invalid value: ${validationResult.error}`);
+
+                // Reset dropdown to previous value
+                setTimeout(() => {
+                    select.value = currentValue;
+                    field.classList.remove('editing');
+                    field.innerHTML = currentValue || 'N/A';
+                    setupInlineEditing();
+                }, 100);
+                return;
+            }
 
             // Immediately update the transaction field
             await updateTransactionField(transactionId, fieldName, newValue, field);
@@ -1738,6 +2006,35 @@ async function updateTransactionField(transactionId, field, value, fieldElement)
                 }
             } else {
                 console.warn('⚠️  No updated_confidence in API response');
+            }
+
+            // AUTO-CATEGORIZATION UPDATE: When entity is set to "Personal" or "Internal Transfer", update category and subcategory in UI
+            if (field === 'classified_entity' && (value === 'Personal' || value === 'Internal Transfer') && result.updated_fields) {
+                const row = fieldElement.closest('tr');
+                console.log(`🔵 AUTO-CATEGORIZATION: Detected ${value} entity update, applying auto-categorization to UI`);
+
+                if (row) {
+                    // Update accounting_category field
+                    if (result.updated_fields.accounting_category) {
+                        const categoryCell = row.querySelector('[data-field="accounting_category"]');
+                        if (categoryCell) {
+                            categoryCell.innerHTML = result.updated_fields.accounting_category || 'N/A';
+                            console.log(`✅ AUTO-CATEGORIZATION: Updated category to "${result.updated_fields.accounting_category}"`);
+                        }
+                    }
+
+                    // Update subcategory field
+                    if (result.updated_fields.subcategory) {
+                        const subcategoryCell = row.querySelector('[data-field="subcategory"]');
+                        if (subcategoryCell) {
+                            subcategoryCell.innerHTML = result.updated_fields.subcategory || 'N/A';
+                            console.log(`✅ AUTO-CATEGORIZATION: Updated subcategory to "${result.updated_fields.subcategory}"`);
+                        }
+                    }
+
+                    // Re-setup inline editing for the updated cells
+                    setupInlineEditing();
+                }
             }
 
             // For description changes, check if we should update similar transactions
@@ -3281,7 +3578,6 @@ function formatDate(dateString) {
 
 // Archive functionality
 let showingArchived = false;
-let excludeInternalTransfers = false;
 
 function updateArchiveButtonVisibility() {
     const selectedCount = document.querySelectorAll('.transaction-select-cb:checked').length;
@@ -3518,13 +3814,13 @@ async function getAISmartSuggestions(transactionId, transaction) {
                 // Determine if this field should use a dropdown or text input
                 let inputHTML = '';
                 if (suggestion.field === 'classified_entity') {
-                    // Use dropdown for Entity
-                    const entityOptions = [
-                        'Delta LLC',
+                    // Use dropdown for Entity - use cached entities from API
+                    const entityOptions = cachedEntities.length > 0 ? cachedEntities : [
+                        'Delta Mining LLC',
                         'Delta Prop Shop LLC',
                         'Infinity Validator',
                         'Delta Mining Paraguay S.A.',
-                        'Delta Brazil Operations',
+                        'Delta Computacao do Brasil S.A.',
                         'Internal Transfer',
                         'Personal'
                     ];
@@ -5281,6 +5577,51 @@ function deselectAllDuplicates() {
         checkbox.indeterminate = false;
     });
     showToast('⬜ All transactions deselected', 'info');
+}
+
+async function archiveDuplicateSelected() {
+    console.log('🔵 archiveDuplicateSelected() called!');
+
+    const selectedCheckboxes = document.querySelectorAll('.duplicate-checkbox:checked');
+    console.log('🔵 Found duplicate checkboxes:', selectedCheckboxes.length);
+
+    const transactionIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.transactionId);
+    console.log('🔵 Transaction IDs:', transactionIds);
+
+    if (transactionIds.length === 0) {
+        showToast('⚠️ No transactions selected', 'warning');
+        console.log('🔴 No transactions selected, returning');
+        return;
+    }
+
+    console.log('🔵 Proceeding with archiving');
+
+    try {
+        const response = await fetch('/api/archive_transactions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({transaction_ids: transactionIds})
+        });
+
+        console.log('🔵 API response status:', response.status);
+        const data = await response.json();
+        console.log('🔵 API response data:', data);
+
+        if (data.success) {
+            showToast(`✅ Archived ${data.archived_count} transaction(s)`, 'success');
+            // Refresh duplicates modal
+            findDuplicates();
+            // Refresh main table if function exists
+            if (typeof loadTransactions === 'function') {
+                setTimeout(() => loadTransactions(), 1000);
+            }
+        } else {
+            showToast('❌ Error archiving transactions: ' + (data.error || 'Unknown error'), 'error');
+        }
+    } catch (error) {
+        console.error('Error archiving duplicate transactions:', error);
+        showToast('❌ Error: ' + error.message, 'error');
+    }
 }
 
 // ============================================================================

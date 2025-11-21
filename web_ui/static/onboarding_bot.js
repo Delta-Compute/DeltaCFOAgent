@@ -151,7 +151,7 @@
 
         // Try to get from global variable (set by tenant context)
         console.log('[OnboardingBot] Checking window.currentTenantId:', window.currentTenantId);
-        if (window.currentTenantId && window.currentTenantId !== 'delta') {
+        if (window.currentTenantId) {
             const tenant = { id: window.currentTenantId, name: window.currentTenantName || window.currentTenantId };
             console.log('[OnboardingBot] Found tenant from window:', tenant);
             return tenant;
@@ -163,7 +163,7 @@
         if (accountMenu) {
             const tenantId = accountMenu.getAttribute('data-current-tenant');
             console.log('[OnboardingBot] Tenant ID from data attribute:', tenantId);
-            if (tenantId && tenantId !== 'delta') {
+            if (tenantId) {
                 const tenant = { id: tenantId, name: accountMenu.getAttribute('data-tenant-name') || tenantId };
                 console.log('[OnboardingBot] Found tenant from DOM:', tenant);
                 return tenant;
@@ -187,7 +187,7 @@
                     if (data.success && data.current_tenant) {
                         const tenant = data.current_tenant;
                         console.log('[OnboardingBot] Tenant from API:', tenant);
-                        if (tenant.id && tenant.id !== 'delta') {
+                        if (tenant.id) {
                             return { id: tenant.id, name: tenant.company_name || tenant.id };
                         }
                     }

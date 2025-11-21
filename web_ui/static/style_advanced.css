@@ -14,9 +14,17 @@ body {
 }
 
 .container {
-    max-width: 1600px;
-    margin: 0 auto;
-    padding: 20px;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.main-layout {
+    width: 100%;
+}
+
+.dashboard-content {
+    padding: 2rem;
 }
 
 /* Navigation */
@@ -24,8 +32,8 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 1rem 2rem;
-    border-radius: 12px;
-    margin-bottom: 2rem;
+    border-radius: 0;
+    margin-bottom: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;

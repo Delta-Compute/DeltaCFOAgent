@@ -3,6 +3,11 @@
  * Aligned with existing system design
  */
 
+// Helper function to get translated text
+function t(key, fallback) {
+    return window.i18n ? window.i18n.t(key) : fallback;
+}
+
 // Global variables
 let currentFilters = {
     period: 'all_time',
@@ -21,7 +26,24 @@ Chart.defaults.responsive = true;
 Chart.defaults.maintainAspectRatio = false;
 
 // Initialize dashboard when DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Wait for i18n to be ready before initializing dashboard
+    if (window.i18n && !window.i18n.loaded) {
+        await new Promise(resolve => {
+            const checkLoaded = setInterval(() => {
+                if (window.i18n && window.i18n.loaded) {
+                    clearInterval(checkLoaded);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // Manually trigger DOM update for i18n to ensure all elements are translated
+    if (window.i18n && window.i18n.loaded) {
+        window.i18n.updateDOM();
+    }
+
     initializeDashboard();
     setupEventListeners();
     setupQuickFilters();
@@ -48,7 +70,7 @@ async function initializeDashboard() {
 
     } catch (error) {
         console.error('Error initializing dashboard:', error);
-        showError('Failed to load dashboard data. Please refresh the page.');
+        showError(t('reports.messages.loadFailed', 'Failed to load dashboard data. Please refresh the page.'));
     } finally {
         showLoading(false);
     }
@@ -337,6 +359,9 @@ function initializeCharts() {
     // Cash Flow Chart
     createCashFlowChart();
 
+    // Shareholder Equity Chart
+    createShareholderEquityChart();
+
     // Sankey Financial Flow Diagram
     createSankeyDiagram();
 }
@@ -546,6 +571,115 @@ function createCashFlowChart() {
 }
 
 /**
+ * Create Shareholder Equity Chart
+ */
+async function createShareholderEquityChart() {
+    const ctx = document.getElementById('shareholderEquityChart');
+    if (!ctx) return;
+
+    try {
+        // Fetch shareholder data from API
+        const response = await fetch('/api/shareholders/chart-data');
+        const data = await response.json();
+
+        if (!data.success || !data.ownership_distribution || data.ownership_distribution.length === 0) {
+            // Display message if no shareholder data
+            ctx.getContext('2d').font = '14px Arial';
+            ctx.getContext('2d').fillStyle = '#666';
+            ctx.getContext('2d').textAlign = 'center';
+            ctx.getContext('2d').fillText('No shareholder data available. Click "Manage Shareholders" to add shareholders.', ctx.width / 2, ctx.height / 2);
+            return;
+        }
+
+        const shareholders = data.ownership_distribution;
+
+        // Prepare data for pie chart
+        const labels = shareholders.map(s => s.shareholder_name);
+        const percentages = shareholders.map(s => parseFloat(s.ownership_percentage) || 0);
+        const shareholderTypes = shareholders.map(s => s.shareholder_type);
+
+        // Generate colors based on shareholder type
+        const colors = shareholderTypes.map(type => {
+            switch(type) {
+                case 'founder': return '#667eea';
+                case 'angel': return '#48bb78';
+                case 'vc': return '#f56565';
+                case 'institutional': return '#ed8936';
+                case 'corporate': return '#9f7aea';
+                default: return '#4299e1';
+            }
+        });
+
+        charts.shareholderEquity = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Ownership %',
+                    data: percentages,
+                    backgroundColor: colors,
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            padding: 15,
+                            font: {
+                                size: 12
+                            },
+                            generateLabels: function(chart) {
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    return data.labels.map((label, i) => {
+                                        const value = data.datasets[0].data[i];
+                                        return {
+                                            text: `${label}: ${value.toFixed(2)}%`,
+                                            fillStyle: data.datasets[0].backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                const type = shareholderTypes[context.dataIndex];
+                                return [
+                                    `${label}`,
+                                    `Type: ${type}`,
+                                    `Ownership: ${value.toFixed(2)}%`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error loading shareholder equity chart:', error);
+        // Display error message on canvas
+        const context = ctx.getContext('2d');
+        context.font = '14px Arial';
+        context.fillStyle = '#f56565';
+        context.textAlign = 'center';
+        context.fillText('Error loading shareholder data', ctx.width / 2, ctx.height / 2);
+    }
+}
+
+/**
  * Show/hide custom date range
  */
 function showCustomDateRange() {
@@ -633,7 +767,7 @@ async function refreshDashboard() {
 
     } catch (error) {
         console.error('Error refreshing dashboard:', error);
-        showError('Failed to refresh dashboard data.');
+        showError(t('reports.messages.refreshFailed', 'Failed to refresh dashboard data.'));
     } finally {
         showLoading(false);
     }
@@ -688,7 +822,7 @@ function generateDREReport() {
 
     } catch (error) {
         console.error('Error loading DRE preview:', error);
-        showError('Failed to load DRE preview. Please try again.');
+        showError(t('reports.messages.dreLoadFailed', 'Failed to load DRE preview. Please try again.'));
         showLoading(false);
     }
 }
@@ -1082,7 +1216,7 @@ function downloadDREPDF() {
 
     } catch (error) {
         console.error('Error downloading DRE PDF:', error);
-        showError('Failed to download DRE PDF. Please try again.');
+        showError(t('reports.messages.dreDownloadFailed', 'Failed to download DRE PDF. Please try again.'));
         showLoading(false);
     }
 }
@@ -1128,7 +1262,7 @@ function generateBalanceSheetReport() {
 
     } catch (error) {
         console.error('Error loading Balance Sheet preview:', error);
-        showError('Failed to load Balance Sheet preview. Please try again.');
+        showError(t('reports.messages.balanceSheetLoadFailed', 'Failed to load Balance Sheet preview. Please try again.'));
         showLoading(false);
     }
 }
@@ -1186,7 +1320,7 @@ function generateCashFlowReport() {
 
     } catch (error) {
         console.error('Error loading Cash Flow preview:', error);
-        showError('Failed to load Cash Flow preview. Please try again.');
+        showError(t('reports.messages.cashFlowLoadFailed', 'Failed to load Cash Flow preview. Please try again.'));
         showLoading(false);
     }
 }
@@ -1244,7 +1378,7 @@ function generateDMPLReport() {
 
     } catch (error) {
         console.error('Error loading DMPL preview:', error);
-        showError('Failed to load DMPL preview. Please try again.');
+        showError(t('reports.messages.dmplLoadFailed', 'Failed to load DMPL preview. Please try again.'));
         showLoading(false);
     }
 }
@@ -1769,7 +1903,7 @@ function downloadBalanceSheetPDF() {
 
     } catch (error) {
         console.error('Error downloading Balance Sheet PDF:', error);
-        showError('Failed to download Balance Sheet PDF. Please try again.');
+        showError(t('reports.messages.balanceSheetDownloadFailed', 'Failed to download Balance Sheet PDF. Please try again.'));
         showLoading(false);
     }
 }
@@ -2221,7 +2355,7 @@ function downloadCashFlowPDF() {
 
     } catch (error) {
         console.error('Error downloading Cash Flow PDF:', error);
-        showError('Failed to download Cash Flow PDF. Please try again.');
+        showError(t('reports.messages.cashFlowDownloadFailed', 'Failed to download Cash Flow PDF. Please try again.'));
         showLoading(false);
     }
 }
@@ -2636,7 +2770,7 @@ function downloadDMPLPDF() {
 
     } catch (error) {
         console.error('Error downloading DMPL PDF:', error);
-        showError('Failed to download DMPL PDF. Please try again.');
+        showError(t('reports.messages.dmplDownloadFailed', 'Failed to download DMPL PDF. Please try again.'));
         showLoading(false);
     }
 }
@@ -2694,14 +2828,51 @@ function createSankeyDiagram() {
             // Assign colors based on node type
             const nodeColors = sankeyData.nodes.map(node => {
                 if (node.type === 'revenue') return '#86efac'; // Light green for revenue
+                if (node.type === 'investor_equity') return '#c4b5fd'; // Light purple for investor equity
                 if (node.type === 'expense') return '#fca5a5'; // Light red for expenses
                 return '#d1d5db'; // Gray for hub
+            });
+
+            // Calculate Y-positions to force Investor Equity to the ABSOLUTE bottom
+            // We need to assign Y positions to ALL nodes for explicit control
+            const leftNodes = sankeyData.nodes.filter(n => n.type === 'revenue' || n.type === 'investor_equity');
+            const revenueOnlyNodes = leftNodes.filter(n => n.type === 'revenue');
+            const expenseNodes = sankeyData.nodes.filter(n => n.type === 'expense');
+
+            const nodeY = sankeyData.nodes.map((node, idx) => {
+                if (node.type === 'investor_equity') {
+                    // Force to ABSOLUTE bottom: Y = 0.99 (very bottom of chart)
+                    return 0.99;
+                } else if (node.type === 'revenue') {
+                    // Distribute regular revenue nodes from top (0.01) to just above investor equity
+                    // Calculate spacing to fit all revenue nodes above investor equity
+                    const revenueIndex = revenueOnlyNodes.findIndex(n => n.name === node.name);
+                    if (revenueOnlyNodes.length === 1) {
+                        return 0.05; // Single revenue node at top
+                    }
+                    // Distribute from 0.01 to 0.92 (leaving space for investor equity at 0.99)
+                    const spacing = 0.91 / (revenueOnlyNodes.length - 1);
+                    return 0.01 + (revenueIndex * spacing);
+                } else if (node.type === 'hub') {
+                    // Center the hub vertically
+                    return 0.5;
+                } else if (node.type === 'expense') {
+                    // Distribute expense nodes evenly on the right
+                    const expenseIndex = expenseNodes.findIndex(n => n.name === node.name);
+                    if (expenseNodes.length === 1) {
+                        return 0.5;
+                    }
+                    const spacing = 0.95 / (expenseNodes.length - 1);
+                    return 0.01 + (expenseIndex * spacing);
+                }
+                return 0.5; // Default fallback
             });
 
             // Build link colors with transparency
             const linkColors = sankeyData.links.map(link => {
                 const sourceNode = sankeyData.nodes[link.source];
                 if (sourceNode.type === 'revenue') return 'rgba(134, 239, 172, 0.4)'; // Green
+                if (sourceNode.type === 'investor_equity') return 'rgba(196, 181, 253, 0.4)'; // Purple
                 if (sourceNode.type === 'hub') return 'rgba(252, 165, 165, 0.4)'; // Red
                 return 'rgba(209, 213, 219, 0.4)'; // Gray
             });
@@ -2719,6 +2890,7 @@ function createSankeyDiagram() {
                     },
                     label: nodeLabels,
                     color: nodeColors,
+                    y: nodeY,  // Explicit Y-positioning to force Investor Equity to bottom
                     hovertemplate: '<b>%{label}</b><extra></extra>'
                 },
                 link: {
@@ -2739,14 +2911,6 @@ function createSankeyDiagram() {
 
             // Layout configuration
             const layout = {
-                title: {
-                    text: 'Financial Flow (Subcategories, excl. Internal Transfers)',
-                    font: {
-                        family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                        size: 18,
-                        color: '#1f2937'
-                    }
-                },
                 font: {
                     family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     size: 12,
@@ -2771,6 +2935,47 @@ function createSankeyDiagram() {
 
             // Render the Sankey diagram
             Plotly.newPlot(container, data, layout, config);
+
+            // Add hover handler for nodes with breakdown data
+            let hoverTimeout = null;
+            const breakdownCache = new Map();
+
+            container.on('plotly_hover', function(eventData) {
+                if (eventData.points && eventData.points.length > 0) {
+                    const point = eventData.points[0];
+
+                    // Check if this is a node hover (not a link)
+                    if (point.pointNumber !== undefined) {
+                        const nodeIndex = point.pointNumber;
+                        const node = sankeyData.nodes[nodeIndex];
+
+                        // Only show breakdown for revenue, investor equity, and expense nodes (not hub)
+                        if (node && (node.type === 'revenue' || node.type === 'investor_equity' || node.type === 'expense')) {
+                            // Debounce hover events by 200ms
+                            clearTimeout(hoverTimeout);
+                            hoverTimeout = setTimeout(() => {
+                                // Use event coordinates for mouse position
+                                const mouseX = eventData.event ? eventData.event.clientX : window.innerWidth / 2;
+                                const mouseY = eventData.event ? eventData.event.clientY : window.innerHeight / 2;
+                                showSankeyBreakdown(node.name, node.type, mouseX, mouseY, breakdownCache);
+                            }, 200);
+                        }
+                    }
+                }
+            });
+
+            // Hide tooltip when mouse leaves (with delay to allow interaction)
+            let hideTimeout = null;
+            container.on('plotly_unhover', function() {
+                clearTimeout(hoverTimeout);
+                // Delay hiding to allow user to move mouse to tooltip
+                hideTimeout = setTimeout(() => {
+                    const tooltip = document.getElementById('sankeyBreakdownTooltip');
+                    if (tooltip && !tooltip.matches(':hover')) {
+                        hideSankeyBreakdown();
+                    }
+                }, 300);
+            });
 
             // Add click handler for nodes
             container.on('plotly_click', function(eventData) {
@@ -2934,4 +3139,315 @@ function displaySankeyTransactions(data) {
     `;
 
     document.getElementById('sankeyTransactionsContent').innerHTML = html;
+}
+
+/**
+ * Show detailed breakdown tooltip for a Sankey node (with keyword analysis)
+ */
+function showSankeyBreakdown(nodeName, nodeType, mouseX, mouseY, cache) {
+    const cacheKey = `${nodeName}_${nodeType}`;
+    const now = Date.now();
+
+    // Check cache first (5 minute TTL)
+    if (cache.has(cacheKey)) {
+        const cached = cache.get(cacheKey);
+        if (now - cached.timestamp < 5 * 60 * 1000) {
+            displayBreakdownTooltip(nodeName, nodeType, cached.data, mouseX, mouseY);
+            return;
+        }
+    }
+
+    // Create tooltip with loading state
+    const tooltip = createBreakdownTooltip(nodeName, nodeType, null, mouseX, mouseY);
+
+    // Fetch breakdown data from API
+    fetch('/api/reports/sankey-breakdown', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            node_name: nodeName,
+            node_type: nodeType
+        })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            // Cache the result
+            cache.set(cacheKey, {
+                data: result,
+                timestamp: now
+            });
+
+            // Update tooltip with actual data
+            updateBreakdownTooltip(result);
+        } else {
+            console.error('Failed to fetch breakdown:', result.error);
+            hideBreakdownTooltip();
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching breakdown:', error);
+        hideBreakdownTooltip();
+    });
+}
+
+/**
+ * Hide the breakdown tooltip
+ */
+function hideSankeyBreakdown() {
+    const tooltip = document.getElementById('sankeyBreakdownTooltip');
+    if (tooltip) {
+        tooltip.remove();
+    }
+}
+
+/**
+ * Create the breakdown tooltip element
+ */
+function createBreakdownTooltip(nodeName, nodeType, data, mouseX, mouseY) {
+    // Remove existing tooltip
+    hideSankeyBreakdown();
+
+    const tooltip = document.createElement('div');
+    tooltip.id = 'sankeyBreakdownTooltip';
+    tooltip.style.cssText = `
+        position: fixed;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        padding: 1rem;
+        max-width: 400px;
+        max-height: 500px;
+        overflow-y: auto;
+        z-index: 9999;
+        pointer-events: auto;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    `;
+
+    // Keep tooltip visible when hovering over it
+    tooltip.addEventListener('mouseenter', function() {
+        // Tooltip stays visible
+    });
+
+    tooltip.addEventListener('mouseleave', function() {
+        // Don't hide if currently dragging - prevents glitchy disappearance
+        if (!isDragging) {
+            hideSankeyBreakdown();
+        }
+    });
+
+    // Position tooltip near mouse but ensure it stays in viewport
+    const tooltipX = Math.min(mouseX + 20, window.innerWidth - 420);
+    const tooltipY = Math.min(mouseY - 20, window.innerHeight - 300);
+    tooltip.style.left = tooltipX + 'px';
+    tooltip.style.top = tooltipY + 'px';
+
+    // Make tooltip draggable
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let tooltipStartX = 0;
+    let tooltipStartY = 0;
+
+    const startDrag = function(e) {
+        // Only allow dragging from the header area (not from buttons or scrollable content)
+        if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+            return;
+        }
+
+        // Check if click is in the header area (first 50px)
+        const rect = tooltip.getBoundingClientRect();
+        if (e.clientY - rect.top > 50) {
+            return; // Don't drag from content area
+        }
+
+        isDragging = true;
+        tooltip.style.cursor = 'move';
+
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        tooltipStartX = parseFloat(tooltip.style.left);
+        tooltipStartY = parseFloat(tooltip.style.top);
+
+        e.preventDefault();
+    };
+
+    const drag = function(e) {
+        if (!isDragging) return;
+
+        e.preventDefault();
+
+        const deltaX = e.clientX - dragStartX;
+        const deltaY = e.clientY - dragStartY;
+
+        let newX = tooltipStartX + deltaX;
+        let newY = tooltipStartY + deltaY;
+
+        // Ensure tooltip stays within viewport
+        const rect = tooltip.getBoundingClientRect();
+        newX = Math.max(0, Math.min(newX, window.innerWidth - rect.width));
+        newY = Math.max(0, Math.min(newY, window.innerHeight - rect.height));
+
+        tooltip.style.left = newX + 'px';
+        tooltip.style.top = newY + 'px';
+    };
+
+    const stopDrag = function() {
+        if (isDragging) {
+            isDragging = false;
+            tooltip.style.cursor = 'default';
+        }
+    };
+
+    tooltip.addEventListener('mousedown', startDrag);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDrag);
+
+    // Initial loading content
+    tooltip.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; cursor: move; padding: 0.25rem; margin: -0.25rem -0.25rem 0.5rem -0.25rem; border-radius: 8px 8px 0 0;" title="Drag to reposition">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="color: #94a3b8; font-size: 0.875rem;">⋮⋮</span>
+                <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: #1e293b;">${nodeName}</h3>
+                <span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: ${nodeType === 'revenue' ? '#dcfce7' : '#fee2e2'}; color: ${nodeType === 'revenue' ? '#166534' : '#991b1b'};">
+                    ${nodeType === 'revenue' ? 'Revenue' : 'Expense'}
+                </span>
+            </div>
+            <button onclick="hideSankeyBreakdown()" style="background: none; border: none; font-size: 1.25rem; color: #94a3b8; cursor: pointer; padding: 0; line-height: 1; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'; this.style.color='#475569';" onmouseout="this.style.background='none'; this.style.color='#94a3b8';">
+                ×
+            </button>
+        </div>
+        <div style="text-align: center; padding: 1.5rem; color: #94a3b8;">
+            <div style="font-size: 1.25rem;">⏳</div>
+            <div style="font-size: 0.875rem; margin-top: 0.5rem;">Loading breakdown...</div>
+        </div>
+    `;
+
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+/**
+ * Update the tooltip with actual breakdown data
+ */
+function updateBreakdownTooltip(data) {
+    const tooltip = document.getElementById('sankeyBreakdownTooltip');
+    if (!tooltip) return;
+
+    const breakdown = data.breakdown || [];
+    const nodeName = data.node_name;
+    const nodeType = data.node_type || 'expense';
+    const totalAmount = data.total_amount || 0;
+    const transactionCount = data.transaction_count || 0;
+
+    // Build breakdown HTML
+    let breakdownHTML = '';
+
+    if (breakdown.length === 0) {
+        breakdownHTML = `
+            <div style="text-align: center; padding: 1rem; color: #64748b; font-size: 0.875rem;">
+                No detailed breakdown available
+            </div>
+        `;
+    } else {
+        // Show top 10 keywords
+        const topBreakdown = breakdown.slice(0, 10);
+
+        breakdownHTML = `
+            <div style="margin-bottom: 0.75rem; padding: 0.5rem; background: #f8fafc; border-radius: 4px;">
+                <div style="font-size: 0.875rem; color: #475569;">
+                    <strong>${formatCurrency(totalAmount)}</strong> across ${transactionCount} transaction${transactionCount !== 1 ? 's' : ''}
+                </div>
+            </div>
+            <div style="max-height: 300px; overflow-y: auto;">
+        `;
+
+        topBreakdown.forEach((item, index) => {
+            const barWidth = (item.percentage || 0).toFixed(1);
+            const barColor = nodeType === 'revenue' ? '#86efac' : '#fca5a5';
+            const keyword = item.keyword || 'Unknown';
+            const encodedKeyword = encodeURIComponent(keyword);
+            const encodedCategory = encodeURIComponent(nodeName);
+
+            breakdownHTML += `
+                <div onclick="openTransactionManager('${encodedKeyword}', '${encodedCategory}')" style="margin-bottom: 0.5rem; padding: 0.5rem; border-radius: 6px; cursor: pointer; transition: all 0.2s; ${index < topBreakdown.length - 1 ? 'border-bottom: 1px solid #e2e8f0;' : ''}" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='transparent';">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                        <span style="font-size: 0.875rem; font-weight: 500; color: #1e293b;">${keyword}</span>
+                        <span style="font-size: 0.75rem; color: #64748b;">${barWidth}%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                        <span style="font-size: 0.75rem; color: #64748b;">${item.count} txn${item.count !== 1 ? 's' : ''}</span>
+                        <span style="font-size: 0.875rem; font-weight: 500; color: #475569;">${formatCurrency(item.amount)}</span>
+                    </div>
+                    <div style="width: 100%; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden;">
+                        <div style="width: ${barWidth}%; height: 100%; background: ${barColor}; border-radius: 2px;"></div>
+                    </div>
+                    <div style="text-align: center; margin-top: 0.25rem;">
+                        <span style="font-size: 0.7rem; color: #94a3b8;">Click to view transactions →</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        breakdownHTML += '</div>';
+
+        if (breakdown.length > 10) {
+            const remainingCount = breakdown.length - 10;
+            breakdownHTML += `
+                <div style="text-align: center; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #e2e8f0;">
+                    <span style="font-size: 0.75rem; color: #94a3b8;">+ ${remainingCount} more keyword${remainingCount !== 1 ? 's' : ''}</span>
+                </div>
+            `;
+        }
+    }
+
+    tooltip.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; cursor: move; padding: 0.25rem; margin: -0.25rem -0.25rem 0.5rem -0.25rem; border-radius: 8px 8px 0 0;" title="Drag to reposition">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span style="color: #94a3b8; font-size: 0.875rem;">⋮⋮</span>
+                <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: #1e293b;">${nodeName}</h3>
+                <span style="padding: 0.125rem 0.5rem; border-radius: 4px; font-size: 0.75rem; background: ${nodeType === 'revenue' ? '#dcfce7' : '#fee2e2'}; color: ${nodeType === 'revenue' ? '#166534' : '#991b1b'};">
+                    ${nodeType === 'revenue' ? 'Revenue' : 'Expense'}
+                </span>
+            </div>
+            <button onclick="hideSankeyBreakdown()" style="background: none; border: none; font-size: 1.25rem; color: #94a3b8; cursor: pointer; padding: 0; line-height: 1; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 4px; transition: all 0.2s;" onmouseover="this.style.background='#f1f5f9'; this.style.color='#475569';" onmouseout="this.style.background='none'; this.style.color='#94a3b8';">
+                ×
+            </button>
+        </div>
+        ${breakdownHTML}
+        <div style="text-align: center; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e2e8f0;">
+            <span style="font-size: 0.75rem; color: #94a3b8;">Click node for full details</span>
+        </div>
+    `;
+}
+
+/**
+ * Display breakdown tooltip (used when data is cached)
+ */
+function displayBreakdownTooltip(nodeName, nodeType, data, mouseX, mouseY) {
+    createBreakdownTooltip(nodeName, nodeType, data, mouseX, mouseY);
+    updateBreakdownTooltip(data);
+}
+
+/**
+ * Hide breakdown tooltip (alias for consistency)
+ */
+function hideBreakdownTooltip() {
+    hideSankeyBreakdown();
+}
+
+/**
+ * Open Transaction Manager in new tab with pre-filtered search
+ */
+function openTransactionManager(keyword, category) {
+    // Build URL with search parameters
+    const params = new URLSearchParams();
+    params.set('search', keyword);
+    params.set('category', category);
+
+    // Open in new tab
+    const url = `/dashboard?${params.toString()}`;
+    window.open(url, '_blank');
 }

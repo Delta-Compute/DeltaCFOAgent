@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Shareholder Equity Management - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <style>
+        .main-content {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .page-header {
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-subtitle {
+            color: #64748b;
+            font-size: 1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 2rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: none;
+            font-size: 1rem;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s ease;
+            position: relative;
+            bottom: -2px;
+        }
+
+        .tab:hover {
+            color: #1e293b;
+            background: #f8fafc;
+        }
+
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .action-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            max-width: 400px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-secondary {
+            background: #f1f5f9;
+            color: #475569;
+        }
+
+        .btn-secondary:hover {
+            background: #e2e8f0;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        .shareholders-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1200px;
+        }
+
+        .shareholders-table th {
+            background: #f1f5f9;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            border-bottom: 2px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        .shareholders-table td {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: middle;
+        }
+
+        .shareholders-table tr:hover {
+            background: #f8fafc;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .status-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-exited {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .type-founder {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        .type-angel {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .type-vc {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .type-institutional {
+            background: #fed7aa;
+            color: #92400e;
+        }
+
+        .type-corporate {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .type-individual {
+            background: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0;
+            width: 2rem;
+            height: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .close-btn:hover {
+            color: #1e293b;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input,
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 2rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+
+        .empty-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .action-icon {
+            cursor: pointer;
+            color: #64748b;
+            margin: 0 0.25rem;
+            transition: color 0.2s ease;
+        }
+
+        .action-icon:hover {
+            color: #1e293b;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    {% include '_navbar.html' %}
+
+    <div class="main-content">
+        <!-- Page Header -->
+        <div class="page-header">
+            <h2 class="page-title">Shareholder Equity Management</h2>
+            <p class="page-subtitle">Manage shareholders and equity contributions</p>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total-shareholders">-</div>
+                <div class="stat-label">Total Shareholders</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total-equity">$0</div>
+                <div class="stat-label">Total Equity Raised</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total-shares">-</div>
+                <div class="stat-label">Shares Outstanding</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="stat-total-contributions">-</div>
+                <div class="stat-label">Total Contributions</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-tab="shareholders">Shareholders</button>
+            <button class="tab" data-tab="contributions">Equity Contributions</button>
+        </div>
+
+        <!-- Shareholders Tab -->
+        <div class="tab-content active" id="shareholders-tab">
+            <!-- Action Bar -->
+            <div class="action-bar">
+                <div class="search-box">
+                    <input type="text" id="shareholders-search" placeholder="Search by name, type...">
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="openAddShareholderModal()">
+                        + Add Shareholder
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshShareholders()">
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-container">
+                <div class="table-wrapper">
+                    <table class="shareholders-table">
+                        <thead>
+                            <tr>
+                                <th>Shareholder Name</th>
+                                <th>Entity</th>
+                                <th>Type</th>
+                                <th>Share Class</th>
+                                <th>Total Shares</th>
+                                <th>Ownership %</th>
+                                <th>Total Contributed</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shareholders-tbody">
+                            <tr>
+                                <td colspan="9" class="loading">Loading shareholders...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Contributions Tab -->
+        <div class="tab-content" id="contributions-tab">
+            <!-- Action Bar -->
+            <div class="action-bar">
+                <div class="search-box">
+                    <input type="text" id="contributions-search" placeholder="Search contributions...">
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="openAddContributionModal()">
+                        + Add Contribution
+                    </button>
+                    <button class="btn btn-secondary" onclick="refreshContributions()">
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="table-container">
+                <div class="table-wrapper">
+                    <table class="shareholders-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Shareholder</th>
+                                <th>Type</th>
+                                <th>Cash Amount</th>
+                                <th>Non-Cash Value</th>
+                                <th>Shares Issued</th>
+                                <th>Price/Share</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contributions-tbody">
+                            <tr>
+                                <td colspan="8" class="loading">Loading contributions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Shareholder Modal -->
+    <div class="modal" id="shareholder-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="shareholder-modal-title">Add Shareholder</h3>
+                <button class="close-btn" onclick="closeShareholderModal()">&times;</button>
+            </div>
+            <form id="shareholder-form">
+                <input type="hidden" id="shareholder-id">
+
+                <div class="form-group">
+                    <label class="form-label">Shareholder Name *</label>
+                    <input type="text" class="form-input" id="shareholder-name" required>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Shareholder Type *</label>
+                        <select class="form-select" id="shareholder-type" required>
+                            <option value="">Select type</option>
+                            <option value="founder">Founder</option>
+                            <option value="angel">Angel Investor</option>
+                            <option value="vc">Venture Capital</option>
+                            <option value="institutional">Institutional</option>
+                            <option value="corporate">Corporate</option>
+                            <option value="individual">Individual</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Entity *</label>
+                        <select class="form-select" id="shareholder-entity" required>
+                            <option value="">Select entity</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Share Class *</label>
+                    <select class="form-select" id="shareholder-share-class" required>
+                        <option value="common">Common</option>
+                        <option value="preferred">Preferred</option>
+                        <option value="series-a">Series A</option>
+                        <option value="series-b">Series B</option>
+                        <option value="series-c">Series C</option>
+                        <option value="SAFE">SAFE (Simple Agreement for Future Equity)</option>
+                    </select>
+                </div>
+
+                <!-- SAFE Terms (conditionally displayed) -->
+                <div id="safe-terms-section" style="display: none;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Discount Rate %</label>
+                            <input type="number" class="form-input" id="shareholder-safe-discount" step="0.01" min="0" max="100" placeholder="e.g. 20">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Valuation CAP</label>
+                            <input type="number" class="form-input" id="shareholder-safe-cap" step="0.01" min="0" placeholder="e.g. 5000000">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">SAFE Investment Amount ($)</label>
+                        <input type="number" class="form-input" id="shareholder-safe-amount" step="0.01" min="0" placeholder="e.g. 100000">
+                        <small style="color: #64748b; font-size: 0.85rem; display: block; margin-top: 0.25rem;">
+                            This will automatically create an equity contribution record
+                        </small>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Total Shares</label>
+                        <input type="number" class="form-input" id="shareholder-shares" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Ownership %</label>
+                        <input type="number" class="form-input" id="shareholder-ownership" step="0.01" min="0" max="100">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Joining Date</label>
+                    <input type="date" class="form-input" id="shareholder-joining-date">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-input" id="shareholder-email">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" class="form-input" id="shareholder-phone">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tax ID / SSN</label>
+                    <input type="text" class="form-input" id="shareholder-tax-id">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Address</label>
+                    <textarea class="form-textarea" id="shareholder-address"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Board Member</label>
+                        <select class="form-select" id="shareholder-board">
+                            <option value="false">No</option>
+                            <option value="true">Yes</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Voting Rights</label>
+                        <select class="form-select" id="shareholder-voting">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="shareholder-status">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="exited">Exited</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-textarea" id="shareholder-notes"></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeShareholderModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Shareholder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Contribution Modal -->
+    <div class="modal" id="contribution-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">Add Equity Contribution</h3>
+                <button class="close-btn" onclick="closeContributionModal()">&times;</button>
+            </div>
+            <form id="contribution-form">
+                <div class="form-group">
+                    <label class="form-label">Shareholder *</label>
+                    <select class="form-select" id="contribution-shareholder" required>
+                        <option value="">Select shareholder</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Contribution Date *</label>
+                    <input type="date" class="form-input" id="contribution-date" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Contribution Type *</label>
+                    <select class="form-select" id="contribution-type" required>
+                        <option value="">Select type</option>
+                        <option value="cash">Cash</option>
+                        <option value="property">Property</option>
+                        <option value="services">Services</option>
+                        <option value="intellectual_property">Intellectual Property</option>
+                        <option value="debt_conversion">Debt Conversion</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Cash Amount</label>
+                        <input type="number" class="form-input" id="contribution-cash" step="0.01" min="0" value="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Non-Cash Value</label>
+                        <input type="number" class="form-input" id="contribution-non-cash" step="0.01" min="0" value="0">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Shares Issued *</label>
+                        <input type="number" class="form-input" id="contribution-shares" min="0" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Price per Share</label>
+                        <input type="number" class="form-input" id="contribution-price" step="0.0001" min="0">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Share Class</label>
+                    <select class="form-select" id="contribution-share-class">
+                        <option value="common">Common</option>
+                        <option value="preferred">Preferred</option>
+                        <option value="series-a">Series A</option>
+                        <option value="series-b">Series B</option>
+                        <option value="series-c">Series C</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">Company Valuation</label>
+                        <input type="number" class="form-input" id="contribution-valuation" step="0.01" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Dilution %</label>
+                        <input type="number" class="form-input" id="contribution-dilution" step="0.01" min="0" max="100">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-textarea" id="contribution-description"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-textarea" id="contribution-notes"></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeContributionModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Contribution</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Firebase Authentication -->
+    <script type="module">
+        import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { auth } from '/static/js/firebase_client.js';
+
+        onAuthStateChanged(auth, (user) => {
+            if (!user) {
+                window.location.href = '/auth/login';
+            } else {
+                const displayName = user.displayName || user.email?.split('@')[0] || 'User';
+                const email = user.email || '';
+
+                document.getElementById('userDisplayName').textContent = displayName;
+                document.getElementById('dropdownUserName').textContent = displayName;
+                document.getElementById('dropdownUserEmail').textContent = email;
+
+                loadUserTenants();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const menuButton = document.getElementById('userMenuButton');
+            const dropdown = document.getElementById('userDropdown');
+            const logoutButton = document.getElementById('logoutButton');
+
+            menuButton?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!document.getElementById('userAccountMenu')?.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+
+            const createTenantButton = document.getElementById('createTenantButton');
+            createTenantButton?.addEventListener('click', () => {
+                dropdown.style.display = 'none';
+                window.location.href = '/?openBot=createTenant';
+            });
+
+            logoutButton?.addEventListener('click', async () => {
+                try {
+                    await window.FirebaseAuth.signOutUser();
+                    window.location.href = '/auth/login';
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    alert('Error signing out. Please try again.');
+                }
+            });
+        });
+
+        async function loadUserTenants() {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.tenants && data.tenants.length > 1) {
+                    document.getElementById('tenantSwitcherSection').style.display = 'block';
+
+                    const tenantsList = document.getElementById('tenantsList');
+                    tenantsList.innerHTML = '';
+
+                    data.tenants.forEach(tenant => {
+                        const isActive = tenant.id === data.current_tenant?.id;
+                        const tenantItem = document.createElement('button');
+                        tenantItem.style.cssText = `
+                            width: 100%;
+                            text-align: left;
+                            background: ${isActive ? '#e0f2fe' : 'transparent'};
+                            border: none;
+                            padding: 0.75rem 1rem;
+                            cursor: pointer;
+                            border-radius: 6px;
+                            transition: background 0.2s;
+                            margin-bottom: 0.25rem;
+                        `;
+
+                        tenantItem.innerHTML = `
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: ${isActive ? '600' : '500'}; color: #1e293b; font-size: 0.9rem;">
+                                        ${tenant.company_name}
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.15rem;">
+                                        <span style="background: #f1f5f9; padding: 0.15rem 0.5rem; border-radius: 4px;">${tenant.role}</span>
+                                    </div>
+                                </div>
+                                ${isActive ? '<div style="color: #0ea5e9; font-size: 1rem;">✓</div>' : ''}
+                            </div>
+                        `;
+
+                        if (!isActive) {
+                            tenantItem.onmouseover = () => { tenantItem.style.background = '#f1f5f9'; };
+                            tenantItem.onmouseout = () => { tenantItem.style.background = 'transparent'; };
+                            tenantItem.onclick = () => switchTenant(tenant.id);
+                        }
+
+                        tenantsList.appendChild(tenantItem);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading tenants:', error);
+            }
+        }
+
+        async function switchTenant(tenantId) {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const idToken = await user.getIdToken();
+                const response = await fetch(`/api/auth/switch-tenant/${tenantId}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert(data.message || 'Failed to switch tenant');
+                }
+            } catch (error) {
+                console.error('Error switching tenant:', error);
+                alert('Error switching tenant. Please try again.');
+            }
+        }
+    </script>
+
+    <!-- Main Script -->
+    <script src="{{ url_for('static', filename='js/shareholders.js') }}?v={{ cache_buster }}"></script>
+</body>
+</html>

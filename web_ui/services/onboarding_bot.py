@@ -332,7 +332,65 @@ class OnboardingBot:
         core_complete = all(current_data.get(f) for f in ['company_name', 'company_description', 'industry', 'default_currency'])
         entities_asked = len(entities) > 0 or any('entit' in msg.get('content', '').lower() or 'subsidiar' in msg.get('content', '').lower() for msg in conversation_history[-5:])
 
-        prompt = f"""You are an inquisitive onboarding assistant for a financial management platform. Your goal is to naturally gather business context through conversation.
+        # Check if this is a fully configured tenant (has entities and core data)
+        is_fully_configured = core_complete and len(entities) > 0
+
+        # Different prompts for configured vs onboarding tenants
+        if is_fully_configured:
+            prompt = f"""You are a helpful AI assistant for an established business using a financial management platform. The business is already set up and you're here to help with updates, learning, and assistance.
+
+**Current Business Profile:**
+{chr(10).join(data_status) if data_status else 'No data collected yet'}
+{entities_text if entities else ''}
+
+**Conversation History:**
+{history_text if history_text else 'This is the start of the conversation'}
+
+**Latest User Message:**
+{user_message}
+
+**Your Role:**
+1. **Helpful Assistant**: You're not onboarding - you're assisting an existing business
+2. **Update Detector**: If they mention changes (new products, locations, revenue changes, etc.), extract and save them
+3. **Knowledge Gatherer**: Learn about their business to improve transaction classification
+4. **DO NOT**: Ask basic onboarding questions like "what's your company name" unless they want to change it
+5. **DO**: Help with specific tasks like adding entities, updating info, or learning about business patterns
+
+**What You Can Help With:**
+- Adding new business entities, subsidiaries, or divisions
+- Updating company information (location, industry, revenue)
+- Learning about business patterns (vendors, expense categories, revenue sources)
+- Analyzing documents they upload
+- Answering questions about their data
+
+**Response Format** (JSON):
+{{
+  "response": "Your natural, helpful response (under 100 words)",
+  "extracted_data": {{
+    "company_description": "value or null (only if they mention changes)",
+    "industry": "value or null (only if they mention changes)",
+    "headquarters_location": "value or null (only if they mention changes)"
+  }},
+  "entities": [
+    {{
+      "name": "Entity Name (if they mention a new entity/subsidiary/division)",
+      "description": "what this entity does",
+      "entity_type": "subsidiary/division/business_unit",
+      "annual_revenue": 1500000.00
+    }}
+  ],
+  "next_question": "follow-up question or null",
+  "completion_percentage": {100 if is_fully_configured else 75}
+}}
+
+**Guidelines:**
+- Be conversational and helpful, not rigid or scripted
+- Focus on what they're asking for
+- Extract information naturally mentioned
+- Don't interrogate - they're already set up!
+"""
+        else:
+            prompt = f"""You are an inquisitive onboarding assistant for a financial management platform. Your goal is to naturally gather business context through conversation.
 
 **Current Data Status:**
 {chr(10).join(data_status) if data_status else 'No data collected yet'}
@@ -617,9 +675,23 @@ class OnboardingBot:
         status = self.get_onboarding_status()
         current_data = status.get('current_data', {})
 
+        # Check if tenant has business entities (sign of actual usage)
+        entities = self.get_business_entities()
+        has_entities = len(entities) > 0
+
         # Build greeting based on what we already know
         if status['completion_percentage'] == 0:
             greeting = "Hi! I'm here to help set up your financial dashboard. I'll ask you a few questions about your business to personalize your experience. Let's start with the basics - what's your company name?"
+        elif status['completion_percentage'] >= 90 and has_entities:
+            # Fully configured tenant - provide helpful assistant greeting
+            company_name = current_data.get('company_name', 'your company')
+            greeting = f"Welcome back! I'm your AI assistant for {company_name}.\n\n"
+            greeting += "Here's what I can help you with:\n"
+            greeting += "• Upload and analyze business documents\n"
+            greeting += "• Manage business entities and accounts\n"
+            greeting += "• Learn about your business to improve transaction classification\n"
+            greeting += "• Update company information and settings\n\n"
+            greeting += "Has anything material changed in your business that I should know about? Or would you like help with something specific?"
         elif status['completion_percentage'] >= 90:
             # Almost complete - acknowledge what we have and ask about missing pieces
             company_name = current_data.get('company_name', 'your company')

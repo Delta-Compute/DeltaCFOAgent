@@ -183,7 +183,7 @@ class PayslipMatcher:
                 FROM payslips p
                 JOIN workforce_members w ON p.workforce_member_id = w.id
                 WHERE p.tenant_id = %s
-                  AND (p.transaction_id IS NULL OR p.transaction_id = 0)
+                  AND (p.transaction_id IS NULL OR p.transaction_id = '')
                   AND p.status IN ('approved', 'paid')
             """
         else:
@@ -229,8 +229,8 @@ class PayslipMatcher:
         # KEY CHANGE: Filter for NEGATIVE amounts (outgoing payments)
         if db_manager.db_type == 'postgresql':
             query = """
-                SELECT id as transaction_id, date, description, amount, currency,
-                       entity as classified_entity, origin, destination, category, subcategory
+                SELECT transaction_id, date, description, amount, currency,
+                       classified_entity, origin, destination, accounting_category, subcategory
                 FROM transactions
                 WHERE tenant_id = %s
                   AND amount < 0
@@ -240,8 +240,8 @@ class PayslipMatcher:
             """
         else:
             query = """
-                SELECT id as transaction_id, date, description, amount, currency,
-                       entity as classified_entity, origin, destination, category, subcategory
+                SELECT transaction_id, date, description, amount, currency,
+                       classified_entity, origin, destination, accounting_category, subcategory
                 FROM transactions
                 WHERE tenant_id = ?
                   AND amount < 0
@@ -461,7 +461,7 @@ class PayslipMatcher:
     def _calculate_keyword_match_score(self, payslip: Dict, transaction: Dict) -> float:
         """Calculate score based on payroll-related keywords in transaction description"""
         transaction_desc = (transaction.get('description') or '').lower().strip()
-        category = (transaction.get('category') or '').lower().strip()
+        category = (transaction.get('accounting_category') or '').lower().strip()
         subcategory = (transaction.get('subcategory') or '').lower().strip()
 
         if not transaction_desc:

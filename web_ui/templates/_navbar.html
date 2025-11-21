@@ -1,8 +1,14 @@
+<!-- Load i18n system -->
+<script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+
+<!-- Pattern Notifications System -->
+<script src="{{ url_for('static', filename='js/pattern_notifications.js') }}"></script>
+
 <!-- Unified Navigation Bar Component -->
 <nav class="top-nav">
     <div class="nav-brand">
-        <h2>Delta CFO Agent</h2>
-        <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;">Delta's proprietary self improving AI CFO Agent</p>
+        <h2 data-i18n="app.title">Delta CFO Agent</h2>
+        <p style="margin: 0; font-size: 0.8rem; opacity: 0.8;" data-i18n="app.tagline">Delta's proprietary self improving AI CFO Agent</p>
     </div>
 
     <!-- Mobile Menu Toggle -->
@@ -14,18 +20,18 @@
 
     <!-- Navigation Links -->
     <div class="nav-links" id="navLinks">
-        <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Home</a>
-        <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}">Transaction Manager</a>
-        <a href="/revenue" class="nav-link {% if request.path == '/revenue' %}active{% endif %}">Revenue Recognition</a>
-        <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}">Reports</a>
-        <a href="/invoices" class="nav-link {% if request.path == '/invoices' %}active{% endif %}">Invoices</a>
-        <a href="/workforce" class="nav-link {% if request.path == '/workforce' %}active{% endif %}">Workforce</a>
-        <a href="/whitelisted-accounts" class="nav-link {% if request.path == '/whitelisted-accounts' %}active{% endif %}">Accounts</a>
-        <a href="/files" class="nav-link {% if request.path == '/files' %}active{% endif %}">File Manager</a>
+        <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" data-i18n="nav.home">Home</a>
+        <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}" data-i18n="nav.dashboard">Transaction Manager</a>
+        <a href="/revenue" class="nav-link {% if request.path == '/revenue' %}active{% endif %}" data-i18n="nav.revenue">Revenue Recognition</a>
+        <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}" data-i18n="nav.reports">Reports</a>
+        <a href="/invoices" class="nav-link {% if request.path == '/invoices' %}active{% endif %}" data-i18n="nav.invoices">Invoices</a>
+        <a href="/workforce" class="nav-link {% if request.path == '/workforce' %}active{% endif %}" data-i18n="nav.workforce">Workforce</a>
+        <a href="/files" class="nav-link {% if request.path == '/files' %}active{% endif %}" data-i18n="nav.files">File Manager</a>
+        <a href="/tenant-knowledge" class="nav-link {% if request.path == '/tenant-knowledge' %}active{% endif %}" data-i18n="nav.knowledge">Knowledge</a>
     </div>
 
     <!-- User Account Menu -->
-    <div id="userAccountMenu" style="margin-left: auto; display: flex; align-items: center; position: relative;">
+    <div id="userAccountMenu" style="display: flex; align-items: center; position: relative;">
         <button id="userMenuButton" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
             <span id="userDisplayName">Loading...</span>
             <span style="font-size: 0.7rem;">▼</span>
@@ -39,23 +45,38 @@
 
             <!-- Switch Tenant Section -->
             <div id="tenantSwitcherSection" style="padding: 0.75rem 0.5rem; border-bottom: 1px solid #e2e8f0; display: none;">
-                <div style="padding: 0 0.5rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">
+                <div style="padding: 0 0.5rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;" data-i18n="nav.switchTenant">
                     Switch Tenant
                 </div>
                 <div id="tenantsList"></div>
             </div>
 
+            <!-- Language Selection Section -->
+            <div style="padding: 0.75rem 0.5rem; border-bottom: 1px solid #e2e8f0;">
+                <div style="padding: 0 0.5rem 0.5rem; font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;" data-i18n="nav.language">
+                    Language
+                </div>
+                <button class="language-option" data-lang="en" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; color: #475569;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                    <span>🇺🇸</span>
+                    <span>English</span>
+                </button>
+                <button class="language-option" data-lang="pt" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; color: #475569;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                    <span>🇧🇷</span>
+                    <span>Português (BR)</span>
+                </button>
+            </div>
+
             <div style="padding: 0.5rem;">
-                <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                <a href="/auth/profile" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'" data-i18n="nav.accountSettings">
                     Account Settings
                 </a>
-                <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'">
+                <a href="/users" style="display: block; padding: 0.75rem 1rem; color: #475569; text-decoration: none; border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'" data-i18n="nav.manageUsers">
                     Manage Users
                 </a>
-                <button id="createTenantButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #3b82f6; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; font-weight: 600; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'">
+                <button id="createTenantButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #3b82f6; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; font-weight: 600; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='transparent'" data-i18n="nav.createTenant">
                     + Create New Tenant
                 </button>
-                <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'">
+                <button id="logoutButton" style="width: 100%; text-align: left; background: transparent; border: none; padding: 0.75rem 1rem; color: #dc2626; cursor: pointer; border-radius: 6px; transition: background 0.2s; font-size: 1rem; border-top: 1px solid #e2e8f0; margin-top: 0.5rem;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='transparent'" data-i18n="nav.signOut">
                     Sign Out
                 </button>
             </div>
@@ -101,6 +122,30 @@
                     navLinks.classList.remove('mobile-active');
                     mobileMenuOverlay.classList.remove('active');
                     document.body.classList.remove('menu-open');
+                }
+            });
+        });
+
+        // Language selector functionality (within user dropdown)
+        const languageOptions = document.querySelectorAll('.language-option');
+
+        languageOptions.forEach(option => {
+            option.addEventListener('click', async function(e) {
+                e.stopPropagation();
+                const lang = this.getAttribute('data-lang');
+
+                if (window.i18n) {
+                    await window.i18n.setLanguage(lang);
+
+                    try {
+                        await fetch('/api/user/language', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ language: lang })
+                        });
+                    } catch (error) {
+                        console.error('Failed to save language preference:', error);
+                    }
                 }
             });
         });

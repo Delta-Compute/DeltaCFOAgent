@@ -20,13 +20,9 @@ cp .env.example .env
 
 ### Running the Application
 ```bash
-# Main web dashboard (PostgreSQL)
+# PRODUCTION: Main web dashboard (PostgreSQL)
 cd web_ui && python app_db.py
 # Access: http://localhost:5001
-
-# Legacy dashboard (CSV-based)
-cd web_ui && python app.py
-# Access: http://localhost:5002
 
 # Crypto invoice system
 cd crypto_invoice_system && python api/invoice_api.py
@@ -35,6 +31,14 @@ cd crypto_invoice_system && python api/invoice_api.py
 # Analytics service
 cd services/analytics_service && python app.py
 # Access: http://localhost:8080
+```
+
+**DEPRECATED - Do Not Use:**
+```bash
+# Legacy dashboard (CSV-based) - DEPRECATED
+cd web_ui && python app.py
+# Access: http://localhost:5002
+# Status: Kept for reference only - DO NOT use in production
 ```
 
 ### Testing
@@ -81,9 +85,10 @@ The system follows a modular microservices architecture with three main layers:
 
 **Main Transaction Processing (`main.py`)**
 - `DeltaCFOAgent` class: Core transaction classification and processing
-- Business knowledge integration from `business_knowledge.md`
+- Classification patterns loaded from database (`classification_patterns` table) per tenant
 - Support for multiple file formats (CSV, bank statements)
 - Reinforcement learning from user feedback
+- **Note:** `business_knowledge.md` deprecated - moved to `docs/examples/` for reference only
 
 **Smart Ingestion System (`smart_ingestion.py`)**
 - Claude API integration for document structure analysis
@@ -91,8 +96,8 @@ The system follows a modular microservices architecture with three main layers:
 - Handles Chase bank formats, standard CSV, and custom formats
 
 **Web Interfaces**
-- `web_ui/app_db.py`: Advanced dashboard with database backend
-- `web_ui/app.py`: Simple dashboard with CSV backend
+- `web_ui/app_db.py`: **PRODUCTION** - Advanced dashboard with PostgreSQL backend (port 5001)
+- `web_ui/app.py`: **DEPRECATED** - Legacy CSV-based dashboard (port 5002) - kept for reference only
 - Templates in `web_ui/templates/` with advanced JavaScript interactions
 
 **Specialized Modules**
@@ -124,16 +129,16 @@ The system follows a modular microservices architecture with three main layers:
 **Claude API Integration**:
 - Transaction classification with confidence scoring
 - Document structure analysis for smart ingestion
-- Business rule application from `business_knowledge.md`
+- Business rule application from database-stored patterns (tenant-specific)
 - Vision API for PDF/image processing in invoice module
 
 **Business Classification Rules**:
 The system uses a hierarchical classification approach:
-1. Exact pattern matching (high confidence)
+1. Exact pattern matching from database (high confidence)
 2. Claude AI classification (medium confidence)
 3. Fallback categorization (low confidence)
 
-Business entities and rules are defined in `business_knowledge.md`.
+Classification patterns are stored in the `classification_patterns` table with `tenant_id` filtering for multi-tenant isolation. Patterns are managed via the web UI Knowledge page (`/tenant-knowledge`).
 
 ### Deployment Configuration
 
@@ -373,9 +378,10 @@ The codebase uses a mix of patterns:
 
 ### Configuration Management
 - Environment variables for API keys and database credentials
-- `business_knowledge.md` for business logic configuration
+- `classification_patterns` table for business logic configuration (tenant-specific, managed via web UI)
 - Regional deployment configurations for different Cloud SQL instances
 - `tenant_configuration` table for per-tenant customization
+- **Deprecated:** `business_knowledge.md` (moved to `docs/examples/` - Delta-specific reference only)
 
 ### File Processing Pipeline
 1. File upload and validation
@@ -435,9 +441,77 @@ python test_postgresql_migration.py --component=main
 
 - The system is currently in active development with production deployment
 - Database schema evolution is managed manually (no formal migration system)
-- Business knowledge and classification rules are externalized in markdown files
+- **Classification patterns are stored in PostgreSQL database** (`classification_patterns` table) with tenant_id isolation
+- **business_knowledge.md deprecated** - File moved to `docs/examples/` for historical reference only (Delta-specific, NOT for production use)
 - Multiple deployment guides exist - prefer `DEPLOYMENT_GUIDE.md` for comprehensive instructions
 - Some test files are mixed with production code and should be cleaned up
+
+## Legacy Components (Deprecated - Keep for Reference)
+
+**app.py (Port 5002) - CSV-Based Dashboard:**
+- **Status**: DEPRECATED - Do not use in production
+- **Description**: Legacy single-tenant dashboard that reads from MASTER_TRANSACTIONS.csv
+- **Why Deprecated**:
+  - Uses CSV files for data storage (single-tenant architecture)
+  - MASTER_TRANSACTIONS.csv no longer exists in repository
+  - Incompatible with multi-tenant SaaS architecture
+  - Production system uses PostgreSQL (app_db.py)
+- **Production Requirement**: Always use `app_db.py` (port 5001) for multi-tenant PostgreSQL system
+- **Kept For**: Historical reference and architecture evolution documentation
+- **DO NOT**: Include app.py in production deployments (Dockerfile, Cloud Build, etc.)
+
+## Multi-Tenant Security (Critical)
+
+### 🚨 CRITICAL RULE: NO TENANT FALLBACKS - EVER
+
+**ABSOLUTE PROHIBITION:**
+- **NEVER** create fallback logic that defaults to any tenant ID (not 'delta', not 'default', NOTHING)
+- **NEVER** use environment-based fallbacks (not for development, not for debugging, NEVER)
+- **NEVER** add "helpful" defaults that could cause cross-tenant data access
+- **ALWAYS** fail explicitly when tenant context is missing
+
+**Why This Rule Exists:**
+1. **Data Leakage Prevention**: A single fallback can expose one tenant's data to another tenant
+2. **Security by Default**: Missing tenant context should cause immediate, obvious failure
+3. **Development Safety**: Developers must set up authentication properly from day one
+4. **Audit Trail**: Every request must have explicit tenant identification
+
+**Correct Tenant Context Management:**
+```python
+# ✅ CORRECT - No fallback, explicit failure
+def get_current_tenant_id(strict: bool = False) -> Optional[str]:
+    tenant_id = session.get('tenant_id') or g.get('tenant_id')
+    if not tenant_id:
+        if strict:
+            raise ValueError("Tenant context required")
+        logger.error("[SECURITY] Missing tenant context")
+        return None  # Will cause query to return empty results
+    return tenant_id
+
+# ❌ WRONG - NEVER DO THIS
+def get_current_tenant_id():
+    tenant_id = session.get('tenant_id')
+    if not tenant_id:
+        if os.getenv('FLASK_DEBUG'):
+            return 'delta'  # ❌ FORBIDDEN
+        return 'default'  # ❌ FORBIDDEN
+    return tenant_id
+```
+
+**Pattern Management:**
+- All classification patterns MUST be stored in database with `tenant_id`
+- NO shared knowledge files (prevents cross-tenant data leakage)
+- New tenants receive industry-specific templates during onboarding
+- Patterns managed via web UI Knowledge page (`/tenant-knowledge`)
+
+**Deprecated Files:**
+- `business_knowledge.md` - Moved to `docs/examples/delta_business_knowledge_EXAMPLE.md` (Delta-specific reference only)
+- Fallback logic removed from `main.py` - system now fails fast if database unavailable (prevents accidental use of wrong tenant's patterns)
+
+**Implementation Files:**
+- `web_ui/tenant_context.py`: Core tenant context management (NO FALLBACKS)
+- `middleware/auth_middleware.py`: Authentication decorators that set tenant context
+- All API endpoints MUST use `@optional_auth` or `@require_auth` decorators
 
 Claude's Code Rules:
 1. First, think about the problem, read the code base for the relevant files, and write a plan in tasks/todo.md.

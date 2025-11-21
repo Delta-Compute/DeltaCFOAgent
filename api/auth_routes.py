@@ -4,14 +4,35 @@ Authentication API Routes
 Provides REST API endpoints for user authentication, registration, and session management.
 """
 
+import os
+import sys
 import logging
 import uuid
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Always insert to be safe (Python will skip duplicates)
+sys.path.insert(0, parent_dir)
+
 from auth.firebase_config import create_firebase_user, verify_firebase_token
 from middleware.auth_middleware import require_auth, get_current_user, get_current_tenant
-# Import from root services module (not web_ui/services)
-from services.email_service import send_invitation_email, send_welcome_email
+
+# Import email service with dynamic import to avoid caching issues
+import importlib.util
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+email_service_path = os.path.join(project_root, 'services', 'email_service.py')
+
+spec = importlib.util.spec_from_file_location("services.email_service", email_service_path)
+email_service_module = importlib.util.module_from_spec(spec)
+sys.modules['services.email_service'] = email_service_module
+spec.loader.exec_module(email_service_module)
+
+# Import the functions from the loaded module
+send_invitation_email = email_service_module.send_invitation_email
+send_welcome_email = email_service_module.send_welcome_email
+
 from web_ui.database import db_manager
 from web_ui.tenant_context import set_tenant_id
 

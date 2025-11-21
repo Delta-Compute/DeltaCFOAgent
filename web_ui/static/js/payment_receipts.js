@@ -12,8 +12,18 @@ document.addEventListener('DOMContentLoaded', function() {
     const uploadBoxReceipts = document.getElementById('upload-box-receipts');
     const customerFilterSelect = document.getElementById('customer-filter-receipts');
 
-    // Load customers for filter
-    loadCustomersForFilter();
+    // Wait for Firebase auth to initialize before loading customers
+    if (typeof auth !== 'undefined') {
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                loadCustomersForFilter();
+            } else {
+                console.log('User not authenticated - customer filter will not load');
+            }
+        });
+    } else {
+        console.warn('Firebase auth not available - customer filter will not load');
+    }
 
     // Handle file selection (single or multiple files)
     fileInputReceipts.addEventListener('change', function(e) {
@@ -79,8 +89,18 @@ document.addEventListener('DOMContentLoaded', function() {
             receiptStatusText.textContent = 'Extracting payment data with Claude AI...';
             receiptProgressBar.style.width = '50%';
 
+            // Get Firebase ID token for authentication
+            const user = auth.currentUser;
+            if (!user) {
+                throw new Error('Not authenticated. Please log in.');
+            }
+            const idToken = await user.getIdToken();
+
             const response = await fetch('/api/payment-proof/upload', {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                },
                 body: formData
             });
 
@@ -325,8 +345,19 @@ document.addEventListener('DOMContentLoaded', function() {
         button.disabled = true;
 
         try {
+            // Get Firebase ID token for authentication
+            const user = auth.currentUser;
+            if (!user) {
+                throw new Error('Not authenticated. Please log in.');
+            }
+            const idToken = await user.getIdToken();
+
             // Get invoice ID by invoice number
-            const invoicesResponse = await fetch(`/api/invoices?per_page=1000`);
+            const invoicesResponse = await fetch(`/api/invoices?per_page=1000`, {
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                }
+            });
             const invoicesData = await invoicesResponse.json();
             const invoice = invoicesData.invoices?.find(inv => inv.invoice_number === invoiceNumber);
 
@@ -343,6 +374,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Call confirm endpoint
             const response = await fetch('/api/payment-proof/confirm-match', {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                },
                 body: formData
             });
 
@@ -454,10 +488,18 @@ document.addEventListener('DOMContentLoaded', function() {
         button.disabled = true;
 
         try {
+            // Get Firebase ID token for authentication
+            const user = auth.currentUser;
+            if (!user) {
+                throw new Error('Not authenticated. Please log in.');
+            }
+            const idToken = await user.getIdToken();
+
             const response = await fetch(`/api/invoices/${invoiceId}/link-transaction`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
                 },
                 body: JSON.stringify({
                     transaction_id: transactionId,
@@ -513,7 +555,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load customers with invoices for filter dropdown
     async function loadCustomersForFilter() {
         try {
-            const response = await fetch('/api/invoices/customers');
+            // Get Firebase ID token for authentication
+            const user = auth.currentUser;
+            if (!user) {
+                console.error('Not authenticated - cannot load customers');
+                return;
+            }
+            const idToken = await user.getIdToken();
+
+            const response = await fetch('/api/invoices/customers', {
+                headers: {
+                    'Authorization': `Bearer ${idToken}`
+                }
+            });
             const data = await response.json();
 
             if (data.success && data.customers) {
@@ -568,6 +622,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 const formData = new FormData();
                 formData.append('file', file);
 
+                // Get Firebase ID token for authentication
+                const user = auth.currentUser;
+                if (!user) {
+                    throw new Error('Not authenticated. Please log in.');
+                }
+                const idToken = await user.getIdToken();
+
                 // Get customer filter value
                 const customerFilter = customerFilterSelect.value;
                 let url = '/api/payment-proof/upload-and-confirm';
@@ -577,6 +638,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 const response = await fetch(url, {
                     method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${idToken}`
+                    },
                     body: formData
                 });
 
@@ -804,6 +868,16 @@ document.addEventListener('DOMContentLoaded', function() {
         confirmAllBtn.disabled = true;
         confirmAllBtn.textContent = 'Confirming...';
 
+        // Get Firebase ID token for authentication
+        const user = auth.currentUser;
+        if (!user) {
+            alert('Not authenticated. Please log in.');
+            confirmAllBtn.disabled = false;
+            confirmAllBtn.textContent = originalText;
+            return;
+        }
+        const idToken = await user.getIdToken();
+
         let successCount = 0;
         let errorCount = 0;
         const errors = [];
@@ -814,7 +888,10 @@ document.addEventListener('DOMContentLoaded', function() {
             try {
                 const response = await fetch('/api/payment-proof/confirm-match', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${idToken}`
+                    },
                     body: JSON.stringify({
                         invoice_id: match.invoice_id,
                         payment_data: fileData.payment_data,
