@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Workforce Management - Delta CFO Agent</title>
+    <title><span data-i18n="workforce.pageTitle">Workforce Management</span> - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
     <style>
         /* Workforce-specific styles */
@@ -469,34 +469,34 @@
     <div class="main-content">
         <!-- Page Header -->
         <div class="page-header">
-            <h2 class="page-title">Workforce Management</h2>
-            <p class="page-subtitle">Manage employees, contractors, and payslips</p>
+            <h2 class="page-title"><span data-i18n="workforce.title">Workforce Management</span></h2>
+            <p class="page-subtitle"><span data-i18n="workforce.subtitle">Manage employees, contractors, and payslips</span></p>
         </div>
 
         <!-- Stats -->
         <div class="stats-grid" id="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="stat-active-members">-</div>
-                <div class="stat-label">Active Members</div>
+                <div class="stat-label" data-i18n="workforce.stats.activeMembers">Active Members</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-payslips">-</div>
-                <div class="stat-label">Total Payslips</div>
+                <div class="stat-label" data-i18n="workforce.stats.totalPayslips">Total Payslips</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-matched-payslips">-</div>
-                <div class="stat-label">Matched Payslips</div>
+                <div class="stat-label" data-i18n="workforce.stats.matchedPayslips">Matched Payslips</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-match-rate">-%</div>
-                <div class="stat-label">Match Rate</div>
+                <div class="stat-label" data-i18n="workforce.stats.matchRate">Match Rate</div>
             </div>
         </div>
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" data-tab="members">Workforce Members</button>
-            <button class="tab" data-tab="payslips">Payslips</button>
+            <button class="tab active" data-tab="members"><span data-i18n="workforce.tabs.members">Workforce Members</span></button>
+            <button class="tab" data-tab="payslips"><span data-i18n="workforce.tabs.payslips">Payslips</span></button>
         </div>
 
         <!-- Workforce Members Tab -->
@@ -504,15 +504,11 @@
             <!-- Action Bar -->
             <div class="action-bar">
                 <div class="search-box">
-                    <input type="text" id="members-search" placeholder="Search by name, title, email...">
+                    <input type="text" id="members-search" data-i18n-attr="placeholder" data-i18n="workforce.members.search.placeholder" placeholder="Search by name, title, email...">
                 </div>
                 <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="openAddMemberModal()">
-                        + Add Member
-                    </button>
-                    <button class="btn btn-secondary" onclick="refreshMembers()">
-                        Refresh
-                    </button>
+                    <button class="btn btn-primary" onclick="openAddMemberModal()"><span data-i18n="workforce.members.buttons.addMember">+ Add Member</span></button>
+                    <button class="btn btn-secondary" onclick="refreshMembers()"><span data-i18n="workforce.members.buttons.refresh">Refresh</span></button>
                 </div>
             </div>
 
@@ -522,18 +518,12 @@
                     <table class="workforce-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Job Title</th>
-                                <th>Date of Hire</th>
-                                <th>Pay Rate</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th data-i18n="workforce.members.table.name">Name</th><th data-i18n="workforce.members.table.type">Type</th><th data-i18n="workforce.members.table.jobTitle">Job Title</th><th data-i18n="workforce.members.table.dateOfHire">Date of Hire</th><th data-i18n="workforce.members.table.payRate">Pay Rate</th><th data-i18n="workforce.members.table.status">Status</th><th data-i18n="workforce.members.table.actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="members-tbody">
                             <tr>
-                                <td colspan="7" class="loading">Loading workforce members...</td>
+                                <td colspan="7" class="loading"><span data-i18n="workforce.members.table.loading">Loading workforce members...</span></td>
                             </tr>
                         </tbody>
                     </table>
@@ -547,15 +537,11 @@
             <!-- Action Bar -->
             <div class="action-bar">
                 <div class="search-box">
-                    <input type="text" id="payslips-search" placeholder="Search by employee, payslip number...">
+                    <input type="text" id="payslips-search" data-i18n-attr="placeholder" data-i18n="workforce.payslips.search.placeholder" placeholder="Search by employee, payslip number...">
                 </div>
                 <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="openAddPayslipModal()">
-                        + Create Payslip
-                    </button>
-                    <button class="btn btn-secondary" onclick="refreshPayslips()">
-                        Refresh
-                    </button>
+                    <button class="btn btn-primary" onclick="openAddPayslipModal()"><span data-i18n="workforce.payslips.buttons.createPayslip">+ Create Payslip</span></button>
+                    <button class="btn btn-secondary" onclick="refreshPayslips()"><span data-i18n="workforce.payslips.buttons.refresh">Refresh</span></button>
                 </div>
             </div>
 
@@ -565,19 +551,12 @@
                     <table class="workforce-table">
                         <thead>
                             <tr>
-                                <th>Payslip #</th>
-                                <th>Employee</th>
-                                <th>Period</th>
-                                <th>Payment Date</th>
-                                <th>Gross Amount</th>
-                                <th>Net Amount</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th data-i18n="workforce.payslips.table.payslipNumber">Payslip #</th><th data-i18n="workforce.payslips.table.employee">Employee</th><th data-i18n="workforce.payslips.table.period">Period</th><th data-i18n="workforce.payslips.table.paymentDate">Payment Date</th><th data-i18n="workforce.payslips.table.grossAmount">Gross Amount</th><th data-i18n="workforce.payslips.table.netAmount">Net Amount</th><th data-i18n="workforce.payslips.table.status">Status</th><th data-i18n="workforce.payslips.table.actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="payslips-tbody">
                             <tr>
-                                <td colspan="8" class="loading">Loading payslips...</td>
+                                <td colspan="8" class="loading"><span data-i18n="workforce.payslips.table.loading">Loading payslips...</span></td>
                             </tr>
                         </tbody>
                     </table>
@@ -591,31 +570,31 @@
     <div class="modal" id="member-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="member-modal-title">Add Workforce Member</h3>
+                <h3 class="modal-title" id="member-modal-title"><span data-i18n="workforce.modals.member.titleAdd">Add Workforce Member</span></h3>
                 <button class="close-btn" onclick="closeMemberModal()">&times;</button>
             </div>
             <form id="member-form">
                 <input type="hidden" id="member-id">
 
                 <div class="form-group">
-                    <label class="form-label">Full Name *</label>
+                    <label class="form-label"><span data-i18n="workforce.modals.member.fields.fullName">Full Name *</span></label>
                     <input type="text" class="form-input" id="member-name" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Employment Type *</label>
+                        <label class="form-label"><span data-i18n="workforce.modals.member.fields.employmentType">Employment Type *</span></label>
                         <select class="form-select" id="member-type" required>
-                            <option value="">Select type</option>
-                            <option value="employee">Employee</option>
-                            <option value="contractor">Contractor</option>
+                            <option value=""><span data-i18n="workforce.modals.member.fields.employmentTypePlaceholder">Select type</span></option>
+                            <option value="employee"><span data-i18n="workforce.type.employee">Employee</span></option>
+                            <option value="contractor"><span data-i18n="workforce.type.contractor">Contractor</span></option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Status</label>
+                        <label class="form-label"><span data-i18n="workforce.modals.member.fields.status">Status</span></label>
                         <select class="form-select" id="member-status">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="active"><span data-i18n="workforce.status.active">Active</span></option>
+                            <option value="inactive"><span data-i18n="workforce.status.inactive">Inactive</span></option>
                         </select>
                     </div>
                 </div>
@@ -624,7 +603,7 @@
                     <div class="form-group">
                         <label class="form-label">Document Type</label>
                         <select class="form-select" id="member-doc-type">
-                            <option value="">Select type</option>
+                            <option value=""><span data-i18n="workforce.modals.member.fields.employmentTypePlaceholder">Select type</span></option>
                             <option value="ssn">SSN</option>
                             <option value="ein">EIN</option>
                             <option value="tax_id">Tax ID</option>
@@ -772,7 +751,7 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Status</label>
+                        <label class="form-label"><span data-i18n="workforce.modals.member.fields.status">Status</span></label>
                         <select class="form-select" id="payslip-status">
                             <option value="draft">Draft</option>
                             <option value="approved">Approved</option>
