@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Shareholder Equity Management - Delta CFO Agent</title>
+    <title><span data-i18n="shareholders.pageTitle">Shareholder Equity Management</span> - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
     <style>
         .main-content {
@@ -409,7 +409,7 @@
     <div class="main-content">
         <!-- Page Header -->
         <div class="page-header">
-            <h2 class="page-title">Shareholder Equity Management</h2>
+            <h2 class="page-title"><span data-i18n="shareholders.title">Shareholder Equity Management</span></h2>
             <p class="page-subtitle">Manage shareholders and equity contributions</p>
         </div>
 
@@ -417,7 +417,7 @@
         <div class="stats-grid" id="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-shareholders">-</div>
-                <div class="stat-label">Total Shareholders</div>
+                <div class="stat-label" data-i18n="shareholders.stats.totalShareholders">Total Shareholders</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-equity">$0</div>
@@ -425,7 +425,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-shares">-</div>
-                <div class="stat-label">Shares Outstanding</div>
+                <div class="stat-label" data-i18n="shareholders.stats.sharesOutstanding">Shares Outstanding</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-contributions">-</div>
@@ -435,7 +435,7 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" data-tab="shareholders">Shareholders</button>
+            <button class="tab active" data-tab="shareholders"><span data-i18n="shareholders.tabs.shareholders">Shareholders</span></button>
             <button class="tab" data-tab="contributions">Equity Contributions</button>
         </div>
 
@@ -448,7 +448,7 @@
                 </div>
                 <div class="action-buttons">
                     <button class="btn btn-primary" onclick="openAddShareholderModal()">
-                        + Add Shareholder
+                        <span data-i18n="shareholders.buttons.addShareholder">+ Add Shareholder</span>
                     </button>
                     <button class="btn btn-secondary" onclick="refreshShareholders()">
                         Refresh
@@ -462,12 +462,12 @@
                     <table class="shareholders-table">
                         <thead>
                             <tr>
-                                <th>Shareholder Name</th>
+                                <th><span data-i18n="shareholders.table.shareholderName">Shareholder Name</span></th>
                                 <th>Entity</th>
                                 <th>Type</th>
-                                <th>Share Class</th>
-                                <th>Total Shares</th>
-                                <th>Ownership %</th>
+                                <th><span data-i18n="shareholders.table.shareClass">Share Class</span></th>
+                                <th><span data-i18n="shareholders.table.totalShares">Total Shares</span></th>
+                                <th><span data-i18n="shareholders.table.ownershipPercent">Ownership %</span></th>
                                 <th>Total Contributed</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -538,7 +538,7 @@
                 <input type="hidden" id="shareholder-id">
 
                 <div class="form-group">
-                    <label class="form-label">Shareholder Name *</label>
+                    <label class="form-label"><span data-i18n="shareholders.modal.shareholderName">Shareholder Name</span> <span data-i18n="shareholders.modal.required">*</span></label>
                     <input type="text" class="form-input" id="shareholder-name" required>
                 </div>
 
@@ -666,7 +666,7 @@
 
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeShareholderModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Shareholder</button>
+                    <button type="submit" class="btn btn-primary"><span data-i18n="shareholders.modal.saveButton">Save Shareholder</span></button>
                 </div>
             </form>
         </div>
