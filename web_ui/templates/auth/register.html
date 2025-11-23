@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - Delta CFO Agent</title>
+    <title><span data-i18n="auth.register.pageTitle">Register</span> - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
 <body>
@@ -11,7 +11,7 @@
         <div class="auth-card">
             <div class="auth-header">
                 <h1>Delta CFO Agent</h1>
-                <p>Create Your Account</p>
+                <p><span data-i18n="auth.register.tagline">Create Your Account</span></p>
             </div>
 
             <div class="auth-tabs">
@@ -21,8 +21,8 @@
 
             <form id="registerForm" class="auth-form">
                 <div class="form-group">
-                    <label for="displayName">Full Name</label>
-                    <input type="text" id="displayName" name="displayName" required placeholder="John Doe">
+                    <label for="displayName"><span data-i18n="auth.register.fullNameLabel">Full Name</span></label>
+                    <input type="text" id="displayName" name="displayName" required data-i18n-attr="placeholder" data-i18n="auth.register.fullNamePlaceholder" placeholder="John Doe">
                 </div>
 
                 <div class="form-group">
@@ -32,32 +32,32 @@
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required placeholder="At least 6 characters">
-                    <small class="form-hint">Must be at least 6 characters long</small>
+                    <input type="password" id="password" name="password" required data-i18n-attr="placeholder" data-i18n="auth.register.passwordPlaceholder" placeholder="At least 6 characters">
+                    <small class="form-hint"><span data-i18n="auth.register.passwordHint">Must be at least 6 characters long</span></small>
                 </div>
 
                 <div class="form-group">
-                    <label for="confirmPassword">Confirm Password</label>
-                    <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Re-enter password">
+                    <label for="confirmPassword"><span data-i18n="auth.register.confirmPasswordLabel">Confirm Password</span></label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required data-i18n-attr="placeholder" data-i18n="auth.register.confirmPasswordPlaceholder" placeholder="Re-enter password">
                 </div>
 
                 <div class="form-group">
-                    <label>I am a:</label>
+                    <label><span data-i18n="auth.register.userTypeLabel">I am a:</span></label>
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="userType" value="fractional_cfo" required>
                             <span class="radio-custom"></span>
                             <div class="radio-content">
-                                <strong>Fractional CFO</strong>
-                                <small>Manage multiple client businesses</small>
+                                <strong><span data-i18n="auth.register.fractionalCFO">Fractional CFO</span></strong>
+                                <small><span data-i18n="auth.register.fractionalCFODesc">Manage multiple client businesses</span></small>
                             </div>
                         </label>
                         <label class="radio-label">
                             <input type="radio" name="userType" value="tenant_admin" required>
                             <span class="radio-custom"></span>
                             <div class="radio-content">
-                                <strong>Business Owner</strong>
-                                <small>Manage my company's finances</small>
+                                <strong><span data-i18n="auth.register.businessOwner">Business Owner</span></strong>
+                                <small><span data-i18n="auth.register.businessOwnerDesc">Manage my company\'s finances</span></small>
                             </div>
                         </label>
                     </div>
@@ -66,12 +66,12 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="agreeTerms" required>
-                        <span>I agree to the <a href="/terms" target="_blank">Terms of Service</a> and <a href="/privacy" target="_blank">Privacy Policy</a></span>
+                        <span><span data-i18n="auth.register.agreeToThe">I agree to the</span> <a href="/terms" target="_blank"><span data-i18n="auth.register.termsOfService">Terms of Service</span></a> and <a href="/privacy" target="_blank"><span data-i18n="auth.register.privacyPolicy">Privacy Policy</span></a></span>
                     </label>
                 </div>
 
                 <button type="submit" class="btn-primary" id="registerBtn">
-                    <span class="btn-text">Create Account</span>
+                    <span class="btn-text"><span data-i18n="auth.register.createAccountButton">Create Account</span></span>
                     <span class="btn-loader" style="display: none;"></span>
                 </button>
 
@@ -86,7 +86,7 @@
                         <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                         <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                     </svg>
-                    Sign up with Google
+                    <span data-i18n="auth.register.googleButton">Sign up with Google</span>
                 </button>
 
                 <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
@@ -94,7 +94,7 @@
             </form>
 
             <div class="auth-footer">
-                <p>Already have an account? <a href="{{ url_for('login_page') }}">Login here</a></p>
+                <p><span data-i18n="auth.register.haveAccount">Already have an account?</span> <a href="{{ url_for('login_page') }}"><span data-i18n="auth.register.loginLink">Login here</span></a></p>
             </div>
         </div>
     </div>
