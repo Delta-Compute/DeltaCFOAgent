@@ -99,6 +99,9 @@ from main import DeltaCFOAgent
 # Import reporting API
 from reporting_api import register_reporting_routes
 
+# Import entity and business line API
+from entity_api import register_entity_routes
+
 # Import Firebase authentication
 try:
     import sys
@@ -209,6 +212,9 @@ init_tenant_context(app)
 
 # Register CFO reporting routes
 register_reporting_routes(app)
+
+# Register entity and business line routes
+register_entity_routes(app)
 
 # NOTE: Global cfo_agent removed - DeltaCFOAgent instances are created
 # per-request with proper tenant_id context in route handlers
