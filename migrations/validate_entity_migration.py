@@ -39,8 +39,8 @@ class EntityMigrationValidator:
         logger.info("Checking: All transactions have entity_id...")
 
         query = "SELECT COUNT(*) FROM transactions WHERE entity_id IS NULL"
-        result = self.db.execute_query(query)
-        null_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        null_count = result[0] if result else 0
 
         if null_count > 0:
             self.errors.append(f"{null_count} transactions have NULL entity_id")
@@ -62,7 +62,7 @@ class EntityMigrationValidator:
         HAVING COUNT(bl.id) = 0
         """
 
-        result = self.db.execute_query(query)
+        result = self.db.execute_query(query, fetch_all=True)
 
         if result and len(result) > 0:
             for row in result:
@@ -84,8 +84,8 @@ class EntityMigrationValidator:
         WHERE bl.entity_id NOT IN (SELECT id FROM entities)
         """
 
-        result = self.db.execute_query(query)
-        orphan_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        orphan_count = result[0] if result else 0
 
         if orphan_count > 0:
             self.errors.append(f"{orphan_count} orphaned business lines found")
@@ -108,7 +108,7 @@ class EntityMigrationValidator:
         GROUP BY t.tenant_id, e.tenant_id
         """
 
-        result = self.db.execute_query(query)
+        result = self.db.execute_query(query, fetch_all=True)
 
         if result and len(result) > 0:
             for row in result:
@@ -134,8 +134,8 @@ class EntityMigrationValidator:
           AND t.entity_id NOT IN (SELECT id FROM entities)
         """
 
-        result = self.db.execute_query(query)
-        invalid_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        invalid_count = result[0] if result else 0
 
         if invalid_count > 0:
             error_msg = f"{invalid_count} transactions reference non-existent entities"
@@ -151,8 +151,8 @@ class EntityMigrationValidator:
           AND t.business_line_id NOT IN (SELECT id FROM business_lines)
         """
 
-        result = self.db.execute_query(query)
-        invalid_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        invalid_count = result[0] if result else 0
 
         if invalid_count > 0:
             error_msg = f"{invalid_count} transactions reference non-existent business lines"
@@ -177,7 +177,7 @@ class EntityMigrationValidator:
         LIMIT 10
         """
 
-        result = self.db.execute_query(query)
+        result = self.db.execute_query(query, fetch_all=True)
 
         if result and len(result) > 0:
             warning_msg = f"{len(result)} transactions have entity VARCHAR != entity.name"
@@ -205,7 +205,7 @@ class EntityMigrationValidator:
         ORDER BY tenant_id
         """
 
-        result = self.db.execute_query(query)
+        result = self.db.execute_query(query, fetch_all=True)
 
         logger.info("Entities per tenant:")
         for row in result:
@@ -213,26 +213,26 @@ class EntityMigrationValidator:
 
         # Business line count
         query = "SELECT COUNT(*) FROM business_lines"
-        result = self.db.execute_query(query)
-        bl_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        bl_count = result[0] if result else 0
         logger.info(f"\nTotal business lines: {bl_count}")
 
         # Transactions with entity_id
         query = "SELECT COUNT(*) FROM transactions WHERE entity_id IS NOT NULL"
-        result = self.db.execute_query(query)
-        mapped_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        mapped_count = result[0] if result else 0
 
         query = "SELECT COUNT(*) FROM transactions"
-        result = self.db.execute_query(query)
-        total_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        total_count = result[0] if result else 0
 
         percentage = (mapped_count / total_count * 100) if total_count > 0 else 0
         logger.info(f"\nTransactions with entity_id: {mapped_count}/{total_count} ({percentage:.1f}%)")
 
         # Transactions with business_line_id
         query = "SELECT COUNT(*) FROM transactions WHERE business_line_id IS NOT NULL"
-        result = self.db.execute_query(query)
-        bl_mapped_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        bl_mapped_count = result[0] if result else 0
 
         percentage = (bl_mapped_count / total_count * 100) if total_count > 0 else 0
         logger.info(f"Transactions with business_line_id: {bl_mapped_count}/{total_count} ({percentage:.1f}%)")

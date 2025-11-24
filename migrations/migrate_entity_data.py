@@ -122,7 +122,7 @@ class EntityMigration:
         ORDER BY tenant_id, entity
         """
 
-        results = self.db.execute_query(query)
+        results = self.db.execute_query(query, fetch_all=True)
 
         # Group by tenant_id
         entities_by_tenant = {}
@@ -188,7 +188,7 @@ class EntityMigration:
             'migration_script'
         )
 
-        result = self.db.execute_query(query, params)
+        result = self.db.execute_query(query, params, fetch_all=True)
 
         if result and len(result) > 0:
             entity_id = str(result[0][0])
@@ -236,7 +236,7 @@ class EntityMigration:
             'migration_script'
         )
 
-        result = self.db.execute_query(query, params)
+        result = self.db.execute_query(query, params, fetch_all=True)
 
         if result and len(result) > 0:
             bl_id = str(result[0][0])
@@ -359,8 +359,8 @@ class EntityMigration:
             WHERE tenant_id = %s AND entity = %s AND entity_id = %s
             """
 
-            result = self.db.execute_query(count_query, (tenant_id, old_entity_name, entity_id))
-            count = result[0][0] if result else 0
+            result = self.db.execute_query(count_query, (tenant_id, old_entity_name, entity_id), fetch_one=True)
+            count = result[0] if result else 0
 
             logger.info(f"✓ Updated {count} transactions for entity: {old_entity_name}")
 
@@ -376,8 +376,8 @@ class EntityMigration:
 
         # Check 1: All transactions have entity_id
         query = "SELECT COUNT(*) FROM transactions WHERE entity_id IS NULL"
-        result = self.db.execute_query(query)
-        null_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        null_count = result[0] if result else 0
 
         if null_count > 0:
             logger.warning(f"✗ {null_count} transactions have NULL entity_id")
@@ -394,7 +394,7 @@ class EntityMigration:
         HAVING COUNT(bl.id) = 0
         """
 
-        result = self.db.execute_query(query)
+        result = self.db.execute_query(query, fetch_all=True)
 
         if result and len(result) > 0:
             logger.warning(f"✗ {len(result)} entities have no business lines")
@@ -406,19 +406,19 @@ class EntityMigration:
 
         # Check 3: Entity summary
         query = "SELECT COUNT(*) FROM entities"
-        result = self.db.execute_query(query)
-        entity_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        entity_count = result[0] if result else 0
         logger.info(f"Total entities created: {entity_count}")
 
         query = "SELECT COUNT(*) FROM business_lines"
-        result = self.db.execute_query(query)
-        bl_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        bl_count = result[0] if result else 0
         logger.info(f"Total business lines created: {bl_count}")
 
         # Check 4: Transactions mapped
         query = "SELECT COUNT(*) FROM transactions WHERE entity_id IS NOT NULL"
-        result = self.db.execute_query(query)
-        mapped_count = result[0][0] if result else 0
+        result = self.db.execute_query(query, fetch_one=True)
+        mapped_count = result[0] if result else 0
         logger.info(f"Transactions with entity_id: {mapped_count}")
 
         logger.info("=" * 80)
