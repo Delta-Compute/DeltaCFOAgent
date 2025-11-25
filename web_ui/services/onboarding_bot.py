@@ -175,109 +175,222 @@ class OnboardingBot:
         self.db_manager.execute_query(query, tuple(params))
         logger.info(f"Updated tenant {self.tenant_id} with fields: {list(updates.keys())}")
 
-    def get_business_entities(self) -> List[Dict[str, Any]]:
+    def get_entities_with_business_lines(self) -> Dict[str, Any]:
         """
-        Get all business entities for the current tenant
+        Get all entities and their business lines for the current tenant
 
         Returns:
-            List of business entities
+            Dictionary with entities, business_lines, and counts
         """
-        query = """
+        # Query entities table
+        entities_query = """
             SELECT
-                id, name, description, entity_type,
-                annual_revenue, transaction_volume,
-                active, created_at, updated_at
-            FROM business_entities
-            WHERE tenant_id = %s AND active = TRUE
+                id, tenant_id, code, name, legal_name, tax_id,
+                tax_jurisdiction, entity_type, base_currency,
+                fiscal_year_end, is_active, created_at, updated_at
+            FROM entities
+            WHERE tenant_id = %s AND is_active = TRUE
             ORDER BY name
         """
 
-        results = self.db_manager.execute_query(query, (self.tenant_id,), fetch_all=True)
+        # Query business_lines table
+        business_lines_query = """
+            SELECT
+                bl.id, bl.entity_id, bl.code, bl.name, bl.description,
+                bl.color_hex, bl.is_default, bl.is_active, bl.created_at
+            FROM business_lines bl
+            JOIN entities e ON bl.entity_id = e.id
+            WHERE e.tenant_id = %s AND bl.is_active = TRUE
+            ORDER BY e.name, bl.name
+        """
 
-        if results:
-            entities = []
-            for row in results:
+        entities_results = self.db_manager.execute_query(
+            entities_query, (self.tenant_id,), fetch_all=True
+        )
+
+        business_lines_results = self.db_manager.execute_query(
+            business_lines_query, (self.tenant_id,), fetch_all=True
+        )
+
+        # Convert to dictionaries with proper formatting
+        entities = []
+        if entities_results:
+            for row in entities_results:
                 entity = dict(row)
+                # Convert UUID to string
+                if entity.get('id'):
+                    entity['id'] = str(entity['id'])
+                # Convert dates to ISO format
                 if entity.get('created_at'):
                     entity['created_at'] = entity['created_at'].isoformat()
                 if entity.get('updated_at'):
                     entity['updated_at'] = entity['updated_at'].isoformat()
-                if entity.get('annual_revenue'):
-                    entity['annual_revenue'] = float(entity['annual_revenue'])
                 entities.append(entity)
-            return entities
-        return []
 
-    def create_or_update_business_entity(self, entity_data: Dict[str, Any]) -> bool:
+        business_lines = []
+        if business_lines_results:
+            for row in business_lines_results:
+                bl = dict(row)
+                # Convert UUIDs to strings
+                if bl.get('id'):
+                    bl['id'] = str(bl['id'])
+                if bl.get('entity_id'):
+                    bl['entity_id'] = str(bl['entity_id'])
+                # Convert dates to ISO format
+                if bl.get('created_at'):
+                    bl['created_at'] = bl['created_at'].isoformat()
+                business_lines.append(bl)
+
+        return {
+            'entities': entities,
+            'business_lines': business_lines,
+            'entity_count': len(entities),
+            'business_line_count': len(business_lines)
+        }
+
+    def create_entity(self, entity_data: Dict[str, Any]) -> Optional[str]:
         """
-        Create or update a business entity for the tenant
+        Create a legal entity for the tenant
 
         Args:
-            entity_data: Dictionary with entity fields (name, description, entity_type, etc.)
+            entity_data: {
+                'code': 'DLLC',  # Required: Short entity code
+                'name': 'Delta Mining LLC',  # Required: Entity name
+                'legal_name': 'Delta Mining LLC',  # Optional: Official name
+                'tax_id': 'XX-XXXXXXX',  # Optional: Tax ID/EIN
+                'tax_jurisdiction': 'US-Delaware',  # Optional
+                'entity_type': 'LLC',  # Optional: LLC, S-Corp, etc.
+                'base_currency': 'USD',  # Optional: Default USD
+                'fiscal_year_end': '12-31'  # Optional: Default 12-31
+            }
 
         Returns:
-            True if successful
+            entity_id (UUID string) if successful, None otherwise
         """
+        code = entity_data.get('code')
         name = entity_data.get('name')
-        if not name:
-            logger.error("Entity name is required")
-            return False
+
+        if not code or not name:
+            logger.error("Entity code and name are required")
+            return None
 
         try:
-            # Check if entity exists
+            # Check if entity already exists
             existing = self.db_manager.execute_query("""
-                SELECT id FROM business_entities
-                WHERE tenant_id = %s AND name = %s
-            """, (self.tenant_id, name), fetch_one=True)
+                SELECT id FROM entities
+                WHERE tenant_id = %s AND (code = %s OR name = %s)
+            """, (self.tenant_id, code, name), fetch_one=True)
 
             if existing:
-                # Update existing entity
-                set_clauses = []
-                params = []
+                logger.warning(f"Entity already exists: {code}")
+                return str(existing['id'])
 
-                allowed_fields = {
-                    'description', 'entity_type', 'annual_revenue', 'transaction_volume'
-                }
+            # Create entity
+            query = """
+                INSERT INTO entities (
+                    tenant_id, code, name, legal_name, tax_id,
+                    tax_jurisdiction, entity_type, base_currency,
+                    fiscal_year_end, is_active
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id
+            """
 
-                for field, value in entity_data.items():
-                    if field in allowed_fields and value is not None:
-                        set_clauses.append(f"{field} = %s")
-                        params.append(value)
+            result = self.db_manager.execute_query(query, (
+                self.tenant_id,
+                code,
+                name,
+                entity_data.get('legal_name', name),
+                entity_data.get('tax_id'),
+                entity_data.get('tax_jurisdiction'),
+                entity_data.get('entity_type', 'LLC'),
+                entity_data.get('base_currency', 'USD'),
+                entity_data.get('fiscal_year_end', '12-31')
+            ), fetch_one=True)
 
-                if set_clauses:
-                    set_clauses.append("updated_at = CURRENT_TIMESTAMP")
-                    params.extend([self.tenant_id, name])
+            entity_id = str(result['id'])
+            logger.info(f"Created entity: {code} ({entity_id})")
 
-                    query = f"""
-                        UPDATE business_entities
-                        SET {', '.join(set_clauses)}
-                        WHERE tenant_id = %s AND name = %s
-                    """
-                    self.db_manager.execute_query(query, tuple(params))
-                    logger.info(f"Updated entity: {name}")
-            else:
-                # Create new entity
-                query = """
-                    INSERT INTO business_entities (
-                        tenant_id, name, description, entity_type,
-                        annual_revenue, transaction_volume, active
-                    ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
-                """
-                self.db_manager.execute_query(query, (
-                    self.tenant_id,
-                    name,
-                    entity_data.get('description'),
-                    entity_data.get('entity_type', 'business_unit'),
-                    entity_data.get('annual_revenue'),
-                    entity_data.get('transaction_volume')
-                ))
-                logger.info(f"Created entity: {name}")
+            # Auto-create default business line
+            self.create_business_line({
+                'entity_id': entity_id,
+                'code': 'DEFAULT',
+                'name': 'General Operations',
+                'description': 'Default business line',
+                'is_default': True
+            })
 
-            return True
+            return entity_id
 
         except Exception as e:
-            logger.error(f"Error creating/updating entity: {e}")
-            return False
+            logger.error(f"Error creating entity: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+
+    def create_business_line(self, bl_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Create a business line under an entity
+
+        Args:
+            bl_data: {
+                'entity_id': 'uuid-string',  # Required: Parent entity UUID
+                'code': 'HOST',  # Required: Short code
+                'name': 'Hosting Services',  # Required: Business line name
+                'description': 'Web hosting operations',  # Optional
+                'color_hex': '#3B82F6',  # Optional: UI color
+                'is_default': False  # Optional: Is this the default BL?
+            }
+
+        Returns:
+            business_line_id (UUID string) if successful, None otherwise
+        """
+        entity_id = bl_data.get('entity_id')
+        code = bl_data.get('code')
+        name = bl_data.get('name')
+
+        if not entity_id or not code or not name:
+            logger.error("Business line entity_id, code, and name are required")
+            return None
+
+        try:
+            # Check if business line exists
+            existing = self.db_manager.execute_query("""
+                SELECT id FROM business_lines
+                WHERE entity_id = %s AND (code = %s OR name = %s)
+            """, (entity_id, code, name), fetch_one=True)
+
+            if existing:
+                logger.warning(f"Business line already exists: {code}")
+                return str(existing['id'])
+
+            # Create business line
+            query = """
+                INSERT INTO business_lines (
+                    entity_id, code, name, description,
+                    color_hex, is_default, is_active
+                ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                RETURNING id
+            """
+
+            result = self.db_manager.execute_query(query, (
+                entity_id,
+                code,
+                name,
+                bl_data.get('description', ''),
+                bl_data.get('color_hex', '#3B82F6'),
+                bl_data.get('is_default', False)
+            ), fetch_one=True)
+
+            bl_id = str(result['id'])
+            logger.info(f"Created business line: {code} ({bl_id})")
+
+            return bl_id
+
+        except Exception as e:
+            logger.error(f"Error creating business line: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
 
     def _build_conversation_prompt(self, user_message: str, conversation_history: List[Dict], current_data: Dict) -> str:
         """
@@ -291,14 +404,36 @@ class OnboardingBot:
             role_label = "User" if msg['role'] == 'user' else "Assistant"
             history_text += f"{role_label}: {msg['content']}\n"
 
-        # Get current entities
-        entities = self.get_business_entities()
+        # Get current entity structure (entities + business lines)
+        structure = self.get_entities_with_business_lines()
+        entities = structure['entities']
+        business_lines = structure['business_lines']
+
         entities_text = ""
-        if entities:
-            entities_text = "\n**Current Business Entities:**\n"
+        if structure['entity_count'] > 0:
+            entities_text = "\n**Current Entity Structure:**\n"
             for entity in entities:
-                rev_text = f" (${entity.get('annual_revenue', 0):,.0f}/year)" if entity.get('annual_revenue') else ""
-                entities_text += f"- {entity['name']}: {entity.get('description', 'N/A')}{rev_text}\n"
+                # Show entity info
+                entity_type = entity.get('entity_type', 'Entity')
+                currency = entity.get('base_currency', 'USD')
+                entities_text += f"\n**Entity:** {entity['name']} ({entity['code']})\n"
+                entities_text += f"  Type: {entity_type}, Currency: {currency}\n"
+
+                # Show business lines for this entity
+                entity_bls = [bl for bl in business_lines if bl['entity_id'] == entity['id']]
+                if entity_bls:
+                    # Don't show default-only business lines (progressive disclosure)
+                    non_default_bls = [bl for bl in entity_bls if not bl.get('is_default')]
+                    if non_default_bls:
+                        entities_text += "  Business Lines:\n"
+                        for bl in non_default_bls:
+                            desc = f" - {bl['description']}" if bl.get('description') else ""
+                            entities_text += f"    • {bl['name']} ({bl['code']}){desc}\n"
+                    # Note if there are no non-default business lines
+                    elif len(entity_bls) == 1:
+                        entities_text += "  Business Lines: None (using default)\n"
+                else:
+                    entities_text += "  Business Lines: None\n"
 
         # Format current data status
         data_status = []
@@ -330,10 +465,10 @@ class OnboardingBot:
 
         # Determine conversation phase
         core_complete = all(current_data.get(f) for f in ['company_name', 'company_description', 'industry', 'default_currency'])
-        entities_asked = len(entities) > 0 or any('entit' in msg.get('content', '').lower() or 'subsidiar' in msg.get('content', '').lower() for msg in conversation_history[-5:])
+        entities_asked = structure['entity_count'] > 0 or any('entit' in msg.get('content', '').lower() or 'subsidiar' in msg.get('content', '').lower() for msg in conversation_history[-5:])
 
         # Check if this is a fully configured tenant (has entities and core data)
-        is_fully_configured = core_complete and len(entities) > 0
+        is_fully_configured = core_complete and structure['entity_count'] > 0
 
         # Different prompts for configured vs onboarding tenants
         if is_fully_configured:
@@ -357,11 +492,22 @@ class OnboardingBot:
 5. **DO**: Help with specific tasks like adding entities, updating info, or learning about business patterns
 
 **What You Can Help With:**
-- Adding new business entities, subsidiaries, or divisions
+- Adding new legal entities (subsidiaries with separate tax IDs)
+- Adding new business lines/divisions (profit centers within entities)
 - Updating company information (location, industry, revenue)
 - Learning about business patterns (vendors, expense categories, revenue sources)
 - Analyzing documents they upload
 - Answering questions about their data
+
+**CRITICAL - Entity vs Business Line Distinction:**
+When user mentions organizational structure:
+- "subsidiary", "separate company", "different tax ID", "incorporated in" → Create LEGAL ENTITY
+- "division", "department", "profit center", "business unit", "business line" → Create BUSINESS LINE
+
+Examples:
+- "We have Delta Mining in Delaware and Delta Paraguay" → 2 legal entities
+- "We have 3 divisions: Hosting, Validator, Property" → 1 entity with 3 business lines
+- "Our LLC has a hosting division and validator operations" → 1 entity + 2 business lines
 
 **Response Format** (JSON):
 {{
@@ -373,10 +519,22 @@ class OnboardingBot:
   }},
   "entities": [
     {{
-      "name": "Entity Name (if they mention a new entity/subsidiary/division)",
-      "description": "what this entity does",
-      "entity_type": "subsidiary/division/business_unit",
-      "annual_revenue": 1500000.00
+      "code": "DLLC",
+      "name": "Delta Mining LLC",
+      "legal_name": "Delta Mining LLC",
+      "tax_id": "XX-XXXXXXX",
+      "tax_jurisdiction": "US-Delaware",
+      "entity_type": "LLC",
+      "base_currency": "USD"
+    }}
+  ],
+  "business_lines": [
+    {{
+      "entity_code": "DLLC",
+      "code": "HOST",
+      "name": "Hosting Services",
+      "description": "Web hosting operations",
+      "color_hex": "#3B82F6"
     }}
   ],
   "next_question": "follow-up question or null",
@@ -421,7 +579,10 @@ class OnboardingBot:
 
 **CRITICAL EXTRACTION RULES:**
 - **Always extract ALL mentioned info**, even if not directly asked
-- **Business entities**: When user mentions divisions, subsidiaries, business units - extract them!
+- **Entity vs Business Line**: CRITICAL distinction!
+  * "subsidiary", "separate company", "different tax ID" → LEGAL ENTITY (entities array)
+  * "division", "department", "profit center", "business line" → BUSINESS LINE (business_lines array)
+  * If unclear, ask: "Is this a separate legal entity with its own tax ID, or a division within your company?"
 - **Don't repeat questions**: Check current data first
 - **Smart Industry Inference**: AUTOMATICALLY infer industry from business description. Examples:
   * "sell hair extensions", "megahair", "beauty products" → "Retail - Beauty & Personal Care"
@@ -432,6 +593,11 @@ class OnboardingBot:
   * "software", "SaaS", "app development" → "Technology - Software"
   * "manufacturing", "production", "factory" → "Manufacturing"
   * NEVER ask "What industry are you in?" if you can infer it from context!
+- **Entity Code Generation**: Create short 2-4 letter codes automatically:
+  * "Delta Mining LLC" → "DLLC" or "DM"
+  * "Acme Corporation" → "ACME" or "AC"
+  * "Tech Solutions Inc" → "TSI" or "TECH"
+  * Use company name abbreviation or acronym
 
 **Response Format** (JSON):
 {{
@@ -453,10 +619,23 @@ class OnboardingBot:
   }},
   "entities": [
     {{
-      "name": "Entity Name",
-      "description": "what this entity does",
-      "entity_type": "subsidiary/division/business_unit",
-      "annual_revenue": 1500000.00
+      "code": "DLLC",
+      "name": "Delta Mining LLC",
+      "legal_name": "Delta Mining LLC",
+      "tax_id": "XX-XXXXXXX",
+      "tax_jurisdiction": "US-Delaware",
+      "entity_type": "LLC",
+      "base_currency": "USD",
+      "fiscal_year_end": "12-31"
+    }}
+  ],
+  "business_lines": [
+    {{
+      "entity_code": "DLLC",
+      "code": "HOST",
+      "name": "Hosting Services",
+      "description": "Web hosting and infrastructure",
+      "color_hex": "#3B82F6"
     }}
   ],
   "next_question": "what to ask next or null",
@@ -579,23 +758,54 @@ class OnboardingBot:
                     self.update_tenant_data(updates)
                     logger.info(f"Extracted and saved: {list(updates.keys())}")
 
-            # Extract and save business entities
+            # Extract and save entities and business lines
             entities = result.get('entities', [])
-            entities_saved = []
+            business_lines = result.get('business_lines', [])
+            entities_created = []
+            business_lines_created = []
+
+            # Map entity codes to UUIDs for business line creation
+            entity_id_map = {}
+
+            # Create entities first
             if entities:
                 for entity_data in entities:
-                    if entity_data.get('name'):
-                        success = self.create_or_update_business_entity(entity_data)
-                        if success:
-                            entities_saved.append(entity_data['name'])
-                            logger.info(f"Saved entity: {entity_data['name']}")
+                    if entity_data.get('code') and entity_data.get('name'):
+                        entity_id = self.create_entity(entity_data)
+                        if entity_id:
+                            entities_created.append(entity_data['name'])
+                            entity_id_map[entity_data['code']] = entity_id
+                            logger.info(f"Created entity: {entity_data['name']} ({entity_id})")
+
+            # Create business lines for created entities
+            if business_lines:
+                for bl_data in business_lines:
+                    entity_code = bl_data.get('entity_code')
+                    if entity_code and entity_code in entity_id_map:
+                        # Add entity_id to business line data
+                        bl_data['entity_id'] = entity_id_map[entity_code]
+                        bl_id = self.create_business_line(bl_data)
+                        if bl_id:
+                            business_lines_created.append(bl_data['name'])
+                            logger.info(f"Created business line: {bl_data['name']} ({bl_id})")
+                    elif bl_data.get('code') and bl_data.get('name'):
+                        # Business line without entity_code - try to find first entity
+                        if entity_id_map:
+                            first_entity_id = list(entity_id_map.values())[0]
+                            bl_data['entity_id'] = first_entity_id
+                            bl_id = self.create_business_line(bl_data)
+                            if bl_id:
+                                business_lines_created.append(bl_data['name'])
+                                logger.info(f"Created business line: {bl_data['name']} under first entity")
 
             # Build extracted summary
             extracted_summary = {}
             if updates:
                 extracted_summary.update(updates)
-            if entities_saved:
-                extracted_summary['entities_saved'] = entities_saved
+            if entities_created:
+                extracted_summary['entities_created'] = entities_created
+            if business_lines_created:
+                extracted_summary['business_lines_created'] = business_lines_created
 
 
             # Save assistant response
@@ -604,7 +814,8 @@ class OnboardingBot:
             return {
                 'response': result['response'],
                 'extracted_data': extracted,
-                'entities_saved': entities_saved,
+                'entities_created': entities_created,
+                'business_lines_created': business_lines_created,
                 'next_question': result.get('next_question'),
                 'completion_percentage': result.get('completion_percentage', 0),
                 'success': True
