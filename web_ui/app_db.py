@@ -19838,6 +19838,20 @@ def api_update_wallet_displays():
 
 
 # ============================================================================
+# ENTITY & BUSINESS LINE MANAGEMENT PAGE
+# ============================================================================
+
+@app.route('/entities')
+def entities_page():
+    """Render the entity and business line management page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('entities.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading entities page: {str(e)}", 500
+
+
+# ============================================================================
 # WORKFORCE MANAGEMENT API ENDPOINTS
 # ============================================================================
 
