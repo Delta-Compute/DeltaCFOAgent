@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ company_name|default("Delta CFO Agent") }} - P&L Trend</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Navigation -->
+        {% include '_navbar.html' %}
+
+        <div class="main-layout">
+            <div class="dashboard-content">
+                <!-- P&L Trend Header -->
+                <header>
+                    <h1>P&L Trend Analysis</h1>
+                    <p style="color: #718096; font-size: 1rem; margin-top: -1rem; margin-bottom: 2rem;">Monthly Revenue, COGS, SG&A, and Net Income</p>
+
+                    <!-- Summary Stats -->
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <h3>Total Revenue</h3>
+                            <div class="stat-number positive" id="totalRevenue">Loading...</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Total COGS</h3>
+                            <div class="stat-number negative" id="totalCogs">Loading...</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Total SG&A</h3>
+                            <div class="stat-number negative" id="totalSga">Loading...</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Net Income</h3>
+                            <div class="stat-number" id="totalNetIncome">Loading...</div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Gross Margin</h3>
+                            <div class="stat-number" id="grossMargin">Loading...</div>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Filter Controls -->
+                <div class="filter-section" style="margin-bottom: 2rem;">
+                    <div class="filter-grid">
+                        <div class="filter-group">
+                            <label for="monthsBackSelector">Time Range:</label>
+                            <select id="monthsBackSelector">
+                                <option value="6">Last 6 Months</option>
+                                <option value="12" selected>Last 12 Months</option>
+                                <option value="24">Last 24 Months</option>
+                                <option value="all">All Time</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label for="internalFilter">Transaction Type:</label>
+                            <select id="internalFilter">
+                                <option value="">All Transactions</option>
+                                <option value="false" selected>External Only</option>
+                                <option value="true">Internal Only</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <button id="refreshChart" class="btn-primary">Refresh Chart</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- P&L Trend Chart -->
+                <div class="chart-section" style="background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 2rem;">
+                    <h2 style="margin-bottom: 1rem; color: #1e293b;">Monthly P&L Trend</h2>
+                    <div style="position: relative; height: 500px;">
+                        <canvas id="plTrendChart"></canvas>
+                    </div>
+                    <div id="chartLoading" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                        <div style="font-size: 1.5rem;">Loading chart data...</div>
+                    </div>
+                </div>
+
+                <!-- Legend and Instructions -->
+                <div style="background: #f8fafc; border-radius: 12px; padding: 1.5rem; margin-bottom: 2rem;">
+                    <h3 style="margin-bottom: 1rem; color: #1e293b;">How to Use</h3>
+                    <ul style="color: #64748b; line-height: 1.8;">
+                        <li><strong>Hover on COGS/SG&A bars:</strong> View expense breakdown by category</li>
+                        <li><strong>Hover on Net Income bar:</strong> Get AI-generated performance summary</li>
+                        <li><strong>Gross Margin Line:</strong> Shows gross margin percentage for each month</li>
+                    </ul>
+                </div>
+
+                <!-- Breakdowns Section -->
+                <div class="grid-2" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <!-- COGS Breakdown -->
+                    <div class="breakdown-card" style="background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 1rem; color: #1e293b;">COGS Breakdown</h3>
+                        <div id="cogsBreakdown">
+                            <p style="color: #94a3b8;">Loading...</p>
+                        </div>
+                    </div>
+
+                    <!-- SG&A Breakdown -->
+                    <div class="breakdown-card" style="background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <h3 style="margin-bottom: 1rem; color: #1e293b;">SG&A Breakdown</h3>
+                        <div id="sgaBreakdown">
+                            <p style="color: #94a3b8;">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Hover Tooltip -->
+    <div id="plTrendTooltip" style="display: none; position: fixed; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 1rem; max-width: 400px; z-index: 9999; pointer-events: auto;"></div>
+
+    <!-- Firebase Auth -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+    <script src="{{ url_for('static', filename='js/firebase_client.js') }}"></script>
+
+    <!-- P&L Trend Chart JavaScript -->
+    <script src="{{ url_for('static', filename='js/pl_trend.js') }}"></script>
+</body>
+</html>
