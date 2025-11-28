@@ -4282,7 +4282,9 @@ def sync_csv_to_database(csv_filename=None):
 
             # AUTOMATIC CRYPTO USD CALCULATION
             # If this is a crypto transaction with crypto_amount but no usd_equivalent, calculate it automatically
-            if data['crypto_amount'] is not None and data['crypto_amount'] != 0 and data['currency'] not in ['USD', 'BRL', 'EUR', 'GBP']:
+            # List of supported fiat currencies (not crypto)
+            FIAT_CURRENCIES = ['USD', 'EUR', 'GBP', 'BRL', 'ARS', 'CLP', 'COP', 'MXN', 'PEN', 'UYU', 'BOB', 'VES', 'PYG']
+            if data['crypto_amount'] is not None and data['crypto_amount'] != 0 and data['currency'] not in FIAT_CURRENCIES:
                 # Only calculate if usd_equivalent is missing/zero OR if it contains the crypto amount (wrong value)
                 # Check if usd_equivalent is close to crypto_amount (means it has the wrong value)
                 usd_equiv_has_crypto_value = abs(abs(data['usd_equivalent']) - abs(data['crypto_amount'])) < 0.0001
@@ -6345,8 +6347,8 @@ def api_update_user_language():
         # Validate language
         if not language:
             return jsonify({'error': 'Language is required'}), 400
-        if language not in ['en', 'pt']:
-            return jsonify({'error': 'Invalid language. Must be "en" or "pt"'}), 400
+        if language not in ['en', 'pt', 'es']:
+            return jsonify({'error': 'Invalid language. Must be "en", "pt", or "es"'}), 400
 
         # Get firebase_uid from session
         firebase_uid = session.get('firebase_uid')

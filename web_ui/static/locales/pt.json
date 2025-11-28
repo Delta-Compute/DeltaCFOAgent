@@ -1199,10 +1199,19 @@
         "loan": "Empréstimo"
       },
       "currencies": {
-        "usd": "USD - Dólar Americano",
+        "usd": "USD - Dolar Americano",
         "eur": "EUR - Euro",
         "gbp": "GBP - Libra Esterlina",
-        "brl": "BRL - Real Brasileiro"
+        "brl": "BRL - Real Brasileiro",
+        "ars": "ARS - Peso Argentino",
+        "clp": "CLP - Peso Chileno",
+        "cop": "COP - Peso Colombiano",
+        "mxn": "MXN - Peso Mexicano",
+        "pen": "PEN - Sol Peruano",
+        "uyu": "UYU - Peso Uruguaio",
+        "bob": "BOB - Boliviano",
+        "ves": "VES - Bolivar Venezuelano",
+        "pyg": "PYG - Guarani Paraguaio"
       },
       "modal": {
         "titleAdd": "Adicionar Conta Bancária",
@@ -1310,7 +1319,8 @@
     "selectLanguage": "Selecione o Idioma",
     "languageOptions": {
       "en": "English",
-      "pt": "Português (Brasil)"
+      "pt": "Portugues (Brasil)",
+      "es": "Espanhol"
     }
   },
   "tenantManagement": {

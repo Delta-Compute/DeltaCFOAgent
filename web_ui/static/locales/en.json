@@ -1202,7 +1202,16 @@
         "usd": "USD - US Dollar",
         "eur": "EUR - Euro",
         "gbp": "GBP - British Pound",
-        "brl": "BRL - Brazilian Real"
+        "brl": "BRL - Brazilian Real",
+        "ars": "ARS - Argentine Peso",
+        "clp": "CLP - Chilean Peso",
+        "cop": "COP - Colombian Peso",
+        "mxn": "MXN - Mexican Peso",
+        "pen": "PEN - Peruvian Sol",
+        "uyu": "UYU - Uruguayan Peso",
+        "bob": "BOB - Bolivian Boliviano",
+        "ves": "VES - Venezuelan Bolivar",
+        "pyg": "PYG - Paraguayan Guarani"
       },
       "modal": {
         "titleAdd": "Add Bank Account",
@@ -1310,7 +1319,8 @@
     "selectLanguage": "Select Language",
     "languageOptions": {
       "en": "English",
-      "pt": "Português (Brasil)"
+      "pt": "Portugues (Brasil)",
+      "es": "Espanol"
     }
   },
   "tenantManagement": {
