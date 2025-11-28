@@ -469,34 +469,34 @@
     <div class="main-content">
         <!-- Page Header -->
         <div class="page-header">
-            <h2 class="page-title">Workforce Management</h2>
-            <p class="page-subtitle">Manage employees, contractors, and payslips</p>
+            <h2 class="page-title" data-i18n="workforce.title">Workforce Management</h2>
+            <p class="page-subtitle" data-i18n="workforce.subtitle">Manage employees, contractors, and payslips</p>
         </div>
 
         <!-- Stats -->
         <div class="stats-grid" id="stats-grid">
             <div class="stat-card">
                 <div class="stat-value" id="stat-active-members">-</div>
-                <div class="stat-label">Active Members</div>
+                <div class="stat-label" data-i18n="workforce.stats.activeMembers">Active Members</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-total-payslips">-</div>
-                <div class="stat-label">Total Payslips</div>
+                <div class="stat-label" data-i18n="workforce.stats.totalPayslips">Total Payslips</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-matched-payslips">-</div>
-                <div class="stat-label">Matched Payslips</div>
+                <div class="stat-label" data-i18n="workforce.stats.matchedPayslips">Matched Payslips</div>
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="stat-match-rate">-%</div>
-                <div class="stat-label">Match Rate</div>
+                <div class="stat-label" data-i18n="workforce.stats.matchRate">Match Rate</div>
             </div>
         </div>
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" data-tab="members">Workforce Members</button>
-            <button class="tab" data-tab="payslips">Payslips</button>
+            <button class="tab active" data-tab="members" data-i18n="workforce.tabs.members">Workforce Members</button>
+            <button class="tab" data-tab="payslips" data-i18n="workforce.tabs.payslips">Payslips</button>
         </div>
 
         <!-- Workforce Members Tab -->
@@ -504,13 +504,13 @@
             <!-- Action Bar -->
             <div class="action-bar">
                 <div class="search-box">
-                    <input type="text" id="members-search" placeholder="Search by name, title, email...">
+                    <input type="text" id="members-search" data-i18n-placeholder="workforce.members.search.placeholder" placeholder="Search by name, title, email...">
                 </div>
                 <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="openAddMemberModal()">
+                    <button class="btn btn-primary" onclick="openAddMemberModal()" data-i18n="workforce.members.buttons.addMember">
                         + Add Member
                     </button>
-                    <button class="btn btn-secondary" onclick="refreshMembers()">
+                    <button class="btn btn-secondary" onclick="refreshMembers()" data-i18n="workforce.members.buttons.refresh">
                         Refresh
                     </button>
                 </div>
@@ -522,18 +522,18 @@
                     <table class="workforce-table">
                         <thead>
                             <tr>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Job Title</th>
-                                <th>Date of Hire</th>
-                                <th>Pay Rate</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th data-i18n="workforce.members.table.name">Name</th>
+                                <th data-i18n="workforce.members.table.type">Type</th>
+                                <th data-i18n="workforce.members.table.jobTitle">Job Title</th>
+                                <th data-i18n="workforce.members.table.dateOfHire">Date of Hire</th>
+                                <th data-i18n="workforce.members.table.payRate">Pay Rate</th>
+                                <th data-i18n="workforce.members.table.status">Status</th>
+                                <th data-i18n="workforce.members.table.actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="members-tbody">
                             <tr>
-                                <td colspan="7" class="loading">Loading workforce members...</td>
+                                <td colspan="7" class="loading" data-i18n="workforce.members.table.loading">Loading workforce members...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -547,13 +547,13 @@
             <!-- Action Bar -->
             <div class="action-bar">
                 <div class="search-box">
-                    <input type="text" id="payslips-search" placeholder="Search by employee, payslip number...">
+                    <input type="text" id="payslips-search" data-i18n-placeholder="workforce.payslips.search.placeholder" placeholder="Search by employee, payslip number...">
                 </div>
                 <div class="action-buttons">
-                    <button class="btn btn-primary" onclick="openAddPayslipModal()">
+                    <button class="btn btn-primary" onclick="openAddPayslipModal()" data-i18n="workforce.payslips.buttons.createPayslip">
                         + Create Payslip
                     </button>
-                    <button class="btn btn-secondary" onclick="refreshPayslips()">
+                    <button class="btn btn-secondary" onclick="refreshPayslips()" data-i18n="workforce.payslips.buttons.refresh">
                         Refresh
                     </button>
                 </div>
@@ -565,19 +565,19 @@
                     <table class="workforce-table">
                         <thead>
                             <tr>
-                                <th>Payslip #</th>
-                                <th>Employee</th>
-                                <th>Period</th>
-                                <th>Payment Date</th>
-                                <th>Gross Amount</th>
-                                <th>Net Amount</th>
-                                <th>Status</th>
-                                <th>Actions</th>
+                                <th data-i18n="workforce.payslips.table.payslipNumber">Payslip #</th>
+                                <th data-i18n="workforce.payslips.table.employee">Employee</th>
+                                <th data-i18n="workforce.payslips.table.period">Period</th>
+                                <th data-i18n="workforce.payslips.table.paymentDate">Payment Date</th>
+                                <th data-i18n="workforce.payslips.table.grossAmount">Gross Amount</th>
+                                <th data-i18n="workforce.payslips.table.netAmount">Net Amount</th>
+                                <th data-i18n="workforce.payslips.table.status">Status</th>
+                                <th data-i18n="workforce.payslips.table.actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="payslips-tbody">
                             <tr>
-                                <td colspan="8" class="loading">Loading payslips...</td>
+                                <td colspan="8" class="loading" data-i18n="workforce.payslips.table.loading">Loading payslips...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -591,60 +591,60 @@
     <div class="modal" id="member-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="member-modal-title">Add Workforce Member</h3>
+                <h3 class="modal-title" id="member-modal-title" data-i18n="workforce.modals.member.titleAdd">Add Workforce Member</h3>
                 <button class="close-btn" onclick="closeMemberModal()">&times;</button>
             </div>
             <form id="member-form">
                 <input type="hidden" id="member-id">
 
                 <div class="form-group">
-                    <label class="form-label">Full Name *</label>
+                    <label class="form-label" data-i18n="workforce.modals.member.fields.fullName">Full Name *</label>
                     <input type="text" class="form-input" id="member-name" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Employment Type *</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.employmentType">Employment Type *</label>
                         <select class="form-select" id="member-type" required>
-                            <option value="">Select type</option>
-                            <option value="employee">Employee</option>
-                            <option value="contractor">Contractor</option>
+                            <option value="" data-i18n="workforce.modals.member.fields.employmentTypePlaceholder">Select type</option>
+                            <option value="employee" data-i18n="workforce.type.employee">Employee</option>
+                            <option value="contractor" data-i18n="workforce.type.contractor">Contractor</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Status</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.status">Status</label>
                         <select class="form-select" id="member-status">
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="active" data-i18n="workforce.status.active">Active</option>
+                            <option value="inactive" data-i18n="workforce.status.inactive">Inactive</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Document Type</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.documentType">Document Type</label>
                         <select class="form-select" id="member-doc-type">
-                            <option value="">Select type</option>
-                            <option value="ssn">SSN</option>
-                            <option value="ein">EIN</option>
-                            <option value="tax_id">Tax ID</option>
-                            <option value="passport">Passport</option>
+                            <option value="" data-i18n="workforce.modals.member.fields.documentTypePlaceholder">Select type</option>
+                            <option value="ssn" data-i18n="workforce.modals.member.fields.documentTypeSSN">SSN</option>
+                            <option value="ein" data-i18n="workforce.modals.member.fields.documentTypeEIN">EIN</option>
+                            <option value="tax_id" data-i18n="workforce.modals.member.fields.documentTypeTaxID">Tax ID</option>
+                            <option value="passport" data-i18n="workforce.modals.member.fields.documentTypePassport">Passport</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Document Number</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.documentNumber">Document Number</label>
                         <input type="text" class="form-input" id="member-doc-number">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Date of Hire *</label>
+                    <label class="form-label" data-i18n="workforce.modals.member.fields.dateOfHire">Date of Hire *</label>
                     <input type="date" class="form-input" id="member-hire-date" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Pay Rate *</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.payRate">Pay Rate *</label>
                         <div style="display: flex; gap: 0.5rem;">
                             <input type="number" class="form-input" id="member-pay-rate" step="0.01" min="0" required style="flex: 1;">
                             <select class="form-select" id="member-currency" required style="flex: 0 0 120px;">
@@ -658,48 +658,48 @@
                         </div>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Pay Frequency *</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.payFrequency">Pay Frequency *</label>
                         <select class="form-select" id="member-pay-frequency" required>
-                            <option value="">Select frequency</option>
-                            <option value="hourly">Hourly</option>
-                            <option value="daily">Daily</option>
-                            <option value="weekly">Weekly</option>
-                            <option value="biweekly">Biweekly</option>
-                            <option value="monthly">Monthly</option>
-                            <option value="annual">Annual</option>
+                            <option value="" data-i18n="workforce.modals.member.fields.payFrequencyPlaceholder">Select frequency</option>
+                            <option value="hourly" data-i18n="workforce.modals.member.fields.payFrequencyHourly">Hourly</option>
+                            <option value="daily" data-i18n="workforce.modals.member.fields.payFrequencyDaily">Daily</option>
+                            <option value="weekly" data-i18n="workforce.modals.member.fields.payFrequencyWeekly">Weekly</option>
+                            <option value="biweekly" data-i18n="workforce.modals.member.fields.payFrequencyBiweekly">Biweekly</option>
+                            <option value="monthly" data-i18n="workforce.modals.member.fields.payFrequencyMonthly">Monthly</option>
+                            <option value="annual" data-i18n="workforce.modals.member.fields.payFrequencyAnnual">Annual</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Job Title</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.jobTitle">Job Title</label>
                         <input type="text" class="form-input" id="member-job-title">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Department</label>
+                        <label class="form-label" data-i18n="workforce.modals.member.fields.department">Department</label>
                         <input type="text" class="form-input" id="member-department">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Email</label>
+                    <label class="form-label" data-i18n="workforce.modals.member.fields.email">Email</label>
                     <input type="email" class="form-input" id="member-email">
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Phone</label>
+                    <label class="form-label" data-i18n="workforce.modals.member.fields.phone">Phone</label>
                     <input type="tel" class="form-input" id="member-phone">
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Notes</label>
+                    <label class="form-label" data-i18n="workforce.modals.member.fields.notes">Notes</label>
                     <textarea class="form-textarea" id="member-notes"></textarea>
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeMemberModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Member</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeMemberModal()" data-i18n="workforce.modals.member.buttons.cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="workforce.modals.member.buttons.saveMember">Save Member</button>
                 </div>
             </form>
         </div>
@@ -709,86 +709,86 @@
     <div class="modal" id="payslip-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="payslip-modal-title">Create Payslip</h3>
+                <h3 class="modal-title" id="payslip-modal-title" data-i18n="workforce.modals.payslip.titleCreate">Create Payslip</h3>
                 <button class="close-btn" onclick="closePayslipModal()">&times;</button>
             </div>
             <form id="payslip-form">
                 <input type="hidden" id="payslip-id">
 
                 <div class="form-group">
-                    <label class="form-label">Employee *</label>
+                    <label class="form-label" data-i18n="workforce.modals.payslip.fields.employee">Employee *</label>
                     <select class="form-select" id="payslip-employee" required>
-                        <option value="">Select employee</option>
+                        <option value="" data-i18n="workforce.modals.payslip.fields.employeePlaceholder">Select employee</option>
                     </select>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Payslip Number *</label>
+                    <label class="form-label" data-i18n="workforce.modals.payslip.fields.payslipNumber">Payslip Number *</label>
                     <input type="text" class="form-input" id="payslip-number" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Period Start *</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.periodStart">Period Start *</label>
                         <input type="date" class="form-input" id="payslip-period-start" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Period End *</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.periodEnd">Period End *</label>
                         <input type="date" class="form-input" id="payslip-period-end" required>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Payment Date *</label>
+                    <label class="form-label" data-i18n="workforce.modals.payslip.fields.paymentDate">Payment Date *</label>
                     <input type="date" class="form-input" id="payslip-payment-date" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Gross Amount *</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.grossAmount">Gross Amount *</label>
                         <input type="number" class="form-input" id="payslip-gross" step="0.01" min="0" required>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Deductions</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.deductions">Deductions</label>
                         <input type="number" class="form-input" id="payslip-deductions" step="0.01" min="0" value="0">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Net Amount *</label>
+                    <label class="form-label" data-i18n="workforce.modals.payslip.fields.netAmount">Net Amount *</label>
                     <input type="number" class="form-input" id="payslip-net" step="0.01" min="0" required>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label class="form-label">Payment Method</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.paymentMethod">Payment Method</label>
                         <select class="form-select" id="payslip-payment-method">
-                            <option value="">Select method</option>
-                            <option value="bank_transfer">Bank Transfer</option>
-                            <option value="check">Check</option>
-                            <option value="cash">Cash</option>
-                            <option value="crypto">Cryptocurrency</option>
-                            <option value="wire">Wire Transfer</option>
+                            <option value="" data-i18n="workforce.modals.payslip.fields.paymentMethodPlaceholder">Select method</option>
+                            <option value="bank_transfer" data-i18n="workforce.modals.payslip.fields.paymentMethodBankTransfer">Bank Transfer</option>
+                            <option value="check" data-i18n="workforce.modals.payslip.fields.paymentMethodCheck">Check</option>
+                            <option value="cash" data-i18n="workforce.modals.payslip.fields.paymentMethodCash">Cash</option>
+                            <option value="crypto" data-i18n="workforce.modals.payslip.fields.paymentMethodCrypto">Cryptocurrency</option>
+                            <option value="wire" data-i18n="workforce.modals.payslip.fields.paymentMethodWire">Wire Transfer</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Status</label>
+                        <label class="form-label" data-i18n="workforce.modals.payslip.fields.status">Status</label>
                         <select class="form-select" id="payslip-status">
-                            <option value="draft">Draft</option>
-                            <option value="approved">Approved</option>
-                            <option value="paid">Paid</option>
+                            <option value="draft" data-i18n="workforce.status.draft">Draft</option>
+                            <option value="approved" data-i18n="workforce.status.approved">Approved</option>
+                            <option value="paid" data-i18n="workforce.status.paid">Paid</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Notes</label>
+                    <label class="form-label" data-i18n="workforce.modals.payslip.fields.notes">Notes</label>
                     <textarea class="form-textarea" id="payslip-notes"></textarea>
                 </div>
 
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closePayslipModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Payslip</button>
+                    <button type="button" class="btn btn-secondary" onclick="closePayslipModal()" data-i18n="workforce.modals.payslip.buttons.cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" data-i18n="workforce.modals.payslip.buttons.savePayslip">Save Payslip</button>
                 </div>
             </form>
         </div>
