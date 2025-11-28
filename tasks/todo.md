@@ -1,341 +1,351 @@
-# Workforce Feature - Implementation Plan
+# Spanish Language & Latin American Currencies Support - Implementation Plan
 
 ## Overview
-Build a complete Workforce management system for employees and contractors, including payslip generation and automatic transaction matching.
+Add Spanish language (es) support and Latin American currencies (ARS, CLP, COP, MXN, PEN, UYU, BOB, VES, PYG) plus ensure Euro (EUR) is consistently supported across the entire application.
 
-## Requirements
-1. **Employee/Contractor Management**: Create and manage workforce members with name, document number, date of hire, and pay rate
-2. **Payslip Generation**: Create payslips that can be sent to employees as proof of payment
-3. **Payment Marking**: Mark payslips as paid by employer
-4. **Transaction Matching**: Match payslip payments with transactions in the Transaction categorization page (reuse existing invoice-transaction matching logic)
+## Current State Analysis
 
-## System Architecture Analysis
+### Existing i18n Framework
+- **Location**: `web_ui/static/js/i18n.js` (vanilla JS implementation)
+- **Translation Files**: `web_ui/static/locales/en.json` (53KB, ~1444 keys) and `pt.json` (58KB)
+- **Languages Supported**: English (en), Portuguese (pt-BR)
+- **Storage**: localStorage for client preference, database for user preference
+- **API Endpoint**: `POST /api/user/language` to save preference
+- **DOM Translation**: Uses `data-i18n` attributes
 
-### Existing Invoice-Transaction Matching System (to be reused)
-- **Database Tables**:
-  - `invoices`: Stores invoice data
-  - `pending_invoice_matches`: Stores potential matches between invoices and transactions
-  - `invoice_match_log`: Logs all matching actions (confirmed/rejected)
+### Current Currency Support
+- **Defined in Locales**: USD, EUR, GBP, BRL
+- **Used in Code**: USD, BRL, PYG (Paraguay), EUR, GBP
+- **In historical_currency_converter.py**: Any currency via external API
 
-- **Matching Engine**: `RevenueInvoiceMatcher` in `web_ui/revenue_matcher.py`
-  - Amount matching with 3% tolerance
-  - Date proximity matching
-  - Description/vendor fuzzy matching
-  - AI-powered semantic matching with Claude
-  - Confidence scoring (high/medium/low)
-
-- **Frontend Pattern**:
-  - Main list page showing all items
-  - Detail modal/page with tabs (details, matches, etc.)
-  - Matches tab shows potential transaction matches with scores
-  - Actions: Confirm match, Reject match, Manual link
-
-- **API Endpoints Pattern**:
-  - GET `/api/invoices` - List all
-  - POST `/api/invoices` - Create new
-  - GET `/api/invoices/<id>` - Get details
-  - GET `/api/invoices/<id>/find-matching-transactions` - Find matches
-  - POST `/api/invoices/<id>/link-transaction` - Manual link
-  - POST `/api/revenue/confirm-match` - Confirm auto-match
-  - POST `/api/revenue/reject-match` - Reject match
-
-## Database Schema Design
-
-### 1. workforce_members table
-```sql
-CREATE TABLE IF NOT EXISTS workforce_members (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(100) NOT NULL,
-
-    -- Basic Information
-    full_name VARCHAR(255) NOT NULL,
-    employment_type VARCHAR(50) NOT NULL, -- 'employee', 'contractor'
-    document_type VARCHAR(50), -- 'ssn', 'ein', 'tax_id', 'passport'
-    document_number VARCHAR(100),
-
-    -- Employment Details
-    date_of_hire DATE NOT NULL,
-    termination_date DATE,
-    status VARCHAR(50) DEFAULT 'active', -- 'active', 'inactive', 'terminated'
-
-    -- Compensation
-    pay_rate DECIMAL(15,2) NOT NULL,
-    pay_frequency VARCHAR(50) NOT NULL, -- 'hourly', 'daily', 'weekly', 'biweekly', 'monthly', 'annual'
-    currency VARCHAR(3) DEFAULT 'USD',
-
-    -- Contact Information
-    email VARCHAR(255),
-    phone VARCHAR(50),
-    address TEXT,
-
-    -- Additional Details
-    job_title VARCHAR(255),
-    department VARCHAR(255),
-    notes TEXT,
-
-    -- Metadata
-    created_by VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(tenant_id, document_number)
-);
-```
-
-### 2. payslips table
-```sql
-CREATE TABLE IF NOT EXISTS payslips (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(100) NOT NULL,
-    workforce_member_id UUID NOT NULL REFERENCES workforce_members(id) ON DELETE RESTRICT,
-
-    -- Payslip Identification
-    payslip_number VARCHAR(50) UNIQUE NOT NULL,
-
-    -- Period Information
-    pay_period_start DATE NOT NULL,
-    pay_period_end DATE NOT NULL,
-    payment_date DATE NOT NULL,
-
-    -- Payment Details
-    gross_amount DECIMAL(15,2) NOT NULL,
-    deductions DECIMAL(15,2) DEFAULT 0,
-    net_amount DECIMAL(15,2) NOT NULL,
-    currency VARCHAR(3) DEFAULT 'USD',
-
-    -- Line Items (detailed breakdown)
-    line_items JSONB, -- {type: 'salary'|'bonus'|'overtime', description, amount, hours}
-    deductions_items JSONB, -- {type: 'tax'|'insurance'|'401k', description, amount}
-
-    -- Payment Status
-    status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'approved', 'paid', 'cancelled'
-    payment_method VARCHAR(50), -- 'bank_transfer', 'check', 'cash', 'crypto'
-
-    -- Transaction Matching
-    transaction_id INTEGER, -- Links to transactions table when matched
-    match_confidence INTEGER, -- 0-100 matching confidence score
-    match_method VARCHAR(50), -- 'automatic', 'manual', 'ai_suggested'
-
-    -- Document Management
-    pdf_path TEXT,
-    sent_to_employee_at TIMESTAMP,
-    employee_viewed_at TIMESTAMP,
-
-    -- Notes
-    notes TEXT,
-    internal_notes TEXT, -- Not visible to employee
-
-    -- Metadata
-    created_by VARCHAR(100),
-    approved_by VARCHAR(100),
-    approved_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### 3. pending_payslip_matches table (similar to pending_invoice_matches)
-```sql
-CREATE TABLE IF NOT EXISTS pending_payslip_matches (
-    id SERIAL PRIMARY KEY,
-    payslip_id UUID NOT NULL,
-    transaction_id TEXT NOT NULL,
-    score DECIMAL(3,2) NOT NULL,
-    match_type TEXT NOT NULL,
-    criteria_scores JSONB,
-    confidence_level TEXT NOT NULL,
-    explanation TEXT,
-    status TEXT DEFAULT 'pending',
-    reviewed_by TEXT,
-    reviewed_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(payslip_id, transaction_id)
-);
-```
-
-### 4. payslip_match_log table
-```sql
-CREATE TABLE IF NOT EXISTS payslip_match_log (
-    id SERIAL PRIMARY KEY,
-    payslip_id UUID NOT NULL,
-    transaction_id TEXT NOT NULL,
-    action TEXT NOT NULL, -- 'confirmed', 'rejected', 'manual_link', 'unmatched'
-    score DECIMAL(3,2),
-    match_type TEXT,
-    user_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+---
 
 ## Implementation Tasks
 
-### Phase 1: Database & Backend Core (4 files)
-- [ ] Create migration script: `migrations/add_workforce_tables.sql`
-- [ ] Create Payslip Matcher class: `web_ui/payslip_matcher.py` (based on revenue_matcher.py)
-- [ ] Add workforce API endpoints to `web_ui/app_db.py`
-- [ ] Write unit tests: `tests/test_workforce_api.py`
+### Phase 1: Core i18n Infrastructure Updates
 
-### Phase 2: Frontend Pages (3 files)
-- [ ] Create workforce list page: `web_ui/templates/workforce.html`
-- [ ] Create workforce JavaScript: `web_ui/static/js/workforce.js`
-- [ ] Create payslip matching JavaScript: `web_ui/static/js/payslip_matches.js`
+#### Task 1.1: Update i18n.js to Support Spanish
+- [ ] Add 'es' to supported languages array (line 101)
+- [ ] Load Spanish translations in init() (line 25-28)
+- [ ] Add Spanish locale for formatNumber (es-ES or es-419)
+- [ ] Add Spanish locale for formatDate
+- [ ] Add Spanish currency formatting
 
-### Phase 3: Integration & Polish (3 files)
-- [ ] Update navigation menu to include Workforce link
-- [ ] Update transaction enrichment to recognize payslip matches
-- [ ] Add workforce stats to homepage/dashboard
+**File**: `web_ui/static/js/i18n.js`
 
-### Phase 4: Testing & Documentation (2 files)
-- [ ] Integration testing with sample data
-- [ ] Update CLAUDE.md with Workforce documentation
+#### Task 1.2: Create Spanish Translation File
+- [ ] Create `web_ui/static/locales/es.json`
+- [ ] Copy structure from en.json
+- [ ] Translate all 1444+ keys to Spanish
+- [ ] Use Latin American Spanish (es-419) conventions
 
-## API Endpoints to Implement
+**New File**: `web_ui/static/locales/es.json`
 
-### Workforce Members
-- GET `/api/workforce` - List all workforce members (with filters)
-- POST `/api/workforce` - Create new workforce member
-- GET `/api/workforce/<id>` - Get workforce member details
-- PUT `/api/workforce/<id>` - Update workforce member
-- DELETE `/api/workforce/<id>` - Soft delete (set status=inactive)
+#### Task 1.3: Update Database Migration
+- [ ] Update `add_language_preferences.sql` to include 'es' in CHECK constraint
+- [ ] Create new migration file `add_spanish_language.sql`
+- [ ] Update both `users` and `tenant_configuration` tables
 
-### Payslips
-- GET `/api/payslips` - List all payslips (with filters)
-- POST `/api/payslips` - Create new payslip
-- GET `/api/payslips/<id>` - Get payslip details
-- PUT `/api/payslips/<id>` - Update payslip
-- DELETE `/api/payslips/<id>` - Delete payslip (if not paid)
-- POST `/api/payslips/<id>/mark-paid` - Mark as paid
-- POST `/api/payslips/<id>/send-to-employee` - Send via email
-- GET `/api/payslips/<id>/pdf` - Generate/download PDF
+**Files**:
+- `migrations/add_spanish_language.sql` (new)
+- `migrations/apply_spanish_language_migration.py` (new)
 
-### Payslip-Transaction Matching
-- GET `/api/payslips/<id>/find-matching-transactions` - Find potential matches
-- POST `/api/payslips/<id>/link-transaction` - Manual link
-- POST `/api/payroll/run-matching` - Run matching for all unmatched payslips
-- GET `/api/payroll/matched-pairs` - Get confirmed matches
-- POST `/api/payroll/confirm-match` - Confirm a suggested match
-- POST `/api/payroll/reject-match` - Reject a suggested match
-- POST `/api/payroll/unmatch` - Remove existing match
-- GET `/api/payroll/stats` - Get matching statistics
+#### Task 1.4: Update Language Switcher UI
+- [ ] Add Spanish option to `_navbar.html` language dropdown
+- [ ] Add Spanish flag emoji or icon
+- [ ] Update click handlers
 
-## Frontend Features
+**File**: `web_ui/templates/_navbar.html`
 
-### Workforce Members Page
-- **List View**: Table with name, type, hire date, pay rate, status
-- **Filters**: employment type, status, department
-- **Actions**: Add new, Edit, View payslips, Deactivate
-- **Bulk Actions**: Export to CSV, Bulk update status
+---
 
-### Workforce Member Detail Modal
-- **Tabs**:
-  1. **Details**: Personal info, employment details, compensation
-  2. **Payslips**: List of all payslips for this member
-  3. **Activity**: History of changes and actions
+### Phase 2: Currency Support Expansion
 
-### Payslips Page/Section
-- **List View**: Table with employee name, period, amount, status, payment date
-- **Filters**: employee, status, date range, payment method
-- **Actions**: Create new, Edit, View matches, Mark paid, Send to employee, Download PDF
+#### Task 2.1: Add Latin American Currencies to Locales
+Update all three locale files (en.json, pt.json, es.json) with:
+- [ ] ARS - Argentine Peso
+- [ ] CLP - Chilean Peso
+- [ ] COP - Colombian Peso
+- [ ] MXN - Mexican Peso
+- [ ] PEN - Peruvian Nuevo Sol
+- [ ] UYU - Uruguayan Peso
+- [ ] BOB - Bolivian Boliviano
+- [ ] VES - Venezuelan Bolivar
+- [ ] PYG - Paraguayan Guarani (already exists in code)
 
-### Payslip Detail Modal
-- **Tabs**:
-  1. **Details**: Employee info, period, amounts breakdown, deductions
-  2. **Matches**: Potential transaction matches (reuses invoice matching UI pattern)
-  3. **History**: Payment status changes, emails sent
+**Files**:
+- `web_ui/static/locales/en.json`
+- `web_ui/static/locales/pt.json`
+- `web_ui/static/locales/es.json`
 
-### Matching Interface (similar to invoice matching)
-- Show list of potential transaction matches with scores
-- Display match confidence (Excellent/Good/Fair)
-- Show date difference and amount difference
-- Actions: Confirm Match, Reject, Manual Link to Different Transaction
-- Visual indicators for already matched transactions
+#### Task 2.2: Update Currency Formatting in i18n.js
+- [ ] Add currency symbol map for all currencies
+- [ ] Add formatCurrencyWithCode(amount, currencyCode) method
+- [ ] Handle different decimal places (e.g., CLP has 0 decimals)
 
-## Code Reuse Strategy
+**File**: `web_ui/static/js/i18n.js`
 
-### 1. Payslip Matcher (80% code reuse from RevenueInvoiceMatcher)
-```python
-# web_ui/payslip_matcher.py
-class PayslipMatcher(RevenueInvoiceMatcher):
-    """
-    Extends RevenueInvoiceMatcher for payslip-transaction matching
-    Changes needed:
-    - Query payslips instead of invoices
-    - Match against employee names in transaction descriptions
-    - Look for payroll-related keywords
-    - Filter transactions by negative amounts (outgoing payments)
-    """
-```
+#### Task 2.3: Update Backend Currency Validation
+- [ ] Update currency validation in `app_db.py` (line ~9665)
+- [ ] Add all new currencies to allowed list
+- [ ] Update invoice form currency dropdown
 
-### 2. Frontend Matching UI (90% code reuse from invoice_matches.js)
-- Copy invoice_matches.js → payslip_matches.js
-- Update API endpoints from `/api/invoices/` to `/api/payslips/`
-- Update terminology from "invoice" to "payslip"
+**Files**:
+- `web_ui/app_db.py`
+- `invoice_processing/improved_visual_system.py` (if still used)
 
-### 3. API Endpoints Pattern (same structure as invoices)
-- Copy invoice endpoints structure
-- Update table names and field mappings
-- Reuse same transaction enrichment logic
+---
 
-## Simplified Approach (KISS Principle)
+### Phase 3: Template Translation Gaps
 
-### Key Simplifications:
-1. **No Complex Payroll Calculations**: Just gross/net/deductions fields, no tax engine
-2. **Reuse Matching Logic**: Copy & adapt invoice matcher, don't rebuild from scratch
-3. **Simple PDF Generation**: Text-based PDF (can enhance later with templates)
-4. **Email Integration**: Reuse existing email service if available, else skip for MVP
-5. **No Automated Payslip Creation**: Manual creation only for MVP (can add recurring later)
+The following templates have ZERO i18n implementation and need data-i18n attributes added:
 
-### Out of Scope for MVP:
-- Automated tax calculations
-- Benefits management
-- Time tracking integration
-- Automated recurring payslip generation
-- Employee self-service portal
-- Complex approval workflows
-- Multi-currency automatic conversion
-- Payroll reporting/analytics (beyond basic stats)
+#### Task 3.1: Core Dashboard Templates
+- [ ] `dashboard.html` - All filter labels, table headers, buttons
+- [ ] `files.html` - Upload sections, progress text, file table
 
-## Testing Strategy
+#### Task 3.2: Workforce Templates
+- [ ] `workforce.html` - Tabs, table headers, form labels, modals
 
-### Manual Testing Checklist:
-1. Create employee with all fields
-2. Create contractor with minimal fields
-3. Create payslip for employee
-4. Mark payslip as paid
-5. Upload transaction that matches payslip
-6. Verify auto-matching finds the transaction
-7. Confirm the match
-8. Verify transaction gets enriched with employee name
-9. Test unmatching
-10. Test manual linking to different transaction
+#### Task 3.3: Invoice Templates
+- [ ] `invoice_detail.html` - All labels, buttons, sidebar
+- [ ] `create_invoice.html` - All form fields, dropdowns, buttons
+- [ ] `invoices.html` (if not already covered)
 
-### Unit Tests (if time permits):
-- Test payslip creation
-- Test amount matching algorithm
-- Test date proximity scoring
-- Test AI matching (mock Claude API)
+#### Task 3.4: Authentication Templates
+- [ ] `auth/login.html` - Form labels, buttons, links
+- [ ] `auth/register.html` - Form labels, user type options, buttons
+- [ ] `auth/profile.html` - All labels and info sections
+- [ ] `auth/accept_invitation.html` - All text and buttons
+- [ ] `auth/forgot_password.html` - Form labels and buttons
+
+#### Task 3.5: Management Templates
+- [ ] `users.html` - All invitation forms and labels
+- [ ] `whitelisted_accounts.html` - Tabs, forms, card labels
+- [ ] `transaction_detail.html` - All labels and buttons
+- [ ] `payslip_detail.html` - All labels and sections
+- [ ] `shareholders.html` - All form labels
+
+#### Task 3.6: Other Templates
+- [ ] `business_overview.html` - Bot interface, loading states
+- [ ] `tenant_management.html` - Forms and labels
+
+---
+
+### Phase 4: JavaScript Hardcoded Strings
+
+#### Task 4.1: tenant_knowledge.js (~83 instances)
+- [ ] Replace all alert() messages with i18n.t() calls
+- [ ] Replace all confirm() messages with i18n.t() calls
+- [ ] Replace innerHTML loading/empty states with translations
+- [ ] Add translation keys to es.json
+
+#### Task 4.2: script_advanced.js (~70 instances)
+- [ ] Replace confirm dialogs
+- [ ] Replace showNotification messages
+- [ ] Replace innerHTML content
+- [ ] Replace placeholder text
+
+#### Task 4.3: workforce.js (~16 instances)
+- [ ] Replace alert messages
+- [ ] Replace confirm dialogs
+- [ ] Replace modal titles
+
+#### Task 4.4: invoice_*.js files
+- [ ] invoice_matches.js (~3 instances)
+- [ ] invoice_attachments.js (~12 instances)
+- [ ] invoice_payments.js (~11 instances)
+- [ ] invoice_detail.js (~5 instances)
+
+#### Task 4.5: payslip_*.js files
+- [ ] payslip_detail.js (~7 instances)
+- [ ] payslip_matches.js (~4 instances)
+
+#### Task 4.6: Other JS files
+- [ ] transaction_detail.js (~5 instances)
+- [ ] auth.js (~12 instances)
+- [ ] homepage.js (~7 instances)
+- [ ] payment_receipts.js (~8 instances)
+- [ ] whitelisted_accounts.js (~5 instances)
+- [ ] shareholders.js (~7 instances)
+- [ ] tenant_management.js (~4 instances)
+- [ ] cfo_dashboard.js (~15 instances - NOTE: has mixed EN/PT)
+- [ ] activity_timeline.js (~1 instance)
+- [ ] pattern_notifications.js (~3 instances)
+
+---
+
+### Phase 5: Translation Keys to Add
+
+#### Task 5.1: New Top-Level Sections for es.json
+Based on the analysis, add these translation key sections:
+- [ ] `currencies` - All currency names and symbols
+- [ ] `errors` - All error messages
+- [ ] `confirmations` - All confirmation dialogs
+- [ ] `notifications` - All toast/notification messages
+- [ ] `loading` - All loading states
+- [ ] `empty` - All empty state messages
+
+#### Task 5.2: Update en.json with Missing Keys
+- [ ] Add all hardcoded strings found in JS files
+- [ ] Add all hardcoded strings found in templates
+- [ ] Maintain consistent key naming convention
+
+#### Task 5.3: Update pt.json with Missing Keys
+- [ ] Mirror all new keys from en.json
+- [ ] Translate to Portuguese
+
+---
+
+### Phase 6: Testing & Validation
+
+#### Task 6.1: Unit Tests
+- [ ] Test language switching works for all 3 languages
+- [ ] Test currency formatting for all currencies
+- [ ] Test all translation keys exist in all locales
+
+#### Task 6.2: Manual Testing Checklist
+- [ ] Switch to Spanish, verify all pages render correctly
+- [ ] Switch to Portuguese, verify no regressions
+- [ ] Switch to English, verify no regressions
+- [ ] Test all currency dropdowns show new currencies
+- [ ] Test currency formatting displays correctly
+- [ ] Test date formatting for each locale
+- [ ] Test number formatting for each locale
+
+#### Task 6.3: Translation Validation Script
+- [ ] Create script to compare keys between en.json, pt.json, es.json
+- [ ] Report missing translations
+- [ ] Report unused translation keys
+
+---
+
+## File Change Summary
+
+### New Files to Create
+1. `web_ui/static/locales/es.json` - Spanish translations (~1500 keys)
+2. `migrations/add_spanish_language.sql` - Database migration
+3. `migrations/apply_spanish_language_migration.py` - Migration script
+4. `tests/test_i18n.py` - Translation tests
+
+### Files to Modify
+
+**Core i18n:**
+- `web_ui/static/js/i18n.js` - Add Spanish support, currency formatting
+
+**Locale Files:**
+- `web_ui/static/locales/en.json` - Add missing keys, currencies
+- `web_ui/static/locales/pt.json` - Add missing keys, currencies
+
+**Templates (add data-i18n attributes):**
+- `web_ui/templates/_navbar.html` - Language switcher
+- `web_ui/templates/dashboard.html`
+- `web_ui/templates/files.html`
+- `web_ui/templates/workforce.html`
+- `web_ui/templates/invoice_detail.html`
+- `web_ui/templates/create_invoice.html`
+- `web_ui/templates/transaction_detail.html`
+- `web_ui/templates/payslip_detail.html`
+- `web_ui/templates/whitelisted_accounts.html`
+- `web_ui/templates/shareholders.html`
+- `web_ui/templates/business_overview.html`
+- `web_ui/templates/users.html`
+- `web_ui/templates/tenant_management.html`
+- `web_ui/templates/auth/login.html`
+- `web_ui/templates/auth/register.html`
+- `web_ui/templates/auth/profile.html`
+- `web_ui/templates/auth/accept_invitation.html`
+- `web_ui/templates/auth/forgot_password.html`
+
+**JavaScript (replace hardcoded strings):**
+- `web_ui/static/js/tenant_knowledge.js`
+- `web_ui/static/js/workforce.js`
+- `web_ui/static/js/invoice_matches.js`
+- `web_ui/static/js/invoice_attachments.js`
+- `web_ui/static/js/invoice_payments.js`
+- `web_ui/static/js/invoice_detail.js`
+- `web_ui/static/js/payslip_detail.js`
+- `web_ui/static/js/payslip_matches.js`
+- `web_ui/static/js/transaction_detail.js`
+- `web_ui/static/js/auth.js`
+- `web_ui/static/js/homepage.js`
+- `web_ui/static/js/payment_receipts.js`
+- `web_ui/static/js/whitelisted_accounts.js`
+- `web_ui/static/js/shareholders.js`
+- `web_ui/static/js/tenant_management.js`
+- `web_ui/static/js/activity_timeline.js`
+- `web_ui/static/js/pattern_notifications.js`
+- `web_ui/static/script_advanced.js`
+- `web_ui/static/cfo_dashboard.js`
+
+**Backend:**
+- `web_ui/app_db.py` - Currency validation
+
+---
+
+## Currencies Reference
+
+| Code | Name (English) | Name (Spanish) | Name (Portuguese) | Symbol | Decimals |
+|------|----------------|----------------|-------------------|--------|----------|
+| USD | US Dollar | Dolar estadounidense | Dolar Americano | $ | 2 |
+| EUR | Euro | Euro | Euro | E | 2 |
+| GBP | British Pound | Libra esterlina | Libra Esterlina | GBP | 2 |
+| BRL | Brazilian Real | Real brasileno | Real Brasileiro | R$ | 2 |
+| ARS | Argentine Peso | Peso argentino | Peso Argentino | $ | 2 |
+| CLP | Chilean Peso | Peso chileno | Peso Chileno | $ | 0 |
+| COP | Colombian Peso | Peso colombiano | Peso Colombiano | $ | 0 |
+| MXN | Mexican Peso | Peso mexicano | Peso Mexicano | $ | 2 |
+| PEN | Peruvian Sol | Sol peruano | Sol Peruano | S/ | 2 |
+| UYU | Uruguayan Peso | Peso uruguayo | Peso Uruguaio | $U | 2 |
+| BOB | Bolivian Boliviano | Boliviano | Boliviano | Bs | 2 |
+| VES | Venezuelan Bolivar | Bolivar venezolano | Bolivar Venezuelano | Bs.S | 2 |
+| PYG | Paraguayan Guarani | Guarani paraguayo | Guarani Paraguaio | Gs | 0 |
+
+---
+
+## Estimation
+
+### Translation Work
+- ~1444 keys to translate to Spanish
+- ~200+ new keys to add for hardcoded strings
+- Total: ~1650 translation keys for Spanish
+
+### Code Changes
+- 1 new locale file
+- 2 migration files
+- ~20 template files with data-i18n additions
+- ~20 JavaScript files with string replacements
+- 1 backend file update
+
+---
 
 ## Success Criteria
 
-- [ ] Can create employees and contractors
-- [ ] Can create payslips with line items
-- [ ] Can mark payslips as paid
-- [ ] Payslip-transaction matching works (finds correct matches)
-- [ ] Can confirm/reject matches from UI
-- [ ] Matched transactions show employee name in classification
-- [ ] All matching functionality reuses existing invoice code
-- [ ] Code changes are minimal and focused
-- [ ] No bugs introduced in existing features
+- [ ] Spanish language option appears in language switcher
+- [ ] All UI text displays correctly in Spanish
+- [ ] All Latin American currencies available in dropdowns
+- [ ] Currency formatting respects locale (decimal separators)
+- [ ] Date formatting respects locale
+- [ ] Number formatting respects locale
+- [ ] No console errors when switching languages
+- [ ] All existing English/Portuguese functionality works
+- [ ] Database migration runs without errors
+- [ ] All translation keys exist in all 3 locale files
 
-## Review Checklist
+---
 
-- [ ] All database migrations run successfully
-- [ ] All API endpoints tested manually
-- [ ] Frontend loads without console errors
-- [ ] Matching algorithm finds correct transactions
-- [ ] Transaction enrichment works correctly
-- [ ] Code follows project style and conventions
-- [ ] No hardcoded values (use environment variables)
-- [ ] PostgreSQL-only (no SQLite code)
-- [ ] Multi-tenant ready (tenant_id in all queries)
-- [ ] Documentation updated in CLAUDE.md
+## Review Section
+
+*(To be filled after implementation)*
+
+### Changes Made
+-
+
+### Issues Encountered
+-
+
+### Testing Results
+-
+
+### Notes
+-
