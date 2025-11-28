@@ -4890,6 +4890,21 @@ def reports():
     except Exception as e:
         return f"Error loading CFO dashboard: {str(e)}", 500
 
+@app.route('/reports/pl-trend')
+def pl_trend():
+    """P&L Trend Chart - Monthly Revenue, COGS, SG&A, Net Income"""
+    try:
+        company_name = "Delta CFO Agent"
+        company_description = "P&L Trend Analysis"
+
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('pl_trend.html',
+                             cache_buster=cache_buster,
+                             company_name=company_name,
+                             company_description=company_description)
+    except Exception as e:
+        return f"Error loading P&L Trend page: {str(e)}", 500
+
 # DEPRECATED: This route is now handled by auth_routes.py blueprint
 # @app.route('/api/auth/switch-tenant/<tenant_id>', methods=['POST'])
 # def api_switch_tenant(tenant_id):

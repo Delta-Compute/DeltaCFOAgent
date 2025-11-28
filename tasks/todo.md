@@ -1,341 +1,131 @@
-# Workforce Feature - Implementation Plan
+# P&L Trend Chart - Implementation Plan
 
 ## Overview
-Build a complete Workforce management system for employees and contractors, including payslip generation and automatic transaction matching.
+Build a new P&L Trend chart in the /reports section that displays monthly Revenue, COGS, SG&A, and Net Income as vertical bar groups with interactive hover features including drill-down expense details and AI-generated Net Income insights.
 
-## Requirements
-1. **Employee/Contractor Management**: Create and manage workforce members with name, document number, date of hire, and pay rate
-2. **Payslip Generation**: Create payslips that can be sent to employees as proof of payment
-3. **Payment Marking**: Mark payslips as paid by employer
-4. **Transaction Matching**: Match payslip payments with transactions in the Transaction categorization page (reuse existing invoice-transaction matching logic)
-
-## System Architecture Analysis
-
-### Existing Invoice-Transaction Matching System (to be reused)
-- **Database Tables**:
-  - `invoices`: Stores invoice data
-  - `pending_invoice_matches`: Stores potential matches between invoices and transactions
-  - `invoice_match_log`: Logs all matching actions (confirmed/rejected)
-
-- **Matching Engine**: `RevenueInvoiceMatcher` in `web_ui/revenue_matcher.py`
-  - Amount matching with 3% tolerance
-  - Date proximity matching
-  - Description/vendor fuzzy matching
-  - AI-powered semantic matching with Claude
-  - Confidence scoring (high/medium/low)
-
-- **Frontend Pattern**:
-  - Main list page showing all items
-  - Detail modal/page with tabs (details, matches, etc.)
-  - Matches tab shows potential transaction matches with scores
-  - Actions: Confirm match, Reject match, Manual link
-
-- **API Endpoints Pattern**:
-  - GET `/api/invoices` - List all
-  - POST `/api/invoices` - Create new
-  - GET `/api/invoices/<id>` - Get details
-  - GET `/api/invoices/<id>/find-matching-transactions` - Find matches
-  - POST `/api/invoices/<id>/link-transaction` - Manual link
-  - POST `/api/revenue/confirm-match` - Confirm auto-match
-  - POST `/api/revenue/reject-match` - Reject match
-
-## Database Schema Design
-
-### 1. workforce_members table
-```sql
-CREATE TABLE IF NOT EXISTS workforce_members (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(100) NOT NULL,
-
-    -- Basic Information
-    full_name VARCHAR(255) NOT NULL,
-    employment_type VARCHAR(50) NOT NULL, -- 'employee', 'contractor'
-    document_type VARCHAR(50), -- 'ssn', 'ein', 'tax_id', 'passport'
-    document_number VARCHAR(100),
-
-    -- Employment Details
-    date_of_hire DATE NOT NULL,
-    termination_date DATE,
-    status VARCHAR(50) DEFAULT 'active', -- 'active', 'inactive', 'terminated'
-
-    -- Compensation
-    pay_rate DECIMAL(15,2) NOT NULL,
-    pay_frequency VARCHAR(50) NOT NULL, -- 'hourly', 'daily', 'weekly', 'biweekly', 'monthly', 'annual'
-    currency VARCHAR(3) DEFAULT 'USD',
-
-    -- Contact Information
-    email VARCHAR(255),
-    phone VARCHAR(50),
-    address TEXT,
-
-    -- Additional Details
-    job_title VARCHAR(255),
-    department VARCHAR(255),
-    notes TEXT,
-
-    -- Metadata
-    created_by VARCHAR(100),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(tenant_id, document_number)
-);
-```
-
-### 2. payslips table
-```sql
-CREATE TABLE IF NOT EXISTS payslips (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id VARCHAR(100) NOT NULL,
-    workforce_member_id UUID NOT NULL REFERENCES workforce_members(id) ON DELETE RESTRICT,
-
-    -- Payslip Identification
-    payslip_number VARCHAR(50) UNIQUE NOT NULL,
-
-    -- Period Information
-    pay_period_start DATE NOT NULL,
-    pay_period_end DATE NOT NULL,
-    payment_date DATE NOT NULL,
-
-    -- Payment Details
-    gross_amount DECIMAL(15,2) NOT NULL,
-    deductions DECIMAL(15,2) DEFAULT 0,
-    net_amount DECIMAL(15,2) NOT NULL,
-    currency VARCHAR(3) DEFAULT 'USD',
-
-    -- Line Items (detailed breakdown)
-    line_items JSONB, -- {type: 'salary'|'bonus'|'overtime', description, amount, hours}
-    deductions_items JSONB, -- {type: 'tax'|'insurance'|'401k', description, amount}
-
-    -- Payment Status
-    status VARCHAR(50) DEFAULT 'draft', -- 'draft', 'approved', 'paid', 'cancelled'
-    payment_method VARCHAR(50), -- 'bank_transfer', 'check', 'cash', 'crypto'
-
-    -- Transaction Matching
-    transaction_id INTEGER, -- Links to transactions table when matched
-    match_confidence INTEGER, -- 0-100 matching confidence score
-    match_method VARCHAR(50), -- 'automatic', 'manual', 'ai_suggested'
-
-    -- Document Management
-    pdf_path TEXT,
-    sent_to_employee_at TIMESTAMP,
-    employee_viewed_at TIMESTAMP,
-
-    -- Notes
-    notes TEXT,
-    internal_notes TEXT, -- Not visible to employee
-
-    -- Metadata
-    created_by VARCHAR(100),
-    approved_by VARCHAR(100),
-    approved_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### 3. pending_payslip_matches table (similar to pending_invoice_matches)
-```sql
-CREATE TABLE IF NOT EXISTS pending_payslip_matches (
-    id SERIAL PRIMARY KEY,
-    payslip_id UUID NOT NULL,
-    transaction_id TEXT NOT NULL,
-    score DECIMAL(3,2) NOT NULL,
-    match_type TEXT NOT NULL,
-    criteria_scores JSONB,
-    confidence_level TEXT NOT NULL,
-    explanation TEXT,
-    status TEXT DEFAULT 'pending',
-    reviewed_by TEXT,
-    reviewed_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(payslip_id, transaction_id)
-);
-```
-
-### 4. payslip_match_log table
-```sql
-CREATE TABLE IF NOT EXISTS payslip_match_log (
-    id SERIAL PRIMARY KEY,
-    payslip_id UUID NOT NULL,
-    transaction_id TEXT NOT NULL,
-    action TEXT NOT NULL, -- 'confirmed', 'rejected', 'manual_link', 'unmatched'
-    score DECIMAL(3,2),
-    match_type TEXT,
-    user_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
+## Requirements Summary
+1. **Bar Chart**: Monthly bars showing Revenue, COGS, SG&A, Net Income
+2. **Expense Drill-down**: On hover over expense bars (COGS, SG&A), show line item breakdown (leverage Sankey code)
+3. **Net Income AI Summary**: On hover over Net Income bar, send data to Claude API for 1-paragraph summary
+4. **Gross Margin Line**: Visual line connecting tops of Revenue and COGS bars showing GM %
 
 ## Implementation Tasks
 
-### Phase 1: Database & Backend Core (4 files)
-- [ ] Create migration script: `migrations/add_workforce_tables.sql`
-- [ ] Create Payslip Matcher class: `web_ui/payslip_matcher.py` (based on revenue_matcher.py)
-- [ ] Add workforce API endpoints to `web_ui/app_db.py`
-- [ ] Write unit tests: `tests/test_workforce_api.py`
+### Phase 1: Backend API (2 files)
+- [x] Add new endpoint `/api/reports/pl-trend` in `reporting_api.py`
+  - Returns monthly data with Revenue, COGS, SG&A, Net Income
+  - Includes subcategory breakdowns for drill-down
+  - Calculates Gross Margin % per month
+- [x] Add new endpoint `/api/reports/pl-trend/ai-summary` for Claude Net Income analysis
+  - Receives month data (revenue, cogs, sga, net_income, trends)
+  - Returns 1-paragraph AI summary of Net Income performance
 
-### Phase 2: Frontend Pages (3 files)
-- [ ] Create workforce list page: `web_ui/templates/workforce.html`
-- [ ] Create workforce JavaScript: `web_ui/static/js/workforce.js`
-- [ ] Create payslip matching JavaScript: `web_ui/static/js/payslip_matches.js`
+### Phase 2: Frontend Page (2 files)
+- [x] Create new template `pl_trend.html` in `web_ui/templates/`
+  - Chart container with proper sizing
+  - Loading state indicator
+  - Date range filters (reuse existing filter UI)
+- [x] Create JavaScript file `pl_trend.js` in `web_ui/static/js/`
+  - Bar chart with Chart.js (mixed type for line overlay)
+  - Four bar datasets: Revenue, COGS, SG&A, Net Income
+  - Gross Margin % line dataset
 
-### Phase 3: Integration & Polish (3 files)
-- [ ] Update navigation menu to include Workforce link
-- [ ] Update transaction enrichment to recognize payslip matches
-- [ ] Add workforce stats to homepage/dashboard
+### Phase 3: Hover Features (1 file - extend pl_trend.js)
+- [x] Add expense breakdown hover
+  - Debounced hover events
+  - Display tooltip with category breakdown from API response
+- [x] Add Net Income AI summary hover
+  - On hover, call `/api/reports/pl-trend/ai-summary`
+  - Display AI paragraph in tooltip
+  - Cache response to avoid repeated API calls
 
-### Phase 4: Testing & Documentation (2 files)
-- [ ] Integration testing with sample data
-- [ ] Update CLAUDE.md with Workforce documentation
+### Phase 4: Route & Navigation (1 file)
+- [x] Add route `/reports/pl-trend` in `app_db.py` to render pl_trend.html
+- [x] Add P&L Trend card to CFO dashboard reports grid
 
-## API Endpoints to Implement
+### Phase 5: Testing & Polish
+- [x] Add unit tests for new API endpoints
+- [x] Verify multi-tenant isolation (tenant_id required)
+- [x] Error handling with fallbacks
 
-### Workforce Members
-- GET `/api/workforce` - List all workforce members (with filters)
-- POST `/api/workforce` - Create new workforce member
-- GET `/api/workforce/<id>` - Get workforce member details
-- PUT `/api/workforce/<id>` - Update workforce member
-- DELETE `/api/workforce/<id>` - Soft delete (set status=inactive)
+## File Changes Summary
 
-### Payslips
-- GET `/api/payslips` - List all payslips (with filters)
-- POST `/api/payslips` - Create new payslip
-- GET `/api/payslips/<id>` - Get payslip details
-- PUT `/api/payslips/<id>` - Update payslip
-- DELETE `/api/payslips/<id>` - Delete payslip (if not paid)
-- POST `/api/payslips/<id>/mark-paid` - Mark as paid
-- POST `/api/payslips/<id>/send-to-employee` - Send via email
-- GET `/api/payslips/<id>/pdf` - Generate/download PDF
+| File | Action | Description |
+|------|--------|-------------|
+| `web_ui/reporting_api.py` | Edit | Added `/api/reports/pl-trend` and `/api/reports/pl-trend/ai-summary` endpoints (~400 lines) |
+| `web_ui/templates/pl_trend.html` | Create | New template for P&L Trend page |
+| `web_ui/static/js/pl_trend.js` | Create | JavaScript for chart and hover interactions (~450 lines) |
+| `web_ui/app_db.py` | Edit | Added `/reports/pl-trend` route |
+| `web_ui/templates/cfo_dashboard.html` | Edit | Added P&L Trend card to reports grid |
+| `tests/test_pl_trend_api.py` | Create | Unit tests for new API endpoints |
 
-### Payslip-Transaction Matching
-- GET `/api/payslips/<id>/find-matching-transactions` - Find potential matches
-- POST `/api/payslips/<id>/link-transaction` - Manual link
-- POST `/api/payroll/run-matching` - Run matching for all unmatched payslips
-- GET `/api/payroll/matched-pairs` - Get confirmed matches
-- POST `/api/payroll/confirm-match` - Confirm a suggested match
-- POST `/api/payroll/reject-match` - Reject a suggested match
-- POST `/api/payroll/unmatch` - Remove existing match
-- GET `/api/payroll/stats` - Get matching statistics
+## Key Technical Decisions
 
-## Frontend Features
-
-### Workforce Members Page
-- **List View**: Table with name, type, hire date, pay rate, status
-- **Filters**: employment type, status, department
-- **Actions**: Add new, Edit, View payslips, Deactivate
-- **Bulk Actions**: Export to CSV, Bulk update status
-
-### Workforce Member Detail Modal
-- **Tabs**:
-  1. **Details**: Personal info, employment details, compensation
-  2. **Payslips**: List of all payslips for this member
-  3. **Activity**: History of changes and actions
-
-### Payslips Page/Section
-- **List View**: Table with employee name, period, amount, status, payment date
-- **Filters**: employee, status, date range, payment method
-- **Actions**: Create new, Edit, View matches, Mark paid, Send to employee, Download PDF
-
-### Payslip Detail Modal
-- **Tabs**:
-  1. **Details**: Employee info, period, amounts breakdown, deductions
-  2. **Matches**: Potential transaction matches (reuses invoice matching UI pattern)
-  3. **History**: Payment status changes, emails sent
-
-### Matching Interface (similar to invoice matching)
-- Show list of potential transaction matches with scores
-- Display match confidence (Excellent/Good/Fair)
-- Show date difference and amount difference
-- Actions: Confirm Match, Reject, Manual Link to Different Transaction
-- Visual indicators for already matched transactions
-
-## Code Reuse Strategy
-
-### 1. Payslip Matcher (80% code reuse from RevenueInvoiceMatcher)
-```python
-# web_ui/payslip_matcher.py
-class PayslipMatcher(RevenueInvoiceMatcher):
-    """
-    Extends RevenueInvoiceMatcher for payslip-transaction matching
-    Changes needed:
-    - Query payslips instead of invoices
-    - Match against employee names in transaction descriptions
-    - Look for payroll-related keywords
-    - Filter transactions by negative amounts (outgoing payments)
-    """
-```
-
-### 2. Frontend Matching UI (90% code reuse from invoice_matches.js)
-- Copy invoice_matches.js → payslip_matches.js
-- Update API endpoints from `/api/invoices/` to `/api/payslips/`
-- Update terminology from "invoice" to "payslip"
-
-### 3. API Endpoints Pattern (same structure as invoices)
-- Copy invoice endpoints structure
-- Update table names and field mappings
-- Reuse same transaction enrichment logic
-
-## Simplified Approach (KISS Principle)
-
-### Key Simplifications:
-1. **No Complex Payroll Calculations**: Just gross/net/deductions fields, no tax engine
-2. **Reuse Matching Logic**: Copy & adapt invoice matcher, don't rebuild from scratch
-3. **Simple PDF Generation**: Text-based PDF (can enhance later with templates)
-4. **Email Integration**: Reuse existing email service if available, else skip for MVP
-5. **No Automated Payslip Creation**: Manual creation only for MVP (can add recurring later)
-
-### Out of Scope for MVP:
-- Automated tax calculations
-- Benefits management
-- Time tracking integration
-- Automated recurring payslip generation
-- Employee self-service portal
-- Complex approval workflows
-- Multi-currency automatic conversion
-- Payroll reporting/analytics (beyond basic stats)
-
-## Testing Strategy
-
-### Manual Testing Checklist:
-1. Create employee with all fields
-2. Create contractor with minimal fields
-3. Create payslip for employee
-4. Mark payslip as paid
-5. Upload transaction that matches payslip
-6. Verify auto-matching finds the transaction
-7. Confirm the match
-8. Verify transaction gets enriched with employee name
-9. Test unmatching
-10. Test manual linking to different transaction
-
-### Unit Tests (if time permits):
-- Test payslip creation
-- Test amount matching algorithm
-- Test date proximity scoring
-- Test AI matching (mock Claude API)
+1. **Use Chart.js Mixed Type**: Bar chart with line overlay for Gross Margin %
+2. **Custom Breakdown Display**: Built-in breakdown from API response instead of Sankey API (simpler, dedicated data)
+3. **Simple Claude Integration**: New endpoint specifically for NI summary with fallback when API unavailable
+4. **Caching**: AI summary responses cached in memory to avoid repeated API calls
 
 ## Success Criteria
-
-- [ ] Can create employees and contractors
-- [ ] Can create payslips with line items
-- [ ] Can mark payslips as paid
-- [ ] Payslip-transaction matching works (finds correct matches)
-- [ ] Can confirm/reject matches from UI
-- [ ] Matched transactions show employee name in classification
-- [ ] All matching functionality reuses existing invoice code
-- [ ] Code changes are minimal and focused
-- [ ] No bugs introduced in existing features
+- [x] Bar chart displays monthly Revenue, COGS, SG&A, Net Income
+- [x] Hovering on COGS/SG&A bars shows expense line items
+- [x] Hovering on Net Income bar shows AI-generated summary paragraph
+- [x] Gross Margin % line visible (purple line with right Y-axis)
+- [x] Works correctly with multi-tenant data isolation
+- [x] All existing functionality preserved (no regressions)
 
 ## Review Checklist
+- [x] Code follows KISS principle
+- [x] No hardcoded tenant IDs (uses get_current_tenant_id with strict=True)
+- [x] PostgreSQL-only queries
+- [x] Error handling with fallbacks
+- [x] Responsive chart sizing
+- [x] Unit tests added
 
-- [ ] All database migrations run successfully
-- [ ] All API endpoints tested manually
-- [ ] Frontend loads without console errors
-- [ ] Matching algorithm finds correct transactions
-- [ ] Transaction enrichment works correctly
-- [ ] Code follows project style and conventions
-- [ ] No hardcoded values (use environment variables)
-- [ ] PostgreSQL-only (no SQLite code)
-- [ ] Multi-tenant ready (tenant_id in all queries)
-- [ ] Documentation updated in CLAUDE.md
+---
+
+## Review Section
+
+### Summary of Changes Made
+
+**Backend (reporting_api.py):**
+1. Added `/api/reports/pl-trend` endpoint (lines 6111-6375):
+   - Queries transactions with COGS/SG&A separation based on category keywords
+   - Returns monthly data with revenue, cogs, sga, net_income, gross_margin_percent
+   - Includes category breakdowns for both COGS and SG&A
+   - Supports date range filters and internal transaction filtering
+
+2. Added `/api/reports/pl-trend/ai-summary` endpoint (lines 6377-6504):
+   - Accepts month data and trend context
+   - Calls Claude API (claude-sonnet-4-5-20250929) for analysis
+   - Returns 1-paragraph professional CFO summary
+   - Falls back to generated summary when API unavailable
+
+**Frontend:**
+1. Created `pl_trend.html` template:
+   - Summary stats cards (Revenue, COGS, SG&A, Net Income, Gross Margin)
+   - Filter controls (time range, transaction type)
+   - Chart container and breakdown sections
+   - Firebase auth integration
+
+2. Created `pl_trend.js` JavaScript:
+   - Chart.js bar chart with 4 datasets + line overlay
+   - Debounced hover events for tooltips
+   - AI summary caching to reduce API calls
+   - Dynamic tooltip positioning
+
+**Navigation:**
+1. Added `/reports/pl-trend` route in app_db.py
+2. Added P&L Trend card to CFO dashboard reports grid
+
+**Testing:**
+1. Created `tests/test_pl_trend_api.py` with unit tests for:
+   - pl-trend endpoint success/empty/filters
+   - ai-summary endpoint with/without Claude API
+   - Page route rendering
+
+### Notes
+- COGS detection uses category keyword matching (material, inventory, cogs, cost of goods, cost of sales)
+- All other expenses are classified as SG&A
+- Gross margin line uses secondary Y-axis (0-100%)
+- AI summaries are cached per month+net_income combination

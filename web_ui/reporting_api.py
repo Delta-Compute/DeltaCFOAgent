@@ -6158,6 +6158,401 @@ def register_reporting_routes(app):
                 'error': str(e)
             }), 500
 
+    # ============================================================================
+    # P&L Trend Chart Endpoints
+    # ============================================================================
+    @app.route('/api/reports/pl-trend', methods=['GET'])
+    def api_pl_trend():
+        """
+        Get monthly P&L trend data with Revenue, COGS, SG&A, and Net Income breakdown.
+
+        GET Parameters:
+            - months_back: Number of months to analyze (default: 12)
+            - start_date: Custom start date (YYYY-MM-DD)
+            - end_date: Custom end date (YYYY-MM-DD)
+            - is_internal: Filter by internal transactions (true/false)
+
+        Returns:
+            JSON with monthly P&L data including:
+            - revenue, cogs, sga, net_income per month
+            - gross_margin_percent per month
+            - category breakdowns for drill-down
+        """
+        try:
+            # Get tenant context (REQUIRED - no default)
+            tenant_id = get_current_tenant_id(strict=True)
+
+            # Parse parameters
+            months_back_param = request.args.get('months_back', '12')
+            start_date_param = request.args.get('start_date')
+            end_date_param = request.args.get('end_date')
+            is_internal_param = request.args.get('is_internal')
+
+            # Determine date range
+            if start_date_param and end_date_param:
+                start_date = datetime.strptime(start_date_param, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_param, '%Y-%m-%d').date()
+            elif months_back_param == 'all':
+                # Get all available data
+                date_range_query = """
+                    SELECT MIN(date::date) as min_date, MAX(date::date) as max_date
+                    FROM transactions
+                    WHERE tenant_id = %s AND date IS NOT NULL AND archived = FALSE
+                """
+                date_range_result = db_manager.execute_query(date_range_query, (tenant_id,), fetch_one=True)
+                if date_range_result and date_range_result.get('min_date'):
+                    start_date = date_range_result['min_date']
+                    end_date = date_range_result['max_date'] or date.today()
+                else:
+                    end_date = date.today()
+                    start_date = end_date - timedelta(days=365)
+            else:
+                months_back = int(months_back_param)
+                end_date = date.today()
+                start_date = end_date - timedelta(days=months_back * 30)
+
+            # Build internal transaction filter
+            internal_filter = ""
+            if is_internal_param == 'true':
+                internal_filter = "AND is_internal_transaction = TRUE"
+            elif is_internal_param == 'false':
+                internal_filter = "AND (is_internal_transaction = FALSE OR is_internal_transaction IS NULL)"
+
+            # Query for monthly P&L with COGS vs SG&A separation
+            # COGS: categories containing 'material', 'inventory', 'cost of goods', 'cogs', 'cost of sales'
+            # SG&A: all other expenses (operating expenses)
+            monthly_query = f"""
+                SELECT
+                    EXTRACT(YEAR FROM date::date) as year,
+                    EXTRACT(MONTH FROM date::date) as month_number,
+                    -- Revenue (positive amounts)
+                    SUM(CASE WHEN amount > 0 THEN
+                        COALESCE(NULLIF(usd_equivalent::text, 'NaN')::numeric, amount)
+                    ELSE 0 END) as revenue,
+                    -- COGS (negative amounts with COGS-related categories)
+                    SUM(CASE WHEN amount < 0 AND (
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of goods%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cogs%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of sales%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%cogs%%'
+                    ) THEN ABS(COALESCE(NULLIF(usd_equivalent::text, 'NaN')::numeric, amount))
+                    ELSE 0 END) as cogs,
+                    -- SG&A (all other negative amounts)
+                    SUM(CASE WHEN amount < 0 AND NOT (
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of goods%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cogs%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of sales%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%cogs%%'
+                    ) THEN ABS(COALESCE(NULLIF(usd_equivalent::text, 'NaN')::numeric, amount))
+                    ELSE 0 END) as sga,
+                    COUNT(*) as transaction_count
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount IS NOT NULL
+                    AND amount::text != 'NaN'
+                    AND date IS NOT NULL
+                    AND archived = FALSE
+                    {internal_filter}
+                GROUP BY EXTRACT(YEAR FROM date::date), EXTRACT(MONTH FROM date::date)
+                ORDER BY year, month_number
+            """
+
+            monthly_data = db_manager.execute_query(monthly_query, (tenant_id, start_date, end_date), fetch_all=True)
+
+            # Process monthly data
+            monthly_pl = []
+            totals = {'revenue': 0, 'cogs': 0, 'sga': 0, 'net_income': 0}
+
+            if monthly_data:
+                for row in monthly_data:
+                    try:
+                        revenue = float(row.get('revenue', 0) or 0)
+                        cogs = float(row.get('cogs', 0) or 0)
+                        sga = float(row.get('sga', 0) or 0)
+                        net_income = revenue - cogs - sga
+                        gross_profit = revenue - cogs
+                        gross_margin_pct = (gross_profit / revenue * 100) if revenue > 0 else 0
+
+                        year = int(row.get('year', 2024) or 2024)
+                        month_num = int(row.get('month_number', 1) or 1)
+                        month_display = f"{calendar.month_abbr[month_num]} {year}"
+
+                        monthly_record = {
+                            'month': month_display,
+                            'year': year,
+                            'month_number': month_num,
+                            'revenue': round(revenue, 2),
+                            'cogs': round(cogs, 2),
+                            'sga': round(sga, 2),
+                            'net_income': round(net_income, 2),
+                            'gross_profit': round(gross_profit, 2),
+                            'gross_margin_percent': round(gross_margin_pct, 1),
+                            'transaction_count': int(row.get('transaction_count', 0) or 0)
+                        }
+                        monthly_pl.append(monthly_record)
+
+                        # Accumulate totals
+                        totals['revenue'] += revenue
+                        totals['cogs'] += cogs
+                        totals['sga'] += sga
+                        totals['net_income'] += net_income
+
+                    except Exception as row_error:
+                        logger.warning(f"Error processing PL trend row: {row_error}")
+                        continue
+
+            # Get COGS category breakdown for drill-down
+            cogs_breakdown_query = f"""
+                SELECT
+                    COALESCE(subcategory, accounting_category, 'Other COGS') as category,
+                    SUM(ABS(COALESCE(NULLIF(usd_equivalent::text, 'NaN')::numeric, amount))) as total,
+                    COUNT(*) as count
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount < 0
+                    AND archived = FALSE
+                    AND (
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of goods%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cogs%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of sales%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%cogs%%'
+                    )
+                    {internal_filter}
+                GROUP BY COALESCE(subcategory, accounting_category, 'Other COGS')
+                ORDER BY total DESC
+                LIMIT 10
+            """
+
+            cogs_breakdown = []
+            try:
+                cogs_data = db_manager.execute_query(cogs_breakdown_query, (tenant_id, start_date, end_date), fetch_all=True)
+                if cogs_data:
+                    for row in cogs_data:
+                        cogs_breakdown.append({
+                            'category': row.get('category', 'Other'),
+                            'amount': round(float(row.get('total', 0) or 0), 2),
+                            'count': int(row.get('count', 0) or 0)
+                        })
+            except Exception as e:
+                logger.warning(f"Error fetching COGS breakdown: {e}")
+
+            # Get SG&A category breakdown for drill-down
+            sga_breakdown_query = f"""
+                SELECT
+                    COALESCE(subcategory, accounting_category, 'Other SG&A') as category,
+                    SUM(ABS(COALESCE(NULLIF(usd_equivalent::text, 'NaN')::numeric, amount))) as total,
+                    COUNT(*) as count
+                FROM transactions
+                WHERE tenant_id = %s
+                    AND date::date >= %s AND date::date <= %s
+                    AND amount < 0
+                    AND archived = FALSE
+                    AND NOT (
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of goods%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cogs%%' OR
+                        LOWER(COALESCE(accounting_category, '')) LIKE '%%cost of sales%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%material%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%inventory%%' OR
+                        LOWER(COALESCE(subcategory, '')) LIKE '%%cogs%%'
+                    )
+                    {internal_filter}
+                GROUP BY COALESCE(subcategory, accounting_category, 'Other SG&A')
+                ORDER BY total DESC
+                LIMIT 15
+            """
+
+            sga_breakdown = []
+            try:
+                sga_data = db_manager.execute_query(sga_breakdown_query, (tenant_id, start_date, end_date), fetch_all=True)
+                if sga_data:
+                    for row in sga_data:
+                        sga_breakdown.append({
+                            'category': row.get('category', 'Other'),
+                            'amount': round(float(row.get('total', 0) or 0), 2),
+                            'count': int(row.get('count', 0) or 0)
+                        })
+            except Exception as e:
+                logger.warning(f"Error fetching SG&A breakdown: {e}")
+
+            # Calculate overall gross margin
+            overall_gross_margin = ((totals['revenue'] - totals['cogs']) / totals['revenue'] * 100) if totals['revenue'] > 0 else 0
+
+            return jsonify({
+                'success': True,
+                'data': {
+                    'monthly_pl': monthly_pl,
+                    'totals': {
+                        'revenue': round(totals['revenue'], 2),
+                        'cogs': round(totals['cogs'], 2),
+                        'sga': round(totals['sga'], 2),
+                        'net_income': round(totals['net_income'], 2),
+                        'gross_margin_percent': round(overall_gross_margin, 1)
+                    },
+                    'breakdowns': {
+                        'cogs': cogs_breakdown,
+                        'sga': sga_breakdown
+                    },
+                    'period': {
+                        'start_date': start_date.isoformat(),
+                        'end_date': end_date.isoformat()
+                    }
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating P&L trend: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
+
+    @app.route('/api/reports/pl-trend/ai-summary', methods=['POST'])
+    def api_pl_trend_ai_summary():
+        """
+        Generate AI-powered summary of Net Income for a specific month.
+
+        POST JSON Parameters:
+            - month: Month display string (e.g., "Jan 2024")
+            - revenue: Revenue for the month
+            - cogs: Cost of Goods Sold for the month
+            - sga: SG&A expenses for the month
+            - net_income: Net Income for the month
+            - gross_margin_percent: Gross margin percentage
+            - trend_data: Array of previous months for trend context
+
+        Returns:
+            JSON with AI-generated 1-paragraph summary of Net Income performance
+        """
+        try:
+            import anthropic
+
+            # Get tenant context
+            tenant_id = get_current_tenant_id(strict=True)
+
+            # Parse request data
+            data = request.get_json()
+            if not data:
+                return jsonify({'success': False, 'error': 'Missing JSON body'}), 400
+
+            month = data.get('month', 'Unknown')
+            revenue = data.get('revenue', 0)
+            cogs = data.get('cogs', 0)
+            sga = data.get('sga', 0)
+            net_income = data.get('net_income', 0)
+            gross_margin_pct = data.get('gross_margin_percent', 0)
+            trend_data = data.get('trend_data', [])
+
+            # Get company context
+            company_query = """
+                SELECT company_name, industry, company_description
+                FROM tenant_configuration
+                WHERE tenant_id = %s
+            """
+            company_result = db_manager.execute_query(company_query, (tenant_id,), fetch_one=True)
+            company_name = company_result.get('company_name', 'Company') if company_result else 'Company'
+            industry = company_result.get('industry', 'Business') if company_result else 'Business'
+
+            # Format trend context
+            trend_context = ""
+            if trend_data and len(trend_data) > 1:
+                prev_months = trend_data[-4:-1] if len(trend_data) > 4 else trend_data[:-1]
+                trend_lines = []
+                for m in prev_months:
+                    trend_lines.append(f"  - {m.get('month')}: Revenue ${m.get('revenue', 0):,.0f}, Net Income ${m.get('net_income', 0):,.0f}")
+                trend_context = "Previous months:\n" + "\n".join(trend_lines)
+
+            # Build prompt for Claude
+            prompt = f"""You are a CFO analyst providing financial insights. Generate a brief, professional 1-paragraph summary (3-4 sentences max) of the Net Income performance for {month}.
+
+Company: {company_name}
+Industry: {industry}
+
+{month} Financial Summary:
+- Revenue: ${revenue:,.2f}
+- Cost of Goods Sold (COGS): ${cogs:,.2f}
+- Gross Profit: ${revenue - cogs:,.2f}
+- Gross Margin: {gross_margin_pct:.1f}%
+- SG&A Expenses: ${sga:,.2f}
+- Net Income: ${net_income:,.2f}
+- Net Margin: {(net_income/revenue*100) if revenue > 0 else 0:.1f}%
+
+{trend_context}
+
+Provide a concise CFO-level summary that:
+1. Highlights the key drivers of Net Income (was it revenue growth, cost control, or margin improvement?)
+2. Notes any significant trends compared to previous months (if trend data available)
+3. Identifies one actionable insight or area of focus
+
+Keep the tone professional and data-driven. Do NOT use bullet points - write in paragraph form."""
+
+            # Call Claude API
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                # Fallback if API key not available
+                net_margin = (net_income / revenue * 100) if revenue > 0 else 0
+                fallback_summary = f"In {month}, {company_name} generated ${revenue:,.0f} in revenue with a net income of ${net_income:,.0f}, representing a {net_margin:.1f}% net margin. "
+                if net_income > 0:
+                    fallback_summary += f"The business maintained profitability with gross margins of {gross_margin_pct:.1f}%."
+                else:
+                    fallback_summary += f"Operating expenses of ${sga:,.0f} exceeded gross profit, resulting in a net loss."
+
+                return jsonify({
+                    'success': True,
+                    'summary': fallback_summary,
+                    'generated_by': 'fallback'
+                })
+
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-5-20250929",
+                max_tokens=300,
+                temperature=0.5,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            summary = response.content[0].text.strip()
+
+            return jsonify({
+                'success': True,
+                'summary': summary,
+                'month': month,
+                'generated_by': 'claude'
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating AI summary: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # Return fallback summary on error
+            return jsonify({
+                'success': True,
+                'summary': f"Net Income for {data.get('month', 'this month')} was ${data.get('net_income', 0):,.0f}, driven by ${data.get('revenue', 0):,.0f} in revenue less ${data.get('cogs', 0) + data.get('sga', 0):,.0f} in total expenses.",
+                'generated_by': 'fallback',
+                'error': str(e)
+            })
+
     # Ensure templates table exists
     ensure_report_templates_table()
 
