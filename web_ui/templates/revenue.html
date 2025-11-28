@@ -706,8 +706,8 @@
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
-                    <h1>💰 Revenue Recognition Dashboard</h1>
-                    <p style="color: #64748b; margin-bottom: 2rem;">Automated invoice-transaction matching with AI intelligence</p>
+                    <h1 data-i18n="revenue.header.title">Revenue Recognition Dashboard</h1>
+                    <p style="color: #64748b; margin-bottom: 2rem;" data-i18n="revenue.header.subtitle">Automated invoice-transaction matching with AI intelligence</p>
                 </header>
 
                 <!-- Revenue Matching Statistics -->
@@ -717,34 +717,34 @@
 
                 <!-- Matching Controls -->
                 <div class="revenue-controls">
-                    <h2>🔗 Invoice Matching</h2>
-                    <p style="color: #64748b; margin-bottom: 1.5rem;">Automatically find and link invoices to transactions with AI-powered matching.</p>
+                    <h2 data-i18n="revenue.controls.matching.title">Invoice Matching</h2>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;" data-i18n="revenue.controls.matching.description">Automatically find and link invoices to transactions with AI-powered matching.</p>
                     <div class="matching-actions">
-                        <button class="action-button btn-primary" onclick="runUltraFastMatching(false)" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;">
-                            ▶️ Run Match
+                        <button class="action-button btn-primary" onclick="runUltraFastMatching(false)" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;" data-i18n="revenue.controls.buttons.runMatch">
+                            Run Match
                         </button>
-                        <button class="action-button btn-success" onclick="runUltraFastMatching(true)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;">
-                            ⚡ Auto-Match HIGH
+                        <button class="action-button btn-success" onclick="runUltraFastMatching(true)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;" data-i18n="revenue.controls.buttons.autoMatchHigh">
+                            Auto-Match HIGH
                         </button>
                     </div>
-                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280;">
-                        🔍 <strong>Run Match:</strong> Find matches for manual review | ⚡ <strong>Auto-Match HIGH:</strong> Auto-apply matches ≥80% confidence with AI enrichment
+                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280;" data-i18n="revenue.controls.matching.helpRunMatch">
+                        Run Match: Analyze ALL unlinked invoices and find potential transaction matches. This creates pending matches for review.
                     </div>
 
                     <!-- Advanced Options (collapsed by default) -->
                     <div style="margin-top: 1rem;">
-                        <button class="action-button" onclick="toggleAdvancedOptions()" style="background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; font-size: 0.875rem;">
-                            ⚙️ More Options
+                        <button class="action-button" onclick="toggleAdvancedOptions()" style="background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; font-size: 0.875rem;" data-i18n="revenue.controls.buttons.moreOptions">
+                            More Options
                         </button>
                     </div>
 
                     <div id="advanced-options" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
                         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                            <button class="action-button btn-warning" onclick="refreshData()" style="font-size: 0.875rem;">
-                                🔄 Refresh Data
+                            <button class="action-button btn-warning" onclick="refreshData()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.refreshData">
+                                Refresh Data
                             </button>
-                            <button class="action-button btn-secondary" onclick="showMatchedPairs()" style="font-size: 0.875rem;">
-                                📋 View All Matches
+                            <button class="action-button btn-secondary" onclick="showMatchedPairs()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.viewAllMatches">
+                                View All Matches
                             </button>
                         </div>
                     </div>
@@ -765,14 +765,14 @@
                 <!-- Pending Matches Section - MOVED TO TOP -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title">
-                            🔍 Pending Matches for Review
+                        <h2 class="section-title" data-i18n="revenue.sections.pendingMatches.title">
+                            Pending Matches for Review
                             <span class="badge warning" id="pending-count">0</span>
                         </h2>
                         <div class="filter-tabs">
-                            <button class="tab-button active" onclick="filterMatches('all')">All</button>
-                            <button class="tab-button" onclick="filterMatches('high')">High Confidence</button>
-                            <button class="tab-button" onclick="filterMatches('medium')">Medium Confidence</button>
+                            <button class="tab-button active" onclick="filterMatches('all')" data-i18n="revenue.filters.all">All</button>
+                            <button class="tab-button" onclick="filterMatches('high')" data-i18n="revenue.filters.highConfidence">High Confidence</button>
+                            <button class="tab-button" onclick="filterMatches('medium')" data-i18n="revenue.filters.mediumConfidence">Medium Confidence</button>
                         </div>
                     </div>
 
@@ -782,18 +782,18 @@
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #374151;">
                                     <input type="checkbox" id="select-all-matches" onchange="toggleSelectAll()" style="margin: 0;">
-                                    <span id="selection-count">0 matches selected</span>
+                                    <span id="selection-count" data-i18n="revenue.controls.buttons.selectedCount">0 matches selected</span>
                                 </label>
                             </div>
                             <div style="display: flex; gap: 0.75rem;">
-                                <button class="action-button btn-success" onclick="bulkApproveMatches()" id="bulk-approve-btn" disabled>
-                                    ✅ Approve Selected
+                                <button class="action-button btn-success" onclick="bulkApproveMatches()" id="bulk-approve-btn" disabled data-i18n="revenue.controls.buttons.approveSelected">
+                                    Approve Selected
                                 </button>
-                                <button class="action-button btn-warning" onclick="bulkRejectMatches()" id="bulk-reject-btn" disabled>
-                                    ❌ Reject Selected
+                                <button class="action-button btn-warning" onclick="bulkRejectMatches()" id="bulk-reject-btn" disabled data-i18n="revenue.controls.buttons.rejectSelected">
+                                    Reject Selected
                                 </button>
-                                <button class="action-button btn-secondary" onclick="clearSelection()" id="clear-selection-btn" disabled>
-                                    🔄 Clear Selection
+                                <button class="action-button btn-secondary" onclick="clearSelection()" id="clear-selection-btn" disabled data-i18n="revenue.controls.buttons.clearSelection">
+                                    Clear Selection
                                 </button>
                             </div>
                         </div>
@@ -807,24 +807,24 @@
                 <!-- Unlinked Invoices Section -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title">
-                            🔗 Unlinked Invoices Ready for Matching
+                        <h2 class="section-title" data-i18n="revenue.sections.unlinkedInvoices.title">
+                            Unlinked Invoices Ready for Matching
                             <span class="badge warning" id="unlinked-count">0</span>
                         </h2>
                         <div style="display: flex; gap: 1rem;">
-                            <button class="action-button btn-primary" onclick="loadUnlinkedInvoices()" style="font-size: 0.875rem;">
-                                🔄 Refresh Unlinked
+                            <button class="action-button btn-primary" onclick="loadUnlinkedInvoices()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.refreshUnlinked">
+                                Refresh Unlinked
                             </button>
-                            <button class="action-button btn-success" onclick="quickMatchAll()" style="font-size: 0.875rem;">
-                                ⚡ Quick Match All
+                            <button class="action-button btn-success" onclick="quickMatchAll()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.quickMatchAll">
+                                Quick Match All
                             </button>
                         </div>
                     </div>
 
                     <div class="filter-tabs">
-                        <button class="tab-button active" onclick="filterUnlinkedInvoices('all')">All Unlinked</button>
-                        <button class="tab-button" onclick="filterUnlinkedInvoices('recent')">Recent (30 days)</button>
-                        <button class="tab-button" onclick="filterUnlinkedInvoices('high-value')">High Value ($1000+)</button>
+                        <button class="tab-button active" onclick="filterUnlinkedInvoices('all')" data-i18n="revenue.filters.allUnlinked">All Unlinked</button>
+                        <button class="tab-button" onclick="filterUnlinkedInvoices('recent')" data-i18n="revenue.filters.recent30Days">Recent (30 days)</button>
+                        <button class="tab-button" onclick="filterUnlinkedInvoices('high-value')" data-i18n="revenue.filters.highValue">High Value ($1000+)</button>
                     </div>
 
                     <div id="unlinked-invoices">
@@ -840,11 +840,11 @@
                 <!-- Recent Matches Section -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title">
-                            ✅ Recent Confirmed Matches
+                        <h2 class="section-title" data-i18n="revenue.sections.recentMatches.title">
+                            Recent Confirmed Matches
                             <span class="badge success" id="confirmed-count">0</span>
                         </h2>
-                        <button class="action-button btn-secondary" onclick="loadMatchedPairs()">
+                        <button class="action-button btn-secondary" onclick="loadMatchedPairs()" data-i18n="revenue.controls.buttons.viewAllConfirmed">
                             View All Confirmed
                         </button>
                     </div>
