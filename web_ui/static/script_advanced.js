@@ -484,7 +484,9 @@ function initializeFiltersFromURL() {
                 const badge = document.createElement('div');
                 badge.id = 'sankeyFilterBadge';
                 badge.style.cssText = `
-                    display: inline-block;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.5rem;
                     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                     color: white;
                     padding: 0.5rem 1rem;
@@ -495,8 +497,27 @@ function initializeFiltersFromURL() {
                     box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
                 `;
                 badge.innerHTML = `
-                    📂 Filtered by Category: <strong>${decodedCategory}</strong>
-                    ${decodedKeywordForBadge ? ` → <strong>${decodedKeywordForBadge}</strong>` : ''}
+                    <span>📂 Filtered by Category: <strong>${decodedCategory}</strong>
+                    ${decodedKeywordForBadge ? ` → <strong>${decodedKeywordForBadge}</strong>` : ''}</span>
+                    <button class="filter-badge-remove" style="
+                        background: rgba(255, 255, 255, 0.2);
+                        border: none;
+                        color: white;
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 50%;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 14px;
+                        font-weight: bold;
+                        transition: background 0.2s;
+                        padding: 0;
+                        line-height: 1;
+                    " onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'"
+                       onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'"
+                       onclick="removeCategoryFilter()" title="Remove filter">×</button>
                 `;
                 filterSection.insertBefore(badge, filterSection.firstChild);
             }
@@ -552,6 +573,35 @@ async function loadDropdownOptions() {
 }
 
 function setupEventListeners() {
+    // Event delegation for clearing stuck hover states
+    // This runs whenever mouse leaves a table row
+    const tbody = document.getElementById('transactionTableBody');
+    if (tbody) {
+        tbody.addEventListener('mouseout', function(e) {
+            // Only handle events from tr elements
+            if (e.target.tagName === 'TR' || e.target.closest('tr')) {
+                const row = e.target.tagName === 'TR' ? e.target : e.target.closest('tr');
+
+                // Clear inline background from the row if it's not part of an active operation
+                if (row.style.backgroundColor &&
+                    !row.classList.contains('drag-fill-source') &&
+                    !dragFillState.isDragging) {
+                    row.style.backgroundColor = '';
+                }
+
+                // Also clear from cells in the row
+                row.querySelectorAll('td').forEach(cell => {
+                    if (cell.style.backgroundColor &&
+                        !cell.classList.contains('drag-fill-target') &&
+                        !cell.classList.contains('drag-fill-active') &&
+                        !dragFillState.isDragging) {
+                        cell.style.backgroundColor = '';
+                    }
+                });
+            }
+        }, true); // Use capture phase to catch events early
+    }
+
     // Column sorting
     document.querySelectorAll('.sortable').forEach(th => {
         th.style.cursor = 'pointer';
@@ -907,6 +957,32 @@ function clearFilters() {
     loadTransactions();
 }
 
+function removeCategoryFilter() {
+    // Remove the filter badge from DOM
+    const badge = document.getElementById('sankeyFilterBadge');
+    if (badge) {
+        badge.remove();
+    }
+
+    // Remove category-related URL parameters and reload
+    const url = new URL(window.location);
+    url.searchParams.delete('category');
+    url.searchParams.delete('accounting_category');
+    url.searchParams.delete('search');
+    url.searchParams.delete('keyword');
+    url.searchParams.delete('origin');
+    url.searchParams.delete('destination');
+
+    // Update URL without reloading (clean history)
+    window.history.replaceState({}, '', url);
+
+    // Reset page and reload transactions
+    currentPage = 1;
+    loadTransactions();
+
+    console.log('Category filter removed - showing all transactions');
+}
+
 function buildFilterQuery() {
     const params = new URLSearchParams();
 
@@ -1237,7 +1313,14 @@ function extractInvoiceInfo(justification) {
 // Function to load correct dashboard statistics from backend
 async function loadDashboardStats() {
     try {
-        const response = await fetch('/api/stats');
+        // Build filter query to get stats for filtered transactions only
+        const filterQuery = buildFilterQuery();
+        // Remove pagination params as stats should aggregate all filtered results
+        const statsQuery = new URLSearchParams(filterQuery);
+        statsQuery.delete('page');
+        statsQuery.delete('per_page');
+
+        const response = await fetch(`/api/stats?${statsQuery.toString()}`);
         const data = await response.json();
 
         if (data.error) {
@@ -1371,13 +1454,17 @@ function renderTransactionTable(transactions) {
                 <td>
                     <span class="confidence-score ${confidenceClass}">${confidence}</span>
                 </td>
-                <td class="source-cell">${truncateText(transaction.source_file, 25) || 'N/A'}</td>
+                <td class="source-cell">
+                    ${transaction.source_document_id
+                        ? `<a href="#" onclick="event.preventDefault(); viewSourceFile('${transaction.source_document_id}');" style="color: #007bff; text-decoration: none; cursor: pointer;" title="Click to view source file">
+                            📄 ${truncateText(transaction.source_file, 22) || 'View File'}
+                           </a>`
+                        : (truncateText(transaction.source_file, 25) || 'N/A')
+                    }
+                </td>
                 <td>
                     <button class="btn-secondary btn-sm" onclick="getAISmartSuggestions('${transaction.transaction_id || ''}', ${JSON.stringify(transaction).replace(/'/g, "\\'").replace(/"/g, '&quot;')})" title="Get AI-powered suggestions for this transaction">
                         🤖 AI
-                    </button>
-                    <button class="btn-secondary btn-sm" onclick="viewTransactionDetails('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
-                        View
                     </button>
                     ${transaction.is_archived
                         ? `<button class="btn-secondary btn-sm" onclick="unarchiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
@@ -3618,12 +3705,29 @@ async function archiveSelectedTransactions() {
 
         if (data.success) {
             showToast(`Archived ${data.archived_count} transactions`, 'success');
+
+            // Remove archived rows from DOM with animation
+            transactionIds.forEach(txId => {
+                const row = document.querySelector(`tr[data-transaction-id="${txId}"]`);
+                if (row) {
+                    row.classList.add('archived-fade-out');
+                    setTimeout(() => row.remove(), 300);
+                }
+            });
+
+            // Update stats counter without reload
+            setTimeout(() => {
+                loadDashboardStats();
+            }, 350);
+
             // Uncheck "Select All" checkbox (if it exists)
             const selectAllCheckbox = document.getElementById('selectAll');
             if (selectAllCheckbox) {
                 selectAllCheckbox.checked = false;
             }
-            loadTransactions();
+
+            // Clear any stuck hover states after rows are removed
+            setTimeout(() => clearStuckHoverStates(), 400);
         } else {
             showToast('Error archiving transactions: ' + (data.error || 'Unknown error'), 'error');
         }
@@ -4813,15 +4917,22 @@ async function askAIAccountingQuestion(transactionId, fieldTransactionId, fieldN
         }
 
         result.categories.forEach((cat, index) => {
+            // Backend returns primary_category and subcategory fields
+            const primaryCategory = cat.primary_category || cat.category || 'OPERATING_EXPENSE';
+            const subcategory = cat.subcategory || '';
+            const displayName = subcategory || primaryCategory;
+
             resultHTML += `
                 <div style="background: white; padding: 12px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ddd;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div style="flex: 1;">
-                            <strong style="color: #0066cc; font-size: 1.1em;">${cat.name}</strong>
-                            <p style="margin: 8px 0 0 0; color: #666; font-size: 0.95em;">${cat.explanation}</p>
+                            <strong style="color: #0066cc; font-size: 1.1em;">${displayName}</strong>
+                            ${subcategory && primaryCategory !== subcategory ?
+                                `<div style="font-size: 0.85em; color: #888; margin-top: 2px;">Primary: ${primaryCategory}</div>` : ''}
+                            <p style="margin: 8px 0 0 0; color: #666; font-size: 0.95em;">${cat.explanation || ''}</p>
                         </div>
                         <button
-                            onclick="applyAIAccountingCategory('${cat.name}', '${fieldTransactionId}', '${fieldName}')"
+                            onclick="applyAIAccountingCategory('${subcategory || primaryCategory}', '${fieldTransactionId}', '${fieldName}')"
                             class="btn-primary"
                             style="margin-left: 15px; white-space: nowrap;">
                             Apply This
@@ -4885,6 +4996,13 @@ async function applyAIAccountingCategory(categoryName, transactionId, fieldName)
 // Invoice Matching Functions
 // ===========================
 
+// Global state for invoice matching
+let allInvoiceMatches = [];
+let filteredInvoiceMatches = [];
+let selectedMatchIds = new Set();
+let matchCurrentPage = 1;
+let matchPerPage = 20;
+
 /**
  * Main function to run invoice matching and display results in modal
  */
@@ -4895,6 +5013,8 @@ async function runInvoiceMatching() {
     const containerDiv = document.getElementById('matchesContainer');
     const emptyDiv = document.getElementById('matchesEmpty');
     const errorDiv = document.getElementById('matchesError');
+    const filterControls = document.getElementById('matchFilterControls');
+    const bulkActionsBar = document.getElementById('bulkActionsBar');
 
     // Show modal and loading state
     modal.style.display = 'block';
@@ -4903,6 +5023,12 @@ async function runInvoiceMatching() {
     containerDiv.style.display = 'none';
     emptyDiv.style.display = 'none';
     errorDiv.style.display = 'none';
+    filterControls.style.display = 'none';
+    bulkActionsBar.style.display = 'none';
+
+    // Reset state
+    selectedMatchIds.clear();
+    matchCurrentPage = 1;
 
     try {
         // Step 1: Run the matching algorithm
@@ -4938,17 +5064,21 @@ async function runInvoiceMatching() {
         });
 
         // Convert back to array and filter for medium/high confidence only
-        const matches = Object.values(bestMatches).filter(m => m.score >= 0.4);
+        allInvoiceMatches = Object.values(bestMatches).filter(m => m.score >= 0.4);
+        filteredInvoiceMatches = [...allInvoiceMatches];
 
-        if (matches.length === 0) {
+        if (allInvoiceMatches.length === 0) {
             emptyDiv.style.display = 'block';
         } else {
             // Show summary
-            document.getElementById('totalMatchesCount').textContent = matches.length;
+            document.getElementById('totalMatchesCount').textContent = allInvoiceMatches.length;
+            document.getElementById('filteredMatchesCount').textContent = filteredInvoiceMatches.length;
             summaryDiv.style.display = 'block';
+            filterControls.style.display = 'block';
+            bulkActionsBar.style.display = 'block';
 
-            // Fetch full details for matches and render table
-            await renderMatchesTableWithDetails(matches);
+            // Render table with pagination
+            renderMatchesTableWithDetails();
             containerDiv.style.display = 'block';
         }
 
@@ -4961,13 +5091,20 @@ async function runInvoiceMatching() {
 }
 
 /**
- * Render matches table with invoice and transaction details (provided by backend)
+ * Render matches table with invoice and transaction details (with pagination and filtering)
  */
-async function renderMatchesTableWithDetails(matches) {
+function renderMatchesTableWithDetails() {
     const tbody = document.getElementById('matchesTableBody');
     tbody.innerHTML = '';
 
-    // Helper to format dates without timezone issues
+    // Calculate pagination
+    const totalFiltered = filteredInvoiceMatches.length;
+    const totalPages = Math.ceil(totalFiltered / matchPerPage);
+    const startIdx = (matchCurrentPage - 1) * matchPerPage;
+    const endIdx = Math.min(startIdx + matchPerPage, totalFiltered);
+    const pageMatches = filteredInvoiceMatches.slice(startIdx, endIdx);
+
+    // Helper to format dates
     const formatDateLocal = (dateStr) => {
         if (!dateStr) return 'N/A';
         const parts = dateStr.split(/[-T]/);
@@ -4978,19 +5115,29 @@ async function renderMatchesTableWithDetails(matches) {
         return new Date(dateStr).toLocaleDateString();
     };
 
-    // The backend now provides invoice and transaction details inline
-    matches.forEach((match, index) => {
+    // Render current page matches
+    pageMatches.forEach((match, index) => {
         const invoice = match.invoice || {};
         const transaction = match.transaction || {};
+        const matchId = `${match.invoice_id}_${match.transaction_id}`;
 
         const row = document.createElement('tr');
         row.style.borderBottom = '1px solid #ddd';
+        row.dataset.matchId = matchId;
 
         const matchScore = match.score || 0;
         const confidenceColor = matchScore >= 0.8 ? '#28a745' :
                                matchScore >= 0.6 ? '#ffc107' : '#dc3545';
+        const confidenceLabel = matchScore >= 0.8 ? 'HIGH' :
+                               matchScore >= 0.6 ? 'MED' : 'LOW';
 
         row.innerHTML = `
+            <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
+                <input type="checkbox" class="match-checkbox" data-match-id="${matchId}"
+                       onchange="toggleMatchSelection('${matchId}')"
+                       ${selectedMatchIds.has(matchId) ? 'checked' : ''}
+                       style="width: 18px; height: 18px; cursor: pointer;">
+            </td>
             <td style="padding: 12px; border: 1px solid #ddd;">
                 <div><strong>${invoice.customer_name || 'Unknown Client'}</strong></div>
                 <div style="font-size: 0.85em; color: #666;">
@@ -5016,11 +5163,14 @@ async function renderMatchesTableWithDetails(matches) {
                 </div>
             </td>
             <td style="padding: 12px; text-align: center; border: 1px solid #ddd;">
-                <div style="background: ${confidenceColor}; color: white; padding: 6px 12px; border-radius: 20px; display: inline-block; font-weight: bold;">
+                <div style="background: ${confidenceColor}; color: white; padding: 8px 14px; border-radius: 20px; display: inline-block; font-weight: bold; font-size: 1em;">
                     ${(matchScore * 100).toFixed(0)}%
                 </div>
-                <div style="font-size: 0.75em; color: #666; margin-top: 4px;">
-                    ${match.match_type || ''}
+                <div style="font-size: 0.8em; color: ${confidenceColor}; margin-top: 6px; font-weight: 600;">
+                    ${confidenceLabel}
+                </div>
+                <div style="font-size: 0.75em; color: #888; margin-top: 2px;">
+                    ${match.match_type || 'Auto'}
                 </div>
             </td>
             <td style="padding: 12px; border: 1px solid #ddd; font-size: 0.9em;">
@@ -5040,6 +5190,228 @@ async function renderMatchesTableWithDetails(matches) {
 
         tbody.appendChild(row);
     });
+
+    // Update pagination UI
+    updateMatchPaginationUI(totalFiltered, totalPages, startIdx, endIdx);
+
+    // Update filtered count
+    document.getElementById('filteredMatchesCount').textContent = totalFiltered;
+}
+
+// Pagination Functions
+function updateMatchPaginationUI(totalFiltered, totalPages, startIdx, endIdx) {
+    document.getElementById('matchPageStart').textContent = startIdx + 1;
+    document.getElementById('matchPageEnd').textContent = endIdx;
+    document.getElementById('matchTotalFiltered').textContent = totalFiltered;
+    document.getElementById('matchCurrentPage').textContent = matchCurrentPage;
+    document.getElementById('matchTotalPages').textContent = totalPages;
+
+    // Enable/disable pagination buttons
+    const prevBtn = document.getElementById('matchPrevBtn');
+    const nextBtn = document.getElementById('matchNextBtn');
+    prevBtn.disabled = matchCurrentPage <= 1;
+    nextBtn.disabled = matchCurrentPage >= totalPages;
+    prevBtn.style.opacity = matchCurrentPage <= 1 ? '0.5' : '1';
+    nextBtn.style.opacity = matchCurrentPage >= totalPages ? '0.5' : '1';
+}
+
+function changeMatchPage(delta) {
+    const totalPages = Math.ceil(filteredInvoiceMatches.length / matchPerPage);
+    matchCurrentPage = Math.max(1, Math.min(totalPages, matchCurrentPage + delta));
+    renderMatchesTableWithDetails();
+}
+
+function changeMatchPerPage() {
+    matchPerPage = parseInt(document.getElementById('matchPerPage').value);
+    matchCurrentPage = 1; // Reset to first page
+    renderMatchesTableWithDetails();
+}
+
+// Filtering Functions
+function filterMatches() {
+    const searchTerm = document.getElementById('matchSearchInput').value.toLowerCase();
+    const confidenceFilter = document.getElementById('confidenceFilter').value;
+
+    filteredInvoiceMatches = allInvoiceMatches.filter(match => {
+        // Confidence filter
+        const score = match.score || 0;
+        if (confidenceFilter === 'high' && score < 0.8) return false;
+        if (confidenceFilter === 'medium' && (score < 0.6 || score >= 0.8)) return false;
+        if (confidenceFilter === 'low' && score >= 0.6) return false;
+
+        // Search filter
+        if (searchTerm) {
+            const invoice = match.invoice || {};
+            const transaction = match.transaction || {};
+            const searchableText = [
+                invoice.customer_name,
+                invoice.invoice_number,
+                transaction.description,
+                transaction.classified_entity
+            ].join(' ').toLowerCase();
+
+            if (!searchableText.includes(searchTerm)) return false;
+        }
+
+        return true;
+    });
+
+    // Reset to first page when filtering
+    matchCurrentPage = 1;
+    renderMatchesTableWithDetails();
+}
+
+function resetMatchFilters() {
+    document.getElementById('matchSearchInput').value = '';
+    document.getElementById('confidenceFilter').value = 'all';
+    filteredInvoiceMatches = [...allInvoiceMatches];
+    matchCurrentPage = 1;
+    renderMatchesTableWithDetails();
+}
+
+// Bulk Selection Functions
+function toggleMatchSelection(matchId) {
+    if (selectedMatchIds.has(matchId)) {
+        selectedMatchIds.delete(matchId);
+    } else {
+        selectedMatchIds.add(matchId);
+    }
+    updateBulkActionButtons();
+}
+
+function toggleSelectAllMatches() {
+    const selectAllCheckbox = document.getElementById('selectAllMatches') || document.getElementById('selectAllHeader');
+    const isChecked = selectAllCheckbox.checked;
+
+    // Get all visible matches on current page
+    const tbody = document.getElementById('matchesTableBody');
+    const checkboxes = tbody.querySelectorAll('.match-checkbox');
+
+    checkboxes.forEach(checkbox => {
+        const matchId = checkbox.dataset.matchId;
+        if (isChecked) {
+            selectedMatchIds.add(matchId);
+            checkbox.checked = true;
+        } else {
+            selectedMatchIds.delete(matchId);
+            checkbox.checked = false;
+        }
+    });
+
+    // Sync both select all checkboxes
+    document.getElementById('selectAllMatches').checked = isChecked;
+    document.getElementById('selectAllHeader').checked = isChecked;
+
+    updateBulkActionButtons();
+}
+
+function updateBulkActionButtons() {
+    const count = selectedMatchIds.size;
+    document.getElementById('selectedMatchCount').textContent = count;
+
+    const acceptBtn = document.getElementById('bulkAcceptBtn');
+    const rejectBtn = document.getElementById('bulkRejectBtn');
+
+    if (count > 0) {
+        acceptBtn.disabled = false;
+        rejectBtn.disabled = false;
+        acceptBtn.style.opacity = '1';
+        rejectBtn.style.opacity = '1';
+    } else {
+        acceptBtn.disabled = true;
+        rejectBtn.disabled = true;
+        acceptBtn.style.opacity = '0.5';
+        rejectBtn.style.opacity = '0.5';
+    }
+}
+
+// Bulk Actions
+async function bulkAcceptMatches() {
+    if (selectedMatchIds.size === 0) {
+        showToast('Please select at least one match', 'warning');
+        return;
+    }
+
+    if (!confirm(`Accept ${selectedMatchIds.size} selected match(es)?`)) {
+        return;
+    }
+
+    const selectedMatches = Array.from(selectedMatchIds).map(matchId => {
+        const [invoiceId, transactionId] = matchId.split('_');
+        return { invoice_id: invoiceId, transaction_id: transactionId };
+    });
+
+    try {
+        const promises = selectedMatches.map(match =>
+            fetch('/api/revenue/link-invoice-transaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    invoice_id: match.invoice_id,
+                    transaction_id: match.transaction_id
+                })
+            })
+        );
+
+        await Promise.all(promises);
+        showToast(`Successfully accepted ${selectedMatches.length} match(es)`, 'success');
+
+        // Remove accepted matches from display
+        selectedMatchIds.forEach(matchId => {
+            const row = document.querySelector(`tr[data-match-id="${matchId}"]`);
+            if (row) row.remove();
+        });
+
+        // Update global state
+        const acceptedIds = new Set(Array.from(selectedMatchIds));
+        allInvoiceMatches = allInvoiceMatches.filter(m => {
+            const matchId = `${m.invoice_id}_${m.transaction_id}`;
+            return !acceptedIds.has(matchId);
+        });
+        filteredInvoiceMatches = filteredInvoiceMatches.filter(m => {
+            const matchId = `${m.invoice_id}_${m.transaction_id}`;
+            return !acceptedIds.has(matchId);
+        });
+
+        selectedMatchIds.clear();
+        renderMatchesTableWithDetails();
+
+    } catch (error) {
+        console.error('Bulk accept error:', error);
+        showToast('Error accepting matches', 'error');
+    }
+}
+
+async function bulkRejectMatches() {
+    if (selectedMatchIds.size === 0) {
+        showToast('Please select at least one match', 'warning');
+        return;
+    }
+
+    if (!confirm(`Reject ${selectedMatchIds.size} selected match(es)?`)) {
+        return;
+    }
+
+    // Remove rejected matches from display
+    selectedMatchIds.forEach(matchId => {
+        const row = document.querySelector(`tr[data-match-id="${matchId}"]`);
+        if (row) row.remove();
+    });
+
+    // Update global state
+    const rejectedIds = new Set(Array.from(selectedMatchIds));
+    allInvoiceMatches = allInvoiceMatches.filter(m => {
+        const matchId = `${m.invoice_id}_${m.transaction_id}`;
+        return !rejectedIds.has(matchId);
+    });
+    filteredInvoiceMatches = filteredInvoiceMatches.filter(m => {
+        const matchId = `${m.invoice_id}_${m.transaction_id}`;
+        return !rejectedIds.has(matchId);
+    });
+
+    selectedMatchIds.clear();
+    renderMatchesTableWithDetails();
+    showToast(`Rejected ${rejectedIds.size} match(es)`, 'success');
 }
 
 /**
@@ -5962,10 +6334,22 @@ async function handleDragFillEnd(e) {
 
                 showToast(`Successfully updated ${updates.length} transactions`, 'success');
 
-                // Update cells in place
-                // Reload the table to show all changes
-                await loadTransactions();
+                // Update cells in place (no page reload!)
+                updates.forEach(update => {
+                    const cell = document.querySelector(
+                        `tr[data-transaction-id="${update.transaction_id}"] td[data-field="${update.field}"]`
+                    );
+                    if (cell) {
+                        if (cell.classList.contains('smart-dropdown')) {
+                            const span = cell.querySelector('span');
+                            if (span) span.textContent = update.value;
+                        } else {
+                            cell.textContent = update.value;
+                        }
+                    }
+                });
 
+                // Update stats only
                 await loadDashboardStats();
 
                 setTimeout(() => {
@@ -6008,6 +6392,41 @@ function clearDragState() {
         affectedCells: [],
         selectedColumns: []
     };
+
+    // Force browser to recalculate hover states
+    setTimeout(() => clearStuckHoverStates(), 10);
+}
+
+// Helper function to force browser to recalculate hover states
+// This prevents cells from remaining highlighted after DOM operations
+function clearStuckHoverStates() {
+    // Force a reflow by accessing offsetHeight
+    const tbody = document.getElementById('transactionTableBody');
+    if (tbody) {
+        void tbody.offsetHeight; // Force reflow
+
+        // Clear any inline background styles from rows
+        tbody.querySelectorAll('tr').forEach(row => {
+            if (row.style.backgroundColor && !row.classList.contains('drag-fill-source')) {
+                row.style.backgroundColor = '';
+            }
+        });
+
+        // Clear any inline background styles from cells
+        tbody.querySelectorAll('td').forEach(cell => {
+            // Don't clear if it's part of drag-fill operation
+            if (cell.style.backgroundColor &&
+                !cell.classList.contains('drag-fill-target') &&
+                !cell.classList.contains('drag-fill-active')) {
+                cell.style.backgroundColor = '';
+            }
+        });
+
+        // Remove any stuck classes that might cause highlighting
+        tbody.querySelectorAll('.sort-highlight').forEach(el => {
+            el.classList.remove('sort-highlight');
+        });
+    }
 }
 
 // ============================================================================
@@ -6088,6 +6507,8 @@ function sortByCell(cell) {
         matchingRows.forEach(row => {
             row.classList.remove('sort-highlight');
         });
+        // Clear any stuck hover states after sort completes
+        clearStuckHoverStates();
     }, 2000);
 
     showToast(`✅ Sorted ${matchingRows.length} transactions by ${fieldName} = "${value}"`, 'success');
@@ -6922,6 +7343,24 @@ async function applyBulkEdit() {
             // Show success message
             showToast(`✅ Successfully updated ${selectedTransactionIds.size} transaction(s)!`, 'success');
 
+            // Update each affected row's cells in-place
+            updates.forEach(update => {
+                const cell = document.querySelector(
+                    `tr[data-transaction-id="${update.transaction_id}"] td[data-field="${update.field}"]`
+                );
+                if (cell) {
+                    if (cell.classList.contains('smart-dropdown')) {
+                        const span = cell.querySelector('span');
+                        if (span) span.textContent = update.value;
+                    } else {
+                        cell.textContent = update.value;
+                    }
+                    // Add visual feedback
+                    cell.classList.add('cell-updated');
+                    setTimeout(() => cell.classList.remove('cell-updated'), 1000);
+                }
+            });
+
             // Close modal
             closeBulkEditModal();
 
@@ -6937,13 +7376,39 @@ async function applyBulkEdit() {
             updateBulkEditButtonVisibility();
             updateArchiveButtonVisibility();
 
-            // Reload transactions to show updated data
-            loadTransactions();
+            // Update stats without reload
+            loadDashboardStats();
+
+            // Clear any stuck hover states after DOM update
+            setTimeout(() => clearStuckHoverStates(), 100);
         } else {
             showToast(`❌ Error: ${data.error || 'Failed to update transactions'}`, 'error');
         }
     } catch (error) {
         console.error('❌ Bulk edit error:', error);
         showToast('❌ Failed to apply bulk edit. Please try again.', 'error');
+    }
+}
+
+// View source file from GCS
+async function viewSourceFile(documentId) {
+    if (!documentId) {
+        showToast('No source file available for this transaction', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/files/${documentId}/view`);
+        const data = await response.json();
+
+        if (data.success && data.signed_url) {
+            // Open file in new tab
+            window.open(data.signed_url, '_blank');
+        } else {
+            showToast('Error: ' + (data.error || 'Failed to load file'), 'error');
+        }
+    } catch (error) {
+        console.error('Failed to view source file:', error);
+        showToast('Failed to load source file', 'error');
     }
 }

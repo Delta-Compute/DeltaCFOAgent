@@ -7,6 +7,7 @@ Handles secure file uploads with tenant isolation
 import os
 import uuid
 import hashlib
+import json
 from datetime import datetime, timedelta
 from typing import Optional, Tuple, BinaryIO
 from werkzeug.utils import secure_filename
@@ -31,8 +32,33 @@ class FileStorageService:
     }
 
     def __init__(self):
-        """Initialize GCS client and bucket"""
-        self.gcs_client = storage.Client()
+        """Initialize GCS client and bucket with service account authentication"""
+        # Get service account credentials
+        credentials_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+
+        # If not set in environment, look for service account file in project root
+        if not credentials_path:
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            service_account_path = os.path.join(project_root, 'firebase-service-account.json')
+
+            if os.path.exists(service_account_path):
+                credentials_path = service_account_path
+                print(f"Using service account from: {credentials_path}")
+
+        # Initialize GCS client with explicit credentials
+        if credentials_path and os.path.exists(credentials_path):
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_file(
+                credentials_path,
+                scopes=['https://www.googleapis.com/auth/cloud-platform']
+            )
+            self.gcs_client = storage.Client(credentials=credentials)
+            print(f"✅ GCS client initialized with service account: {credentials_path}")
+        else:
+            # Fallback to Application Default Credentials (for development)
+            self.gcs_client = storage.Client()
+            print("⚠️ GCS client initialized with Application Default Credentials")
+
         self.bucket_name = os.environ.get('GCS_BUCKET_NAME')
 
         if not self.bucket_name:
@@ -153,6 +179,9 @@ class FileStorageService:
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
 
+            # Convert metadata dict to JSON string for JSONB column
+            metadata_json = json.dumps(metadata) if metadata else None
+
             cursor.execute("""
                 INSERT INTO tenant_documents (
                     tenant_id,
@@ -176,7 +205,7 @@ class FileStorageService:
                 file_obj.content_type,
                 user_id,
                 file_hash,
-                metadata,  # JSONB field
+                metadata_json,  # JSONB field
                 datetime.utcnow()
             ))
 
@@ -314,6 +343,48 @@ class FileStorageService:
             cursor.close()
 
         return deleted
+
+    def rename_file(self, document_id: str, new_name: str, tenant_id: str = None) -> bool:
+        """
+        Rename a file's display name in the database (GCS path unchanged)
+
+        Args:
+            document_id: Document ID to rename
+            new_name: New display name for the file
+            tenant_id: Tenant ID (defaults to current tenant)
+
+        Returns:
+            True if renamed successfully, False if not found
+
+        Note:
+            This only updates the display name in the database.
+            The actual GCS file path remains unchanged for integrity.
+        """
+        tenant_id = tenant_id or get_current_tenant_id()
+        if not tenant_id:
+            raise ValueError("Tenant context not set - user must be authenticated")
+
+        # Sanitize new name
+        new_name = secure_filename(new_name.strip())
+        if not new_name:
+            raise ValueError("Invalid file name")
+
+        # Update database record
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                UPDATE tenant_documents
+                SET document_name = %s,
+                    updated_at = %s
+                WHERE id = %s AND tenant_id = %s
+            """, (new_name, datetime.utcnow(), document_id, tenant_id))
+
+            updated = cursor.rowcount > 0
+            conn.commit()
+            cursor.close()
+
+        return updated
 
     def list_files(
         self,

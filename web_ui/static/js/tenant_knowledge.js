@@ -57,11 +57,22 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('addEntityBtn')?.addEventListener('click', () => openEntityModal());
     document.getElementById('testPatternsBtn')?.addEventListener('click', () => openPatternTester());
     document.getElementById('reviewSuggestionsBtn')?.addEventListener('click', () => openSuggestionsModal());
+    document.getElementById('runKnowledgeGenBtn')?.addEventListener('click', () => runKnowledgeGenerator());
 
     document.getElementById('patternForm')?.addEventListener('submit', savePattern);
     document.getElementById('entityForm')?.addEventListener('submit', saveEntity);
     document.getElementById('saveSettingsBtn')?.addEventListener('click', saveSettings);
     document.getElementById('addEntityRuleBtn')?.addEventListener('click', addEntityRule);
+
+    // Show/hide Currency Filter based on pattern type selection
+    document.getElementById('patternType')?.addEventListener('change', function() {
+        const currencyFilterGroup = document.getElementById('currencyFilterGroup');
+        if (this.value === 'regional') {
+            currencyFilterGroup.style.display = 'block';
+        } else {
+            currencyFilterGroup.style.display = 'none';
+        }
+    });
 
     // Search
     document.getElementById('patternSearchInput')?.addEventListener('input', filterPatterns);
@@ -135,6 +146,7 @@ function renderPatterns(patternsToRender) {
                     <div>
                         <div class="pattern-name">${escapeHtml(displayPattern)}</div>
                         <span class="badge badge-active">Active</span>
+                        ${pattern.created_by === 'ai' ? '<span class="badge badge-ai" style="background-color: #8b5cf6; color: white; margin-left: 0.5rem;">AI Generated</span>' : ''}
                     </div>
                     <div class="button-group">
                         <button class="btn btn-test" onclick="testPattern(${pattern.pattern_id})">
@@ -213,6 +225,7 @@ async function openPatternModal(patternId = null) {
     const modal = document.getElementById('patternModal');
     const title = document.getElementById('patternModalTitle');
     const form = document.getElementById('patternForm');
+    const currencyFilterGroup = document.getElementById('currencyFilterGroup');
 
     // Load categories and subcategories dynamically
     await loadCategoriesForDropdown();
@@ -238,6 +251,16 @@ async function openPatternModal(patternId = null) {
         document.getElementById('patternPriority').value = pattern.priority || 500;
         document.getElementById('patternIsActive').checked = pattern.is_active !== false;
         document.getElementById('patternNotes').value = pattern.notes || '';
+
+        // Load currency filter if present
+        document.getElementById('patternCurrency').value = pattern.currency || '';
+
+        // Show/hide currency filter based on pattern type
+        if (pattern.pattern_type === 'regional') {
+            currencyFilterGroup.style.display = 'block';
+        } else {
+            currencyFilterGroup.style.display = 'none';
+        }
     } else {
         // Create mode
         currentEditingPattern = null;
@@ -247,6 +270,9 @@ async function openPatternModal(patternId = null) {
         document.getElementById('patternConfidence').value = '0.8';
         document.getElementById('patternPriority').value = '500';
         document.getElementById('patternIsActive').checked = true;
+
+        // Hide currency filter by default
+        currencyFilterGroup.style.display = 'none';
     }
 
     modal.classList.add('active');
@@ -336,11 +362,13 @@ async function savePattern(e) {
 
     const patternId = document.getElementById('patternId').value;
     const descriptionValue = document.getElementById('patternDescription').value.trim();
+    const patternType = document.getElementById('patternType').value;
+    const currencyValue = document.getElementById('patternCurrency').value;
 
     // Add wildcards automatically before saving
     const pattern = {
         description_pattern: addWildcards(descriptionValue),
-        pattern_type: document.getElementById('patternType').value,
+        pattern_type: patternType,
         entity: document.getElementById('patternEntity').value.trim() || null,
         accounting_category: document.getElementById('patternCategory').value,
         accounting_subcategory: document.getElementById('patternSubcategory').value.trim() || null,
@@ -350,6 +378,11 @@ async function savePattern(e) {
         is_active: document.getElementById('patternIsActive').checked,
         notes: document.getElementById('patternNotes').value.trim() || null
     };
+
+    // Include currency filter for regional patterns
+    if (patternType === 'regional' && currencyValue) {
+        pattern.currency = currencyValue;
+    }
 
     try {
         const url = patternId ? `/api/classification-patterns/${patternId}` : '/api/classification-patterns';
@@ -2145,6 +2178,148 @@ function getTimeAgo(date) {
     const months = Math.floor(days / 30);
     return `${months}mo ago`;
 }
+
+// Run Knowledge Generator to analyze transaction history and discover patterns
+async function runKnowledgeGenerator() {
+    const btn = document.getElementById('runKnowledgeGenBtn');
+    const originalText = btn.innerHTML;
+
+    if (confirm('Run Knowledge Generator to analyze your transaction history and discover new patterns?\n\nThis may take 30-60 seconds.')) {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Analyzing...';
+
+        try {
+            const response = await fetch('/api/knowledge-generator/run', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-ID': 'delta'  // Will be replaced with session tenant_id in production
+                }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                alert(`Knowledge Generator Complete!\n\n` +
+                      `Accounts analyzed: ${data.results.accounts_analyzed}\n` +
+                      `Vendors analyzed: ${data.results.vendors_analyzed}\n` +
+                      `Patterns created: ${data.results.patterns_created}\n` +
+                      `Insights generated: ${data.results.insights_generated}`);
+
+                // Reload patterns to show new AI-generated ones
+                await loadPatterns();
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        } catch (error) {
+            console.error('Knowledge Generator error:', error);
+            alert('Error running Knowledge Generator. Check console for details.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// =============================================
+// BUSINESS SUMMARY FUNCTIONS
+// =============================================
+
+// Load Business Summary when tab is clicked
+async function loadBusinessSummary() {
+    try {
+        const response = await fetch('/api/business-summary', {
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Tenant-ID': 'delta'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.summary) {
+            displayBusinessSummary(data.summary);
+        } else {
+            document.getElementById('businessSummaryContent').innerHTML = `
+                <div style="text-align: center; color: #94a3b8; padding: 2rem;">
+                    No business summary generated yet.<br><br>
+                    Upload a file or click "Regenerate Summary" to create one.
+                </div>
+            `;
+            document.getElementById('summaryMetadata').style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading business summary:', error);
+    }
+}
+
+function displayBusinessSummary(summary) {
+    // Update metadata
+    const metadataDiv = document.getElementById('summaryMetadata');
+    metadataDiv.style.display = 'block';
+
+    document.getElementById('summaryGeneratedAt').textContent =
+        summary.generated_at ? new Date(summary.generated_at).toLocaleString() : '-';
+    document.getElementById('summaryTriggeredBy').textContent =
+        summary.triggered_by || 'manual';
+    document.getElementById('summaryPatternCount').textContent =
+        summary.stats?.pattern_count || 0;
+    document.getElementById('summaryEntityCount').textContent =
+        summary.stats?.entity_count || 0;
+    document.getElementById('summaryWorkforceCount').textContent =
+        summary.stats?.workforce_count || 0;
+
+    // Update content - render markdown as formatted text
+    const contentDiv = document.getElementById('businessSummaryContent');
+    contentDiv.textContent = summary.markdown || 'No content available';
+}
+
+async function regenerateBusinessSummary() {
+    const btn = document.getElementById('regenerateSummaryBtn');
+    const originalText = btn.innerHTML;
+
+    if (confirm('Regenerate the business summary from current tenant knowledge?')) {
+        btn.disabled = true;
+        btn.innerHTML = 'Generating...';
+
+        try {
+            const response = await fetch('/api/business-summary/regenerate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-ID': 'delta'
+                }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                displayBusinessSummary(data.summary);
+                alert('Business summary regenerated successfully!');
+            } else {
+                alert(`Error: ${data.message}`);
+            }
+        } catch (error) {
+            console.error('Error regenerating summary:', error);
+            alert('Error regenerating summary. Check console for details.');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+// Add tab click handler for business-summary
+document.addEventListener('DOMContentLoaded', function() {
+    const tabs = document.querySelectorAll('.tab-button');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+            if (this.dataset.tab === 'business-summary') {
+                loadBusinessSummary();
+            }
+        });
+    });
+});
 
 // Add CSS animations
 const style = document.createElement('style');

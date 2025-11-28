@@ -3390,6 +3390,10 @@ def register_reporting_routes(app):
             - end_date: End date for analysis (YYYY-MM-DD) (optional)
             - min_amount: Minimum amount to include (default: 1000)
             - max_categories: Maximum categories per type (default: 8)
+            - keyword: Filter by keyword in description/origin/destination (optional)
+            - entity: Filter by entity (optional)
+            - accounting_category: Filter by accounting category (optional)
+            - accounting_subcategory: Filter by subcategory (optional)
 
         Returns:
             JSON with Sankey diagram nodes and links for D3.js
@@ -3403,12 +3407,21 @@ def register_reporting_routes(app):
             min_amount = float(request.args.get('min_amount', 1000))
             max_categories = int(request.args.get('max_categories', 8))
 
+            # NEW: Parse filter parameters
+            keyword = request.args.get('keyword', '').strip()
+            entity = request.args.get('entity', '').strip()
+            accounting_category = request.args.get('accounting_category', '').strip()
+            accounting_subcategory = request.args.get('accounting_subcategory', '').strip()
+
             # Get current tenant_id
             tenant_id = get_current_tenant_id()
 
             # Parse dates if provided
             date_filter = ""
             params = [tenant_id]  # Start with tenant_id
+
+            # Build additional filters
+            additional_filters = ""
 
             if start_date_str and end_date_str:
                 try:
@@ -3430,6 +3443,41 @@ def register_reporting_routes(app):
                 except ValueError:
                     return jsonify({'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
 
+            # NEW: Build additional filters based on parameters
+            if keyword:
+                if db_manager.db_type == 'postgresql':
+                    additional_filters += " AND (LOWER(description) LIKE LOWER(%s) OR LOWER(origin) LIKE LOWER(%s) OR LOWER(destination) LIKE LOWER(%s))"
+                    keyword_param = f'%{keyword}%'
+                    params.extend([keyword_param, keyword_param, keyword_param])
+                else:
+                    additional_filters += " AND (LOWER(description) LIKE LOWER(?) OR LOWER(origin) LIKE LOWER(?) OR LOWER(destination) LIKE LOWER(?))"
+                    keyword_param = f'%{keyword}%'
+                    params.extend([keyword_param, keyword_param, keyword_param])
+
+            if entity:
+                if db_manager.db_type == 'postgresql':
+                    additional_filters += " AND classified_entity = %s"
+                    params.append(entity)
+                else:
+                    additional_filters += " AND classified_entity = ?"
+                    params.append(entity)
+
+            if accounting_category:
+                if db_manager.db_type == 'postgresql':
+                    additional_filters += " AND accounting_category = %s"
+                    params.append(accounting_category)
+                else:
+                    additional_filters += " AND accounting_category = ?"
+                    params.append(accounting_category)
+
+            if accounting_subcategory:
+                if db_manager.db_type == 'postgresql':
+                    additional_filters += " AND subcategory = %s"
+                    params.append(accounting_subcategory)
+                else:
+                    additional_filters += " AND subcategory = ?"
+                    params.append(accounting_subcategory)
+
             # Get revenue categories (sources)
             # Exclude all transfer-type categories (Internal, Exchange, Intercompany, Blockchain)
             revenue_query = f"""
@@ -3445,6 +3493,7 @@ def register_reporting_routes(app):
                 AND COALESCE(subcategory, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
                 AND COALESCE(subcategory, accounting_category, '') != ''
                 {date_filter}
+                {additional_filters}
                 GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Revenue')
                 HAVING SUM(amount) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 ORDER BY total_amount DESC
@@ -3469,6 +3518,7 @@ def register_reporting_routes(app):
                 AND COALESCE(subcategory, '') NOT IN ('Internal Transfer', 'Exchange Transfer', 'Intercompany Transfer', 'Blockchain Transaction')
                 AND COALESCE(subcategory, accounting_category, '') != ''
                 {date_filter}
+                {additional_filters}
                 GROUP BY COALESCE(subcategory, accounting_category, classified_entity, 'Other Expenses')
                 HAVING SUM(ABS(amount)) >= {'%s' if db_manager.db_type == 'postgresql' else '?'}
                 ORDER BY total_amount DESC

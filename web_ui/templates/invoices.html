@@ -948,6 +948,14 @@
         <!-- Navigation -->
         {% include '_navbar.html' %}
 
+        <div class="main-layout">
+            <div class="dashboard-content">
+        <!-- Page Header -->
+        <header style="margin-bottom: 2rem;">
+            <h1 data-i18n="invoices.pageTitle" style="font-size: 2rem; font-weight: 700; color: #1e293b; margin-bottom: 0.5rem;">📄 Invoice Processing</h1>
+            <p style="color: #718096; font-size: 1rem; margin-top: 0;" data-i18n="invoices.subtitle">Manage invoices and billing</p>
+        </header>
+
         <!-- Statistics -->
         <div class="invoice-stats">
             <div class="stat-card">
@@ -991,10 +999,10 @@
             </div>
         </div>
 
-        <!-- <span data-i18n="invoices.filter">Filter</span>s -->
+        <!-- Filters -->
         <div class="invoice-filters">
             <div class="filters-header">
-                <div class="filters-title"><span data-i18n="invoices.filter">Filter</span>s & Search</div>
+                <div class="filters-title"><span data-i18n="invoices.filters.title">Filters & Search</span></div>
             </div>
 
             <!-- Keyword Search -->
@@ -1005,7 +1013,7 @@
                 </div>
             </div>
 
-            <!-- All <span data-i18n="invoices.filter">Filter</span>s (Always Visible) -->
+            <!-- All Filters (Always Visible) -->
             <div class="all-filters-grid">
                 <div class="filter-group">
                     <label class="filter-label">Search Vendor</label>
@@ -1070,10 +1078,10 @@
                 </div>
             </div>
 
-            <!-- <span data-i18n="invoices.filter">Filter</span> Actions -->
+            <!-- Filter Actions -->
             <div class="filter-actions">
-                <button class="btn-apply-filters" onclick="apply<span data-i18n="invoices.filter">Filter</span>s()">Apply <span data-i18n="invoices.filter">Filter</span>s</button>
-                <button class="btn-clear-filters" onclick="clearAll<span data-i18n="invoices.filter">Filter</span>s()">Clear All</button>
+                <button class="btn-apply-filters" onclick="applyFilters()"><span data-i18n="invoices.filters.applyFilters">Apply Filters</span></button>
+                <button class="btn-clear-filters" onclick="clearAllFilters()"><span data-i18n="invoices.filters.clearAll">Clear All</span></button>
             </div>
         </div>
 
@@ -1319,6 +1327,10 @@
         </div>
     </div>
 
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentPage = 1;
         let totalPages = 1;
@@ -1478,11 +1490,11 @@
         // FILTERS
         // ========================================
 
-        function apply<span data-i18n="invoices.filter">Filter</span>s() {
+        function applyFilters() {
             loadInvoices(1); // Reset to page 1 when applying filters
         }
 
-        function clearAll<span data-i18n="invoices.filter">Filter</span>s() {
+        function clearAllFilters() {
             // Clear keyword search
             document.getElementById('filter-keyword').value = '';
 

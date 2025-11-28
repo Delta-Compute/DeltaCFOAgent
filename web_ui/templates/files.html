@@ -37,6 +37,52 @@
                                     <div class="progress-fill" id="progressFill"></div>
                                 </div>
                                 <div class="progress-text" id="progressText">Processing...</div>
+
+                                <!-- Processing Stages -->
+                                <div class="processing-stages" id="processingStages">
+                                    <div class="stage" id="stage-upload" data-stage="upload">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">Uploading file</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                    <div class="stage" id="stage-extract" data-stage="extract">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">Extracting transactions</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                    <div class="stage" id="stage-pattern" data-stage="pattern">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">Pattern recognition</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                    <div class="stage" id="stage-classify" data-stage="classify">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">AI Classification</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                    <div class="stage" id="stage-pass2" data-stage="pass2">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">AI Review (Pass 2)</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                    <div class="stage" id="stage-save" data-stage="save">
+                                        <div class="stage-indicator"></div>
+                                        <div class="stage-content">
+                                            <span class="stage-name">Saving to database</span>
+                                            <span class="stage-status"></span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -406,52 +452,102 @@
 
             try {
                 showProgress();
-                updateProgress(0, 'Uploading file...');
+                resetStages();
+                updateProgress(0, 'Starting upload...');
+                setStageActive('upload', 'Uploading...');
 
                 // Get Firebase ID token for authentication
+                const headers = {};
                 const user = auth.currentUser;
+
                 if (!user) {
                     throw new Error('Not authenticated. Please log in.');
                 }
-                const idToken = await user.getIdToken();
 
-                const response = await fetch('/api/upload', {
+                const idToken = await user.getIdToken();
+                headers['Authorization'] = `Bearer ${idToken}`;
+                console.log('[UPLOAD] Using Firebase authentication');
+
+                // Use SSE endpoint for real-time progress
+                const response = await fetch('/api/upload-with-progress', {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${idToken}`
-                    },
+                    headers: headers,
                     body: formData
                 });
 
-                updateProgress(50, 'Processing transactions...');
+                if (!response.ok) {
+                    const errorResult = await response.json();
+                    throw new Error(errorResult.error || 'Upload failed');
+                }
 
-                const result = await response.json();
+                // Handle SSE response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let finalResult = null;
 
-                if (result.duplicate_confirmation_needed) {
-                    // Duplicates found after smart ingestion
-                    hideProgress();
-                    // Add filename, filepath, and processed_file to duplicate_info
-                    const enrichedDuplicateInfo = {
-                        ...result.duplicate_info,
-                        filename: result.filename,
-                        filepath: result.filepath,
-                        processed_file: result.processed_file
-                    };
-                    showDuplicateModal(enrichedDuplicateInfo);
-                } else if (result.success) {
-                    updateProgress(100, 'Complete!');
-                    let message = `Successfully processed ${file.name}`;
-                    if (result.transactions_processed) {
-                        message += ` (${result.transactions_processed} transactions)`;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                handleProgressEvent(data);
+                                if (data.complete) {
+                                    finalResult = data;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
                     }
-                    showToast(message, 'success');
+                }
 
-                    // Refresh the page to show new files
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 2000);
-                } else {
-                    throw new Error(result.error || result.message || 'Upload failed');
+                // Handle final result
+                if (finalResult) {
+                    if (finalResult.duplicate_confirmation_needed) {
+                        hideProgress();
+                        const enrichedDuplicateInfo = {
+                            ...finalResult.duplicate_info,
+                            filename: finalResult.filename,
+                            filepath: finalResult.filepath,
+                            processed_file: finalResult.processed_file
+                        };
+                        showDuplicateModal(enrichedDuplicateInfo);
+                    } else if (finalResult.success) {
+                        completeAllStages();
+                        updateProgress(100, 'Complete!');
+                        let message = `Successfully processed ${file.name}`;
+                        if (finalResult.transactions_processed) {
+                            message += ` - ${finalResult.transactions_processed} saved`;
+                            // Show breakdown if transactions were skipped
+                            if (finalResult.skipped_duplicates > 0 || finalResult.skipped_invalid > 0) {
+                                const parts = [];
+                                if (finalResult.skipped_duplicates > 0) {
+                                    parts.push(`${finalResult.skipped_duplicates} duplicates`);
+                                }
+                                if (finalResult.skipped_invalid > 0) {
+                                    parts.push(`${finalResult.skipped_invalid} invalid`);
+                                }
+                                message += ` (${parts.join(', ')} skipped)`;
+                            }
+                            if (finalResult.total_extracted) {
+                                console.log(`[SUMMARY] Total extracted: ${finalResult.total_extracted}, Saved: ${finalResult.transactions_processed}, Duplicates: ${finalResult.skipped_duplicates}, Invalid: ${finalResult.skipped_invalid}`);
+                            }
+                        }
+                        showToast(message, 'success');
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        throw new Error(finalResult.error || finalResult.message || 'Upload failed');
+                    }
                 }
 
             } catch (error) {
@@ -459,6 +555,25 @@
                 showToast('Upload failed: ' + error.message, 'error');
             } finally {
                 setTimeout(hideProgress, 2000);
+            }
+        }
+
+        function handleProgressEvent(data) {
+            console.log('[PROGRESS]', data);
+
+            // Update progress bar
+            if (data.percent !== undefined) {
+                updateProgress(data.percent, data.message || 'Processing...');
+            }
+
+            // Update stage
+            if (data.stage) {
+                setStageActive(data.stage, data.status || '');
+            }
+
+            // Mark stage as completed
+            if (data.stage_completed) {
+                setStageCompleted(data.stage_completed, data.status || '');
             }
         }
 
@@ -470,11 +585,63 @@
         function hideProgress() {
             document.querySelector('.upload-content').style.display = 'block';
             uploadProgress.style.display = 'none';
+            resetStages();
         }
 
         function updateProgress(percent, text) {
             progressFill.style.width = percent + '%';
             progressText.textContent = text;
+        }
+
+        // Processing stages management
+        const STAGES = ['upload', 'extract', 'pattern', 'classify', 'pass2', 'save'];
+
+        function resetStages() {
+            STAGES.forEach(stage => {
+                const el = document.getElementById(`stage-${stage}`);
+                if (el) {
+                    el.classList.remove('active', 'completed');
+                    el.querySelector('.stage-status').textContent = '';
+                }
+            });
+        }
+
+        function setStageActive(stageName, statusText = '') {
+            // Complete all previous stages
+            const stageIndex = STAGES.indexOf(stageName);
+            STAGES.forEach((stage, i) => {
+                const el = document.getElementById(`stage-${stage}`);
+                if (el) {
+                    el.classList.remove('active');
+                    if (i < stageIndex) {
+                        el.classList.add('completed');
+                    } else if (i === stageIndex) {
+                        el.classList.add('active');
+                        el.querySelector('.stage-status').textContent = statusText;
+                    }
+                }
+            });
+        }
+
+        function setStageCompleted(stageName, statusText = '') {
+            const el = document.getElementById(`stage-${stageName}`);
+            if (el) {
+                el.classList.remove('active');
+                el.classList.add('completed');
+                if (statusText) {
+                    el.querySelector('.stage-status').textContent = statusText;
+                }
+            }
+        }
+
+        function completeAllStages() {
+            STAGES.forEach(stage => {
+                const el = document.getElementById(`stage-${stage}`);
+                if (el) {
+                    el.classList.remove('active');
+                    el.classList.add('completed');
+                }
+            });
         }
 
         function showDuplicateModal(duplicateInfo) {
@@ -1158,6 +1325,113 @@
         .progress-text {
             color: #4a5568;
             font-weight: 500;
+        }
+
+        /* Processing Stages */
+        .processing-stages {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 8px;
+        }
+
+        .stage {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0;
+            opacity: 0.5;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .stage.active {
+            opacity: 1;
+        }
+
+        .stage.completed {
+            opacity: 1;
+        }
+
+        .stage-indicator {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+
+        .stage.active .stage-indicator {
+            background: #667eea;
+            animation: pulse 1.5s infinite;
+        }
+
+        .stage.completed .stage-indicator {
+            background: #48bb78;
+        }
+
+        .stage.completed .stage-indicator::after {
+            content: "";
+            display: block;
+            width: 8px;
+            height: 4px;
+            border-left: 2px solid white;
+            border-bottom: 2px solid white;
+            transform: rotate(-45deg);
+            margin-top: -2px;
+        }
+
+        .stage.active .stage-indicator::after {
+            content: "";
+            display: block;
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4); }
+            50% { box-shadow: 0 0 0 8px rgba(102, 126, 234, 0); }
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .stage-content {
+            flex: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stage-name {
+            font-size: 0.9rem;
+            color: #4a5568;
+        }
+
+        .stage.active .stage-name {
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .stage.completed .stage-name {
+            color: #48bb78;
+        }
+
+        .stage-status {
+            font-size: 0.75rem;
+            color: #718096;
+        }
+
+        .stage.active .stage-status {
+            color: #667eea;
         }
 
         /* Status Badges */

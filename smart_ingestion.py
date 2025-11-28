@@ -36,6 +36,7 @@ import re
 from typing import Dict, Any, Optional, Tuple
 import anthropic
 from pathlib import Path
+import base64
 
 class SmartDocumentIngestion:
     def __init__(self):
@@ -1198,20 +1199,174 @@ Respond with JSON ONLY (no other text):
             return None
 
     def _claude_extract_data(self, file_path: str) -> Optional[pd.DataFrame]:
-        """Use Claude to extract data from complex documents (PDFs, etc.)"""
+        """Use Claude Vision to extract transaction data from PDF bank statements"""
         if not self.claude_client:
             print(" Claude API not available for data extraction")
             return None
 
         try:
-            # This would be for PDFs and complex documents
-            # Implementation would involve sending document to Claude for full extraction
-            print(" Using Claude for full document extraction (not implemented yet)")
-            return None
+            file_ext = Path(file_path).suffix.lower()
+
+            if file_ext != '.pdf':
+                print(f" Unsupported file type for Claude extraction: {file_ext}")
+                return None
+
+            print(f" Using Claude Vision for PDF extraction: {file_path}")
+
+            # Import PyMuPDF for PDF processing
+            try:
+                import fitz
+            except ImportError:
+                print(" ERROR: PyMuPDF (fitz) not installed. Install with: pip install PyMuPDF")
+                return None
+
+            # Open PDF and convert pages to images
+            doc = fitz.open(file_path)
+            if doc.page_count == 0:
+                print(" ERROR: PDF has no pages")
+                return None
+
+            # Process all pages (for multi-page bank statements)
+            all_transactions = []
+
+            for page_num in range(min(doc.page_count, 10)):  # Limit to first 10 pages
+                print(f"   Processing page {page_num + 1}/{min(doc.page_count, 10)}...")
+
+                # Convert page to high-resolution image
+                page = doc.load_page(page_num)
+                mat = fitz.Matrix(2, 2)  # 2x zoom for better OCR
+                pix = page.get_pixmap(matrix=mat)
+                image_bytes = pix.pil_tobytes(format="PNG")
+
+                # Extract text for hybrid processing
+                text_content = page.get_text()
+
+                # Encode image to base64
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+                # Call Claude Vision API
+                transactions = self._call_claude_vision_for_transactions(
+                    image_base64,
+                    file_path,
+                    page_num + 1,
+                    text_content
+                )
+
+                if transactions:
+                    all_transactions.extend(transactions)
+
+            doc.close()
+
+            if not all_transactions:
+                print(" WARNING: No transactions extracted from PDF")
+                return None
+
+            # Convert to DataFrame
+            df = pd.DataFrame(all_transactions)
+            print(f" Successfully extracted {len(df)} transactions from PDF")
+            return df
 
         except Exception as e:
-            print(f" Claude extraction failed: {e}")
+            print(f" Claude PDF extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+
+    def _call_claude_vision_for_transactions(self, image_base64: str, file_path: str, page_num: int, text_content: str = "") -> list:
+        """Call Claude Vision API to extract bank statement transactions with Origin and Destination"""
+        try:
+            prompt = f"""
+🏦 BANK STATEMENT TRANSACTION EXTRACTOR - Extract ALL transactions from this bank statement.
+
+File: {Path(file_path).name} (Page {page_num})
+Text content preview: {text_content[:500] if text_content else "No text extracted"}
+
+CRITICAL INSTRUCTIONS:
+1. Extract EVERY transaction visible on this page
+2. For EACH transaction, identify:
+   - Date (YYYY-MM-DD format)
+   - Description (full transaction description)
+   - Amount (positive for deposits/credits, negative for withdrawals/debits)
+   - Origin (sender/source of funds - can be account name, person, company, or "Self" if internal)
+   - Destination (recipient/where funds went - can be account name, person, company, or "Self" if internal)
+
+3. ORIGIN and DESTINATION Rules:
+   - PIX transfers: Extract sender and recipient names from description
+   - Card payments: Origin = cardholder, Destination = merchant
+   - Transfers: Extract both account holders or companies
+   - If only one party visible, use "Self" for the bank account owner
+   - Internal transfers: Both might be "Self" if between same owner's accounts
+
+4. Amount signs:
+   - NEGATIVE (-) for outgoing payments, withdrawals, debits
+   - POSITIVE (+) for incoming payments, deposits, credits
+
+5. Handle multi-language statements (Portuguese, Spanish, English)
+
+Return ONLY a JSON array of transactions:
+[
+    {{
+        "Date": "YYYY-MM-DD",
+        "Description": "Full transaction description",
+        "Amount": -123.45,
+        "Origin": "Sender/Source name",
+        "Destination": "Recipient/Destination name"
+    }},
+    ...
+]
+
+If NO transactions are visible on this page, return an empty array: []
+"""
+
+            response = self.claude_client.messages.create(
+                model="claude-sonnet-4-5-20250929",
+                max_tokens=16000,  # Increased from 4000 to handle pages with 50+ transactions
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": image_base64
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }]
+            )
+
+            response_text = response.content[0].text.strip()
+
+            # Clean up code fences if present
+            if response_text.startswith('```json'):
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+            elif response_text.startswith('```'):
+                response_text = response_text.replace('```', '').strip()
+
+            # Parse JSON
+            transactions = json.loads(response_text)
+
+            if not isinstance(transactions, list):
+                print(f"   WARNING: Expected list of transactions, got {type(transactions)}")
+                return []
+
+            print(f"   Extracted {len(transactions)} transactions from page {page_num}")
+            return transactions
+
+        except json.JSONDecodeError as e:
+            print(f"   ERROR: Failed to parse Claude response as JSON: {e}")
+            print(f"   Response: {response_text[:500]}")
+            return []
+        except Exception as e:
+            print(f"   ERROR: Claude Vision API call failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 # Integration function to replace existing column detection logic
 def smart_process_file(file_path: str, enhance: bool = True) -> Optional[pd.DataFrame]:

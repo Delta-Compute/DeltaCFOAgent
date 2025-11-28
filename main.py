@@ -18,6 +18,7 @@ import json
 import shutil
 import argparse
 import re
+import anthropic
 
 class DeltaCFOAgent:
     def __init__(self, tenant_id: str):
@@ -76,6 +77,8 @@ class DeltaCFOAgent:
         self.account_mapping = {}
         self.employees = {}
         self.wallets = {}
+        self.business_entities = []  # List of tenant's business entity names
+        self.workforce_members = {}  # Employee/contractor names from workforce table
 
         # Try to load from database first (SaaS architecture)
         try:
@@ -104,23 +107,32 @@ class DeltaCFOAgent:
 
             # Load all patterns for Delta tenant
             cursor.execute("""
-                SELECT pattern_type, description_pattern, entity, accounting_category, confidence_score
+                SELECT pattern_type, description_pattern, entity, accounting_category, confidence_score, currency
                 FROM classification_patterns
-                WHERE tenant_id = %s
+                WHERE tenant_id = %s AND is_active = TRUE
                 ORDER BY confidence_score DESC
             """, (tenant_id,))
 
             patterns_loaded = 0
-            for pattern_type, description_pattern, entity, accounting_category, confidence_score in cursor.fetchall():
+            for pattern_type, description_pattern, entity, accounting_category, confidence_score, currency in cursor.fetchall():
                 pattern_key = pattern_type if pattern_type in self.patterns else 'expense'
 
-                # Handle card mappings specially
-                if pattern_type == 'card_mapping':
+                # Handle account/card mappings specially
+                if pattern_type in ['card_mapping', 'account_number']:
                     self.account_mapping[description_pattern] = entity
                 else:
                     # Convert SQL LIKE pattern (%KEYWORD%) to Python string (KEYWORD)
                     # Remove leading and trailing % wildcards for Python "in" matching
                     python_pattern = description_pattern.strip('%').upper()
+
+                    # For regional patterns with currency field, use currency code as the pattern key
+                    # This allows currency-based matching (e.g., "BTC" → "Infinity Validator")
+                    if pattern_type == 'regional' and currency:
+                        python_pattern = currency.upper()
+
+                    # Skip empty patterns (can cause false matches)
+                    if not python_pattern:
+                        continue
 
                     # Store pattern in appropriate category
                     # Use accounting_category as fallback when entity is NULL (for expense patterns)
@@ -148,11 +160,60 @@ class DeltaCFOAgent:
                     'confidence': float(confidence_score) if confidence_score else 0.9
                 }
 
+            # Load business entities for the tenant
+            cursor.execute("""
+                SELECT name
+                FROM business_entities
+                WHERE tenant_id = %s
+                ORDER BY name
+            """, (tenant_id,))
+
+            for (entity_name,) in cursor.fetchall():
+                self.business_entities.append(entity_name)
+
+            # Load workforce members for automatic employee recognition
+            # Note: Entity assignment will be determined by transaction context (bank account, etc.)
+            cursor.execute("""
+                SELECT full_name, employment_type, department
+                FROM workforce_members
+                WHERE tenant_id = %s AND status = 'active'
+                ORDER BY full_name
+            """, (tenant_id,))
+
+            for full_name, employment_type, department in cursor.fetchall():
+                # Store both full name and individual name parts for flexible matching
+                name_upper = full_name.upper()
+
+                # Try to infer entity from department name or use first business entity as default
+                # Future: Add entity_id FK to workforce_members table for explicit association
+                inferred_entity = department if department and department in self.business_entities else (
+                    self.business_entities[0] if self.business_entities else 'Unknown'
+                )
+
+                self.workforce_members[name_upper] = {
+                    'full_name': full_name,
+                    'type': employment_type,
+                    'entity': inferred_entity
+                }
+
+                # Also store individual name parts (first name, last name) for partial matching
+                # e.g., "JOAO SILVA" → can match "JOAO" or "SILVA" in descriptions
+                name_parts = name_upper.split()
+                for part in name_parts:
+                    if len(part) > 2:  # Only store name parts longer than 2 chars to avoid false matches
+                        if part not in self.workforce_members:
+                            self.workforce_members[part] = {
+                                'full_name': full_name,
+                                'type': employment_type,
+                                'entity': inferred_entity
+                            }
+
             cursor.close()
             conn.close()
 
-            print(f" Loaded business knowledge: {len(self.account_mapping)} accounts, {patterns_loaded} patterns, {len(self.wallets)} wallets")
+            print(f" Loaded business knowledge: {len(self.account_mapping)} accounts, {patterns_loaded} patterns, {len(self.wallets)} wallets, {len(self.business_entities)} entities, {len(self.workforce_members)} workforce")
             print(f"    Pattern breakdown: revenue={len(self.patterns['revenue'])}, expense={len(self.patterns['expense'])}, crypto={len(self.patterns['crypto'])}, regional={len(self.patterns['regional'])}")
+            print(f"    Business entities: {', '.join(self.business_entities)}")
             return
 
         except Exception as e:
@@ -325,85 +386,22 @@ class DeltaCFOAgent:
             'elimination_amount': 0
         }
 
-        # Map accounts to entities for intercompany detection
-        account_entity_map = {
-            '3687': 'Delta LLC',  # BUS COMPLETE CHK
-            '6118': 'Mixed Entities',  # J. DHAMER
-            '4832': 'Delta Mining Paraguay S.A.',  # D. OZUNA
-            '6134': 'Delta Mining Paraguay S.A.',  # A. MENDEZ
-            '2512': 'Delta Mining Paraguay S.A.',  # A. CASTORINO
-            '4236': 'Personal',  # V. CRUZ
-            '6126': 'Delta Mining Paraguay S.A.'   # E. AQUINO
-        }
-
-        from_entity = account_entity_map.get(account, entity)
+        # Map accounts to entities for intercompany detection (loaded from database)
+        from_entity = self.account_mapping.get(account, entity)
 
         # INTERCOMPANY DETECTION PATTERNS
+        #
+        # NOTE: Complex intercompany detection rules should be stored in database
+        # configuration or detected using AI. The logic below provides basic
+        # pattern matching that works across tenants.
+        #
+        # Removed hardcoded Delta-specific patterns. Tenants should configure:
+        # - Entity relationships (parent-subsidiary)
+        # - Intercompany account mappings
+        # - Custom detection keywords via classification_patterns table
 
-        # 1. Wire transfers to Paraguay subsidiaries
-        if ('DELTA VALIDATOR' in description_upper or 'DELTA MINING' in description_upper) and \
-           ('PARAGUAY' in description_upper or 'ASUNCION' in description_upper):
-            return {
-                'from_entity': 'Delta LLC',
-                'to_entity': 'Delta Mining Paraguay S.A.',
-                'type': 'Investment',
-                'elimination_required': True,
-                'elimination_amount': abs(amount_float)
-            }
-
-        # 2. Credit card payments between entities (if from LLC paying for subsidiary expenses)
-        if 'PAYMENT TO CHASE CARD' in description_upper and from_entity == 'Delta LLC':
-            return {
-                'from_entity': 'Delta LLC',
-                'to_entity': 'Mixed Entities',
-                'type': 'Intercompany_Loan',
-                'elimination_required': True,
-                'elimination_amount': abs(amount_float)
-            }
-
-        # 3. Revenue from subsidiaries to parent
-        if entity in ['Delta Prop Shop LLC', 'Delta Mining Paraguay S.A.'] and amount_float > 0:
-            # Large amounts could be revenue sharing or dividends
-            if abs(amount_float) > 10000:  # Threshold for significant intercompany revenue
-                return {
-                    'from_entity': entity,
-                    'to_entity': 'Delta LLC',
-                    'type': 'Revenue_Share',
-                    'elimination_required': True,
-                    'elimination_amount': abs(amount_float)
-                }
-
-        # 4. Transfers between Chase cards (different entities)
-        if 'ONLINE TRANSFER' in description_upper:
-            # Extract account numbers from description if possible
-            if '3687' in description_upper and from_entity != 'Delta LLC':
-                return {
-                    'from_entity': from_entity,
-                    'to_entity': 'Delta LLC',
-                    'type': 'Intercompany_Transfer',
-                    'elimination_required': True,
-                    'elimination_amount': abs(amount_float)
-                }
-
-        # 5. Management fees or expense allocations
-        if 'MANAGEMENT' in description_upper or 'ALLOCATION' in description_upper:
-            return {
-                'from_entity': entity,
-                'to_entity': 'Delta LLC',
-                'type': 'Management_Fee',
-                'elimination_required': True,
-                'elimination_amount': abs(amount_float)
-            }
-
-        # 6. Detect patterns indicating intercompany nature
-        intercompany_keywords = [
-            'DELTA VALIDATOR LLC',
-            'DELTA MINING LLC',
-            'DELTA PROP SHOP',
-            'INTERCOMPANY',
-            'SUBSIDIARY'
-        ]
-
+        # 1. Generic intercompany keyword detection
+        intercompany_keywords = ['INTERCOMPANY', 'SUBSIDIARY', 'INTERNAL TRANSFER']
         for keyword in intercompany_keywords:
             if keyword in description_upper:
                 return {
@@ -1449,6 +1447,143 @@ class DeltaCFOAgent:
             else:
                 return 'OPERATING_EXPENSE', 'General Expenses'
 
+    def _classify_with_ai(self, description, amount, account='', currency=''):
+        """
+        Use Claude AI to classify a transaction based on tenant context.
+
+        This is the FALLBACK when no patterns match - provides intelligent classification
+        based on the tenant's business entities, industry, and context.
+
+        Args:
+            description: Transaction description
+            amount: Transaction amount
+            account: Bank account number (last 4 digits)
+            currency: Transaction currency
+
+        Returns:
+            (entity, confidence, reason, accounting_category, subcategory)
+        """
+        try:
+            # Get Claude API key from environment
+            api_key = os.environ.get('ANTHROPIC_API_KEY')
+            if not api_key:
+                return '', 0.4, 'AI classification unavailable (no API key)', 'OPERATING_EXPENSE', 'General Expenses'
+
+            # Initialize Claude client
+            client = anthropic.Anthropic(api_key=api_key)
+
+            # Load tenant business context from database
+            import psycopg2
+
+            db_host = os.environ.get('DB_HOST', '34.39.143.82')
+            db_port = os.environ.get('DB_PORT', '5432')
+            db_name = os.environ.get('DB_NAME', 'delta_cfo')
+            db_user = os.environ.get('DB_USER', 'delta_user')
+            db_password = os.environ.get('DB_PASSWORD', 'nWr0Y8bU51ypLjMIfx8bTe+V/1iOV59r90T8wJEsSGo=')
+
+            conn = psycopg2.connect(
+                host=db_host,
+                port=db_port,
+                database=db_name,
+                user=db_user,
+                password=db_password
+            )
+            cursor = conn.cursor()
+
+            # Load tenant configuration (business context)
+            cursor.execute("""
+                SELECT config_data
+                FROM tenant_configurations
+                WHERE tenant_id = %s AND config_type = 'business_context'
+            """, (self.tenant_id,))
+
+            business_context = {}
+            result = cursor.fetchone()
+            if result and result[0]:
+                business_context = json.loads(result[0]) if isinstance(result[0], str) else result[0]
+
+            cursor.close()
+            conn.close()
+
+            # Build context for AI
+            entities_list = ', '.join(self.business_entities) if self.business_entities else 'No entities configured'
+            industry = business_context.get('industry', 'general business')
+            company_name = business_context.get('company_name', 'the company')
+
+            # Determine transaction type
+            is_revenue = float(amount) > 0 if amount else False
+            transaction_type = "incoming/revenue" if is_revenue else "outgoing/expense"
+
+            # Build AI prompt
+            prompt = f"""You are a financial transaction classifier for {company_name}, a {industry} company.
+
+Business Entities:
+{entities_list}
+
+Transaction Details:
+- Description: {description}
+- Amount: ${amount}
+- Currency: {currency if currency else 'USD'}
+- Type: {transaction_type}
+- Account: {account if account else 'unknown'}
+
+Task: Classify this transaction by determining:
+1. Which business entity this transaction belongs to (choose from the entities above, or return empty string if unclear)
+2. Accounting category (REVENUE, OPERATING_EXPENSE, COST_OF_GOODS_SOLD, etc.)
+3. Subcategory (be specific based on the description)
+4. Brief justification (one sentence explaining your reasoning)
+
+Respond in this EXACT JSON format:
+{{
+  "entity": "Entity Name or empty string",
+  "category": "ACCOUNTING_CATEGORY",
+  "subcategory": "Specific Subcategory",
+  "justification": "Brief explanation",
+  "confidence": 0.7
+}}
+
+Important:
+- Only return entity names that exist in the Business Entities list above
+- If no entity is a good match, return empty string for entity
+- Confidence should be 0.6-0.8 for AI classifications (never claim 100% certainty)
+- Be specific with subcategories based on transaction description
+"""
+
+            # Call Claude API
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=500,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            # Parse AI response
+            response_text = message.content[0].text
+
+            # Extract JSON from response (handle cases where AI adds explanation before/after JSON)
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                json_text = response_text[json_start:json_end]
+                result = json.loads(json_text)
+
+                entity = result.get('entity', '')
+                category = result.get('category', 'OPERATING_EXPENSE')
+                subcategory = result.get('subcategory', 'General Expenses')
+                justification = result.get('justification', 'AI classification')
+                confidence = float(result.get('confidence', 0.7))
+
+                reason = f"AI: {justification}"
+                return entity, confidence, reason, category, subcategory
+            else:
+                return '', 0.5, 'AI classification failed (invalid response)', 'OPERATING_EXPENSE', 'General Expenses'
+
+        except Exception as e:
+            print(f"  AI classification error: {e}")
+            return '', 0.4, f'AI classification error: {str(e)[:50]}', 'OPERATING_EXPENSE', 'General Expenses'
+
     def classify_transaction(self, description, amount, account='', currency='', withdrawal_address=''):
         """
         Classify a single transaction based on business rules.
@@ -1456,6 +1591,7 @@ class DeltaCFOAgent:
         """
 
         description_upper = str(description).upper()
+        amount_float = self.safe_float(amount)  # Convert amount to float for comparisons
 
         # CRITICAL PRIORITY 0: INTERMEDIATE ROUTING ACCOUNT DETECTION
         # These are treasury routing operations, NOT business unit transactions
@@ -1482,119 +1618,28 @@ class DeltaCFOAgent:
                     acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                     return entity, 1.0, reason, acct_cat, subcat
 
-        # Special handling for known routing accounts
-        if account:
-            routing_accounts = ['3911', '3687', '5893', '9189']  # Chase accounts used for routing
-            if any(acc in str(account) for acc in routing_accounts):
-                if 'COINBASE' in description_upper or 'MERCADO' in description_upper:
-                    entity = 'Internal Transfer'
-                    reason = f"Routing account transfer: {account}"
-                    acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                    return entity, 1.0, reason, acct_cat, subcat
+        # PRIORITY 0: Routing accounts - Moved to database patterns
+        # Account-based routing logic now handled by classification_patterns table (pattern_type='account_number')
 
-        # PRIORITY 0.5: COINBASE INTERNAL OPERATIONS - Apply business logic
-        # These are NOT routing but actual business operations within Coinbase
-
-        # BTC/Crypto receives from external accounts = Mining rewards/revenue
-        if 'RECEIVE BTC - EXTERNAL ACCOUNT' in description_upper:
-            entity = 'Infinity Validator'
-            reason = 'BTC mining rewards received at Coinbase'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.95, reason, acct_cat, subcat
-        elif 'RECEIVE USDC - EXTERNAL ACCOUNT' in description_upper:
-            # USDC receives from external sources - need manual classification
-            # Could be: client payments, trading profits, returns from other operations
-            # Leave entity blank so TF-IDF can find similar transactions
-            entity = ''
-            reason = 'USDC received from external account - needs manual classification'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.5, reason, acct_cat, subcat
-        elif 'RECEIVE USDT - EXTERNAL ACCOUNT' in description_upper:
-            # USDT receives from external sources - likely trading but needs verification
-            # Leave entity blank so TF-IDF can find similar transactions
-            entity = ''
-            reason = 'USDT received from external account - likely trading revenue'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.6, reason, acct_cat, subcat
-
-        # Crypto sends from Coinbase = Likely to mining operations or employees
-        elif 'SEND BTC' in description_upper:
-            # Without wallet addresses, assume these go to mining operations
-            entity = 'Infinity Validator'
-            reason = 'BTC sent to mining operations'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.8, reason, acct_cat, subcat
-        elif 'SEND USDC' in description_upper or 'SEND USDT' in description_upper:
-            # USD stablecoin sends likely for operational expenses
-            entity = 'Delta Prop Shop'
-            reason = 'Crypto sent for operations'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.8, reason, acct_cat, subcat
-
-        # USD withdrawals from Coinbase to bank accounts
-        elif 'WITHDRAWAL USD' in description_upper and 'CHASE' in description_upper:
-            entity = 'Internal Transfer'
-            reason = 'USD withdrawal to Chase bank account'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 1.0, reason, acct_cat, subcat
-        elif 'WITHDRAWAL USD' in description_upper:
-            # USD withdrawals likely going to operational accounts
-            entity = 'Delta Prop Shop'
-            reason = 'USD withdrawal for operations'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.85, reason, acct_cat, subcat
-        elif 'WITHDRAWAL USDC' in description_upper and 'CHASE' in description_upper:
-            entity = 'Internal Transfer'
-            reason = 'USDC withdrawal to Chase bank account'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 1.0, reason, acct_cat, subcat
-        elif 'WITHDRAWAL USDC' in description_upper or 'WITHDRAWAL USDT' in description_upper:
-            entity = 'Delta Prop Shop'
-            reason = 'Crypto withdrawal for operations'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.85, reason, acct_cat, subcat
-
-        # Convert operations within Coinbase = Trading activity
-        elif 'CONVERT BTC' in description_upper or 'CONVERT USDT' in description_upper or 'CONVERT USDC' in description_upper:
-            entity = 'Delta Prop Shop'
-            reason = 'Coinbase trading conversion'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.9, reason, acct_cat, subcat
-        elif 'SELL BTC' in description_upper or 'SELL USDT' in description_upper or 'SELL USDC' in description_upper:
-            entity = 'Delta Prop Shop'
-            reason = 'Coinbase crypto sale'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.9, reason, acct_cat, subcat
+        # PRIORITY 0.5: COINBASE OPERATIONS - Moved to database patterns
+        # All Coinbase-specific logic now handled by classification_patterns table
+        # This includes: RECEIVE BTC, SEND operations, WITHDRAWAL patterns, CONVERT/SELL operations
 
         # PRIORITY 1: Check wallet intelligence for withdrawals
+        # Wallet routing logic moved to database (wallet_addresses table)
         if withdrawal_address and withdrawal_address.lower() in self.wallets:
             wallet_info = self.wallets[withdrawal_address.lower()]
-            # Check if it's a known routing wallet
-            if '0x86cc1529bdf444200f06957ab567b56a385c5e90' in withdrawal_address:  # Whit Mercado Bitcoin
-                entity = 'Internal Transfer'
-                reason = 'Routing wallet: Whit Mercado Bitcoin → Brazil Bank'
-                acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                return entity, 1.0, reason, acct_cat, subcat
             entity = wallet_info['entity']
             confidence = wallet_info['confidence']
             reason = f"wallet: {wallet_info['purpose']}"
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, confidence, reason, acct_cat, subcat
 
-        # PRIORITY 2: Special rules for crypto
+        # PRIORITY 2: Special rules for crypto (moved to database patterns)
+        # Currency-based classification now handled by classification_patterns table
         if currency:
             currency_upper = currency.upper()
-            if currency_upper == 'BTC':
-                entity = 'Infinity Validator'
-                reason = 'BTC mining rewards from Subnet 89'
-                acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                return entity, 1.0, reason, acct_cat, subcat
-            elif currency_upper == 'TAO':
-                entity = 'Delta Prop Shop LLC'
-                reason = 'TAO revenue (Taoshi contract + trader revenue)'
-                acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                return entity, 1.0, reason, acct_cat, subcat
-            elif currency_upper in ['USDT', 'USDC']:
+            if currency_upper in ['USDT', 'USDC']:
                 # Leave entity blank so TF-IDF can find similar transactions
                 entity = ''
                 reason = f'{currency_upper} deposit - determine if trading or revenue'
@@ -1609,85 +1654,79 @@ class DeltaCFOAgent:
                 acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
                 return entity, 0.95, reason, acct_cat, subcat
 
-        # Check all patterns in priority order
+        # Check workforce members (employees/contractors) with word boundary matching
+        # This automatically recognizes any employee added to the workforce system
+        for name_key, member_info in self.workforce_members.items():
+            if re.search(r'\b' + re.escape(name_key) + r'\b', description_upper):
+                entity = member_info['entity']
+                full_name = member_info['full_name']
+                emp_type = member_info['type']
+                reason = f"Workforce: {full_name} ({emp_type})"
+
+                # Determine category based on employment type
+                if amount_float < 0:  # Outgoing payment
+                    if emp_type == 'employee':
+                        acct_cat, subcat = 'OPERATING_EXPENSE', 'Payroll & Benefits'
+                    else:  # contractor
+                        acct_cat, subcat = 'OPERATING_EXPENSE', 'Professional Services'
+                else:
+                    acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
+
+                return entity, 0.95, reason, acct_cat, subcat
+
+        # Check all patterns in priority order (with word boundary matching)
         pattern_order = ['revenue', 'transfer', 'technology', 'paraguay', 'brazil', 'fees', 'crypto', 'personal', 'expense', 'regional']
 
         for pattern_type in pattern_order:
             for pattern, rule in self.patterns.get(pattern_type, {}).items():
-                if pattern in description_upper:
-                    entity = rule['entity']
-                    confidence = rule['confidence']
-                    reason = f"{pattern_type}: {pattern}"
-                    acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                    return entity, confidence, reason, acct_cat, subcat
+                # Special handling for regional patterns - check currency field
+                if pattern_type == 'regional':
+                    # Check if pattern matches currency (e.g., BRL, USD, EUR)
+                    if currency and pattern.upper() in currency.upper():
+                        entity = rule['entity']
+                        confidence = rule['confidence']
+                        reason = f"Currency match: {currency} → {entity}"
+                        acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
+                        return entity, confidence, reason, acct_cat, subcat
+                    # Also check description for country/region names
+                    if pattern.upper() in description_upper:
+                        entity = rule['entity']
+                        confidence = rule['confidence']
+                        reason = f"Regional match: {pattern}"
+                        acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
+                        return entity, confidence, reason, acct_cat, subcat
+                else:
+                    # Use word boundary matching for other pattern types to avoid false positives
+                    # e.g., "ALDO" won't match "ALAINE" or "VAL"
+                    if re.search(r'\b' + re.escape(pattern) + r'\b', description_upper):
+                        entity = rule['entity']
+                        confidence = rule['confidence']
+                        reason = f"{pattern_type}: {pattern}"
+                        acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
+                        return entity, confidence, reason, acct_cat, subcat
 
-        # PRIORITY 3: Check for FINAL DESTINATION patterns (actual business expenses)
-        # These are where we SHOULD classify to business units
-        final_destination_patterns = {
-            'TIAGO': ('Delta Brazil', 0.95, 'Employee payment: Tiago'),
-            'VICTOR': ('Delta Brazil', 0.95, 'Employee payment: Victor'),
-            'VANESSA': ('Delta Brazil', 0.95, 'Employee payment: Vanessa'),
-            'DANIELE': ('Delta Brazil', 0.95, 'Employee payment: Daniele/Regis'),
-            'LEAP SOLUCOES': ('Delta Brazil', 0.95, 'Professional services: Accounting'),
-            'PORTO SEGURO': ('Delta Brazil', 0.95, 'Insurance: Porto Seguro'),
-            'ANDE': ('Delta PY', 0.95, 'Power provider: ANDE Paraguay'),
-            'ADMINISTRATION NACIONAL DE ELECTRIC': ('Delta PY', 0.95, 'Power: ANDE Paraguay'),
-            'RISEWORKS': ('Delta Prop Shop LLC', 0.95, 'Contractor: Riseworks'),
-            'ALDO': ('Delta PY', 0.95, 'Employee/Operations: Aldo'),
-            'ANDERSON': ('Delta PY', 0.95, 'Employee: Anderson'),
-        }
+        # PRIORITY 3: Patterns already checked above in database patterns loop
+        # (Removed hardcoded final_destination_patterns - now loaded from database)
 
-        for pattern, (entity, confidence, reason) in final_destination_patterns.items():
-            if pattern in description_upper:
-                # Double-check it's not a routing transaction
-                if not any(routing in description_upper for routing in ['COINBASE', 'MERCADO', 'MEXC', 'TRANSFER FROM', 'TRANSFER TO']):
-                    acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-                    return entity, confidence, reason, acct_cat, subcat
-
-        # Check for specific keywords and wire transfer patterns
+        # Check for specific internal transfer patterns
         if 'PAYMENT TO CHASE CARD' in description_upper:
             entity = 'Internal Transfer'
             reason = 'Inter-account transfer'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 1.0, reason, acct_cat, subcat
-        elif 'ONLINE TRANSFER' in description_upper and not any(final in description_upper for final in final_destination_patterns.keys()):
+        elif 'ONLINE TRANSFER' in description_upper:
             entity = 'Internal Transfer'
             reason = 'Inter-account transfer'
             acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
             return entity, 1.0, reason, acct_cat, subcat
-        elif 'UBER' in description_upper:
-            entity = 'Delta LLC'
-            reason = 'Business travel'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 1.0, reason, acct_cat, subcat
-        elif 'EXOS CAPITAL' in description_upper:
-            entity = 'Delta Mining Paraguay S.A.'
-            reason = 'Client revenue from EXOS'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 1.0, reason, acct_cat, subcat
-        elif 'ALPS BLOCKCHAIN' in description_upper:
-            entity = 'Delta Mining Paraguay S.A.'
-            reason = 'Client revenue from Alps'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 1.0, reason, acct_cat, subcat
-        elif ('PARAGUAY' in description_upper or 'ASUNCION' in description_upper) and self.safe_float(amount) > 1000:
-            entity = 'Delta Mining Paraguay S.A.'
-            reason = 'Wire transfer to Paraguay operations'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.95, reason, acct_cat, subcat
 
-        # Default classification based on amount
-        # Leave entity blank so TF-IDF can find similar transactions
-        if self.safe_float(amount) > 0:
-            entity = ''
-            reason = 'Unknown revenue source'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.5, reason, acct_cat, subcat
-        else:
-            entity = ''
-            reason = 'Unknown expense'
-            acct_cat, subcat = self._determine_accounting_category(entity, description, amount)
-            return entity, 0.5, reason, acct_cat, subcat
+        # Removed hardcoded vendor rules (UBER, EXOS CAPITAL, ALPS, PARAGUAY)
+        # These are now loaded from database patterns
+
+        # FALLBACK: Use AI classification when no patterns match
+        # This provides intelligent classification based on tenant's business context
+        print(f"  No patterns matched - using AI classification for: {description[:50]}...")
+        return self._classify_with_ai(description, amount, account, currency)
 
     def _continue_processing_from_dataframe(self, df, file_path, enhance):
         """Continue processing from a DataFrame after smart ingestion handles column mapping"""

@@ -76,45 +76,83 @@ async def handle_new_pattern_notification(payload):
 
 def start_listener():
     """
-    Start listening for PostgreSQL NOTIFY events on 'new_pattern_suggestion' channel
+    Start listening for PostgreSQL NOTIFY events on 'new_pattern_suggestion' channel.
+    Includes automatic reconnection logic for resilience.
     """
-    logger.info("🚀 Starting Pattern Validation Service...")
+    logger.info("Starting Pattern Validation Service...")
 
     # Initialize Claude client
     initialize_claude_client()
 
-    # Get a dedicated connection for LISTEN using db_manager's method
-    conn = db_manager._get_postgresql_connection()
-    conn.set_isolation_level(0)  # Set to autocommit mode
-    cursor = conn.cursor()
+    reconnect_delay = 5  # Start with 5 seconds
+    max_reconnect_delay = 300  # Max 5 minutes between retries
 
-    # Start listening
-    cursor.execute("LISTEN new_pattern_suggestion;")
-    logger.info("👂 Listening for new pattern suggestions...")
+    while True:
+        conn = None
+        cursor = None
+        try:
+            # Get a dedicated connection for LISTEN
+            conn = db_manager._get_postgresql_connection()
+            conn.set_isolation_level(0)  # Set to autocommit mode
+            cursor = conn.cursor()
 
-    try:
-        while True:
-            # Wait for notifications (with 5 second timeout)
-            if select.select([conn], [], [], 5) == ([], [], []):
-                # Timeout - no notifications
-                continue
+            # Start listening
+            cursor.execute("LISTEN new_pattern_suggestion;")
+            logger.info("Listening for new pattern suggestions...")
 
-            # Process notifications
-            conn.poll()
-            while conn.notifies:
-                notify = conn.notifies.pop(0)
-                logger.info(f"📨 Received notification: {notify.payload}")
+            # Reset reconnect delay on successful connection
+            reconnect_delay = 5
 
-                # Handle notification asynchronously
-                asyncio.run(handle_new_pattern_notification(notify.payload))
+            while True:
+                # Wait for notifications (with 30 second timeout)
+                if select.select([conn], [], [], 30) == ([], [], []):
+                    # Timeout - check connection is still alive
+                    try:
+                        cursor.execute("SELECT 1")
+                    except Exception:
+                        logger.warning("Connection check failed, reconnecting...")
+                        break
+                    continue
 
-    except KeyboardInterrupt:
-        logger.info("⏹️  Stopping Pattern Validation Service...")
-    finally:
-        cursor.execute("UNLISTEN new_pattern_suggestion;")
-        cursor.close()
-        conn.close()
-        logger.info("✅ Service stopped")
+                # Process notifications
+                conn.poll()
+                while conn.notifies:
+                    notify = conn.notifies.pop(0)
+                    logger.info(f"Received notification: {notify.payload}")
+
+                    # Handle notification asynchronously
+                    try:
+                        asyncio.run(handle_new_pattern_notification(notify.payload))
+                    except Exception as e:
+                        logger.error(f"Error processing notification: {e}")
+
+        except KeyboardInterrupt:
+            logger.info("Stopping Pattern Validation Service...")
+            break
+
+        except Exception as e:
+            logger.error(f"Listener error: {e}. Reconnecting in {reconnect_delay}s...")
+
+        finally:
+            # Clean up connection
+            if cursor:
+                try:
+                    cursor.execute("UNLISTEN new_pattern_suggestion;")
+                    cursor.close()
+                except Exception:
+                    pass
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        # Wait before reconnecting (exponential backoff)
+        import time
+        time.sleep(reconnect_delay)
+        reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+
+    logger.info("Service stopped")
 
 
 if __name__ == '__main__':
