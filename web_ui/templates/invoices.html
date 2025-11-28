@@ -948,6 +948,14 @@
         <!-- Navigation -->
         {% include '_navbar.html' %}
 
+        <div class="main-layout">
+            <div class="dashboard-content">
+        <!-- Page Header -->
+        <header style="margin-bottom: 2rem;">
+            <h1 data-i18n="invoices.pageTitle" style="font-size: 2rem; font-weight: 700; color: #1e293b; margin-bottom: 0.5rem;">📄 Invoice Processing</h1>
+            <p style="color: #718096; font-size: 1rem; margin-top: 0;" data-i18n="invoices.subtitle">Manage invoices and billing</p>
+        </header>
+
         <!-- Statistics -->
         <div class="invoice-stats">
             <div class="stat-card">
@@ -972,7 +980,7 @@
             </div>
         </div>
 
-        <!-- Create Invoice Button -->
+        <!-- <span data-i18n="invoices.createInvoice">Create Invoice</span> Button -->
         <div style="margin-bottom: 2rem; text-align: center;">
             <a href="/invoices/create" class="btn" style="padding: 1rem 2.5rem; text-decoration: none; display: inline-block; font-size: 1.1rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3); border-radius: 25px; color: white;">
                 ➕ Create New Invoice
@@ -994,7 +1002,7 @@
         <!-- Filters -->
         <div class="invoice-filters">
             <div class="filters-header">
-                <div class="filters-title">Filters & Search</div>
+                <div class="filters-title"><span data-i18n="invoices.filters.title">Filters & Search</span></div>
             </div>
 
             <!-- Keyword Search -->
@@ -1072,8 +1080,8 @@
 
             <!-- Filter Actions -->
             <div class="filter-actions">
-                <button class="btn-apply-filters" onclick="applyFilters()">Apply Filters</button>
-                <button class="btn-clear-filters" onclick="clearAllFilters()">Clear All</button>
+                <button class="btn-apply-filters" onclick="applyFilters()"><span data-i18n="invoices.filters.applyFilters">Apply Filters</span></button>
+                <button class="btn-clear-filters" onclick="clearAllFilters()"><span data-i18n="invoices.filters.clearAll">Clear All</span></button>
             </div>
         </div>
 
@@ -1316,6 +1324,10 @@
                     <button type="submit" class="btn-save" id="mark-paid-submit-btn">Mark as Paid</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+            </div>
         </div>
     </div>
 

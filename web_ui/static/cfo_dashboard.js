@@ -14,7 +14,10 @@ let currentFilters = {
     entity: '',
     startDate: null,
     endDate: null,
-    isInternal: 'false'  // Default to External Only for accurate financial reporting
+    isInternal: 'false',  // Default to External Only for accurate financial reporting
+    keyword: '',  // Search keyword for description/origin/destination
+    accountingCategory: '',  // Filter by accounting category
+    accountingSubcategory: ''  // Filter by subcategory
 };
 
 let dashboardData = {};
@@ -739,7 +742,10 @@ function resetFilters() {
         entity: '',
         startDate: null,
         endDate: null,
-        isInternal: ''
+        isInternal: '',
+        keyword: '',
+        accountingCategory: '',
+        accountingSubcategory: ''
     };
 
     updateFilterDisplay();
@@ -771,6 +777,14 @@ async function refreshDashboard() {
     } finally {
         showLoading(false);
     }
+}
+
+/**
+ * Refresh only the Sankey diagram with current filters
+ */
+function refreshSankeyDiagram() {
+    console.log('Refreshing Sankey diagram with filters:', currentFilters);
+    createSankeyDiagram();
 }
 
 /**
@@ -2808,8 +2822,48 @@ function createSankeyDiagram() {
     // Show loading message
     container.innerHTML = '<div style="text-align: center; color: #666; padding: 2rem;">Loading Sankey diagram...</div>';
 
+    // NEW: Build query string with filters
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiParams = new URLSearchParams({
+        min_amount: '500',
+        max_categories: '15'
+    });
+
+    // Add current filters if available (prioritize currentFilters object)
+    if (currentFilters) {
+        if (currentFilters.startDate) apiParams.set('start_date', currentFilters.startDate);
+        if (currentFilters.endDate) apiParams.set('end_date', currentFilters.endDate);
+        if (currentFilters.entity) apiParams.set('entity', currentFilters.entity);
+        if (currentFilters.keyword) apiParams.set('keyword', currentFilters.keyword);
+        if (currentFilters.accountingCategory) apiParams.set('accounting_category', currentFilters.accountingCategory);
+        if (currentFilters.accountingSubcategory) apiParams.set('accounting_subcategory', currentFilters.accountingSubcategory);
+    }
+
+    // Also check URL params (for deep linking from transaction dashboard) - only if not already set
+    if (!apiParams.has('keyword')) {
+        const urlKeyword = urlParams.get('keyword') || urlParams.get('search');
+        if (urlKeyword) apiParams.set('keyword', urlKeyword);
+    }
+
+    if (!apiParams.has('entity')) {
+        const urlEntity = urlParams.get('entity');
+        if (urlEntity) apiParams.set('entity', urlEntity);
+    }
+
+    if (!apiParams.has('accounting_category')) {
+        const urlCategory = urlParams.get('accounting_category');
+        if (urlCategory) apiParams.set('accounting_category', urlCategory);
+    }
+
+    if (!apiParams.has('accounting_subcategory')) {
+        const urlSubcategory = urlParams.get('accounting_subcategory');
+        if (urlSubcategory) apiParams.set('accounting_subcategory', urlSubcategory);
+    }
+
+    console.log('Sankey Data: Fetching with filters:', Object.fromEntries(apiParams));
+
     // Fetch Sankey data from the new API endpoint (uses subcategories, excludes Internal Transfers)
-    fetch('/api/reports/sankey-flow?min_amount=500&max_categories=15')
+    fetch(`/api/reports/sankey-flow?${apiParams.toString()}`)
         .then(response => response.json())
         .then(result => {
             if (!result.success || !result.data || !result.data.sankey) {
@@ -3440,12 +3494,25 @@ function hideBreakdownTooltip() {
 
 /**
  * Open Transaction Manager in new tab with pre-filtered search
+ * NOTE: The keyword comes from origin (revenue) or destination (expense) fields in breakdown.
+ * For revenue, we filter by origin field; for expenses, by destination field.
  */
 function openTransactionManager(keyword, category) {
     // Build URL with search parameters
+    // Use origin/destination filter instead of generic keyword search for precise matching
     const params = new URLSearchParams();
-    params.set('search', keyword);
-    params.set('category', category);
+
+    // Determine if this is revenue or expense based on category
+    // For now, assume if category contains "Revenue", filter by origin; otherwise by destination
+    const isRevenue = category && category.toLowerCase().includes('revenue');
+
+    if (isRevenue) {
+        params.set('origin', keyword);  // Filter by origin field for revenue transactions
+    } else {
+        params.set('destination', keyword);  // Filter by destination field for expenses
+    }
+
+    params.set('category', category);  // Category filter for Sankey integration
 
     // Open in new tab
     const url = `/dashboard?${params.toString()}`;

@@ -372,7 +372,7 @@ tbody tr:nth-child(odd) {
 }
 
 tbody tr:hover {
-    background-color: #e5e7eb !important;
+    background-color: #e5e7eb;
     transition: background-color 0.2s ease;
     cursor: pointer;
 }

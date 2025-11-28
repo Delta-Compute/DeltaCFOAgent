@@ -9,30 +9,14 @@ from typing import Dict, List, Optional, Any
 from functools import lru_cache
 from datetime import datetime, timedelta
 
+# Import tenant context management - NO hardcoded defaults
+from tenant_context import get_current_tenant_id
+
 logger = logging.getLogger(__name__)
 
 # Global cache for tenant configurations (in-memory cache with TTL)
 _config_cache = {}
 _cache_ttl = timedelta(minutes=15)  # Cache configs for 15 minutes
-
-
-def get_current_tenant_id() -> str:
-    """
-    Get the current tenant ID from the request context.
-    For now, returns 'delta' as default.
-
-    In a full multi-tenant implementation, this would:
-    - Check JWT token for tenant_id claim
-    - Check session for tenant context
-    - Check subdomain (e.g., acme.deltacfo.com -> 'acme')
-    - Check custom header (X-Tenant-ID)
-
-    Returns:
-        str: Current tenant ID
-    """
-    # TODO: Implement proper tenant detection from request context
-    # For now, default to 'delta' tenant
-    return 'delta'
 
 
 def clear_tenant_config_cache(tenant_id: Optional[str] = None):

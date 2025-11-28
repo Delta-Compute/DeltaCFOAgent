@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delta CFO Agent - Tenant Management</title>
+    <title>Delta CFO Agent - <span data-i18n="tenantManagement.pageTitle">Tenant Management</span></title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
 </head>
 <body>
@@ -57,31 +57,27 @@
             <div class="dashboard-content">
                 <!-- Header -->
                 <header>
-                    <h1>🏢 Tenant Management</h1>
-                    <div class="date-range">
-                        Manage your client tenants
-                    </div>
+                    <h1><span data-i18n="tenantManagement.title">🏢 Tenant Management</span></h1>
+                    <div class="date-range"><span data-i18n="tenantManagement.subtitle">Manage your client tenants</span></div>
                 </header>
 
                 <!-- Tenant Switcher Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>🔄 Current Tenant</h2>
+                        <h2><span data-i18n="tenantManagement.currentTenant.sectionTitle">🔄 Current Tenant</span></h2>
                         <div class="table-info">
-                            <span>Switch between your client tenants</span>
+                            <span><span data-i18n="tenantManagement.currentTenant.description">Switch between your client tenants</span></span>
                         </div>
                     </div>
 
                     <div style="padding: 2rem;">
                         <div style="background: white; padding: 1.5rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); max-width: 500px;">
-                            <label for="tenantSelector" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
-                                Active Tenant:
-                            </label>
+                            <label for="tenantSelector" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;"><span data-i18n="tenantManagement.currentTenant.label">Active Tenant:</span></label>
                             <select id="tenantSelector" style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem; cursor: pointer;">
-                                <option value="">Loading tenants...</option>
+                                <option value=""><span data-i18n="tenantManagement.currentTenant.loading"><span data-i18n="tenantManagement.tenantList.loading">Loading tenants...</span></span></option>
                             </select>
                             <p style="margin-top: 0.5rem; font-size: 0.85rem; color: #718096;">
-                                All data and operations will be scoped to the selected tenant
+                                <span data-i18n="tenantManagement.currentTenant.scopeNote">All data and operations will be scoped to the selected tenant</span>
                             </p>
                         </div>
                     </div>
@@ -90,9 +86,9 @@
                 <!-- Create New Tenant Section (CFO Only) -->
                 <div class="table-section" id="createTenantSection" style="display: none;">
                     <div class="table-header">
-                        <h2>➕ Create New Tenant</h2>
+                        <h2><span data-i18n="tenantManagement.createTenant.sectionTitle">➕ Create New Tenant</span></h2>
                         <div class="table-info">
-                            <span>Add a new client to manage with the AI CFO Agent</span>
+                            <span><span data-i18n="tenantManagement.createTenant.description">Add a new client to manage with the AI CFO Agent</span></span>
                         </div>
                     </div>
 
@@ -101,41 +97,41 @@
                             <form id="createTenantForm">
                                 <div style="margin-bottom: 1.5rem;">
                                     <label for="companyName" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
-                                        Company Name <span style="color: #e53e3e;">*</span>
+                                        <span data-i18n="tenantManagement.createTenant.form.companyName">Company Name</span> <span style="color: #e53e3e;" data-i18n="tenantManagement.createTenant.form.required">*</span>
                                     </label>
                                     <input
                                         type="text"
                                         id="companyName"
                                         name="companyName"
                                         required
-                                        placeholder="Client Company Inc."
+                                        data-i18n-attr="placeholder" data-i18n="tenantManagement.createTenant.form.companyNamePlaceholder" placeholder="Client Company Inc."
                                         style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem;">
                                 </div>
 
                                 <div style="margin-bottom: 1.5rem;">
                                     <label for="companyDescription" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
-                                        Description <span style="font-size: 0.85rem; font-weight: normal; color: #718096;">(optional)</span>
+                                        <span data-i18n="tenantManagement.createTenant.form.description">Description</span> <span style="font-size: 0.85rem; font-weight: normal; color: #718096;" data-i18n="tenantManagement.createTenant.form.descriptionOptional">(optional)</span>
                                     </label>
                                     <textarea
                                         id="companyDescription"
                                         name="companyDescription"
                                         rows="3"
-                                        placeholder="Brief description of the client's business..."
+                                        data-i18n-attr="placeholder" data-i18n="tenantManagement.createTenant.form.descriptionPlaceholder" placeholder="Brief description of the client\'s business..."
                                         style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem; resize: vertical;"></textarea>
                                 </div>
 
                                 <div style="margin-bottom: 1.5rem;">
                                     <label for="adminEmail" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2d3748;">
-                                        Admin Email <span style="font-size: 0.85rem; font-weight: normal; color: #718096;">(optional)</span>
+                                        <span data-i18n="tenantManagement.createTenant.form.adminEmail">Admin Email</span> <span style="font-size: 0.85rem; font-weight: normal; color: #718096;" data-i18n="tenantManagement.createTenant.form.descriptionOptional">(optional)</span>
                                     </label>
                                     <input
                                         type="email"
                                         id="adminEmail"
                                         name="adminEmail"
-                                        placeholder="admin@clientcompany.com"
+                                        data-i18n-attr="placeholder" data-i18n="tenantManagement.createTenant.form.adminEmailPlaceholder" placeholder="admin@clientcompany.com"
                                         style="width: 100%; padding: 0.75rem; border: 1px solid #cbd5e0; border-radius: 8px; font-size: 1rem;">
                                     <p style="margin-top: 0.5rem; font-size: 0.85rem; color: #718096;">
-                                        If provided, an invitation will be sent to this email to join as tenant admin
+                                        <span data-i18n="tenantManagement.createTenant.form.adminEmailNote">If provided, an invitation will be sent to this email to join as tenant admin</span>
                                     </p>
                                 </div>
 
@@ -145,9 +141,7 @@
                                         id="createTenantBtn"
                                         style="flex: 1; padding: 0.75rem 1.5rem; background-color: #667eea; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s;"
                                         onmouseover="this.style.backgroundColor='#5a67d8'"
-                                        onmouseout="this.style.backgroundColor='#667eea'">
-                                        Create Tenant
-                                    </button>
+                                        onmouseout="this.style.backgroundColor='#667eea'"><span data-i18n="tenantManagement.createTenant.form.createButton">Create Tenant</span></button>
                                     <button
                                         type="reset"
                                         style="padding: 0.75rem 1.5rem; background-color: #e2e8f0; color: #4a5568; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background-color 0.2s;"
@@ -164,9 +158,9 @@
                 <!-- Tenant List Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>📋 Your Tenants</h2>
+                        <h2><span data-i18n="tenantManagement.tenantList.sectionTitle">📋 Your Tenants</span></h2>
                         <div class="table-info">
-                            <span>All client tenants you have access to</span>
+                            <span><span data-i18n="tenantManagement.tenantList.description">All client tenants you have access to</span></span>
                         </div>
                     </div>
 
@@ -174,7 +168,7 @@
                         <div id="tenantListContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1.5rem;">
                             <!-- Tenant cards will be populated by JavaScript -->
                             <div style="text-align: center; padding: 2rem; color: #718096;">
-                                Loading tenants...
+                                <span data-i18n="tenantManagement.tenantList.loading">Loading tenants...</span>
                             </div>
                         </div>
                     </div>

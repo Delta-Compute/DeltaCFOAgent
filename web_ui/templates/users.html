@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>User Management - Delta CFO Agent</title>
+    <title><span data-i18n="users.pageTitle">User Management</span> - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}">
     <style>
         .users-container {
@@ -152,45 +152,43 @@
         </a>
 
         <div class="page-header">
-            <h1>User Management</h1>
-            <p style="color: #64748b;">Invite team members and manage access to your tenant</p>
+            <h1><span data-i18n="users.title">User Management</span></h1>
+            <p style="color: #64748b;"><span data-i18n="users.subtitle">Invite team members and manage access to your tenant</span></p>
         </div>
 
         <div class="alert alert-success" id="successAlert"></div>
         <div class="alert alert-error" id="errorAlert"></div>
 
         <div class="invite-section">
-            <h2>Invite Fractional CFO</h2>
+            <h2><span data-i18n="users.inviteCFO.sectionTitle">Invite Fractional CFO</span></h2>
             <form id="inviteCFOForm" class="invite-form">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="cfoEmail">Email Address *</label>
-                        <input type="email" id="cfoEmail" required placeholder="cfo@example.com">
+                        <label for="cfoEmail"><span data-i18n="users.inviteCFO.form.email">Email Address</span> <span data-i18n="users.inviteCFO.form.required">*</span></label>
+                        <input type="email" id="cfoEmail" required data-i18n-attr="placeholder" data-i18n="users.inviteCFO.form.emailPlaceholder" placeholder="cfo@example.com">
                     </div>
                     <div class="form-group">
-                        <label for="cfoName">Display Name *</label>
+                        <label for="cfoName"><span data-i18n="users.inviteCFO.form.name">Display Name</span> <span data-i18n="users.inviteCFO.form.required">*</span></label>
                         <input type="text" id="cfoName" required placeholder="John Doe">
                     </div>
                 </div>
                 <div class="user-type-info">
-                    Fractional CFO will have full access to manage financials, reports, and can invite their own assistants to help manage your tenant.
+                    <span data-i18n="users.inviteCFO.form.infoText">Fractional CFO will have full access to manage financials, reports, and can invite their own assistants to help manage your tenant.</span>
                 </div>
-                <button type="submit" class="btn btn-primary" id="inviteCFOBtn">
-                    Send Invitation to CFO
-                </button>
+                <button type="submit" class="btn btn-primary" id="inviteCFOBtn"><span data-i18n="users.inviteCFO.form.submitButton">Send Invitation to CFO</span></button>
             </form>
         </div>
 
         <div class="invite-section">
-            <h2>Invite CFO Assistant</h2>
+            <h2><span data-i18n="users.inviteCFOAssistant.sectionTitle">Invite CFO Assistant</span></h2>
             <form id="inviteCFOAssistantForm" class="invite-form">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="assistantEmail">Email Address *</label>
-                        <input type="email" id="assistantEmail" required placeholder="assistant@example.com">
+                        <label for="assistantEmail"><span data-i18n="users.inviteCFOAssistant.form.email">Email Address</span> <span data-i18n="users.inviteCFOAssistant.form.required">*</span></label>
+                        <input type="email" id="assistantEmail" required data-i18n-attr="placeholder" data-i18n="users.inviteCFOAssistant.form.emailPlaceholder" placeholder="assistant@example.com">
                     </div>
                     <div class="form-group">
-                        <label for="assistantName">Display Name *</label>
+                        <label for="assistantName"><span data-i18n="users.inviteCFOAssistant.form.name">Display Name</span> <span data-i18n="users.inviteCFOAssistant.form.required">*</span></label>
                         <input type="text" id="assistantName" required placeholder="Alex Johnson">
                     </div>
                 </div>
@@ -203,24 +201,22 @@
                     </select>
                 </div>
                 <div class="user-type-info">
-                    CFO assistants support the Fractional CFO with access based on their privilege level.
+                    <span data-i18n="users.inviteCFOAssistant.form.infoText">CFO assistants support the Fractional CFO with access based on their privilege level.</span>
                 </div>
-                <button type="submit" class="btn btn-primary" id="inviteCFOAssistantBtn">
-                    Send Invitation to CFO Assistant
-                </button>
+                <button type="submit" class="btn btn-primary" id="inviteCFOAssistantBtn"><span data-i18n="users.inviteCFOAssistant.form.submitButton">Send Invitation to CFO Assistant</span></button>
             </form>
         </div>
 
         <div class="invite-section">
-            <h2>Invite Team Member (Employee)</h2>
+            <h2><span data-i18n="users.inviteEmployee.sectionTitle">Invite Team Member (Employee)</span></h2>
             <form id="inviteEmployeeForm" class="invite-form">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="employeeEmail">Email Address *</label>
-                        <input type="email" id="employeeEmail" required placeholder="employee@example.com">
+                        <label for="employeeEmail"><span data-i18n="users.inviteEmployee.form.email">Email Address</span> <span data-i18n="users.inviteEmployee.form.required">*</span></label>
+                        <input type="email" id="employeeEmail" required data-i18n-attr="placeholder" data-i18n="users.inviteEmployee.form.emailPlaceholder" placeholder="employee@example.com">
                     </div>
                     <div class="form-group">
-                        <label for="employeeName">Display Name *</label>
+                        <label for="employeeName"><span data-i18n="users.inviteEmployee.form.name">Display Name</span> <span data-i18n="users.inviteEmployee.form.required">*</span></label>
                         <input type="text" id="employeeName" required placeholder="Jane Smith">
                     </div>
                 </div>

@@ -699,6 +699,7 @@ async def create_llm_validated_pattern(
         int: Pattern ID if successful, None otherwise
     """
     try:
+        logger.info(f"[PATTERN_CREATION] Starting for suggestion #{suggestion_id}, tenant={tenant_id}")
         # Apply LLM suggested improvements
         description_pattern = validation_result.get('suggested_improvements', {}).get('description_pattern') or pattern_data['description_pattern']
         entity = validation_result.get('suggested_improvements', {}).get('entity') or pattern_data['entity']
@@ -718,9 +719,9 @@ async def create_llm_validated_pattern(
                 tenant_id, description_pattern, pattern_type, entity,
                 accounting_category, accounting_subcategory, justification,
                 confidence_score, created_by,
-                llm_confidence_adjustment, risk_assessment, notes
+                llm_confidence_adjustment, risk_assessment
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING pattern_id
         """, (
             tenant_id,
@@ -729,12 +730,11 @@ async def create_llm_validated_pattern(
             entity,
             pattern_data.get('accounting_category'),
             pattern_data.get('accounting_subcategory'),
-            justification or f"Auto-created pattern (LLM validated) - {validation_result.get('reasoning', '')}",
+            f"Auto-created from suggestion #{suggestion_id}. {validation_result.get('reasoning', '')}",
             final_confidence,
             'llm_validated',
             llm_adjustment,
-            risk,
-            f"Created from suggestion #{suggestion_id}. {validation_result.get('reasoning', '')}"
+            risk
         ))
 
         pattern_id = cursor.fetchone()[0]
@@ -770,6 +770,7 @@ async def create_pattern_notification(
         bool: Success status
     """
     try:
+        logger.info(f"[NOTIFICATION] Starting creation for pattern #{pattern_id}, tenant={tenant_id}, type={notification_type}")
         # Build notification message
         if notification_type == 'pattern_created':
             title = f"New Auto-Pattern Created: {pattern_data.get('entity', 'Pattern')}"
@@ -810,11 +811,16 @@ async def create_pattern_notification(
         }
 
         # Insert notification
+        logger.info(f"[NOTIFICATION] Inserting into pattern_notifications table...")
+        logger.info(f"[NOTIFICATION] Title: {title[:80]}...")
+        logger.info(f"[NOTIFICATION] Message length: {len(message)} chars")
+
         cursor.execute("""
             INSERT INTO pattern_notifications (
                 tenant_id, pattern_id, notification_type, title, message, metadata, priority
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (
             tenant_id,
             pattern_id,
@@ -825,15 +831,23 @@ async def create_pattern_notification(
             priority
         ))
 
-        conn.commit()
+        notification_id = cursor.fetchone()[0]
+        logger.info(f"[NOTIFICATION] INSERT successful, notification_id={notification_id}")
 
-        logger.info(f"✅ Created {notification_type} notification for pattern #{pattern_id}")
+        conn.commit()
+        logger.info(f"[NOTIFICATION] COMMIT successful")
+
+        logger.info(f"✅ Created {notification_type} notification #{notification_id} for pattern #{pattern_id}")
 
         return True
 
     except Exception as e:
-        logger.error(f"Error creating pattern notification: {e}", exc_info=True)
-        conn.rollback()
+        logger.error(f"❌ [NOTIFICATION] Error creating pattern notification: {e}", exc_info=True)
+        try:
+            conn.rollback()
+            logger.info(f"[NOTIFICATION] Rolled back transaction")
+        except:
+            pass
         return False
 
 

@@ -7,13 +7,13 @@
 {% block record_type_plural %}invoices{% endblock %}
 
 {% block breadcrumb %}
-<a href="/invoices" class="breadcrumb-link">Invoices</a>
+<a href="/invoices" class="breadcrumb-link"><span data-i18n="detail.invoice.breadcrumb">Invoices</span></a>
 <span class="breadcrumb-separator">/</span>
 <span class="breadcrumb-current" id="invoice-number-breadcrumb">Loading...</span>
 {% endblock %}
 
 {% block page_title %}
-    <span id="invoice-title">Invoice Details</span>
+    <span id="invoice-title" data-i18n="detail.invoice.title">Invoice Details</span>
 {% endblock %}
 
 {% block page_subtitle %}
@@ -54,27 +54,27 @@
 {% block quick_info %}
 <div class="quick-info-grid">
     <div class="info-item">
-        <span class="info-label">Invoice Number</span>
+        <span class="info-label" data-i18n="detail.invoice.invoiceNumber">Invoice Number</span>
         <span class="info-value" id="info-invoice-number">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Vendor</span>
+        <span class="info-label" data-i18n="detail.invoice.vendor">Vendor</span>
         <span class="info-value" id="info-vendor-name">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Amount</span>
+        <span class="info-label" data-i18n="detail.labels.amount">Amount</span>
         <span class="info-value info-amount" id="info-total-amount">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Invoice Date</span>
+        <span class="info-label" data-i18n="detail.invoice.invoiceDate">Invoice Date</span>
         <span class="info-value" id="info-invoice-date">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Due Date</span>
+        <span class="info-label" data-i18n="detail.invoice.dueDate">Due Date</span>
         <span class="info-value" id="info-due-date">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Status</span>
+        <span class="info-label" data-i18n="detail.labels.status">Status</span>
         <span class="info-value" id="info-status">Loading...</span>
     </div>
 </div>
@@ -82,14 +82,14 @@
 
 {% block tab_overview %}
 <div class="detail-card">
-    <h3 class="card-title">Invoice Summary</h3>
+    <h3 class="card-title" data-i18n="detail.invoice.summary">Invoice Summary</h3>
     <div class="invoice-summary" id="invoice-summary">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Line Items</h3>
+    <h3 class="card-title" data-i18n="detail.invoice.lineItems">Line Items</h3>
     <div class="line-items-table" id="line-items-table">
         <!-- Populated by JavaScript -->
     </div>
@@ -98,14 +98,14 @@
 
 {% block tab_details %}
 <div class="detail-card">
-    <h3 class="card-title">Complete Invoice Details</h3>
+    <h3 class="card-title" data-i18n="detail.invoice.completeDetails">Complete Invoice Details</h3>
     <div class="details-grid" id="invoice-details-grid">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Payment Information</h3>
+    <h3 class="card-title" data-i18n="detail.invoice.paymentInfo">Payment Information</h3>
     <div class="payment-info" id="payment-info">
         <!-- Populated by JavaScript -->
     </div>
@@ -115,8 +115,8 @@
 {% block tab_matches %}
 <div class="detail-card">
     <h3 class="card-title">
-        Linked Transaction
-        <span class="card-subtitle" id="linked-status">No transaction linked</span>
+        <span data-i18n="detail.invoice.linkedTransaction">Linked Transaction</span>
+        <span class="card-subtitle" id="linked-status"><span data-i18n="detail.invoice.noTransactionLinked">No transaction linked</span></span>
     </h3>
     <div class="linked-transaction" id="linked-transaction-container">
         <!-- Populated by JavaScript -->
@@ -125,7 +125,7 @@
 
 <div class="detail-card">
     <h3 class="card-title">
-        Potential Matches
+        <span data-i18n="detail.invoice.potentialMatches">Potential Matches</span>
         <span class="card-subtitle" id="matches-count">0 pending matches</span>
     </h3>
     <div class="pending-matches" id="pending-matches-container">

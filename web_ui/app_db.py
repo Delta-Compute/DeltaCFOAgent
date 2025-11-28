@@ -13,7 +13,7 @@ import time
 import threading
 import traceback
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, send_file, session
+from flask import Flask, render_template, request, jsonify, send_file, session, Response
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import random
 import anthropic
@@ -1608,6 +1608,16 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
                 where_conditions.append(f"t.subcategory = {placeholder}")
                 params.append(filters['subcategory'])
 
+            # DRILL-DOWN INTEGRATION: Filter by origin field (exact match)
+            if filters.get('origin'):
+                where_conditions.append("origin = %s" if is_postgresql else "origin = ?")
+                params.append(filters['origin'])
+
+            # DRILL-DOWN INTEGRATION: Filter by destination field (exact match)
+            if filters.get('destination'):
+                where_conditions.append("destination = %s" if is_postgresql else "destination = ?")
+                params.append(filters['destination'])
+
             # Handle archived filter
             archived_filter = filters.get('show_archived')
             if archived_filter == 'true':
@@ -1747,8 +1757,133 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
 
         return transactions, total_count
 
-def get_dashboard_stats():
-    """Calculate dashboard statistics from database"""
+def build_filter_where_clause(filters, tenant_id, is_postgresql):
+    """
+    Build WHERE clause and params list from filters dictionary.
+    Returns: (where_clause_string, params_list)
+    """
+    placeholder = "%s" if is_postgresql else "?"
+    where_conditions = [
+        "(archived = FALSE OR archived IS NULL)",
+        f"tenant_id = {placeholder}"
+    ]
+    params = [tenant_id]
+
+    if not filters:
+        return " AND ".join(where_conditions), params
+
+    # Entity filter
+    if filters.get('entity'):
+        where_conditions.append(f"classified_entity = {placeholder}")
+        params.append(filters['entity'])
+
+    # Transaction type filter (Revenue/Expense)
+    if filters.get('transaction_type'):
+        if filters['transaction_type'] == 'Revenue':
+            where_conditions.append("amount > 0")
+        elif filters['transaction_type'] == 'Expense':
+            where_conditions.append("amount < 0")
+
+    # Source file filter
+    if filters.get('source_file'):
+        where_conditions.append(f"source_file = {placeholder}")
+        params.append(filters['source_file'])
+
+    # Needs review filter
+    if filters.get('needs_review') == 'true':
+        where_conditions.append("(confidence < 0.7 OR needs_review = TRUE)")
+
+    # Amount range filters
+    if filters.get('min_amount'):
+        where_conditions.append(f"ABS(amount) >= {placeholder}")
+        params.append(float(filters['min_amount']))
+
+    if filters.get('max_amount'):
+        where_conditions.append(f"ABS(amount) <= {placeholder}")
+        params.append(float(filters['max_amount']))
+
+    # Date range filters
+    if filters.get('start_date'):
+        if is_postgresql:
+            where_conditions.append("date::date >= %s::date")
+        else:
+            where_conditions.append("date >= ?")
+        params.append(filters['start_date'])
+
+    if filters.get('end_date'):
+        if is_postgresql:
+            where_conditions.append("date::date <= %s::date")
+        else:
+            where_conditions.append("date <= ?")
+        params.append(filters['end_date'])
+
+    # Keyword search (multi-field)
+    if filters.get('keyword'):
+        if is_postgresql:
+            where_conditions.append(
+                "(description ILIKE %s OR classification_reason ILIKE %s OR "
+                "justification ILIKE %s OR origin ILIKE %s OR destination ILIKE %s)"
+            )
+        else:
+            where_conditions.append(
+                "(description LIKE ? OR classification_reason LIKE ? OR "
+                "justification LIKE ? OR origin LIKE ? OR destination LIKE ?)"
+            )
+        keyword_pattern = f"%{filters['keyword']}%"
+        params.extend([keyword_pattern] * 5)
+
+    # Category filters
+    if filters.get('accounting_category'):
+        if is_postgresql:
+            where_conditions.append(
+                "COALESCE(subcategory, accounting_category, classified_entity, "
+                "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s"
+            )
+        else:
+            where_conditions.append(
+                "COALESCE(subcategory, accounting_category, classified_entity, "
+                "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = ?"
+            )
+        params.append(filters['accounting_category'])
+
+    if filters.get('subcategory'):
+        where_conditions.append(f"subcategory = {placeholder}")
+        params.append(filters['subcategory'])
+
+    # Origin/Destination filters
+    if filters.get('origin'):
+        where_conditions.append(f"origin = {placeholder}")
+        params.append(filters['origin'])
+
+    if filters.get('destination'):
+        where_conditions.append(f"destination = {placeholder}")
+        params.append(filters['destination'])
+
+    # Archived filter
+    archived_filter = filters.get('show_archived')
+    if archived_filter == 'true':
+        where_conditions = [c for c in where_conditions if 'archived' not in c]
+        where_conditions.append("archived = TRUE")
+    elif archived_filter == 'all':
+        where_conditions = [c for c in where_conditions if 'archived' not in c]
+
+    # Internal transaction filters
+    internal_filter = filters.get('is_internal')
+    if internal_filter == 'true':
+        where_conditions.append("is_internal_transaction = TRUE")
+    elif internal_filter == 'false':
+        where_conditions.append("(is_internal_transaction = FALSE OR is_internal_transaction IS NULL)")
+
+    exclude_internal_filter = filters.get('exclude_internal')
+    if exclude_internal_filter == 'true':
+        where_conditions.append(f"(classified_entity != {placeholder} AND classified_entity IS NOT NULL)")
+        params.append('Internal Transfer')
+
+    return " AND ".join(where_conditions), params
+
+
+def get_dashboard_stats(filters=None):
+    """Calculate dashboard statistics from database with optional filters"""
     try:
         from database import db_manager
         tenant_id = get_current_tenant_id()
@@ -1764,32 +1899,35 @@ def get_dashboard_stats():
             is_postgresql = db_manager.db_type == 'postgresql'
             placeholder = "%s" if is_postgresql else "?"
 
-            # Total transactions (exclude archived to match /api/transactions behavior)
-            cursor.execute(f"SELECT COUNT(*) as total FROM transactions WHERE tenant_id = {placeholder} AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            # Build WHERE clause from filters
+            where_clause, params = build_filter_where_clause(filters, tenant_id, is_postgresql)
+
+            # Total transactions with filters
+            cursor.execute(f"SELECT COUNT(*) as total FROM transactions WHERE {where_clause}", params)
             result = cursor.fetchone()
             total_transactions = result['total'] if is_postgresql else result[0]
 
-            # Revenue and expenses (exclude archived and NaN values)
+            # Revenue and expenses with filters
             if is_postgresql:
-                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE tenant_id = {placeholder} AND amount > 0 AND amount::text != 'NaN' AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE {where_clause} AND amount > 0 AND amount::text != 'NaN'", params)
             else:
-                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE tenant_id = {placeholder} AND amount > 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+                cursor.execute(f"SELECT COALESCE(SUM(amount), 0) as revenue FROM transactions WHERE {where_clause} AND amount > 0", params)
             result = cursor.fetchone()
             revenue = result['revenue'] if is_postgresql else result[0]
 
             if is_postgresql:
-                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE tenant_id = {placeholder} AND amount < 0 AND amount::text != 'NaN' AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE {where_clause} AND amount < 0 AND amount::text != 'NaN'", params)
             else:
-                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE tenant_id = {placeholder} AND amount < 0 AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+                cursor.execute(f"SELECT COALESCE(SUM(ABS(amount)), 0) as expenses FROM transactions WHERE {where_clause} AND amount < 0", params)
             result = cursor.fetchone()
             expenses = result['expenses'] if is_postgresql else result[0]
 
-            # Needs review (exclude archived)
-            cursor.execute(f"SELECT COUNT(*) as needs_review FROM transactions WHERE tenant_id = {placeholder} AND (confidence < 0.8 OR confidence IS NULL) AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+            # Needs review with filters
+            cursor.execute(f"SELECT COUNT(*) as needs_review FROM transactions WHERE {where_clause} AND (confidence < 0.8 OR confidence IS NULL)", params)
             result = cursor.fetchone()
             needs_review = result['needs_review'] if is_postgresql else result[0]
 
-            # Date range (exclude archived)
+            # Date range with filters
             # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
             # Since date is stored as VARCHAR, we need to convert to proper date type for MIN/MAX
             if is_postgresql:
@@ -1810,12 +1948,11 @@ def get_dashboard_stats():
                             END
                         ) as max_date
                     FROM transactions
-                    WHERE tenant_id = {placeholder}
-                    AND (archived = FALSE OR archived IS NULL)
-                """, (tenant_id,))
+                    WHERE {where_clause}
+                """, params)
             else:
                 # SQLite fallback - simpler text-based MIN/MAX
-                cursor.execute(f"SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions WHERE tenant_id = {placeholder} AND (archived = FALSE OR archived IS NULL)", (tenant_id,))
+                cursor.execute(f"SELECT MIN(date) as min_date, MAX(date) as max_date FROM transactions WHERE {where_clause}", params)
 
             date_range_result = cursor.fetchone()
 
@@ -1852,29 +1989,27 @@ def get_dashboard_stats():
                 'max': format_date(max_date)
             }
 
-            # Top entities (exclude archived)
+            # Top entities with filters
             cursor.execute(f"""
                 SELECT classified_entity, COUNT(*) as count
                 FROM transactions
-                WHERE tenant_id = {placeholder}
+                WHERE {where_clause}
                 AND classified_entity IS NOT NULL
-                AND (archived = FALSE OR archived IS NULL)
                 GROUP BY classified_entity
                 ORDER BY count DESC
                 LIMIT 10
-            """, (tenant_id,))
+            """, params)
             entities = cursor.fetchall()
 
-            # All source files (exclude archived) - no limit for dropdown filter
+            # All source files with filters - no limit for dropdown filter
             cursor.execute(f"""
                 SELECT source_file, COUNT(*) as count
                 FROM transactions
-                WHERE tenant_id = {placeholder}
+                WHERE {where_clause}
                 AND source_file IS NOT NULL
-                AND (archived = FALSE OR archived IS NULL)
                 GROUP BY source_file
                 ORDER BY count DESC
-            """, (tenant_id,))
+            """, params)
             source_files = cursor.fetchall()
 
             cursor.close()
@@ -4942,7 +5077,9 @@ def api_transactions():
             'is_internal': request.args.get('is_internal'),
             'exclude_internal': request.args.get('exclude_internal'),
             'accounting_category': request.args.get('category'),  # SANKEY INTEGRATION
-            'subcategory': request.args.get('subcategory')  # SANKEY INTEGRATION
+            'subcategory': request.args.get('subcategory'),  # SANKEY INTEGRATION
+            'origin': request.args.get('origin'),  # DRILL-DOWN INTEGRATION
+            'destination': request.args.get('destination')  # DRILL-DOWN INTEGRATION
         }
 
         # Remove None values
@@ -5293,9 +5430,32 @@ def api_get_transaction_details(transaction_id):
 
 @app.route('/api/stats')
 def api_stats():
-    """API endpoint to get dashboard statistics"""
+    """API endpoint to get dashboard statistics with optional filters"""
     try:
-        stats = get_dashboard_stats()
+        # Extract filter parameters (same as /api/transactions)
+        filters = {
+            'entity': request.args.get('entity'),
+            'transaction_type': request.args.get('transaction_type'),
+            'source_file': request.args.get('source_file'),
+            'needs_review': request.args.get('needs_review'),
+            'min_amount': request.args.get('min_amount'),
+            'max_amount': request.args.get('max_amount'),
+            'start_date': request.args.get('start_date'),
+            'end_date': request.args.get('end_date'),
+            'keyword': request.args.get('keyword'),
+            'show_archived': request.args.get('show_archived'),
+            'is_internal': request.args.get('is_internal'),
+            'exclude_internal': request.args.get('exclude_internal'),
+            'accounting_category': request.args.get('category'),
+            'subcategory': request.args.get('subcategory'),
+            'origin': request.args.get('origin'),
+            'destination': request.args.get('destination')
+        }
+
+        # Remove None values
+        filters = {k: v for k, v in filters.items() if v}
+
+        stats = get_dashboard_stats(filters)
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -6825,9 +6985,11 @@ def api_get_classification_patterns():
         query = """
             SELECT
                 pattern_id, tenant_id, pattern_type, description_pattern,
-                entity, accounting_category, confidence_score,
+                entity, accounting_category, accounting_subcategory,
+                confidence_score, justification, notes,
                 usage_count, success_count, last_used,
-                created_at, updated_at, pattern_data
+                created_at, updated_at, pattern_data,
+                created_by, status
             FROM classification_patterns
             WHERE tenant_id = %s
             ORDER BY created_at DESC
@@ -9996,8 +10158,8 @@ def convert_currency_to_usd(amount: float, from_currency: str, transaction_date:
 
 def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, Any]:
     """
-    Process PDF using Claude Vision to extract transaction data
-    Uses PyMuPDF (same as invoice processing) for PDF conversion
+    Process PDF using Claude Vision to extract transaction data with Origin/Destination
+    Uses PyMuPDF for PDF conversion and processes ALL pages
 
     Args:
         filepath: Full path to the PDF file
@@ -10009,165 +10171,188 @@ def process_pdf_with_claude_vision(filepath: str, filename: str) -> Dict[str, An
     try:
         print(f" Processing PDF with Claude Vision: {filename}")
 
-        # Convert PDF to image using PyMuPDF (same method as invoices)
+        # Convert PDF pages to images using PyMuPDF
         try:
             import fitz  # PyMuPDF
 
-            # Open PDF and get first page
+            # Open PDF
             doc = fitz.open(filepath)
             if doc.page_count == 0:
                 raise ValueError("PDF has no pages")
 
-            # Get first page as image with 2x zoom for better quality
-            page = doc.load_page(0)
-            mat = fitz.Matrix(2, 2)
-            pix = page.get_pixmap(matrix=mat)
+            print(f" PDF has {doc.page_count} pages - processing all pages...")
 
-            # Convert to PNG bytes
-            image_bytes = pix.pil_tobytes(format="PNG")
+            # Get Anthropic API key
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                raise ValueError("ANTHROPIC_API_KEY not configured")
+
+            # Initialize Claude client
+            client = anthropic.Anthropic(api_key=api_key)
+
+            # Process all pages (up to 10 pages to avoid excessive API calls)
+            all_transactions = []
+            document_currency = None
+            document_type = None
+            total_pages = doc.page_count  # Save page count before closing
+            pages_to_process = min(total_pages, 10)
+
+            for page_num in range(pages_to_process):
+                print(f"   Processing page {page_num + 1}/{pages_to_process}...")
+
+                # Convert page to high-resolution image
+                page = doc.load_page(page_num)
+                mat = fitz.Matrix(2, 2)  # 2x zoom for better OCR
+                pix = page.get_pixmap(matrix=mat)
+
+                # Convert to PNG bytes
+                image_bytes = pix.pil_tobytes(format="PNG")
+
+                # Encode to base64
+                image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+                # Extract text for hybrid processing
+                text_content = page.get_text()
+
+                # Extraction prompt with Origin/Destination fields
+                prompt = f"""
+🏦 BANK STATEMENT TRANSACTION EXTRACTOR - Extract ALL transactions from this bank statement.
+
+File: {filename} (Page {page_num + 1})
+Text content preview: {text_content[:500] if text_content else "No text extracted"}
+
+CRITICAL INSTRUCTIONS:
+1. Extract EVERY transaction visible on this page
+2. For EACH transaction, identify:
+   - Date (YYYY-MM-DD format)
+   - Description (full transaction description)
+   - Amount (positive for deposits/credits, negative for withdrawals/debits)
+   - Currency (ISO code: BRL, USD, EUR, etc.)
+   - Origin (sender/source of funds - can be account name, person, company, or "Self" if internal)
+   - Destination (recipient/where funds went - can be account name, person, company, or "Self" if internal)
+
+3. ORIGIN and DESTINATION Rules:
+   - PIX transfers: Extract sender and recipient names from description
+   - Card payments: Origin = cardholder, Destination = merchant
+   - Transfers: Extract both account holders or companies
+   - If only one party visible, use "Self" for the bank account owner
+   - Internal transfers: Both might be "Self" if between same owner's accounts
+
+4. Amount signs:
+   - NEGATIVE (-) for outgoing payments, withdrawals, debits
+   - POSITIVE (+) for incoming payments, deposits, credits
+
+5. Currency Detection:
+   - Look for R$ = BRL (Brazilian Real)
+   - Look for $ = USD (US Dollar)
+   - Look for € = EUR (Euro)
+   - Look for £ = GBP (British Pound)
+
+6. Handle multi-language statements (Portuguese, Spanish, English)
+
+Return ONLY a JSON object in this exact format:
+{{
+    "currency": "BRL",
+    "document_type": "Bank Statement",
+    "transactions": [
+        {{
+            "date": "YYYY-MM-DD",
+            "description": "Full transaction description",
+            "amount": -123.45,
+            "currency": "BRL",
+            "origin": "Sender/Source name",
+            "destination": "Recipient/Destination name"
+        }}
+    ],
+    "total_found": 1
+}}
+
+If NO transactions are visible on this page, return: {{"currency": "USD", "transactions": [], "total_found": 0}}
+"""
+
+                # Call Claude Vision API
+                try:
+                    response = client.messages.create(
+                        model="claude-sonnet-4-5-20250929",  # Best model for accurate extraction
+                        max_tokens=16000,  # Increased from 4000 to handle pages with 50+ transactions
+                        temperature=0.1,  # Low temperature for structured data
+                        timeout=180.0,  # 3 minute timeout for API call
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": "image/png",
+                                        "data": image_base64
+                                    }
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt
+                                }
+                            ]
+                        }]
+                    )
+
+                    # Parse response
+                    response_text = response.content[0].text.strip()
+
+                    # Remove markdown code blocks if present
+                    if response_text.startswith('```json'):
+                        response_text = response_text.replace('```json', '').replace('```', '').strip()
+                    elif response_text.startswith('```'):
+                        response_text = response_text.replace('```', '').strip()
+
+                    # Parse JSON
+                    page_data = json.loads(response_text)
+
+                    # Extract page-level metadata
+                    if not document_currency and 'currency' in page_data:
+                        document_currency = page_data['currency']
+                    if not document_type and 'document_type' in page_data:
+                        document_type = page_data['document_type']
+
+                    # Add transactions from this page
+                    page_transactions = page_data.get('transactions', [])
+                    all_transactions.extend(page_transactions)
+                    print(f"   Extracted {len(page_transactions)} transactions from page {page_num + 1}")
+
+                except json.JSONDecodeError as e:
+                    print(f"   WARNING: Failed to parse Claude response as JSON: {e}")
+                    print(f"   Response preview: {response_text[:500]}")
+                    continue
+                except anthropic.APIConnectionError as e:
+                    print(f"   WARNING: API connection error on page {page_num + 1}: {e}")
+                    continue
+                except anthropic.APITimeoutError as e:
+                    print(f"   WARNING: API timeout on page {page_num + 1}: {e}")
+                    continue
+                except anthropic.APIError as e:
+                    print(f"   WARNING: API error on page {page_num + 1}: {e}")
+                    continue
+
             doc.close()
 
-            # Encode to base64
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+            # Return combined results
+            print(f" Total extracted: {len(all_transactions)} transactions from {pages_to_process} pages")
+
+            return {
+                "currency": document_currency or "USD",
+                "document_type": document_type or "Bank Statement",
+                "transactions": all_transactions,
+                "total_found": len(all_transactions)
+            }
 
         except ImportError:
             raise ValueError("PyMuPDF not installed. Run: pip install PyMuPDF")
         except Exception as e:
             raise ValueError(f"PDF conversion failed: {str(e)}")
 
-        print(f" PDF converted to image successfully ({len(image_base64)} bytes)")
-
-        # Get Anthropic API key
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not configured")
-
-        # Initialize Claude client
-        client = anthropic.Anthropic(api_key=api_key)
-
-        # Extraction prompt for financial transactions
-        prompt = """
-Analyze this document and extract ALL transaction data you can find.
-
-This could be:
-- Bank statement with multiple transactions
-- Invoice with line items
-- Receipt with transaction details
-- Financial report with transaction history
-- Credit card statement
-
-CRITICAL - Currency Detection:
-- Carefully identify the currency used in the document
-- Look for currency symbols (R$, $, €, £, etc.), currency codes (BRL, USD, EUR, GBP, etc.), or written currency names
-- Common currencies: BRL (Brazilian Real), USD (US Dollar), EUR (Euro), GBP (British Pound)
-- If the document mentions "Real", "Reais", or shows "R$", the currency is BRL
-- The currency MUST be specified for EVERY transaction
-
-For EACH transaction, extract:
-- date (in YYYY-MM-DD format, required)
-- description (transaction description, required)
-- amount (numeric value - use negative for expenses/debits, positive for income/credits, required)
-- currency (ISO currency code like BRL, USD, EUR - required)
-
-Return ONLY valid JSON in this exact format:
-{
-    "currency": "BRL",
-    "transactions": [
-        {
-            "date": "2024-01-15",
-            "description": "Office supplies purchase",
-            "amount": -150.50,
-            "currency": "BRL"
-        }
-    ],
-    "total_found": 1,
-    "document_type": "Bank Statement"
-}
-
-Important:
-- Extract ALL transactions from the document
-- ONLY extract: date, description, amount, currency
-- DO NOT try to categorize or classify transactions - this will be done separately
-- ALWAYS specify the currency for each transaction
-- Use negative amounts for expenses/debits
-- Use positive amounts for income/credits
-- If date format is unclear, use best estimate in YYYY-MM-DD
-- Return empty array if no transactions found
-- The top-level "currency" field should be the default currency for all transactions in the document
-"""
-
-        print(f" Calling Claude Vision API...")
-
-        # Call Claude Vision API with explicit error handling
-        try:
-            response = client.messages.create(
-                model="claude-3-haiku-20240307",  # Fast model for vision tasks
-                max_tokens=4000,
-                temperature=0.1,  # Low temperature for structured data
-                timeout=180.0,  # 3 minute timeout for API call
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": image_base64
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
-                        }
-                    ]
-                }]
-            )
-        except anthropic.APIConnectionError as e:
-            error_msg = f"Failed to connect to Claude API: {str(e)}. Check network connectivity and API key."
-            print(f" ERROR: {error_msg}")
-            return {"error": error_msg, "transactions": [], "total_found": 0}
-        except anthropic.APITimeoutError as e:
-            error_msg = f"Claude API request timed out: {str(e)}. The PDF may be too large or complex."
-            print(f" ERROR: {error_msg}")
-            return {"error": error_msg, "transactions": [], "total_found": 0}
-        except anthropic.APIError as e:
-            error_msg = f"Claude API error: {str(e)}"
-            print(f" ERROR: {error_msg}")
-            return {"error": error_msg, "transactions": [], "total_found": 0}
-
-        # Parse response
-        response_text = response.content[0].text.strip()
-        print(f" Received response from Claude ({len(response_text)} chars)")
-
-        # Remove markdown code blocks if present
-        if response_text.startswith('```json'):
-            response_text = response_text.replace('```json', '').replace('```', '').strip()
-        elif response_text.startswith('```'):
-            response_text = response_text.replace('```', '').strip()
-
-        # Parse JSON
-        result = json.loads(response_text)
-
-        # Debug: Show what currency Claude detected
-        detected_currency = result.get('currency', 'NOT FOUND')
-        print(f" DEBUG: Claude detected document currency: '{detected_currency}'")
-        if result.get('transactions'):
-            first_txn_currency = result['transactions'][0].get('currency', 'NOT FOUND')
-            print(f" DEBUG: First transaction currency: '{first_txn_currency}'")
-
-        print(f" Successfully extracted {result.get('total_found', 0)} transactions from PDF")
-
-        return result
-
     except ImportError as e:
-        error_msg = f"PDF processing libraries not available: {e}. Install with: pip install pdf2image Pillow"
+        error_msg = f"PDF processing libraries not available: {e}. Install with: pip install PyMuPDF"
         print(f" {error_msg}")
-        return {"error": error_msg, "transactions": [], "total_found": 0}
-    except json.JSONDecodeError as e:
-        error_msg = f"Invalid JSON response from Claude Vision: {e}"
-        print(f" {error_msg}")
-        print(f"Raw response: {response_text[:500]}...")
         return {"error": error_msg, "transactions": [], "total_found": 0}
     except Exception as e:
         error_str = str(e)
@@ -10179,25 +10364,496 @@ Important:
         import traceback
         traceback.print_exc()
 
-        # Check if this is a poppler-related error
-        if "poppler" in error_str.lower() or "Unable to get page count" in error_str:
-            error_msg = (
-                "Poppler is not installed or not in PATH. "
-                "PDF upload requires Poppler to convert PDF to images. "
-                "Download from: https://github.com/oschwartz10612/poppler-windows/releases/ "
-                "and add the bin folder to your PATH environment variable. "
-                "CSV uploads will continue to work normally."
-            )
-        else:
-            error_msg = f"PDF processing failed ({error_type}): {error_str}"
+        error_msg = f"PDF processing failed ({error_type}): {error_str}"
         print(f" {error_msg}")
         return {"error": error_msg, "transactions": [], "total_found": 0}
 
 
+# ============================================================================
+# SSE Upload Endpoint with Progress Streaming
+# ============================================================================
+
+def emit_progress(stage=None, stage_completed=None, percent=0, message='', status='', **extra):
+    """Create SSE event data"""
+    data = {
+        'stage': stage,
+        'stage_completed': stage_completed,
+        'percent': percent,
+        'message': message,
+        'status': status,
+        **extra
+    }
+    return f"data: {json.dumps(data)}\n\n"
+
+
+@app.route('/api/upload-with-progress', methods=['POST'])
+@optional_auth
+def upload_file_with_progress():
+    """Handle file upload with SSE progress streaming"""
+    import tempfile as temp_module
+
+    # Extract all request-context-dependent data BEFORE generator starts
+    # (Flask request context is not available inside the generator after first yield)
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    # Check file extension
+    allowed_extensions = ['.csv', '.xls', '.xlsx', '.pdf']
+    file_ext = os.path.splitext(file.filename.lower())[1]
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': 'Only CSV, Excel (.xls, .xlsx), and PDF files are allowed'}), 400
+
+    filename = secure_filename(file.filename)
+
+    # Read file content into memory before generator starts
+    file.seek(0)
+    file_content = file.read()
+
+    # Get session data
+    user_id = session.get('user_id', 'system')
+
+    # Get tenant context
+    try:
+        from middleware.auth_middleware import get_current_tenant
+        tenant = get_current_tenant()
+        if not tenant:
+            return jsonify({'error': 'no_tenant_context', 'message': 'Please complete onboarding first'}), 400
+        tenant_id = tenant['id']
+    except ImportError as e:
+        return jsonify({'error': 'auth_system_error'}), 500
+
+    def generate_progress():
+        """Generator function to stream progress events"""
+        # Declare nonlocal for variables we may reassign (Excel -> CSV conversion)
+        nonlocal filename, file_ext
+
+        try:
+            # Stage 1: Upload
+            yield emit_progress(stage='upload', percent=5, message='Receiving file...', status='Receiving...')
+            yield emit_progress(stage='upload', percent=10, message=f'File received: {filename}', status='Received')
+
+            # Save to GCS
+            try:
+                document_type = 'statements' if file_ext == '.pdf' else 'transactions'
+
+                # Create a file-like object from the content
+                import io
+                import mimetypes
+                file_obj = io.BytesIO(file_content)
+                file_obj.filename = filename
+                # Set content_type based on file extension
+                content_type, _ = mimetypes.guess_type(filename)
+                file_obj.content_type = content_type or 'application/octet-stream'
+
+                gcs_uri, document_info = file_storage.save_file(
+                    file_obj=file_obj,
+                    document_type=document_type,
+                    tenant_id=tenant_id,  # Pass explicitly since we're outside Flask context
+                    user_id=user_id,
+                    metadata={
+                        'original_filename': filename,
+                        'file_extension': file_ext,
+                        'upload_source': 'web_ui',
+                        'upload_type': 'transaction_upload'
+                    }
+                )
+
+                yield emit_progress(stage_completed='upload', percent=15, message='File saved to cloud storage', status='Saved')
+
+            except Exception as gcs_error:
+                logger.error(f"GCS upload failed: {gcs_error}", exc_info=True)
+                yield emit_progress(percent=0, message='Storage error', complete=True, success=False,
+                                   error='File storage service unavailable. Please try again later.')
+                return
+
+            # Create temp copy for processing
+            temp_dir = temp_module.gettempdir()
+            temp_filename = f"processing_{document_info['id']}_{filename}"
+            filepath = os.path.join(temp_dir, temp_filename)
+
+            # Write the file content we already have
+            with open(filepath, 'wb') as temp_file:
+                temp_file.write(file_content)
+
+            # Import db_manager for database operations
+            from database import db_manager
+
+            # Stage 2: Extract transactions
+            if file_ext == '.pdf':
+                # PDF processing with Claude Vision AI
+                yield emit_progress(stage='extract', percent=20,
+                                   message='Reading PDF with Claude Vision AI...',
+                                   status='AI Reading...')
+                pdf_result = process_pdf_with_claude_vision(filepath, filename)
+
+                if pdf_result.get('error'):
+                    if os.path.exists(filepath) and filepath.startswith(temp_module.gettempdir()):
+                        os.remove(filepath)
+                    yield emit_progress(percent=0, message='PDF processing failed', complete=True, success=False,
+                                       error=f"PDF processing failed: {pdf_result['error']}")
+                    return
+
+                transactions = pdf_result.get('transactions', [])
+                if not transactions:
+                    if os.path.exists(filepath) and filepath.startswith(temp_module.gettempdir()):
+                        os.remove(filepath)
+                    yield emit_progress(percent=0, message='No transactions found', complete=True, success=False,
+                                       error='No transactions found in PDF')
+                    return
+
+                yield emit_progress(stage_completed='extract', percent=30,
+                                   message=f'AI extracted {len(transactions)} transactions from PDF',
+                                   status=f'{len(transactions)} found')
+
+                # DEBUG: Log all extracted transactions
+                logger.info(f"[PDF DEBUG] Total extracted: {len(transactions)} transactions")
+                for tidx, t in enumerate(transactions[:5]):  # Log first 5 for debugging
+                    logger.info(f"[PDF DEBUG] Transaction {tidx}: date={t.get('date')}, desc={t.get('description', '')[:50]}, amount={t.get('amount')}")
+
+                # Stage 3: Pattern recognition
+                yield emit_progress(stage='pattern', percent=35, message='Analyzing patterns...', status='Analyzing...')
+
+                # Get document currency
+                document_currency = pdf_result.get('currency', 'USD')
+
+                # Create tenant agent
+                tenant_agent = None
+                try:
+                    tenant_agent = DeltaCFOAgent(tenant_id=tenant_id)
+                except Exception as e:
+                    logger.warning(f"Failed to create DeltaCFOAgent: {e}")
+
+                yield emit_progress(stage_completed='pattern', percent=40, message='Pattern analysis ready', status='Ready')
+
+                # Stage 4: Classification (Pass 1)
+                yield emit_progress(stage='classify', percent=45, message='Classifying transactions...', status='Classifying...')
+
+                skipped_duplicates = 0
+                classified_transactions = []
+                total_txns = len(transactions)
+                logger.info(f"[PDF DEBUG] Starting classification loop for {total_txns} transactions")
+
+                skipped_invalid = 0
+                for idx, txn in enumerate(transactions):
+                    txn_currency = txn.get('currency', document_currency)
+                    original_amount = txn.get('amount')
+                    txn_date = txn.get('date')
+                    txn_description = txn.get('description')
+                    txn_origin = txn.get('origin')
+                    txn_destination = txn.get('destination')
+
+                    # Validate required fields
+                    if not txn_date or not txn_description or original_amount is None:
+                        skipped_invalid += 1
+                        logger.warning(f"[PDF DEBUG] Transaction {idx} SKIPPED (invalid): date={txn_date}, desc={txn_description[:30] if txn_description else None}, amount={original_amount}")
+                        continue
+
+                    # Convert currency
+                    usd_amount, original_currency, conversion_note = convert_currency_to_usd(
+                        original_amount, txn_currency, txn_date
+                    )
+
+                    # Validate converted amount
+                    if usd_amount is None or (isinstance(usd_amount, float) and (usd_amount != usd_amount)):  # NaN check
+                        skipped_invalid += 1
+                        logger.warning(f"[PDF DEBUG] Transaction {idx} SKIPPED (conversion failed): original_amount={original_amount}, currency={txn_currency}")
+                        continue
+
+                    # Check for duplicates (only among non-archived transactions)
+                    existing = db_manager.execute_query("""
+                        SELECT transaction_id FROM transactions
+                        WHERE tenant_id = %s AND date = %s AND description = %s AND ABS(amount - %s) < 0.01
+                        AND (archived IS NULL OR archived = FALSE)
+                        LIMIT 1
+                    """, (tenant_id, txn_date, txn_description, usd_amount), fetch_one=True)
+
+                    if existing:
+                        skipped_duplicates += 1
+                        logger.info(f"[PDF DEBUG] Transaction {idx} DUPLICATE: date={txn_date}, amount={usd_amount}, desc={txn_description[:40] if txn_description else 'None'}")
+                        continue
+
+                    # Classify
+                    try:
+                        if tenant_agent:
+                            classified_entity, confidence, reason, accounting_category, subcategory = tenant_agent.classify_transaction(
+                                description=txn_description,
+                                amount=usd_amount,
+                                currency=original_currency
+                            )
+                        else:
+                            raise ValueError("No tenant agent available")
+                    except Exception as e:
+                        classified_entity = 'Unclassified'
+                        accounting_category = 'OPERATING_EXPENSE' if usd_amount < 0 else 'REVENUE'
+                        subcategory = None
+                        confidence = 0.3
+                        reason = f"Classification error: {str(e)}"
+
+                    classified_transactions.append({
+                        'date': txn_date,
+                        'description': txn_description,
+                        'amount': usd_amount,
+                        'original_currency': original_currency,
+                        'conversion_note': conversion_note,
+                        'classified_entity': classified_entity,
+                        'accounting_category': accounting_category,
+                        'subcategory': subcategory,
+                        'confidence': confidence,
+                        'justification': reason,
+                        'origin': txn_origin,
+                        'destination': txn_destination
+                    })
+
+                    # Update progress periodically
+                    if idx % 5 == 0 or idx == total_txns - 1:
+                        progress_pct = 45 + int((idx / total_txns) * 25)
+                        yield emit_progress(stage='classify', percent=progress_pct,
+                                           message=f'Classifying {idx+1}/{total_txns}...',
+                                           status=f'{idx+1}/{total_txns}')
+
+                logger.info(f"[PDF DEBUG] Classification loop complete: {len(classified_transactions)} classified, {skipped_duplicates} duplicates, {skipped_invalid} invalid, total={total_txns}")
+                # Show detailed breakdown if transactions were skipped
+                if skipped_duplicates > 0 or skipped_invalid > 0:
+                    skip_msg = f'Pass 1: {len(classified_transactions)} new'
+                    if skipped_duplicates > 0:
+                        skip_msg += f', {skipped_duplicates} duplicates'
+                    if skipped_invalid > 0:
+                        skip_msg += f', {skipped_invalid} invalid'
+                    yield emit_progress(stage_completed='classify', percent=70,
+                                       message=skip_msg,
+                                       status=f'{len(classified_transactions)} new')
+                else:
+                    yield emit_progress(stage_completed='classify', percent=70,
+                                       message=f'Pass 1 complete: {len(classified_transactions)} classified',
+                                       status=f'{len(classified_transactions)} done')
+
+                # Stage 5: AI Review (Pass 2)
+                yield emit_progress(stage='pass2', percent=72, message='Running AI review...', status='Reviewing...')
+
+                try:
+                    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
+                    from knowledge_generator import KnowledgeGenerator
+                    from ai_classification_reviewer import AIClassificationReviewer, queue_pattern_suggestions
+
+                    kg = KnowledgeGenerator(tenant_id)
+                    summary_result = kg.generate_tenant_knowledge_summary(triggered_by='upload', source_file=filename)
+                    business_context = summary_result['markdown']
+
+                    low_confidence = [t for t in classified_transactions if t['confidence'] < 0.85]
+                    if low_confidence:
+                        yield emit_progress(stage='pass2', percent=75,
+                                           message=f'Reviewing {len(low_confidence)} low-confidence transactions...',
+                                           status=f'{len(low_confidence)} to review')
+
+                        reviewer = AIClassificationReviewer(tenant_id, business_context)
+                        review_result = reviewer.review_batch(classified_transactions, confidence_threshold=0.85)
+
+                        if review_result.get('corrections'):
+                            classified_transactions = reviewer.apply_corrections(
+                                classified_transactions, review_result['corrections']
+                            )
+                            yield emit_progress(stage='pass2', percent=82,
+                                               message=f'Applied {len(review_result["corrections"])} corrections',
+                                               status=f'{len(review_result["corrections"])} fixed')
+
+                        if review_result.get('pattern_suggestions'):
+                            queue_pattern_suggestions(tenant_id, review_result['pattern_suggestions'])
+                    else:
+                        yield emit_progress(stage='pass2', percent=82,
+                                           message='All transactions high confidence',
+                                           status='Skipped')
+
+                except Exception as e:
+                    logger.warning(f"AI Classification Review failed: {e}")
+                    yield emit_progress(stage='pass2', percent=82,
+                                       message='AI review skipped (error)',
+                                       status='Skipped')
+
+                yield emit_progress(stage_completed='pass2', percent=85, message='AI review complete', status='Complete')
+
+                # Stage 6: Save to database (batch insert for speed)
+                yield emit_progress(stage='save', percent=87, message='Saving to database...', status='Saving...')
+
+                inserted_count = 0
+                try:
+                    # Prepare batch data for fast insert
+                    if classified_transactions:
+                        from psycopg2.extras import execute_values
+
+                        # Build values list
+                        values_list = []
+                        source_file_name = f'PDF Upload: {filename}'
+                        doc_id = document_info.get('id')
+
+                        for txn in classified_transactions:
+                            transaction_id = str(uuid.uuid4())
+                            values_list.append((
+                                transaction_id, tenant_id, txn['date'], txn['description'], txn['amount'],
+                                txn['original_currency'],
+                                txn['amount'] if txn['original_currency'] != 'USD' else None,
+                                txn['conversion_note'], txn['classified_entity'], txn['accounting_category'],
+                                txn['subcategory'], txn['confidence'], txn['justification'],
+                                source_file_name, doc_id,
+                                txn.get('origin'), txn.get('destination')
+                            ))
+
+                        # Single batch insert (much faster than individual inserts)
+                        with db_manager.get_connection() as conn:
+                            with conn.cursor() as cursor:
+                                execute_values(cursor, """
+                                    INSERT INTO transactions (
+                                        transaction_id, tenant_id, date, description, amount,
+                                        currency, usd_equivalent, conversion_note,
+                                        classified_entity, accounting_category, subcategory,
+                                        confidence, justification, source_file, source_document_id,
+                                        origin, destination
+                                    ) VALUES %s
+                                """, values_list)
+                                conn.commit()
+                                inserted_count = len(values_list)
+
+                    yield emit_progress(stage_completed='save', percent=100,
+                                       message=f'Saved {inserted_count} transactions',
+                                       status=f'{inserted_count} saved')
+
+                except Exception as e:
+                    logger.error(f"Database insertion error: {e}", exc_info=True)
+                    yield emit_progress(percent=0, message='Database error', complete=True, success=False,
+                                       error=f'Database insertion failed: {str(e)}')
+                    return
+
+                # Cleanup temp file
+                if os.path.exists(filepath) and filepath.startswith(temp_module.gettempdir()):
+                    os.remove(filepath)
+
+                # Success!
+                logger.info(f"[PDF DEBUG] Final result: {inserted_count} inserted, {skipped_duplicates} duplicates, {skipped_invalid} invalid, original total={total_txns}")
+                yield emit_progress(percent=100, message='Processing complete!', complete=True, success=True,
+                                   transactions_processed=inserted_count,
+                                   skipped_duplicates=skipped_duplicates,
+                                   skipped_invalid=skipped_invalid,
+                                   total_extracted=total_txns)
+
+            else:
+                # CSV/Excel file - use subprocess (existing logic)
+                yield emit_progress(stage='extract', percent=20, message='Parsing CSV/Excel file...', status='Parsing...')
+                yield emit_progress(stage_completed='extract', percent=25, message='File ready for processing', status='Ready')
+                yield emit_progress(stage='pattern', percent=30, message='Starting classification...', status='Starting...')
+
+                # Convert Excel to CSV if needed
+                if file_ext in ['.xls', '.xlsx']:
+                    try:
+                        from excel_converter import convert_excel_to_csv
+                        csv_filename = os.path.splitext(filename)[0] + '.csv'
+                        csv_filepath = os.path.join(temp_dir, f"processing_{document_info['id']}_{csv_filename}")
+                        convert_excel_to_csv(filepath, csv_filepath)
+                        original_excel_path = filepath
+                        filename = csv_filename
+                        filepath = csv_filepath
+                        file_ext = '.csv'
+                        if os.path.exists(original_excel_path):
+                            os.remove(original_excel_path)
+                    except Exception as e:
+                        yield emit_progress(percent=0, message='Excel conversion failed', complete=True, success=False,
+                                           error=f"Failed to convert Excel file: {str(e)}")
+                        return
+
+                yield emit_progress(stage_completed='pattern', percent=40, message='Pattern analysis ready', status='Ready')
+                yield emit_progress(stage='classify', percent=45, message='Running classification...', status='Running...')
+
+                # Run subprocess for CSV processing
+                parent_dir_path = os.path.dirname(os.path.dirname(__file__))
+                parent_dir_safe = parent_dir_path.replace(chr(92), '/')
+                filename_safe = filename.replace(chr(92), '/')
+                tenant_id_safe = tenant_id.replace("'", "\\'")
+
+                processing_script = f"""
+import sys
+import os
+sys.path.append('{parent_dir_safe}')
+os.chdir('{parent_dir_safe}')
+
+from main import DeltaCFOAgent
+
+agent = DeltaCFOAgent(tenant_id='{tenant_id_safe}')
+result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
+
+if result is not None:
+    print(f'PROCESSED_COUNT:{{len(result)}}')
+else:
+    print('PROCESSED_COUNT:0')
+"""
+
+                env = os.environ.copy()
+                env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
+                for var in ['DB_TYPE', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']:
+                    if os.getenv(var):
+                        env[var] = os.getenv(var)
+
+                yield emit_progress(stage='classify', percent=55, message='Processing transactions...', status='Processing...')
+
+                process_result = subprocess.run(
+                    [sys.executable, '-c', processing_script],
+                    capture_output=True, text=True, cwd=parent_dir_path, timeout=120, env=env
+                )
+
+                if process_result.returncode != 0:
+                    yield emit_progress(percent=0, message='Classification failed', complete=True, success=False,
+                                       error=f'Classification failed: {process_result.stderr or "Unknown error"}')
+                    return
+
+                yield emit_progress(stage_completed='classify', percent=70, message='Classification complete', status='Done')
+                yield emit_progress(stage='pass2', percent=72, message='AI review (handled in pipeline)', status='Integrated')
+                yield emit_progress(stage_completed='pass2', percent=85, message='AI review complete', status='Complete')
+
+                # Extract transaction count
+                transactions_processed = 0
+                if 'PROCESSED_COUNT:' in process_result.stdout:
+                    count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
+                    try:
+                        transactions_processed = int(count_str)
+                    except ValueError:
+                        pass
+
+                yield emit_progress(stage='save', percent=90, message='Saving results...', status='Saving...')
+
+                # Check for duplicates
+                duplicate_info = check_processed_file_duplicates(filepath, filename)
+
+                if duplicate_info['has_duplicates']:
+                    yield emit_progress(percent=100, message='Duplicates found', complete=True,
+                                       duplicate_confirmation_needed=True,
+                                       duplicate_info=duplicate_info,
+                                       filename=filename,
+                                       filepath=filepath,
+                                       processed_file=filepath)
+                    return
+
+                # Sync to database
+                sync_result = sync_processed_file_to_database(filepath)
+
+                yield emit_progress(stage_completed='save', percent=100, message='Processing complete!', status='Saved')
+                yield emit_progress(percent=100, message='Upload complete!', complete=True, success=True,
+                                   transactions_processed=sync_result.get('inserted', 0) + sync_result.get('updated', 0))
+
+        except Exception as e:
+            logger.error(f"Upload with progress failed: {e}", exc_info=True)
+            yield emit_progress(percent=0, message='Processing failed', complete=True, success=False,
+                               error=str(e))
+
+    return Response(generate_progress(), mimetype='text/event-stream',
+                   headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
+
+
 @app.route('/api/upload', methods=['POST'])
-@require_auth
+@optional_auth
 def upload_file():
-    """Handle file upload and processing - requires authentication"""
+    """Handle file upload and processing - works with or without authentication"""
     import sys
     sys.stderr.write("=" * 80 + "\n")
     sys.stderr.write("UPLOAD ENDPOINT HIT - Starting file upload processing\n")
@@ -10231,15 +10887,65 @@ def upload_file():
         filename = secure_filename(file.filename)
         print(f"DEBUG: Secured filename: {filename}")
 
-        # Save to parent directory (same location as other CSV files)
-        print("DEBUG: Getting parent directory...")
-        parent_dir = os.path.dirname(os.path.dirname(__file__))
-        print(f"DEBUG: Parent dir: {parent_dir}")
-        filepath = os.path.join(parent_dir, filename)
-        print(f"DEBUG: Full filepath: {filepath}")
+        # STEP 1: Save to GCS for permanent storage
+        print("DEBUG: Saving file to Google Cloud Storage...")
+        try:
+            # Determine document type based on file extension and usage
+            if file_ext == '.pdf':
+                document_type = 'statements'  # PDF bank statements
+            elif file_ext in ['.csv', '.xls', '.xlsx']:
+                document_type = 'transactions'  # Transaction files
+            else:
+                document_type = 'other'
 
-        # Save the uploaded file
-        file.save(filepath)
+            # Get current user for upload tracking
+            user_id = session.get('user_id', 'system')
+
+            # Reset file pointer before reading
+            file.seek(0)
+
+            # Save to GCS with tenant isolation
+            gcs_uri, document_info = file_storage.save_file(
+                file_obj=file,
+                document_type=document_type,
+                user_id=user_id,
+                metadata={
+                    'original_filename': filename,
+                    'file_extension': file_ext,
+                    'upload_source': 'web_ui',
+                    'upload_type': 'transaction_upload'
+                }
+            )
+
+            print(f"DEBUG: File saved to GCS: {gcs_uri}")
+            print(f"DEBUG: GCS Document ID: {document_info['id']}")
+
+            # STEP 2: Create temp copy for processing (existing code needs filesystem access)
+            print("DEBUG: Creating temporary copy for processing...")
+            parent_dir = os.path.dirname(os.path.dirname(__file__))
+            # Use temp directory with unique name to avoid conflicts
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            temp_filename = f"processing_{document_info['id']}_{filename}"
+            filepath = os.path.join(temp_dir, temp_filename)
+
+            # Download from GCS to temp location
+            file_bytes = file_storage.get_file(document_info['id'])
+            with open(filepath, 'wb') as temp_file:
+                temp_file.write(file_bytes)
+
+            print(f"DEBUG: Temp file created at: {filepath}")
+            print(f"DEBUG: Original permanently stored in GCS: {gcs_uri}")
+
+        except Exception as gcs_error:
+            print(f"ERROR: Failed to save to GCS: {gcs_error}")
+            logger.error(f"GCS upload failed: {gcs_error}", exc_info=True)
+            # No fallback - GCS is required for file storage
+            return jsonify({
+                'success': False,
+                'error': 'File storage service unavailable. Please try again later.',
+                'details': str(gcs_error) if logger.level <= 10 else None  # Show details in debug mode
+            }), 503
 
         # Debug: Show file extension detection
         print(f"DEBUG: File extension detected: '{file_ext}' for file: {filename}")
@@ -10252,9 +10958,9 @@ def upload_file():
             try:
                 from excel_converter import convert_excel_to_csv
 
-                # Convert Excel to CSV
+                # Convert Excel to CSV in temp directory
                 csv_filename = os.path.splitext(filename)[0] + '.csv'
-                csv_filepath = os.path.join(parent_dir, csv_filename)
+                csv_filepath = os.path.join(temp_dir, f"processing_{document_info['id']}_{csv_filename}")
 
                 convert_excel_to_csv(filepath, csv_filepath)
 
@@ -10265,17 +10971,19 @@ def upload_file():
 
                 print(f"DEBUG: Excel converted to CSV: {csv_filename}")
 
-                # Clean up original Excel file
-                excel_path = os.path.join(parent_dir, secure_filename(file.filename))
-                if os.path.exists(excel_path):
-                    os.remove(excel_path)
-                    print(f"DEBUG: Cleaned up original Excel file")
+                # Clean up temp Excel file (GCS copy is permanent)
+                # The original Excel temp file is at 'filepath' before we updated it to CSV
+                original_excel_path = os.path.join(temp_dir, temp_filename)
+                if os.path.exists(original_excel_path):
+                    os.remove(original_excel_path)
+                    print(f"DEBUG: Cleaned up temp Excel file")
 
             except Exception as e:
                 print(f"ERROR: Failed to convert Excel to CSV: {e}")
-                # Clean up uploaded file
-                if os.path.exists(filepath):
+                # Clean up temp file (GCS copy is permanent)
+                if os.path.exists(filepath) and filepath.startswith(tempfile.gettempdir()):
                     os.remove(filepath)
+                    print(f"DEBUG: Cleaned up temp file after Excel conversion failure")
                 return jsonify({
                     'success': False,
                     'error': f"Failed to convert Excel file: {str(e)}"
@@ -10291,9 +10999,12 @@ def upload_file():
 
             # Check for errors
             if pdf_result.get('error'):
-                # Clean up uploaded file
-                if os.path.exists(filepath):
+                # Only clean up temp file (GCS copy is permanent)
+                if os.path.exists(filepath) and filepath.startswith(tempfile.gettempdir()):
                     os.remove(filepath)
+                    print(f"DEBUG: Cleaned up temp file after PDF processing error")
+                else:
+                    print(f"DEBUG: Preserved file after PDF processing error (GCS-backed)")
                 return jsonify({
                     'success': False,
                     'error': f"PDF processing failed: {pdf_result['error']}"
@@ -10302,9 +11013,12 @@ def upload_file():
             # Check if transactions were found
             transactions = pdf_result.get('transactions', [])
             if not transactions:
-                # Clean up uploaded file
-                if os.path.exists(filepath):
+                # Only clean up temp file (GCS copy is permanent)
+                if os.path.exists(filepath) and filepath.startswith(tempfile.gettempdir()):
                     os.remove(filepath)
+                    print(f"DEBUG: Cleaned up temp file (no transactions found)")
+                else:
+                    print(f"DEBUG: Preserved file with no transactions (GCS-backed)")
                 return jsonify({
                     'success': False,
                     'error': 'No transactions found in PDF'
@@ -10321,24 +11035,40 @@ def upload_file():
                 document_currency = pdf_result.get('currency', 'USD')
                 print(f" DEBUG: Document-level currency from pdf_result: '{document_currency}'")
 
+                # Create tenant agent ONCE before the loop (not per-transaction!)
+                # This avoids exhausting the database connection pool with 90+ connections
+                tenant_agent = None
+                try:
+                    tenant_agent = DeltaCFOAgent(tenant_id=tenant_id)
+                    print(f" Created DeltaCFOAgent for tenant: {tenant_id}")
+                except Exception as e:
+                    print(f" WARNING: Failed to create DeltaCFOAgent: {e}")
+
+                # ================================================
+                # PASS 1: Classify all transactions (pattern matching)
+                # ================================================
                 skipped_duplicates = 0
+                classified_transactions = []
+
                 for txn in transactions:
                     # Get transaction data
                     txn_currency = txn.get('currency', document_currency)
                     original_amount = txn.get('amount')
                     txn_date = txn.get('date')
                     txn_description = txn.get('description')
+                    txn_origin = txn.get('origin')
+                    txn_destination = txn.get('destination')
 
                     print(f" DEBUG: About to convert: amount={original_amount}, from_currency={txn_currency}")
 
-                    # Convert currency to USD (including cryptocurrency)
+                    # Convert currency to USD
                     usd_amount, original_currency, conversion_note = convert_currency_to_usd(
                         original_amount,
                         txn_currency,
-                        txn_date  # Pass transaction date for historic crypto pricing
+                        txn_date
                     )
 
-                    # Check for duplicates: same date, description, and amount
+                    # Check for duplicates
                     existing = db_manager.execute_query("""
                         SELECT transaction_id FROM transactions
                         WHERE tenant_id = %s
@@ -10353,52 +11083,123 @@ def upload_file():
                         skipped_duplicates += 1
                         continue
 
-                    # Classify transaction using DeltaCFOAgent with business knowledge
-                    # Create tenant-specific agent instance for proper multi-tenant classification
+                    # Classify transaction using DeltaCFOAgent (Pass 1)
                     print(f" Classifying transaction: {txn_description}")
                     try:
-                        tenant_agent = DeltaCFOAgent(tenant_id=tenant_id)
-                        classified_entity, confidence, reason, accounting_category, subcategory = tenant_agent.classify_transaction(
-                            description=txn_description,
-                            amount=usd_amount,
-                            currency=original_currency
-                        )
-                        print(f" Classification: entity={classified_entity}, category={accounting_category}, subcategory={subcategory}, confidence={confidence}")
+                        if tenant_agent:
+                            classified_entity, confidence, reason, accounting_category, subcategory = tenant_agent.classify_transaction(
+                                description=txn_description,
+                                amount=usd_amount,
+                                currency=original_currency
+                            )
+                            print(f" Classification: entity={classified_entity}, category={accounting_category}, subcategory={subcategory}, confidence={confidence}")
+                        else:
+                            raise ValueError("No tenant agent available")
                     except Exception as e:
                         print(f" Classification failed: {e}")
-                        # Fallback to basic classification
                         classified_entity = 'Unclassified'
                         accounting_category = 'OPERATING_EXPENSE' if usd_amount < 0 else 'REVENUE'
                         subcategory = None
                         confidence = 0.3
                         reason = f"Classification error: {str(e)}"
 
-                    # Generate transaction ID
+                    # Collect classified transaction
+                    classified_transactions.append({
+                        'date': txn_date,
+                        'description': txn_description,
+                        'amount': usd_amount,
+                        'original_currency': original_currency,
+                        'conversion_note': conversion_note,
+                        'classified_entity': classified_entity,
+                        'accounting_category': accounting_category,
+                        'subcategory': subcategory,
+                        'confidence': confidence,
+                        'justification': reason,
+                        'origin': txn_origin,
+                        'destination': txn_destination
+                    })
+
+                print(f" Pass 1 complete: {len(classified_transactions)} transactions classified")
+
+                # ================================================
+                # PASS 2: AI Review for low-confidence transactions
+                # ================================================
+                try:
+                    # Generate business summary for AI context
+                    import sys
+                    import os as os_module
+                    sys.path.insert(0, os_module.path.join(os_module.path.dirname(__file__), '..', 'services'))
+                    from knowledge_generator import KnowledgeGenerator
+                    from ai_classification_reviewer import AIClassificationReviewer, queue_pattern_suggestions
+
+                    # Generate/update business summary
+                    kg = KnowledgeGenerator(tenant_id)
+                    summary_result = kg.generate_tenant_knowledge_summary(
+                        triggered_by='upload',
+                        source_file=filename
+                    )
+                    business_context = summary_result['markdown']
+                    print(f" Business summary generated: {len(business_context)} chars")
+
+                    # Check if any transactions need review
+                    low_confidence = [t for t in classified_transactions if t['confidence'] < 0.85]
+                    if low_confidence:
+                        print(f" Pass 2: Reviewing {len(low_confidence)} low-confidence transactions with AI...")
+
+                        reviewer = AIClassificationReviewer(tenant_id, business_context)
+                        review_result = reviewer.review_batch(classified_transactions, confidence_threshold=0.85)
+
+                        # Apply corrections
+                        if review_result.get('corrections'):
+                            classified_transactions = reviewer.apply_corrections(
+                                classified_transactions,
+                                review_result['corrections']
+                            )
+                            print(f" Pass 2: Applied {len(review_result['corrections'])} corrections")
+
+                        # Queue pattern suggestions
+                        if review_result.get('pattern_suggestions'):
+                            queue_pattern_suggestions(tenant_id, review_result['pattern_suggestions'])
+                            print(f" Pass 2: Queued {len(review_result['pattern_suggestions'])} pattern suggestions")
+                    else:
+                        print(f" Pass 2: Skipped - all transactions have high confidence")
+
+                except Exception as e:
+                    print(f" Pass 2 error (continuing with Pass 1 results): {e}")
+                    logger.warning(f"AI Classification Review failed: {e}")
+
+                # ================================================
+                # Insert all transactions into database
+                # ================================================
+                for txn in classified_transactions:
                     transaction_id = str(uuid.uuid4())
 
-                    # Insert into database with proper classification
                     db_manager.execute_query("""
                         INSERT INTO transactions (
                             transaction_id, tenant_id, date, description, amount,
                             currency, usd_equivalent, conversion_note,
                             classified_entity, accounting_category, subcategory,
-                            confidence, justification, source_file
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            confidence, justification, source_file, source_document_id,
+                            origin, destination
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         transaction_id,
                         tenant_id,
-                        txn_date,
-                        txn_description,
-                        usd_amount,  # Amount in USD
-                        original_currency,  # Original currency
-                        usd_amount if original_currency != 'USD' else None,  # USD equivalent (only if converted)
-                        conversion_note,  # Conversion details
-                        classified_entity,  # Classified by DeltaCFOAgent
-                        accounting_category,  # Classified by DeltaCFOAgent
-                        subcategory,  # Classified by DeltaCFOAgent
-                        confidence,  # Confidence from classification
-                        reason,  # Classification justification
-                        f'PDF Upload: {filename}'
+                        txn['date'],
+                        txn['description'],
+                        txn['amount'],
+                        txn['original_currency'],
+                        txn['amount'] if txn['original_currency'] != 'USD' else None,
+                        txn['conversion_note'],
+                        txn['classified_entity'],
+                        txn['accounting_category'],
+                        txn['subcategory'],
+                        txn['confidence'],
+                        txn['justification'],
+                        f'PDF Upload: {filename}',
+                        document_info.get('id'),
+                        txn['origin'],
+                        txn['destination']
                     ))
                     inserted_count += 1
 
@@ -10407,17 +11208,23 @@ def upload_file():
             except Exception as e:
                 print(f" Database insertion error: {e}")
                 logger.error(f"Failed to insert PDF transactions: {e}", exc_info=True)
-                # Clean up uploaded file
-                if os.path.exists(filepath):
+                # Only clean up temp file (GCS copy is permanent)
+                if os.path.exists(filepath) and filepath.startswith(tempfile.gettempdir()):
                     os.remove(filepath)
+                    print(f"DEBUG: Cleaned up temp file after database insertion failure")
+                else:
+                    print(f"DEBUG: Preserved file after database insertion failure (GCS-backed)")
                 return jsonify({
                     'success': False,
                     'error': f'Database insertion failed: {str(e)}'
                 }), 500
 
-            # Success! Clean up the PDF file (data already extracted and saved)
-            if os.path.exists(filepath):
+            # Success! Clean up temp PDF file only (GCS copy is permanent)
+            if os.path.exists(filepath) and filepath.startswith(tempfile.gettempdir()):
                 os.remove(filepath)
+                print(f"DEBUG: Cleaned up temp PDF file after successful processing")
+            else:
+                print(f"DEBUG: Preserved PDF file after successful processing (GCS-backed)")
 
             print(f" Successfully processed PDF: {inserted_count} transactions saved to database")
             return jsonify({
@@ -10436,18 +11243,26 @@ def upload_file():
         print(f" DEBUG: Step 1 - Processing file with smart ingestion: {filename}")
 
         # Get tenant_id from authenticated user's current tenant
-        from middleware.auth_middleware import get_current_tenant
-        tenant = get_current_tenant()
-        if not tenant:
-            logger.error(f"[UPLOAD] No tenant context - user must complete onboarding")
+        try:
+            from middleware.auth_middleware import get_current_tenant
+            tenant = get_current_tenant()
+            if not tenant:
+                logger.error(f"[UPLOAD] No tenant context - user must complete onboarding")
+                return jsonify({
+                    'success': False,
+                    'error': 'no_tenant_context',
+                    'message': 'Please complete onboarding to create a tenant before uploading files. If you have authentication issues, please check your Firebase configuration.'
+                }), 400
+
+            tenant_id = tenant['id']
+            print(f" DEBUG: Using tenant_id: {tenant_id} (from authenticated user)")
+        except ImportError as e:
+            logger.error(f"[UPLOAD] Auth middleware not available: {e}")
             return jsonify({
                 'success': False,
-                'error': 'no_tenant_context',
-                'message': 'Please complete onboarding to create a tenant before uploading files'
-            }), 400
-
-        tenant_id = tenant['id']
-        print(f" DEBUG: Using tenant_id: {tenant_id} (from authenticated user)")
+                'error': 'auth_system_error',
+                'message': 'Authentication system not properly configured. Please contact support.'
+            }), 500
 
         # Process the file to get enriched transactions
         try:
@@ -11086,6 +11901,98 @@ def handle_duplicates():
             'success': False,
             'error': str(e),
             'traceback': traceback.format_exc()
+        }), 500
+
+# ============================================================================
+# FILE MANAGEMENT ENDPOINTS (GCS)
+# ============================================================================
+
+@app.route('/api/files/<document_id>/rename', methods=['PUT'])
+@optional_auth
+def rename_file_endpoint(document_id):
+    """
+    Rename a file's display name (GCS path remains unchanged)
+    """
+    try:
+        from services.file_storage_service import FileStorageService
+
+        data = request.json
+        new_name = data.get('new_name', '').strip()
+
+        if not new_name:
+            return jsonify({
+                'success': False,
+                'error': 'New file name is required'
+            }), 400
+
+        file_storage = FileStorageService()
+        success = file_storage.rename_file(document_id, new_name)
+
+        if not success:
+            return jsonify({
+                'success': False,
+                'error': 'File not found or access denied'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': f'File renamed to "{new_name}"',
+            'new_name': new_name
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"File rename error: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Failed to rename file: {str(e)}'
+        }), 500
+
+
+@app.route('/api/files/<document_id>/view', methods=['GET'])
+@optional_auth
+def view_file_endpoint(document_id):
+    """
+    Get a signed URL for viewing/downloading a file from GCS
+    """
+    try:
+        from services.file_storage_service import FileStorageService
+
+        # Optional: specify expiration in minutes (default 15)
+        expiration_minutes = request.args.get('expiration', 15, type=int)
+
+        file_storage = FileStorageService()
+        signed_url = file_storage.get_signed_url(
+            document_id,
+            expiration_minutes=expiration_minutes
+        )
+
+        if not signed_url:
+            return jsonify({
+                'success': False,
+                'error': 'File not found or access denied'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'signed_url': signed_url,
+            'expires_in_minutes': expiration_minutes
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        logger.error(f"File view error: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'error': f'Failed to generate file URL: {str(e)}'
         }), 500
 
 @app.route('/api/download/<filename>')
@@ -21533,6 +22440,131 @@ def api_get_shareholder_chart_data():
     except Exception as e:
         logger.error(f"Error fetching chart data: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/knowledge-generator/run', methods=['POST'])
+def run_knowledge_generator():
+    """Run the AI Knowledge Generator to analyze transaction history and create patterns"""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
+
+        from knowledge_generator import KnowledgeGenerator
+        from tenant_context import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'message': 'No tenant context available'
+            }), 400
+
+        logger.info(f"Running Knowledge Generator for tenant: {tenant_id}")
+
+        # Create generator and run analysis
+        generator = KnowledgeGenerator(tenant_id)
+        results = generator.analyze_all(min_frequency=75.0, min_transactions=5)
+
+        logger.info(f"Knowledge Generator complete: {results}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Knowledge Generator completed successfully',
+            'results': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error running Knowledge Generator: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/business-summary', methods=['GET'])
+def get_business_summary():
+    """Get the cached business knowledge summary for the current tenant"""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
+
+        from knowledge_generator import KnowledgeGenerator
+        from tenant_context import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'message': 'No tenant context available'
+            }), 400
+
+        generator = KnowledgeGenerator(tenant_id)
+        summary = generator.get_cached_summary()
+
+        if summary:
+            return jsonify({
+                'success': True,
+                'summary': summary
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No summary available'
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting business summary: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
+
+
+@app.route('/api/business-summary/regenerate', methods=['POST'])
+def regenerate_business_summary():
+    """Regenerate the business knowledge summary"""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'services'))
+
+        from knowledge_generator import KnowledgeGenerator
+        from tenant_context import get_current_tenant_id
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'message': 'No tenant context available'
+            }), 400
+
+        logger.info(f"Regenerating business summary for tenant: {tenant_id}")
+
+        generator = KnowledgeGenerator(tenant_id)
+        result = generator.generate_tenant_knowledge_summary(triggered_by='manual')
+
+        return jsonify({
+            'success': True,
+            'summary': {
+                'markdown': result['markdown'],
+                'stats': result['stats'],
+                'generated_at': None,  # Will be set by DB
+                'triggered_by': 'manual'
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error regenerating business summary: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 500
 
 
 if __name__ == '__main__':

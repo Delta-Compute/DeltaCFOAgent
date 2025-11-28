@@ -549,6 +549,9 @@
                 <button class="tab-button" data-tab="settings" data-i18n="knowledge.tabs.settings">
                     ⚙️ Settings
                 </button>
+                <button class="tab-button" data-tab="business-summary" data-i18n="knowledge.tabs.businessSummary">
+                    AI Business Summary
+                </button>
             </div>
 
             <!-- Classification Patterns Tab -->
@@ -583,6 +586,10 @@
                         <button class="add-button" id="testPatternsBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);"
                                 data-i18n="knowledge.buttons.testPatterns">
                             🧪 Test Patterns
+                        </button>
+                        <button class="add-button" id="runKnowledgeGenBtn" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9);"
+                                title="Analyze transaction history to discover new patterns">
+                            🤖 Run Knowledge Generator
                         </button>
                     </div>
                 </div>
@@ -766,8 +773,60 @@
                 <!-- Save Button at Bottom -->
                 <div style="margin-top: 2rem;">
                     <button class="add-button" id="saveSettingsBtn" data-i18n="knowledge.buttons.saveSettings">
-                        💾 Save All Settings
+                        Save All Settings
                     </button>
+                </div>
+            </div>
+
+            <!-- Business Summary Tab -->
+            <div id="business-summary" class="tab-content">
+                <div class="pattern-card">
+                    <div class="toolbar">
+                        <div>
+                            <h3 style="margin: 0;">AI Business Summary</h3>
+                            <p style="color: #64748b; margin: 0.5rem 0 0 0; font-size: 0.9rem;">
+                                This summary is used by the AI to understand your business context during transaction classification.
+                                It is regenerated each time you upload a file.
+                            </p>
+                        </div>
+                        <button class="add-button" id="regenerateSummaryBtn" onclick="regenerateBusinessSummary()">
+                            Regenerate Summary
+                        </button>
+                    </div>
+
+                    <!-- Summary Metadata -->
+                    <div id="summaryMetadata" style="margin: 1.5rem 0; padding: 1rem; background: #f8fafc; border-radius: 8px; display: none;">
+                        <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+                            <div>
+                                <span style="color: #64748b; font-size: 0.85rem;">Last Generated:</span>
+                                <span id="summaryGeneratedAt" style="font-weight: 600; margin-left: 0.5rem;">-</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; font-size: 0.85rem;">Triggered By:</span>
+                                <span id="summaryTriggeredBy" style="font-weight: 600; margin-left: 0.5rem;">-</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; font-size: 0.85rem;">Patterns:</span>
+                                <span id="summaryPatternCount" style="font-weight: 600; margin-left: 0.5rem;">-</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; font-size: 0.85rem;">Entities:</span>
+                                <span id="summaryEntityCount" style="font-weight: 600; margin-left: 0.5rem;">-</span>
+                            </div>
+                            <div>
+                                <span style="color: #64748b; font-size: 0.85rem;">Workforce:</span>
+                                <span id="summaryWorkforceCount" style="font-weight: 600; margin-left: 0.5rem;">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Summary Content -->
+                    <div id="businessSummaryContent" style="background: #1e293b; color: #e2e8f0; padding: 1.5rem; border-radius: 8px; font-family: monospace; font-size: 0.9rem; line-height: 1.6; max-height: 600px; overflow-y: auto; white-space: pre-wrap;">
+                        <div style="text-align: center; color: #94a3b8; padding: 2rem;">
+                            No business summary generated yet.<br><br>
+                            Upload a file or click "Regenerate Summary" to create one.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -799,8 +858,34 @@
                         <option value="expense" data-i18n="knowledge.patternForm.patternTypeExpense">Expense</option>
                         <option value="transfer" data-i18n="knowledge.patternForm.patternTypeTransfer">Transfer</option>
                         <option value="technology" data-i18n="knowledge.patternForm.patternTypeTechnology">Technology</option>
+                        <option value="regional" data-i18n="knowledge.patternForm.patternTypeRegional">Regional (Currency/Location)</option>
                         <option value="card_mapping" data-i18n="knowledge.patternForm.patternTypeCardMapping">Card Mapping</option>
+                        <option value="account_number" data-i18n="knowledge.patternForm.patternTypeAccountNumber">Account Number</option>
                     </select>
+                    <div class="form-hint" data-i18n="knowledge.patternForm.patternTypeHint">
+                        Regional patterns can match by currency or location. Account Number patterns match bank account identifiers.
+                    </div>
+                </div>
+
+                <div class="form-group" id="currencyFilterGroup" style="display: none;">
+                    <label class="form-label" data-i18n="knowledge.patternForm.currencyFilter">Currency Filter (Optional)</label>
+                    <select id="patternCurrency" class="form-select">
+                        <option value="" data-i18n="knowledge.patternForm.currencyFilterNone">Any Currency</option>
+                        <option value="BRL">BRL - Brazilian Real</option>
+                        <option value="USD">USD - US Dollar</option>
+                        <option value="EUR">EUR - Euro</option>
+                        <option value="GBP">GBP - British Pound</option>
+                        <option value="BTC">BTC - Bitcoin</option>
+                        <option value="ETH">ETH - Ethereum</option>
+                        <option value="USDT">USDT - Tether</option>
+                        <option value="USDC">USDC - USD Coin</option>
+                        <option value="TAO">TAO - Bittensor</option>
+                        <option value="SOL">SOL - Solana</option>
+                        <option value="MATIC">MATIC - Polygon</option>
+                    </select>
+                    <div class="form-hint" data-i18n="knowledge.patternForm.currencyFilterHint">
+                        For regional patterns: Only match transactions in this specific currency. Leave as "Any Currency" to match all currencies.
+                    </div>
                 </div>
 
                 <div class="form-group">

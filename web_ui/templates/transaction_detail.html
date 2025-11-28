@@ -7,13 +7,13 @@
 {% block record_type_plural %}transactions{% endblock %}
 
 {% block breadcrumb %}
-<a href="/transactions" class="breadcrumb-link">Transactions</a>
+<a href="/transactions" class="breadcrumb-link"><span data-i18n="detail.transaction.breadcrumb">Transactions</span></a>
 <span class="breadcrumb-separator">/</span>
 <span class="breadcrumb-current" id="transaction-id-breadcrumb">Loading...</span>
 {% endblock %}
 
 {% block page_title %}
-    <span id="transaction-title">Transaction Details</span>
+    <span id="transaction-title" data-i18n="detail.transaction.title">Transaction Details</span>
 {% endblock %}
 
 {% block page_subtitle %}
@@ -48,27 +48,27 @@
 {% block quick_info %}
 <div class="quick-info-grid">
     <div class="info-item">
-        <span class="info-label">Date</span>
+        <span class="info-label" data-i18n="detail.labels.date">Date</span>
         <span class="info-value" id="info-transaction-date">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Amount</span>
+        <span class="info-label" data-i18n="detail.labels.amount">Amount</span>
         <span class="info-value info-amount" id="info-amount">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Category</span>
+        <span class="info-label" data-i18n="detail.transaction.category">Category</span>
         <span class="info-value" id="info-category">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Origin</span>
+        <span class="info-label" data-i18n="detail.transaction.origin">Origin</span>
         <span class="info-value" id="info-origin">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Destination</span>
+        <span class="info-label" data-i18n="detail.transaction.destination">Destination</span>
         <span class="info-value" id="info-destination">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Business Unit</span>
+        <span class="info-label" data-i18n="detail.transaction.businessUnit">Business Unit</span>
         <span class="info-value" id="info-business-unit">Loading...</span>
     </div>
 </div>
@@ -76,14 +76,14 @@
 
 {% block tab_overview %}
 <div class="detail-card">
-    <h3 class="card-title">Transaction Details</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.cardTitle">Transaction Details</h3>
     <div class="transaction-details" id="transaction-details">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Classification</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.classification">Classification</h3>
     <div class="classification-details" id="classification-details">
         <!-- Populated by JavaScript -->
     </div>
@@ -92,7 +92,7 @@
 
 {% block tab_details %}
 <div class="detail-card">
-    <h3 class="card-title">Additional Information</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.additionalInfo">Additional Information</h3>
     <div class="additional-info" id="additional-info">
         <!-- Populated by JavaScript -->
     </div>
@@ -101,21 +101,21 @@
 
 {% block tab_matches %}
 <div class="detail-card">
-    <h3 class="card-title">Linked Invoice</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.linkedInvoice">Linked Invoice</h3>
     <div id="linked-invoice-section">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Linked Payslip</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.linkedPayslip">Linked Payslip</h3>
     <div id="linked-payslip-section">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Potential Matches</h3>
+    <h3 class="card-title" data-i18n="detail.transaction.potentialMatches">Potential Matches</h3>
     <div id="potential-matches-section">
         <!-- Populated by JavaScript -->
     </div>

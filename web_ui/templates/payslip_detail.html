@@ -7,13 +7,13 @@
 {% block record_type_plural %}payslips{% endblock %}
 
 {% block breadcrumb %}
-<a href="/workforce" class="breadcrumb-link">Workforce</a>
+<a href="/workforce" class="breadcrumb-link"><span data-i18n="detail.payslip.breadcrumb">Workforce</span></a>
 <span class="breadcrumb-separator">/</span>
 <span class="breadcrumb-current" id="payslip-number-breadcrumb">Loading...</span>
 {% endblock %}
 
 {% block page_title %}
-    <span id="payslip-title">Payslip Details</span>
+    <span id="payslip-title" data-i18n="detail.payslip.title">Payslip Details</span>
 {% endblock %}
 
 {% block page_subtitle %}
@@ -54,27 +54,27 @@
 {% block quick_info %}
 <div class="quick-info-grid">
     <div class="info-item">
-        <span class="info-label">Payslip Number</span>
+        <span class="info-label" data-i18n="detail.payslip.payslipNumber">Payslip Number</span>
         <span class="info-value" id="info-payslip-number">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Employee</span>
+        <span class="info-label" data-i18n="detail.payslip.employee">Employee</span>
         <span class="info-value" id="info-employee-name">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Net Amount</span>
+        <span class="info-label" data-i18n="detail.payslip.netAmount">Net Amount</span>
         <span class="info-value info-amount" id="info-net-amount">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Pay Period</span>
+        <span class="info-label" data-i18n="detail.payslip.payPeriod">Pay Period</span>
         <span class="info-value" id="info-pay-period">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Payment Date</span>
+        <span class="info-label" data-i18n="detail.payslip.paymentDate">Payment Date</span>
         <span class="info-value" id="info-payment-date">Loading...</span>
     </div>
     <div class="info-item">
-        <span class="info-label">Status</span>
+        <span class="info-label" data-i18n="detail.labels.status">Status</span>
         <span class="info-value" id="info-status">Loading...</span>
     </div>
 </div>
@@ -82,14 +82,14 @@
 
 {% block tab_overview %}
 <div class="detail-card">
-    <h3 class="card-title">Payslip Summary</h3>
+    <h3 class="card-title" data-i18n="detail.payslip.summary">Payslip Summary</h3>
     <div class="payslip-summary" id="payslip-summary">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Earnings & Deductions</h3>
+    <h3 class="card-title" data-i18n="detail.payslip.earningsDeductions">Earnings & Deductions</h3>
     <div class="line-items-table" id="line-items-table">
         <!-- Populated by JavaScript -->
     </div>
@@ -98,7 +98,7 @@
 
 {% block tab_details %}
 <div class="detail-card">
-    <h3 class="card-title">Employee Information</h3>
+    <h3 class="card-title" data-i18n="detail.payslip.employeeInfo">Employee Information</h3>
     <div class="employee-info" id="employee-info">
         <!-- Populated by JavaScript -->
     </div>
@@ -107,14 +107,14 @@
 
 {% block tab_matches %}
 <div class="detail-card">
-    <h3 class="card-title">Linked Transaction</h3>
+    <h3 class="card-title" data-i18n="detail.payslip.linkedTransaction">Linked Transaction</h3>
     <div id="linked-transaction-section">
         <!-- Populated by JavaScript -->
     </div>
 </div>
 
 <div class="detail-card">
-    <h3 class="card-title">Potential Transaction Matches</h3>
+    <h3 class="card-title" data-i18n="detail.payslip.potentialMatches">Potential Transaction Matches</h3>
     <div id="potential-matches-section">
         <!-- Populated by JavaScript -->
     </div>
