@@ -353,18 +353,40 @@ Based on the analysis, add these translation key sections:
 - [x] `business_overview.html` - Added data-i18n to hero section, metrics, portfolio, structure, onboarding bot
 
 #### Remaining Template Updates (Phase 3B - Future Work):
-- [ ] `auth/login.html` - Form labels, buttons, links (requires adding auth keys to locales)
-- [ ] `auth/register.html` - Form labels, buttons
-- [ ] `auth/forgot_password.html` - Form labels, buttons
-- [ ] `invoice_detail.html` - Labels, buttons
-- [ ] `create_invoice.html` - Form fields
-- [ ] `expenses.html` - Stats, filters
+- [x] `auth/login.html` - Form labels, buttons, links (requires adding auth keys to locales)
+- [x] `auth/register.html` - Form labels, buttons
+- [x] `auth/forgot_password.html` - Form labels, buttons
+- [x] `invoice_detail.html` - Labels, buttons
+- [x] `create_invoice.html` - Form fields
+- [ ] `expenses.html` - Stats, filters (template does not exist)
+
+### Phase 3B - COMPLETED (Nov 2024)
+
+#### Completed Template Updates:
+- [x] `_detail_base.html` - Added data-i18n to breadcrumb (Home), tabs (Overview, Details, Matches, Activity), sidebar titles (Statistics, Quick Actions, Related), loading text
+- [x] `invoice_detail.html` - Added data-i18n to all labels, buttons, status badges, quick info, sidebar stats, action buttons
+- [x] `create_invoice.html` - Added data-i18n to all form labels, placeholders, buttons; Added Latin American currencies to dropdown
+- [x] `auth/login.html` - Added i18n.js script, data-i18n to all form elements, tabs, buttons, links
+- [x] `auth/register.html` - Added i18n.js script, data-i18n to all form elements, user type options, tabs, buttons
+- [x] `auth/forgot_password.html` - Added i18n.js script, data-i18n to all form elements, buttons, links
+
+#### Locale File Updates:
+- Added `auth` section to all locale files (en.json, es.json, pt.json) with 40+ authentication-related keys
+- Added `currencies` section with long format currency names (e.g., "USD - US Dollar")
+- Added `tabs` section for detail page tabs
+- Added `sidebar` section for sidebar titles
+- Added `stats` section for sidebar statistics
+- Added `navigation` section for breadcrumb links
+- Added 60+ new invoice-related keys for detail and create pages
+- Added `common.home`, `common.remove`, `common.never` keys
 
 ### Issues Encountered
-- Auth templates don't include i18n.js and have no translation keys (needs separate auth section in locales)
+- Auth templates don't include i18n.js (FIXED: added script tag to each auth template)
 - Some templates are very large (invoices.html ~28k tokens)
+- `expenses.html` template does not exist
 
 ### Notes
 - All translation keys for Phase 3 templates already exist in locale files (added in Phase 1-2)
 - The i18n system loads automatically via _navbar.html which is included in most templates
-- Auth templates may need special handling since they don't include the navbar
+- Auth templates now include i18n.js script directly in the head section
+- Standalone templates (create_invoice.html) also have i18n.js included directly
