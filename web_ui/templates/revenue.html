@@ -706,8 +706,8 @@
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
-                    <h1><span data-i18n="revenue.header.title">💰 Revenue Recognition Dashboard</span></h1>
-                    <p style="color: #64748b; margin-bottom: 2rem;"><span data-i18n="revenue.header.subtitle">Automated invoice-transaction matching with AI intelligence</span></p>
+                    <h1 data-i18n="revenue.header.title">Revenue Recognition Dashboard</h1>
+                    <p style="color: #64748b; margin-bottom: 2rem;" data-i18n="revenue.header.subtitle">Automated invoice-transaction matching with AI intelligence</p>
                 </header>
 
                 <!-- Revenue Matching Statistics -->
@@ -717,37 +717,47 @@
 
                 <!-- Matching Controls -->
                 <div class="revenue-controls">
-                    <h2><span data-i18n="revenue.controls.matching.title">🔗 Invoice Matching</span></h2>
-                    <p style="color: #64748b; margin-bottom: 1.5rem;"><span data-i18n="revenue.controls.matching.description">Automatically find and link invoices to transactions with AI-powered matching.</span></p>
+                    <h2 data-i18n="revenue.controls.matching.title">Invoice Matching</h2>
+                    <p style="color: #64748b; margin-bottom: 1.5rem;" data-i18n="revenue.controls.matching.description">Automatically find and link invoices to transactions with AI-powered matching.</p>
                     <div class="matching-actions">
-                        <button class="action-button btn-primary" onclick="runUltraFastMatching(false)" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;"><span data-i18n="revenue.controls.buttons.runMatch">▶️ Run Match</span></button>
-                        <button class="action-button btn-success" onclick="runUltraFastMatching(true)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;"><span data-i18n="revenue.controls.buttons.autoMatchHigh">⚡ Auto-Match HIGH</span></button>
+                        <button class="action-button btn-primary" onclick="runUltraFastMatching(false)" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;" data-i18n="revenue.controls.buttons.runMatch">
+                            Run Match
+                        </button>
+                        <button class="action-button btn-success" onclick="runUltraFastMatching(true)" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; font-weight: 600; padding: 14px 28px; font-size: 1rem;" data-i18n="revenue.controls.buttons.autoMatchHigh">
+                            Auto-Match HIGH
+                        </button>
                     </div>
-                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280;">
-                        🔍 <strong>Run Match:</strong> Find matches for manual review | ⚡ <strong>Auto-Match HIGH:</strong> Auto-apply matches ≥80% confidence with AI enrichment
+                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: #6b7280;" data-i18n="revenue.controls.matching.helpRunMatch">
+                        Run Match: Analyze ALL unlinked invoices and find potential transaction matches. This creates pending matches for review.
                     </div>
 
                     <!-- Advanced Options (collapsed by default) -->
                     <div style="margin-top: 1rem;">
-                        <button class="action-button" onclick="toggleAdvancedOptions()" style="background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; font-size: 0.875rem;"><span data-i18n="revenue.controls.buttons.moreOptions">⚙️ More Options</span></button>
+                        <button class="action-button" onclick="toggleAdvancedOptions()" style="background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; font-size: 0.875rem;" data-i18n="revenue.controls.buttons.moreOptions">
+                            More Options
+                        </button>
                     </div>
 
                     <div id="advanced-options" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e2e8f0;">
                         <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                            <button class="action-button btn-warning" onclick="refreshData()" style="font-size: 0.875rem;"><span data-i18n="revenue.controls.buttons.refreshData">🔄 Refresh Data</span></button>
-                            <button class="action-button btn-secondary" onclick="showMatchedPairs()" style="font-size: 0.875rem;"><span data-i18n="revenue.controls.buttons.viewAllMatches">📋 View All Matches</span></button>
+                            <button class="action-button btn-warning" onclick="refreshData()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.refreshData">
+                                Refresh Data
+                            </button>
+                            <button class="action-button btn-secondary" onclick="showMatchedPairs()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.viewAllMatches">
+                                View All Matches
+                            </button>
                         </div>
                     </div>
 
                     <div id="matching-progress" style="display: none; background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; border-left: 4px solid #3b82f6;">
-                        <p><strong><span data-i18n="revenue.controls.progress.initializing">🚀 Initializing matching process...</span></strong></p>
+                        <p><strong>🚀 Initializing matching process...</strong></p>
                         <div class="progress-bar" style="background: #e5e7eb; height: 8px; border-radius: 4px; margin: 1rem 0; overflow: hidden;">
                             <div class="progress-fill" style="background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%); height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 4px;"></div>
                         </div>
                         <div style="font-size: 0.875rem; color: #64748b;">
-                            <div><span data-i18n="revenue.controls.progress.status">📊 Status:</span> <span id="progress-status" data-i18n="revenue.controls.progress.starting">Starting...</span></div>
-                            <div><span data-i18n="revenue.controls.progress.time">⏱️ Time:</span> <span id="progress-time" data-i18n="revenue.controls.progress.calculating">Calculating...</span></div>
-                            <div><span data-i18n="revenue.controls.progress.optimizations">🔧 Optimizations:</span> <span id="progress-optimizations" data-i18n="revenue.controls.progress.loading">Loading...</span></div>
+                            <div>📊 Status: <span id="progress-status">Starting...</span></div>
+                            <div>⏱️ Time: <span id="progress-time">Calculating...</span></div>
+                            <div>🔧 Optimizations: <span id="progress-optimizations">Loading...</span></div>
                         </div>
                     </div>
                 </div>
@@ -755,13 +765,14 @@
                 <!-- Pending Matches Section - MOVED TO TOP -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title"><span data-i18n="revenue.sections.pendingMatches.title">🔍 Pending Matches for Review</span>
+                        <h2 class="section-title" data-i18n="revenue.sections.pendingMatches.title">
+                            Pending Matches for Review
                             <span class="badge warning" id="pending-count">0</span>
                         </h2>
                         <div class="filter-tabs">
-                            <button class="tab-button active" onclick="filterMatches('all')"><span data-i18n="revenue.filters.all">All</span></button>
-                            <button class="tab-button" onclick="filterMatches('high')"><span data-i18n="revenue.filters.highConfidence">High Confidence</span></button>
-                            <button class="tab-button" onclick="filterMatches('medium')"><span data-i18n="revenue.filters.mediumConfidence">Medium Confidence</span></button>
+                            <button class="tab-button active" onclick="filterMatches('all')" data-i18n="revenue.filters.all">All</button>
+                            <button class="tab-button" onclick="filterMatches('high')" data-i18n="revenue.filters.highConfidence">High Confidence</button>
+                            <button class="tab-button" onclick="filterMatches('medium')" data-i18n="revenue.filters.mediumConfidence">Medium Confidence</button>
                         </div>
                     </div>
 
@@ -771,13 +782,19 @@
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <label style="display: flex; align-items: center; gap: 0.5rem; font-weight: 600; color: #374151;">
                                     <input type="checkbox" id="select-all-matches" onchange="toggleSelectAll()" style="margin: 0;">
-                                    <span id="selection-count"><span data-i18n="revenue.controls.selected.noSelection">0 matches selected</span></span>
+                                    <span id="selection-count" data-i18n="revenue.controls.buttons.selectedCount">0 matches selected</span>
                                 </label>
                             </div>
                             <div style="display: flex; gap: 0.75rem;">
-                                <button class="action-button btn-success" onclick="bulkApproveMatches()" id="bulk-approve-btn" disabled><span data-i18n="revenue.controls.buttons.approveSelected">✅ Approve Selected</span></button>
-                                <button class="action-button btn-warning" onclick="bulkRejectMatches()" id="bulk-reject-btn" disabled><span data-i18n="revenue.controls.buttons.rejectSelected">❌ Reject Selected</span></button>
-                                <button class="action-button btn-secondary" onclick="clearSelection()" id="clear-selection-btn" disabled><span data-i18n="revenue.controls.buttons.clearSelection">🔄 Clear Selection</span></button>
+                                <button class="action-button btn-success" onclick="bulkApproveMatches()" id="bulk-approve-btn" disabled data-i18n="revenue.controls.buttons.approveSelected">
+                                    Approve Selected
+                                </button>
+                                <button class="action-button btn-warning" onclick="bulkRejectMatches()" id="bulk-reject-btn" disabled data-i18n="revenue.controls.buttons.rejectSelected">
+                                    Reject Selected
+                                </button>
+                                <button class="action-button btn-secondary" onclick="clearSelection()" id="clear-selection-btn" disabled data-i18n="revenue.controls.buttons.clearSelection">
+                                    Clear Selection
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -790,19 +807,24 @@
                 <!-- Unlinked Invoices Section -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title"><span data-i18n="revenue.sections.unlinkedInvoices.title">🔗 Unlinked Invoices Ready for Matching</span>
+                        <h2 class="section-title" data-i18n="revenue.sections.unlinkedInvoices.title">
+                            Unlinked Invoices Ready for Matching
                             <span class="badge warning" id="unlinked-count">0</span>
                         </h2>
                         <div style="display: flex; gap: 1rem;">
-                            <button class="action-button btn-primary" onclick="loadUnlinkedInvoices()" style="font-size: 0.875rem;"><span data-i18n="revenue.controls.buttons.refreshUnlinked">🔄 Refresh Unlinked</span></button>
-                            <button class="action-button btn-success" onclick="quickMatchAll()" style="font-size: 0.875rem;"><span data-i18n="revenue.controls.buttons.quickMatchAll">⚡ Quick Match All</span></button>
+                            <button class="action-button btn-primary" onclick="loadUnlinkedInvoices()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.refreshUnlinked">
+                                Refresh Unlinked
+                            </button>
+                            <button class="action-button btn-success" onclick="quickMatchAll()" style="font-size: 0.875rem;" data-i18n="revenue.controls.buttons.quickMatchAll">
+                                Quick Match All
+                            </button>
                         </div>
                     </div>
 
                     <div class="filter-tabs">
-                        <button class="tab-button active" onclick="filterUnlinkedInvoices('all')"><span data-i18n="revenue.filters.allUnlinked">All Unlinked</span></button>
-                        <button class="tab-button" onclick="filterUnlinkedInvoices('recent')"><span data-i18n="revenue.filters.recent30Days">Recent (30 days)</span></button>
-                        <button class="tab-button" onclick="filterUnlinkedInvoices('high-value')"><span data-i18n="revenue.filters.highValue">High Value ($1000+)</span></button>
+                        <button class="tab-button active" onclick="filterUnlinkedInvoices('all')" data-i18n="revenue.filters.allUnlinked">All Unlinked</button>
+                        <button class="tab-button" onclick="filterUnlinkedInvoices('recent')" data-i18n="revenue.filters.recent30Days">Recent (30 days)</button>
+                        <button class="tab-button" onclick="filterUnlinkedInvoices('high-value')" data-i18n="revenue.filters.highValue">High Value ($1000+)</button>
                     </div>
 
                     <div id="unlinked-invoices">
@@ -818,10 +840,13 @@
                 <!-- Recent Matches Section -->
                 <div class="matches-section">
                     <div class="section-header">
-                        <h2 class="section-title"><span data-i18n="revenue.sections.recentMatches.title">✅ Recent Confirmed Matches</span>
+                        <h2 class="section-title" data-i18n="revenue.sections.recentMatches.title">
+                            Recent Confirmed Matches
                             <span class="badge success" id="confirmed-count">0</span>
                         </h2>
-                        <button class="action-button btn-secondary" onclick="loadMatchedPairs()"><span data-i18n="revenue.controls.buttons.viewAllConfirmed">View All Confirmed</span></button>
+                        <button class="action-button btn-secondary" onclick="loadMatchedPairs()" data-i18n="revenue.controls.buttons.viewAllConfirmed">
+                            View All Confirmed
+                        </button>
                     </div>
 
                     <div id="confirmed-matches">
@@ -913,51 +938,51 @@
 
             statsGrid.innerHTML = `
                 <div class="stat-card">
-                    <div class="stat-label" data-i18n="revenue.stats.totalInvoices.label">Total Invoices</div>
+                    <div class="stat-label">Total Invoices</div>
                     <div class="stat-value">${stats.total_invoices || 0}</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.totalInvoices.sublabel">In the system</div>
+                    <div class="stat-sublabel">In the system</div>
                 </div>
 
                 <div class="stat-card success">
-                    <div class="stat-label" data-i18n="revenue.stats.matchedInvoices.label">Matched Invoices</div>
+                    <div class="stat-label">Matched Invoices</div>
                     <div class="stat-value">${stats.matched_invoices || 0}</div>
                     <div class="stat-sublabel">$${(stats.matched_revenue || 0).toLocaleString()}</div>
                 </div>
 
                 <div class="stat-card warning">
-                    <div class="stat-label" data-i18n="revenue.stats.unmatchedInvoices.label">Unmatched Invoices</div>
+                    <div class="stat-label">Unmatched Invoices</div>
                     <div class="stat-value">${stats.unmatched_invoices || 0}</div>
                     <div class="stat-sublabel">$${(stats.unmatched_revenue || 0).toLocaleString()}</div>
                 </div>
 
                 <div class="stat-card ${matchRateClass}">
-                    <div class="stat-label" data-i18n="revenue.stats.matchRate.label">Match Rate</div>
+                    <div class="stat-label">Match Rate</div>
                     <div class="stat-value">${matchRate.toFixed(1)}%</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.matchRate.sublabel">Automation success</div>
+                    <div class="stat-sublabel">Automation success</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label" data-i18n="revenue.stats.pendingReview.label">Pending Review</div>
+                    <div class="stat-label">Pending Review</div>
                     <div class="stat-value">${stats.pending_matches || 0}</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.pendingReview.sublabel">Awaiting approval</div>
+                    <div class="stat-sublabel">Awaiting approval</div>
                 </div>
 
                 <div class="stat-card">
-                    <div class="stat-label" data-i18n="revenue.stats.recentActivity.label">Recent Activity</div>
+                    <div class="stat-label">Recent Activity</div>
                     <div class="stat-value">${stats.recent_matches || 0}</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.recentActivity.sublabel">Last 30 days</div>
+                    <div class="stat-sublabel">Last 30 days</div>
                 </div>
 
                 <div class="stat-card warning">
-                    <div class="stat-label" data-i18n="revenue.stats.unlinkedTransactions.label">Unlinked Transactions</div>
+                    <div class="stat-label">Unlinked Transactions</div>
                     <div class="stat-value">${stats.unlinked_transactions || 0}</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.unlinkedTransactions.sublabel">Total transactions without invoice</div>
+                    <div class="stat-sublabel">Total transactions without invoice</div>
                 </div>
 
                 <div class="stat-card danger">
-                    <div class="stat-label" data-i18n="revenue.stats.unlinkedRevenue.label">Unlinked Revenue Transactions</div>
+                    <div class="stat-label">Unlinked Revenue Transactions</div>
                     <div class="stat-value">${stats.unlinked_revenue_transactions || 0}</div>
-                    <div class="stat-sublabel" data-i18n="revenue.stats.unlinkedRevenue.sublabel">Positive amounts needing match</div>
+                    <div class="stat-sublabel">Positive amounts needing match</div>
                 </div>
             `;
 
@@ -1014,10 +1039,10 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">✅</div>
-                        <h3 data-i18n="revenue.sections.unlinkedInvoices.empty">Great! All invoices are matched!</h3>
-                        <p data-i18n="revenue.sections.unlinkedInvoices.emptyDescription">No unlinked invoices found. All invoices have been successfully matched to transactions.</p>
+                        <h3>Great! All invoices are matched!</h3>
+                        <p>No unlinked invoices found. All invoices have been successfully matched to transactions.</p>
                         <button class="action-button btn-primary" onclick="loadUnlinkedInvoices()" style="margin-top: 1rem;">
-                            <span data-i18n="revenue.sections.unlinkedInvoices.refreshButton">🔄 Refresh to Check for New Invoices</span>
+                            🔄 Refresh to Check for New Invoices
                         </button>
                     </div>
                 `;
@@ -1090,9 +1115,11 @@
                                         </td>
                                         <td style="padding: 0.75rem; text-align: center; border-left: 1px solid #e2e8f0;" rowspan="3">
                                             <button class="action-btn btn-primary" onclick="quickMatchSingle('${invoice.id}')" style="display: block; margin: 0.25rem auto; font-size: 0.75rem; padding: 0.5rem 0.75rem;">
-                                                <span data-i18n="revenue.controls.buttons.quickMatch">⚡ Quick Match</span></button>
+                                                ⚡ Quick Match
+                                            </button>
                                             <button class="action-btn btn-secondary" onclick="viewInvoiceDetails('${invoice.id}')" style="display: block; margin: 0.25rem auto; font-size: 0.75rem; padding: 0.5rem 0.75rem;">
-                                                <span data-i18n="revenue.controls.buttons.viewDetails">👁️ View Details</span></button>
+                                                👁️ View Details
+                                            </button>
                                         </td>
                                     </tr>
                                     <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -1109,7 +1136,7 @@
                                         </td>
                                         <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fff8dc;">
                                             <span style="color: #6b7280; font-size: 0.875rem;">
-                                                <span data-i18n="revenue.invoiceCard.status">Awaiting matching</span>
+                                                Awaiting matching
                                             </span>
                                             <div style="color: #f59e0b; font-size: 0.75rem; margin-top: 0.25rem;">
                                                 ${invoice.payment_status === 'overdue' ? '⚠️ Overdue' :
@@ -1134,10 +1161,10 @@
                                         </td>
                                         <td style="padding: 0.75rem; border-left: 1px solid #e2e8f0; background: #fff8dc;">
                                             <span style="color: #f59e0b; font-size: 0.875rem;">
-                                                <span data-i18n="revenue.matchCard.noMatch">No transaction match</span>
+                                                No transaction match
                                             </span>
                                             <div style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
-                                                <span data-i18n="revenue.matchCard.runMatching">Run matching to find candidates</span>
+                                                Run matching to find candidates
                                             </div>
                                         </td>
                                     </tr>
@@ -1147,7 +1174,7 @@
 
                         <div class="explanation" style="margin-top: 1rem; color: #f59e0b; font-size: 0.875rem;">
                             <strong>⚡ Action needed:</strong> This invoice has not been matched to any transaction yet.
-                            <span data-i18n="revenue.sections.unlinkedInvoices.quickMatchHelp">Use Quick Match to automatically find potential transaction matches.</span>
+                            Use Quick Match to automatically find potential transaction matches.
                         </div>
                     </div>
                 `;
@@ -1184,7 +1211,8 @@
             if (currentUnlinkedPage > 1) {
                 paginationHtml += `
                     <button class="pagination-btn" onclick="loadUnlinkedInvoices(${currentUnlinkedPage - 1})">
-                        <span data-i18n="revenue.pagination.previous">← Previous</span></button>
+                        ← Previous
+                    </button>
                 `;
             }
 
@@ -1219,14 +1247,15 @@
             if (currentUnlinkedPage < totalUnlinkedPages) {
                 paginationHtml += `
                     <button class="pagination-btn" onclick="loadUnlinkedInvoices(${currentUnlinkedPage + 1})">
-                        <span data-i18n="revenue.pagination.next">Next →</span></button>
+                        Next →
+                    </button>
                 `;
             }
 
             paginationHtml += `
                     </div>
                     <div class="per-page-controls">
-                        <label for="per-page-select" data-i18n="revenue.pagination.perPage">Per page:</label>
+                        <label for="per-page-select">Per page:</label>
                         <select id="per-page-select" onchange="changePerPage(this.value)" style="margin-left: 0.5rem; padding: 0.25rem;">
                             <option value="10" ${unlinkedPerPage === 10 ? 'selected' : ''}>10</option>
                             <option value="20" ${unlinkedPerPage === 20 ? 'selected' : ''}>20</option>
@@ -1638,8 +1667,8 @@
                                 <thead>
                                     <tr style="background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-bottom: 3px solid #cbd5e1;">
                                         <th style="padding: 1.25rem; text-align: left; color: #374151; font-weight: 700; width: 140px; font-size: 0.95rem;">Criteria</th>
-                                        <th style="padding: 1.25rem; text-align: left; color: #3b82f6; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;"><span data-i18n="revenue.matchCard.invoiceDetails">📄 Invoice Details</span></th>
-                                        <th style="padding: 1.25rem; text-align: left; color: #10b981; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;"><span data-i18n="revenue.matchCard.transactionDetails">💰 Transaction Details</span></th>
+                                        <th style="padding: 1.25rem; text-align: left; color: #3b82f6; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">📄 Invoice Details</th>
+                                        <th style="padding: 1.25rem; text-align: left; color: #10b981; font-weight: 700; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">💰 Transaction Details</th>
                                         <th style="padding: 1.25rem; text-align: center; color: #6b7280; font-weight: 700; width: 120px; border-left: 2px solid #cbd5e1; font-size: 0.95rem;">Match Score</th>
                                     </tr>
                                 </thead>
@@ -1914,9 +1943,11 @@
 
                         <div class="match-actions">
                             <button class="action-btn btn-confirm" onclick="confirmMatch(${match.id})">
-                                <span data-i18n="revenue.controls.buttons.confirmMatch">✅ Confirm Match</span></button>
+                                ✅ Confirm Match
+                            </button>
                             <button class="action-btn btn-reject" onclick="rejectMatch(${match.id})">
-                                <span data-i18n="revenue.controls.buttons.rejectMatch">❌ Reject Match</span></button>
+                                ❌ Reject Match
+                            </button>
                         </div>
                     </div>
                 `;
@@ -1955,7 +1986,8 @@
             if (currentPendingPage > 1) {
                 paginationHtml += `
                     <button class="pagination-btn" onclick="loadPendingMatches(${currentPendingPage - 1})">
-                        <span data-i18n="revenue.pagination.previous">← Previous</span></button>
+                        ← Previous
+                    </button>
                 `;
             }
 
@@ -1990,7 +2022,8 @@
             if (currentPendingPage < totalPendingPages) {
                 paginationHtml += `
                     <button class="pagination-btn" onclick="loadPendingMatches(${currentPendingPage + 1})">
-                        <span data-i18n="revenue.pagination.next">Next →</span></button>
+                        Next →
+                    </button>
                 `;
             }
 
@@ -3193,7 +3226,7 @@
                                 <button onclick="quickMatchSingle('${invoice.id}'); this.closest('.modal').remove();" style="
                                     padding: 0.75rem 1.5rem; background: #10b981; color: white;
                                     border: none; border-radius: 6px; cursor: pointer; font-weight: 600;
-                                "><span data-i18n="revenue.controls.buttons.quickMatch">⚡ Quick Match</span></button>
+                                ">⚡ Quick Match</button>
                             ` : ''}
                         </div>
                     </div>

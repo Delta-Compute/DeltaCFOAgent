@@ -1,6 +1,6 @@
 /**
  * Simple i18n (Internationalization) System
- * Supports English (en) and Brazilian Portuguese (pt)
+ * Supports English (en), Brazilian Portuguese (pt), and Spanish (es)
  * No dependencies - pure vanilla JavaScript
  */
 
@@ -9,8 +9,10 @@ class I18n {
         this.currentLang = 'en';
         this.translations = {
             en: null,
-            pt: null
+            pt: null,
+            es: null
         };
+        this.supportedLanguages = ['en', 'pt', 'es'];
         this.loaded = false;
     }
 
@@ -24,7 +26,8 @@ class I18n {
 
             await Promise.all([
                 this.loadTranslations('en'),
-                this.loadTranslations('pt')
+                this.loadTranslations('pt'),
+                this.loadTranslations('es')
             ]);
 
             this.loaded = true;
@@ -98,7 +101,7 @@ class I18n {
      * Set current language and update UI
      */
     async setLanguage(lang) {
-        if (!['en', 'pt'].includes(lang)) {
+        if (!this.supportedLanguages.includes(lang)) {
             console.error(`Unsupported language: ${lang}`);
             return;
         }
@@ -158,16 +161,22 @@ class I18n {
     }
 
     /**
+     * Get the locale string for the current language
+     */
+    getLocale() {
+        const localeMap = {
+            'en': 'en-US',
+            'pt': 'pt-BR',
+            'es': 'es-419'  // Latin American Spanish
+        };
+        return localeMap[this.currentLang] || 'en-US';
+    }
+
+    /**
      * Format number according to current locale
      */
     formatNumber(num, decimals = 2) {
-        if (this.currentLang === 'pt') {
-            return num.toLocaleString('pt-BR', {
-                minimumFractionDigits: decimals,
-                maximumFractionDigits: decimals
-            });
-        }
-        return num.toLocaleString('en-US', {
+        return num.toLocaleString(this.getLocale(), {
             minimumFractionDigits: decimals,
             maximumFractionDigits: decimals
         });
@@ -175,15 +184,48 @@ class I18n {
 
     /**
      * Format currency according to current locale
+     * Uses locale-specific symbol placement
      */
     formatCurrency(amount, decimals = 2) {
         const formatted = this.formatNumber(Math.abs(amount), decimals);
         const symbol = this.t('currency.symbol');
 
-        if (this.currentLang === 'pt') {
+        // Portuguese and Spanish use symbol with space before amount
+        if (this.currentLang === 'pt' || this.currentLang === 'es') {
             return `${symbol} ${formatted}`;
         }
         return `${symbol}${formatted}`;
+    }
+
+    /**
+     * Format currency with specific currency code
+     * Handles different decimal places for different currencies
+     */
+    formatCurrencyWithCode(amount, currencyCode) {
+        const currencyConfig = {
+            'USD': { symbol: '$', decimals: 2 },
+            'EUR': { symbol: 'E', decimals: 2 },
+            'GBP': { symbol: 'GBP', decimals: 2 },
+            'BRL': { symbol: 'R$', decimals: 2 },
+            'ARS': { symbol: '$', decimals: 2 },
+            'CLP': { symbol: '$', decimals: 0 },
+            'COP': { symbol: '$', decimals: 0 },
+            'MXN': { symbol: '$', decimals: 2 },
+            'PEN': { symbol: 'S/', decimals: 2 },
+            'UYU': { symbol: '$U', decimals: 2 },
+            'BOB': { symbol: 'Bs', decimals: 2 },
+            'VES': { symbol: 'Bs.S', decimals: 2 },
+            'PYG': { symbol: 'Gs', decimals: 0 }
+        };
+
+        const config = currencyConfig[currencyCode] || { symbol: currencyCode, decimals: 2 };
+        const formatted = this.formatNumber(Math.abs(amount), config.decimals);
+
+        // Portuguese and Spanish use symbol with space before amount
+        if (this.currentLang === 'pt' || this.currentLang === 'es') {
+            return `${config.symbol} ${formatted}`;
+        }
+        return `${config.symbol}${formatted}`;
     }
 
     /**
@@ -191,10 +233,7 @@ class I18n {
      */
     formatDate(date) {
         const d = new Date(date);
-        if (this.currentLang === 'pt') {
-            return d.toLocaleDateString('pt-BR');
-        }
-        return d.toLocaleDateString('en-US');
+        return d.toLocaleDateString(this.getLocale());
     }
 }
 

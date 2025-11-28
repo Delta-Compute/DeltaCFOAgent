@@ -3,61 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><span data-i18n="auth.register.pageTitle">Register</span> - Delta CFO Agent</title>
+    <title>Register - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
 </head>
 <body>
     <div class="auth-container">
         <div class="auth-card">
             <div class="auth-header">
                 <h1>Delta CFO Agent</h1>
-                <p><span data-i18n="auth.register.tagline">Create Your Account</span></p>
+                <p data-i18n="auth.createYourAccount">Create Your Account</p>
             </div>
 
             <div class="auth-tabs">
-                <a href="{{ url_for('login_page') }}" class="tab">Login</a>
-                <a href="{{ url_for('register_page') }}" class="tab active">Register</a>
+                <a href="{{ url_for('login_page') }}" class="tab" data-i18n="auth.login">Login</a>
+                <a href="{{ url_for('register_page') }}" class="tab active" data-i18n="auth.register">Register</a>
             </div>
 
             <form id="registerForm" class="auth-form">
                 <div class="form-group">
-                    <label for="displayName"><span data-i18n="auth.register.fullNameLabel">Full Name</span></label>
-                    <input type="text" id="displayName" name="displayName" required data-i18n-attr="placeholder" data-i18n="auth.register.fullNamePlaceholder" placeholder="John Doe">
+                    <label for="displayName" data-i18n="auth.fullName">Full Name</label>
+                    <input type="text" id="displayName" name="displayName" required data-i18n-placeholder="auth.fullNamePlaceholder" placeholder="John Doe">
                 </div>
 
                 <div class="form-group">
-                    <label for="email">Email Address</label>
-                    <input type="email" id="email" name="email" required placeholder="your@email.com">
+                    <label for="email" data-i18n="auth.emailAddress">Email Address</label>
+                    <input type="email" id="email" name="email" required data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
                 </div>
 
                 <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required data-i18n-attr="placeholder" data-i18n="auth.register.passwordPlaceholder" placeholder="At least 6 characters">
-                    <small class="form-hint"><span data-i18n="auth.register.passwordHint">Must be at least 6 characters long</span></small>
+                    <label for="password" data-i18n="auth.password">Password</label>
+                    <input type="password" id="password" name="password" required data-i18n-placeholder="auth.passwordMinChars" placeholder="At least 6 characters">
+                    <small class="form-hint" data-i18n="auth.passwordHint">Must be at least 6 characters long</small>
                 </div>
 
                 <div class="form-group">
-                    <label for="confirmPassword"><span data-i18n="auth.register.confirmPasswordLabel">Confirm Password</span></label>
-                    <input type="password" id="confirmPassword" name="confirmPassword" required data-i18n-attr="placeholder" data-i18n="auth.register.confirmPasswordPlaceholder" placeholder="Re-enter password">
+                    <label for="confirmPassword" data-i18n="auth.confirmPassword">Confirm Password</label>
+                    <input type="password" id="confirmPassword" name="confirmPassword" required data-i18n-placeholder="auth.reenterPassword" placeholder="Re-enter password">
                 </div>
 
                 <div class="form-group">
-                    <label><span data-i18n="auth.register.userTypeLabel">I am a:</span></label>
+                    <label data-i18n="auth.iAmA">I am a:</label>
                     <div class="radio-group">
                         <label class="radio-label">
                             <input type="radio" name="userType" value="fractional_cfo" required>
                             <span class="radio-custom"></span>
                             <div class="radio-content">
-                                <strong><span data-i18n="auth.register.fractionalCFO">Fractional CFO</span></strong>
-                                <small><span data-i18n="auth.register.fractionalCFODesc">Manage multiple client businesses</span></small>
+                                <strong data-i18n="auth.fractionalCfo">Fractional CFO</strong>
+                                <small data-i18n="auth.fractionalCfoDesc">Manage multiple client businesses</small>
                             </div>
                         </label>
                         <label class="radio-label">
                             <input type="radio" name="userType" value="tenant_admin" required>
                             <span class="radio-custom"></span>
                             <div class="radio-content">
-                                <strong><span data-i18n="auth.register.businessOwner">Business Owner</span></strong>
-                                <small><span data-i18n="auth.register.businessOwnerDesc">Manage my company\'s finances</span></small>
+                                <strong data-i18n="auth.businessOwner">Business Owner</strong>
+                                <small data-i18n="auth.businessOwnerDesc">Manage my company's finances</small>
                             </div>
                         </label>
                     </div>
@@ -66,17 +67,17 @@
                 <div class="form-group">
                     <label class="checkbox-label">
                         <input type="checkbox" id="agreeTerms" required>
-                        <span><span data-i18n="auth.register.agreeToThe">I agree to the</span> <a href="/terms" target="_blank"><span data-i18n="auth.register.termsOfService">Terms of Service</span></a> and <a href="/privacy" target="_blank"><span data-i18n="auth.register.privacyPolicy">Privacy Policy</span></a></span>
+                        <span><span data-i18n="auth.agreeToTerms">I agree to the</span> <a href="/terms" target="_blank" data-i18n="auth.termsOfService">Terms of Service</a> <span data-i18n="auth.and">and</span> <a href="/privacy" target="_blank" data-i18n="auth.privacyPolicy">Privacy Policy</a></span>
                     </label>
                 </div>
 
                 <button type="submit" class="btn-primary" id="registerBtn">
-                    <span class="btn-text"><span data-i18n="auth.register.createAccountButton">Create Account</span></span>
+                    <span class="btn-text" data-i18n="auth.createAccount">Create Account</span>
                     <span class="btn-loader" style="display: none;"></span>
                 </button>
 
                 <div class="divider">
-                    <span>OR</span>
+                    <span data-i18n="auth.or">OR</span>
                 </div>
 
                 <button type="button" class="btn-google" id="googleSignUpBtn">
@@ -86,7 +87,7 @@
                         <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                         <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                     </svg>
-                    <span data-i18n="auth.register.googleButton">Sign up with Google</span>
+                    <span data-i18n="auth.signUpWithGoogle">Sign up with Google</span>
                 </button>
 
                 <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
@@ -94,7 +95,7 @@
             </form>
 
             <div class="auth-footer">
-                <p><span data-i18n="auth.register.haveAccount">Already have an account?</span> <a href="{{ url_for('login_page') }}"><span data-i18n="auth.register.loginLink">Login here</span></a></p>
+                <p><span data-i18n="auth.alreadyHaveAccount">Already have an account?</span> <a href="{{ url_for('login_page') }}" data-i18n="auth.loginHere">Login here</a></p>
             </div>
         </div>
     </div>

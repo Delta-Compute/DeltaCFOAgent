@@ -322,19 +322,19 @@
         <!-- Hero Section -->
         <section class="hero-business">
             <div class="hero-content">
-                <h1 class="company-title" id="companyTitle">Loading...</h1>
-                <p class="company-tagline" id="companyTagline">Loading...</p>
-                <p class="company-description" id="companyDescription">
+                <h1 class="company-title" id="companyTitle" data-i18n="homepage.hero.loading">Loading...</h1>
+                <p class="company-tagline" id="companyTagline" data-i18n="homepage.hero.loading">Loading...</p>
+                <p class="company-description" id="companyDescription" data-i18n="homepage.hero.loadingCompanyInfo">
                     Loading company information...
                 </p>
                 <div style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-                    <button id="regenerateBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.3s;">
-                        🔄 Regenerate with AI
+                    <button id="regenerateBtn" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.95rem; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); transition: all 0.3s;" data-i18n="homepage.hero.regenerateButton">
+                        Regenerate with AI
                     </button>
                 </div>
                 <div id="generatedTimestamp" style="margin-top: 1rem; opacity: 0.8; font-size: 0.85rem;"></div>
-                <div id="loadingIndicator" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.2); border-radius: 8px; backdrop-filter: blur(10px);">
-                    ⏳ Loading content...
+                <div id="loadingIndicator" style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.2); border-radius: 8px; backdrop-filter: blur(10px);" data-i18n="homepage.hero.loadingIndicator">
+                    Loading content...
                 </div>
             </div>
         </section>
@@ -343,8 +343,8 @@
         <section class="metrics-section">
             <div class="metrics-grid" id="kpiMetricsGrid">
                 <div class="metric-card">
-                    <div class="metric-number" data-target="0">📊 0</div>
-                    <div class="metric-title">Loading...</div>
+                    <div class="metric-number" data-target="0">0</div>
+                    <div class="metric-title" data-i18n="homepage.metrics.loading">Loading...</div>
                 </div>
             </div>
         </section>
@@ -352,14 +352,14 @@
         <!-- AI Insights Section -->
         <section style="background: white; padding: 3rem 2rem;">
             <div style="max-width: 1000px; margin: 0 auto;" id="aiInsights">
-                <p style="text-align: center; color: #94a3b8;">Loading AI insights...</p>
+                <p style="text-align: center; color: #94a3b8;" data-i18n="homepage.aiInsights.loading">Loading AI insights...</p>
             </div>
         </section>
 
         <!-- Holdings Portfolio -->
         <section class="holdings-section" id="portfolioSection" style="display: none;">
-            <h2 class="section-title">Our Portfolio</h2>
-            <p class="section-subtitle" id="portfolioSubtitle">Loading portfolio...</p>
+            <h2 class="section-title" data-i18n="homepage.portfolio.sectionTitle">Our Portfolio</h2>
+            <p class="section-subtitle" id="portfolioSubtitle" data-i18n="homepage.portfolio.loading">Loading portfolio...</p>
             <div class="holdings-grid" id="portfolioGrid">
                 <!-- Dynamically populated by JavaScript -->
             </div>
@@ -367,8 +367,8 @@
 
         <!-- Business Structure -->
         <section class="structure-section" id="structureSection" style="display: none;">
-            <h2 class="section-title">Organizational Structure</h2>
-            <p class="section-subtitle" id="structureSubtitle">Loading organization...</p>
+            <h2 class="section-title" data-i18n="homepage.structure.sectionTitle">Organizational Structure</h2>
+            <p class="section-subtitle" id="structureSubtitle" data-i18n="homepage.structure.loading">Loading organization...</p>
             <div class="org-chart" id="orgChart">
                 <!-- Dynamically populated by JavaScript -->
             </div>
@@ -388,8 +388,8 @@
         <!-- Bot Header -->
         <div style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <div style="font-size: 1.1rem; font-weight: 600;">Business Onboarding</div>
-                <div style="font-size: 0.85rem; opacity: 0.9;">Tell us about your company</div>
+                <div style="font-size: 1.1rem; font-weight: 600;" data-i18n="homepage.onboardingBot.header.title">Business Onboarding</div>
+                <div style="font-size: 0.85rem; opacity: 0.9;" data-i18n="homepage.onboardingBot.header.subtitle">Tell us about your company</div>
             </div>
             <button id="onboardingBotClose" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 1.2rem; display: flex; align-items: center; justify-content: center;">
                 ×
@@ -399,7 +399,7 @@
         <!-- Progress Bar -->
         <div id="onboardingProgressContainer" style="background: #f1f5f9; padding: 0.75rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                <span style="font-size: 0.85rem; color: #64748b;">Setup Progress</span>
+                <span style="font-size: 0.85rem; color: #64748b;" data-i18n="homepage.onboardingBot.progress.label">Setup Progress</span>
                 <span id="onboardingProgressText" style="font-size: 0.85rem; font-weight: 600; color: #3b82f6;">0%</span>
             </div>
             <div style="width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
@@ -422,8 +422,8 @@
         <!-- Input Area -->
         <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; background: white;">
             <div style="display: flex; gap: 0.75rem;">
-                <textarea id="onboardingBotInput" placeholder="Type your message..." style="flex: 1; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; resize: none; font-family: inherit; font-size: 0.95rem; max-height: 100px;"></textarea>
-                <button id="onboardingBotSend" disabled style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; padding: 0.75rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.3s;">
+                <textarea id="onboardingBotInput" data-i18n-placeholder="homepage.onboardingBot.input.placeholder" placeholder="Type your message..." style="flex: 1; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; resize: none; font-family: inherit; font-size: 0.95rem; max-height: 100px;"></textarea>
+                <button id="onboardingBotSend" disabled style="background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: white; border: none; padding: 0.75rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 600; transition: opacity 0.3s;" data-i18n="homepage.onboardingBot.input.sendButton">
                     Send
                 </button>
             </div>

@@ -14,21 +14,21 @@
         <div class="main-layout">
             <div class="dashboard-content">
                 <header>
-                    <h1>File Management</h1>
+                    <h1 data-i18n="files.pageTitle">File Management</h1>
                 </header>
 
                 <!-- Upload Sections - Side by Side -->
                 <div class="upload-grid">
                     <!-- Upload Transaction Files Section -->
                     <div class="upload-section-card">
-                        <h2>Upload Transaction Files (CSV/Excel/PDF)</h2>
+                        <h2 data-i18n="files.transactions.title">Upload Transaction Files (CSV/Excel/PDF)</h2>
                         <div class="upload-area" id="uploadArea">
                             <div class="upload-content">
                                 <div class="upload-icon">📁</div>
-                                <h3>Drag & Drop CSV, Excel or PDF Files Here</h3>
-                                <p>Or click to select files</p>
+                                <h3 data-i18n="files.transactions.dragDrop">Drag & Drop CSV, Excel or PDF Files Here</h3>
+                                <p data-i18n="files.transactions.orClick">Or click to select files</p>
                                 <input type="file" id="fileInput" multiple accept=".csv,.xls,.xlsx,.pdf" style="display: none;">
-                                <button class="btn-primary" onclick="document.getElementById('fileInput').click()">
+                                <button class="btn-primary" onclick="document.getElementById('fileInput').click()" data-i18n="files.transactions.chooseFiles">
                                     Choose Files
                                 </button>
                             </div>
@@ -36,49 +36,49 @@
                                 <div class="progress-bar">
                                     <div class="progress-fill" id="progressFill"></div>
                                 </div>
-                                <div class="progress-text" id="progressText">Processing...</div>
+                                <div class="progress-text" id="progressText" data-i18n="files.transactions.progress.processing">Processing...</div>
 
                                 <!-- Processing Stages -->
                                 <div class="processing-stages" id="processingStages">
                                     <div class="stage" id="stage-upload" data-stage="upload">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">Uploading file</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.upload">Uploading file</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
                                     <div class="stage" id="stage-extract" data-stage="extract">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">Extracting transactions</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.extract">Extracting transactions</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
                                     <div class="stage" id="stage-pattern" data-stage="pattern">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">Pattern recognition</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.pattern">Pattern recognition</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
                                     <div class="stage" id="stage-classify" data-stage="classify">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">AI Classification</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.classify">AI Classification</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
                                     <div class="stage" id="stage-pass2" data-stage="pass2">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">AI Review (Pass 2)</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.pass2">AI Review (Pass 2)</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
                                     <div class="stage" id="stage-save" data-stage="save">
                                         <div class="stage-indicator"></div>
                                         <div class="stage-content">
-                                            <span class="stage-name">Saving to database</span>
+                                            <span class="stage-name" data-i18n="files.transactions.progress.stages.save">Saving to database</span>
                                             <span class="stage-status"></span>
                                         </div>
                                     </div>
@@ -89,21 +89,21 @@
 
                     <!-- Upload Invoices Section -->
                     <div class="upload-section-card">
-                        <h2>Upload Invoices</h2>
+                        <h2 data-i18n="files.invoices.title">Upload Invoices</h2>
                         <div class="upload-box-invoices" id="upload-box-invoices">
                             <div class="upload-icon">📤</div>
-                            <div class="upload-text">Drag & drop invoice files here or click to browse</div>
-                            <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX), ZIP, 7Z (Max 50MB total)</div>
-                            <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600;">Upload multiple files, a ZIP archive, or a single invoice</div>
+                            <div class="upload-text" data-i18n="files.invoices.dragDrop">Drag & drop invoice files here or click to browse</div>
+                            <div class="upload-hint" data-i18n="files.invoices.supportedFormats">Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX), ZIP, 7Z (Max 50MB total)</div>
+                            <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600;" data-i18n="files.invoices.multipleHint">Upload multiple files, a ZIP archive, or a single invoice</div>
                             <input type="file" id="file-input-invoices" accept=".pdf,.png,.jpg,.jpeg,.tiff,.csv,.xls,.xlsx,.zip,.7z" multiple style="display: none;">
                         </div>
 
                         <!-- Batch Progress for Invoices -->
                         <div id="batch-progress-invoices" style="display: none; margin-top: 1rem;">
-                            <h4 style="margin-bottom: 0.5rem;">Processing Files...</h4>
+                            <h4 style="margin-bottom: 0.5rem;" data-i18n="files.invoices.progress.title">Processing Files...</h4>
                             <div style="background: #f1f5f9; border-radius: 8px; padding: 1rem;">
                                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                                    <span>Progress: <span id="progress-text-invoices">0 / 0</span></span>
+                                    <span><span data-i18n="files.invoices.progress.progress">Progress:</span> <span id="progress-text-invoices">0 / 0</span></span>
                                     <span id="progress-percent-invoices">0%</span>
                                 </div>
                                 <div style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden;">
@@ -114,13 +114,13 @@
 
                             <!-- Results Summary -->
                             <div id="results-summary-invoices" style="display: none; margin-top: 1rem;">
-                                <h4>Processing Complete</h4>
+                                <h4 data-i18n="files.invoices.progress.complete">Processing Complete</h4>
                                 <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
                                     <div style="padding: 0.5rem 1rem; background: #dcfce7; border-radius: 6px; color: #166534;">
-                                        <strong id="success-count-invoices">0</strong> Successful
+                                        <strong id="success-count-invoices">0</strong> <span data-i18n="files.invoices.progress.successful">Successful</span>
                                     </div>
                                     <div style="padding: 0.5rem 1rem; background: #fee2e2; border-radius: 6px; color: #991b1b;">
-                                        <strong id="error-count-invoices">0</strong> Failed
+                                        <strong id="error-count-invoices">0</strong> <span data-i18n="files.invoices.progress.failed">Failed</span>
                                     </div>
                                 </div>
                                 <div id="error-details-invoices" style="margin-top: 1rem;"></div>
@@ -130,40 +130,40 @@
 
                     <!-- Upload Payment Receipts Section -->
                     <div class="upload-section-card">
-                        <h2>Upload Payment Receipts</h2>
+                        <h2 data-i18n="files.receipts.title">Upload Payment Receipts</h2>
                         <div class="upload-box-receipts" id="upload-box-receipts">
                             <div class="upload-icon">💳</div>
-                            <div class="upload-text">Drag & drop payment receipts here or click to browse</div>
-                            <div class="upload-hint">Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX)</div>
-                            <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600; color: #667eea;">Upload multiple files - AI will automatically match receipts to invoices</div>
+                            <div class="upload-text" data-i18n="files.receipts.dragDrop">Drag & drop payment receipts here or click to browse</div>
+                            <div class="upload-hint" data-i18n="files.receipts.supportedFormats">Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX)</div>
+                            <div class="upload-hint" style="margin-top: 0.5rem; font-weight: 600; color: #667eea;" data-i18n="files.receipts.aiHint">Upload multiple files - AI will automatically match receipts to invoices</div>
 
                             <input type="file" id="file-input-receipts" accept=".pdf,.png,.jpg,.jpeg,.tiff,.csv,.xls,.xlsx" multiple style="display: none;">
 
                             <!-- Customer Filter for Better Matching -->
                             <div style="margin-top: 1rem; padding: 1rem; background: white; border-radius: 6px; border: 1px solid #e2e8f0;">
-                                <label for="customer-filter-receipts" style="display: block; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;">
+                                <label for="customer-filter-receipts" style="display: block; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;" data-i18n="files.receipts.customerFilter.label">
                                     Filter by Customer (Optional)
                                 </label>
                                 <select id="customer-filter-receipts" style="width: 100%; padding: 0.5rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; background: white;">
-                                    <option value="">All Customers (No Filter)</option>
-                                    <option value="loading" disabled>Loading customers...</option>
+                                    <option value="" data-i18n="files.receipts.customerFilter.allCustomers">All Customers (No Filter)</option>
+                                    <option value="loading" disabled data-i18n="files.receipts.customerFilter.loading">Loading customers...</option>
                                 </select>
-                                <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #64748b;">
+                                <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #64748b;" data-i18n="files.receipts.customerFilter.hint">
                                     Select a customer to improve matching accuracy. Only invoices from this customer will be considered.
                                 </div>
                             </div>
 
-                            <button id="upload-receipt-button" class="btn-primary" style="margin-top: 1rem;" onclick="document.getElementById('file-input-receipts').click()">
+                            <button id="upload-receipt-button" class="btn-primary" style="margin-top: 1rem;" onclick="document.getElementById('file-input-receipts').click()" data-i18n="files.receipts.chooseFiles">
                                 Choose Receipt Files
                             </button>
                         </div>
 
                         <!-- Batch Progress for Payment Receipts -->
                         <div id="batch-progress-receipts" style="display: none; margin-top: 1rem;">
-                            <h4 style="margin-bottom: 0.5rem;">Processing Payment Receipts...</h4>
+                            <h4 style="margin-bottom: 0.5rem;" data-i18n="files.receipts.progress.title">Processing Payment Receipts...</h4>
                             <div style="background: #f1f5f9; border-radius: 8px; padding: 1rem;">
                                 <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
-                                    <span>Progress: <span id="progress-text-receipts">0 / 0</span></span>
+                                    <span><span data-i18n="files.receipts.progress.progress">Progress:</span> <span id="progress-text-receipts">0 / 0</span></span>
                                     <span id="progress-percent-receipts">0%</span>
                                 </div>
                                 <div style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden;">
@@ -174,13 +174,13 @@
 
                             <!-- Results Summary -->
                             <div id="results-summary-receipts" style="display: none; margin-top: 1rem;">
-                                <h4>Processing Complete</h4>
+                                <h4 data-i18n="files.receipts.progress.complete">Processing Complete</h4>
                                 <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
                                     <div style="padding: 0.5rem 1rem; background: #dcfce7; border-radius: 6px; color: #166534;">
-                                        <strong id="success-count-receipts">0</strong> Successful
+                                        <strong id="success-count-receipts">0</strong> <span data-i18n="files.receipts.progress.successful">Successful</span>
                                     </div>
                                     <div style="padding: 0.5rem 1rem; background: #fee2e2; border-radius: 6px; color: #991b1b;">
-                                        <strong id="error-count-receipts">0</strong> Failed
+                                        <strong id="error-count-receipts">0</strong> <span data-i18n="files.receipts.progress.failed">Failed</span>
                                     </div>
                                 </div>
                                 <div id="error-details-receipts" style="margin-top: 1rem;"></div>
@@ -189,9 +189,9 @@
 
                         <!-- Receipt Upload Progress -->
                         <div id="receipt-progress" style="display: none; margin-top: 1rem;">
-                            <h4 style="margin-bottom: 0.5rem;">Processing Receipt...</h4>
+                            <h4 style="margin-bottom: 0.5rem;" data-i18n="files.receipts.progress.processing">Processing Receipt...</h4>
                             <div style="background: #f1f5f9; border-radius: 8px; padding: 1rem;">
-                                <div id="receipt-status-text" style="margin-bottom: 0.5rem; color: #64748b;">Extracting payment data with AI...</div>
+                                <div id="receipt-status-text" style="margin-bottom: 0.5rem; color: #64748b;" data-i18n="files.receipts.progress.extracting">Extracting payment data with AI...</div>
                                 <div style="background: #e2e8f0; height: 20px; border-radius: 10px; overflow: hidden;">
                                     <div id="receipt-progress-bar" style="background: #3b82f6; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
                                 </div>
@@ -206,17 +206,17 @@
                 <!-- Account Groups Section -->
                 <div class="table-section">
                     <div class="table-header">
-                        <h2>Uploaded Files by Account</h2>
+                        <h2 data-i18n="files.accountGroups.title">Uploaded Files by Account</h2>
                         <div class="table-info">
-                            <span>{{ account_groups|length }} account(s) with uploaded files</span>
+                            <span>{{ account_groups|length }} <span data-i18n="files.accountGroups.accountsWithFiles">account(s) with uploaded files</span></span>
                         </div>
                     </div>
 
                     {% if account_groups|length == 0 %}
                     <div style="padding: 3rem; text-align: center; color: #718096;">
                         <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
-                        <h3 style="margin: 0 0 0.5rem 0; color: #4a5568;">No files uploaded yet</h3>
-                        <p>Upload CSV or PDF files above to get started with transaction tracking.</p>
+                        <h3 style="margin: 0 0 0.5rem 0; color: #4a5568;" data-i18n="files.accountGroups.empty.title">No files uploaded yet</h3>
+                        <p data-i18n="files.accountGroups.empty.description">Upload CSV or PDF files above to get started with transaction tracking.</p>
                     </div>
                     {% else %}
                     <!-- Account Groups Display -->
@@ -243,7 +243,7 @@
                                                 {{ group.total_files }} file(s) • {{ group.overall_start }} to {{ group.overall_end }}
                                             </span>
                                             {% if group.has_gaps %}
-                                            <span class="gap-warning-badge">⚠️ Gaps Detected</span>
+                                            <span class="gap-warning-badge"><span data-i18n="files.accountGroups.badges.gapsDetected">Gaps Detected</span></span>
                                             {% endif %}
                                         </div>
                                     </div>
@@ -252,18 +252,18 @@
                                     <div class="account-stats">
                                         <div class="stat-item">
                                             <span class="stat-value">{{ group.total_transactions }}</span>
-                                            <span class="stat-label">Total Txns</span>
+                                            <span class="stat-label" data-i18n="files.accountGroups.stats.totalTxns">Total Txns</span>
                                         </div>
                                         <div class="stat-item">
                                             <span class="stat-value">{{ group.active_transactions }}</span>
-                                            <span class="stat-label">Active</span>
+                                            <span class="stat-label" data-i18n="files.accountGroups.stats.active">Active</span>
                                         </div>
                                         {% if group.coverage_pct %}
                                         <div class="stat-item">
                                             <span class="stat-value" style="color: {% if group.coverage_pct >= 90 %}#38a169{% elif group.coverage_pct >= 70 %}#f59e0b{% else %}#e53e3e{% endif %};">
                                                 {{ group.coverage_pct }}%
                                             </span>
-                                            <span class="stat-label">Coverage</span>
+                                            <span class="stat-label" data-i18n="files.accountGroups.stats.coverage">Coverage</span>
                                         </div>
                                         {% endif %}
                                     </div>
@@ -276,11 +276,11 @@
                                 <table class="files-table">
                                     <thead>
                                         <tr>
-                                            <th style="width: 40%;">File Name</th>
-                                            <th style="width: 20%;">Statement Period</th>
-                                            <th style="width: 15%;">Transactions</th>
-                                            <th style="width: 15%;">Status</th>
-                                            <th style="width: 10%;">Actions</th>
+                                            <th style="width: 40%;" data-i18n="files.table.headers.fileName">File Name</th>
+                                            <th style="width: 20%;" data-i18n="files.table.headers.statementPeriod">Statement Period</th>
+                                            <th style="width: 15%;" data-i18n="files.table.headers.transactions">Transactions</th>
+                                            <th style="width: 15%;" data-i18n="files.table.headers.status">Status</th>
+                                            <th style="width: 10%;" data-i18n="files.table.headers.actions">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -333,15 +333,15 @@
                                             </td>
                                             <td>
                                                 {% if file.archived_transactions == file.total_transactions %}
-                                                    <span class="status-badge status-archived">All Archived</span>
+                                                    <span class="status-badge status-archived" data-i18n="files.table.status.allArchived">All Archived</span>
                                                 {% elif file.archived_transactions > 0 %}
-                                                    <span class="status-badge status-partial">Partially Archived</span>
+                                                    <span class="status-badge status-partial" data-i18n="files.table.status.partiallyArchived">Partially Archived</span>
                                                 {% else %}
-                                                    <span class="status-badge status-active">Active</span>
+                                                    <span class="status-badge status-active" data-i18n="files.table.status.active">Active</span>
                                                 {% endif %}
                                             </td>
                                             <td>
-                                                <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')">
+                                                <button class="btn-secondary btn-sm" onclick="viewFile('{{ file.name }}')" data-i18n="files.buttons.view">
                                                     View
                                                 </button>
                                             </td>

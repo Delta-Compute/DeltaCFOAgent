@@ -231,10 +231,12 @@
     </style>
 </head>
 <body>
+    <!-- i18n Script -->
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
     <div class="container">
         <div class="header">
-            <h1>Create New Invoice</h1>
-            <a href="/invoices" class="back-link">Back to Invoices</a>
+            <h1 data-i18n="invoices.createNewInvoice">Create New Invoice</h1>
+            <a href="/invoices" class="back-link" data-i18n="invoices.backToInvoices">Back to Invoices</a>
         </div>
 
         <div class="form-card">
@@ -244,48 +246,57 @@
             <form id="invoiceForm">
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="invoice_number">Invoice Number *</label>
-                        <div class="invoice-number-display" id="invoiceNumberDisplay">Loading...</div>
+                        <label for="invoice_number" data-i18n="invoices.invoiceNumber">Invoice Number *</label>
+                        <div class="invoice-number-display" id="invoiceNumberDisplay" data-i18n="common.loading">Loading...</div>
                     </div>
 
                     <div class="form-group">
-                        <label for="currency_type">Currency Type *</label>
+                        <label for="currency_type" data-i18n="invoices.currencyType">Currency Type *</label>
                         <select id="currency_type" name="currency_type" required onchange="toggleCurrencyFields()">
-                            <option value="fiat">FIAT Currency</option>
-                            <option value="crypto">Cryptocurrency</option>
+                            <option value="fiat" data-i18n="invoices.fiatCurrency">FIAT Currency</option>
+                            <option value="crypto" data-i18n="invoices.cryptocurrency">Cryptocurrency</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="vendor_name">Vendor (From) *</label>
+                    <label for="vendor_name" data-i18n="invoices.vendorFrom">Vendor (From) *</label>
                     <select id="vendor_name" name="vendor_name" required onchange="handleVendorChange()">
-                        <option value="">Select vendor...</option>
+                        <option value="" data-i18n="invoices.selectVendor">Select vendor...</option>
                         <option value="DELTA ENERGY" selected>DELTA ENERGY</option>
                         <option value="Delta LLC">Delta LLC</option>
                         <option value="Delta Prop Shop LLC">Delta Prop Shop LLC</option>
                         <option value="Delta Mining Paraguay S.A.">Delta Mining Paraguay S.A.</option>
                         <option value="Delta Brazil">Delta Brazil</option>
-                        <option value="CUSTOM">+ Add Custom Vendor...</option>
+                        <option value="CUSTOM" data-i18n="invoices.addCustomVendor">+ Add Custom Vendor...</option>
                     </select>
-                    <input type="text" id="custom_vendor" name="custom_vendor" style="display:none; margin-top: 10px;" placeholder="Enter custom vendor name">
+                    <input type="text" id="custom_vendor" name="custom_vendor" style="display:none; margin-top: 10px;" data-i18n-placeholder="invoices.enterCustomVendorName" placeholder="Enter custom vendor name">
                 </div>
 
                 <div class="form-group">
-                    <label for="vendor_address">Vendor Address</label>
+                    <label for="vendor_address" data-i18n="invoices.vendorAddress">Vendor Address</label>
                     <textarea id="vendor_address" name="vendor_address" rows="2"
-                              placeholder="Vendor's business address"></textarea>
+                              data-i18n-placeholder="invoices.vendorBusinessAddressPlaceholder" placeholder="Vendor's business address"></textarea>
                 </div>
 
                 <!-- FIAT Currency Fields -->
                 <div id="fiatFields" class="form-row">
                     <div class="form-group">
-                        <label for="currency">FIAT Currency *</label>
+                        <label for="currency" data-i18n="invoices.fiatCurrencyLabel">FIAT Currency *</label>
                         <select id="currency" name="currency">
-                            <option value="USD">USD - US Dollar</option>
-                            <option value="BRL">BRL - Brazilian Real</option>
-                            <option value="EUR">EUR - Euro</option>
-                            <option value="GBP">GBP - British Pound</option>
+                            <option value="USD" data-i18n="currencies.usdLong">USD - US Dollar</option>
+                            <option value="BRL" data-i18n="currencies.brlLong">BRL - Brazilian Real</option>
+                            <option value="EUR" data-i18n="currencies.eurLong">EUR - Euro</option>
+                            <option value="GBP" data-i18n="currencies.gbpLong">GBP - British Pound</option>
+                            <option value="ARS" data-i18n="currencies.arsLong">ARS - Argentine Peso</option>
+                            <option value="CLP" data-i18n="currencies.clpLong">CLP - Chilean Peso</option>
+                            <option value="COP" data-i18n="currencies.copLong">COP - Colombian Peso</option>
+                            <option value="MXN" data-i18n="currencies.mxnLong">MXN - Mexican Peso</option>
+                            <option value="PEN" data-i18n="currencies.penLong">PEN - Peruvian Sol</option>
+                            <option value="UYU" data-i18n="currencies.uyuLong">UYU - Uruguayan Peso</option>
+                            <option value="BOB" data-i18n="currencies.bobLong">BOB - Bolivian Boliviano</option>
+                            <option value="VES" data-i18n="currencies.vesLong">VES - Venezuelan Bolivar</option>
+                            <option value="PYG" data-i18n="currencies.pygLong">PYG - Paraguayan Guarani</option>
                         </select>
                     </div>
                     <div class="form-group"></div>
@@ -295,98 +306,98 @@
                 <div id="cryptoFields" style="display: none;">
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="crypto_currency">Cryptocurrency *</label>
+                            <label for="crypto_currency" data-i18n="invoices.cryptocurrencyLabel">Cryptocurrency *</label>
                             <select id="crypto_currency" name="crypto_currency" onchange="updateNetworkOptions()">
-                                <option value="">Select Currency</option>
+                                <option value="" data-i18n="invoices.selectCurrency">Select Currency</option>
                                 <option value="BTC">Bitcoin (BTC)</option>
                                 <option value="USDT">Tether (USDT)</option>
                                 <option value="TAO">Bittensor (TAO)</option>
-                                <option value="OTHER">Other (Custom)</option>
+                                <option value="OTHER" data-i18n="invoices.otherCustom">Other (Custom)</option>
                             </select>
                         </div>
 
                         <div class="form-group">
-                            <label for="crypto_network">Network *</label>
+                            <label for="crypto_network" data-i18n="invoices.network">Network *</label>
                             <select id="crypto_network" name="crypto_network" onchange="toggleNetworkCustomInput()">
-                                <option value="">Select Network</option>
+                                <option value="" data-i18n="invoices.selectNetwork">Select Network</option>
                             </select>
                         </div>
                     </div>
 
                     <!-- Custom Crypto Input -->
                     <div id="customCryptoField" class="form-group" style="display: none;">
-                        <label for="custom_crypto">Custom Cryptocurrency *</label>
-                        <input type="text" id="custom_crypto" name="custom_crypto" placeholder="e.g., ETH, SOL, MATIC">
+                        <label for="custom_crypto" data-i18n="invoices.customCryptocurrency">Custom Cryptocurrency *</label>
+                        <input type="text" id="custom_crypto" name="custom_crypto" data-i18n-placeholder="invoices.customCryptoPlaceholder" placeholder="e.g., ETH, SOL, MATIC">
                     </div>
 
                     <!-- Custom Network Input -->
                     <div id="customNetworkField" class="form-group" style="display: none;">
-                        <label for="custom_network">Custom Network *</label>
-                        <input type="text" id="custom_network" name="custom_network" placeholder="e.g., Polygon, Solana, Arbitrum">
+                        <label for="custom_network" data-i18n="invoices.customNetwork">Custom Network *</label>
+                        <input type="text" id="custom_network" name="custom_network" data-i18n-placeholder="invoices.customNetworkPlaceholder" placeholder="e.g., Polygon, Solana, Arbitrum">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="customer_name">Customer Name *</label>
+                    <label for="customer_name" data-i18n="invoices.customerName">Customer Name *</label>
                     <input type="text" id="customer_name" name="customer_name" required
-                           placeholder="e.g., Alps Blockchain">
+                           data-i18n-placeholder="invoices.customerNamePlaceholder" placeholder="e.g., Alps Blockchain">
                 </div>
 
                 <div class="form-group">
-                    <label for="customer_address">Customer Address</label>
+                    <label for="customer_address" data-i18n="invoices.customerAddress">Customer Address</label>
                     <textarea id="customer_address" name="customer_address" rows="2"
-                              placeholder="Customer's billing address"></textarea>
+                              data-i18n-placeholder="invoices.customerAddressPlaceholder" placeholder="Customer's billing address"></textarea>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="invoice_date">Invoice Date *</label>
+                        <label for="invoice_date" data-i18n="invoices.invoiceDate">Invoice Date *</label>
                         <input type="date" id="invoice_date" name="invoice_date" required>
                     </div>
 
                     <div class="form-group">
-                        <label for="due_date">Due Date *</label>
+                        <label for="due_date" data-i18n="invoices.dueDate">Due Date *</label>
                         <input type="date" id="due_date" name="due_date" required>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="description">Description</label>
+                    <label for="description" data-i18n="common.description">Description</label>
                     <input type="text" id="description" name="description"
-                           placeholder="e.g., Professional Services - October 2025">
+                           data-i18n-placeholder="invoices.descriptionPlaceholder" placeholder="e.g., Professional Services - October 2025">
                 </div>
 
                 <div class="form-group">
-                    <label>Line Items *</label>
+                    <label data-i18n="invoices.lineItems">Line Items *</label>
                     <div class="line-items">
                         <div class="line-items-header">
-                            <div>Description</div>
-                            <div>Quantity</div>
-                            <div>Unit Price</div>
-                            <div>Amount</div>
+                            <div data-i18n="common.description">Description</div>
+                            <div data-i18n="invoices.quantity">Quantity</div>
+                            <div data-i18n="invoices.unitPrice">Unit Price</div>
+                            <div data-i18n="common.amount">Amount</div>
                             <div></div>
                         </div>
                         <div id="lineItemsContainer">
                             <div class="line-item">
                                 <div class="line-item-row">
-                                    <input type="text" placeholder="Item name" class="line-desc" required>
+                                    <input type="text" data-i18n-placeholder="invoices.itemNamePlaceholder" placeholder="Item name" class="line-desc" required>
                                     <input type="number" step="0.01" placeholder="1" value="1" class="line-qty" required>
                                     <input type="number" step="0.01" placeholder="0.00" class="line-price" required>
                                     <input type="number" step="0.01" placeholder="0.00" class="line-amount" readonly>
-                                    <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)">Remove</button>
+                                    <button type="button" class="btn btn-remove btn-small" onclick="removeLineItem(this)" data-i18n="common.remove">Remove</button>
                                 </div>
                                 <div class="line-item-details">
-                                    <textarea placeholder="Item details/description (optional)" class="line-details"></textarea>
+                                    <textarea data-i18n-placeholder="invoices.itemDetailsPlaceholder" placeholder="Item details/description (optional)" class="line-details"></textarea>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-secondary btn-small" onclick="addLineItem()">+ Add Line Item</button>
+                    <button type="button" class="btn btn-secondary btn-small" onclick="addLineItem()" data-i18n="invoices.addLineItem">+ Add Line Item</button>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="tax_percentage">Tax Percentage (%)</label>
+                        <label for="tax_percentage" data-i18n="invoices.taxPercentage">Tax Percentage (%)</label>
                         <input type="number" id="tax_percentage" name="tax_percentage" step="0.01" value="0"
                                placeholder="0.00" onchange="calculateTotals()">
                     </div>
@@ -395,30 +406,30 @@
 
                 <div class="summary-box">
                     <div class="summary-row">
-                        <span>Subtotal:</span>
+                        <span data-i18n="invoices.subtotal">Subtotal:</span>
                         <span id="subtotalDisplay">$0.00</span>
                     </div>
                     <div class="summary-row">
-                        <span>Tax:</span>
+                        <span data-i18n="invoices.tax">Tax:</span>
                         <span id="taxDisplay">$0.00</span>
                     </div>
                     <div class="summary-row total">
-                        <span>Total:</span>
+                        <span data-i18n="invoices.total">Total:</span>
                         <span id="totalDisplay">$0.00</span>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="payment_terms">Payment Instructions / Terms</label>
+                    <label for="payment_terms" data-i18n="invoices.paymentTerms">Payment Instructions / Terms</label>
                     <textarea id="payment_terms" name="payment_terms" rows="4"
-                              placeholder="Enter payment instructions (e.g., bank account details, wire transfer info, crypto wallet address, payment terms, or any additional notes for the customer)"></textarea>
+                              data-i18n-placeholder="invoices.paymentTermsPlaceholder" placeholder="Enter payment instructions (e.g., bank account details, wire transfer info, crypto wallet address, payment terms, or any additional notes for the customer)"></textarea>
                 </div>
 
-                <button type="submit" class="btn btn-primary" style="width: 100%;">Generate Invoice PDF</button>
+                <button type="submit" class="btn btn-primary" style="width: 100%;" data-i18n="invoices.generateInvoicePdf">Generate Invoice PDF</button>
             </form>
 
             <div class="loading" id="loading">
-                <p>Generating invoice PDF and saving to database...</p>
+                <p data-i18n="invoices.generatingInvoice">Generating invoice PDF and saving to database...</p>
             </div>
         </div>
     </div>

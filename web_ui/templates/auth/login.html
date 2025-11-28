@@ -3,48 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><span data-i18n="auth.login.pageTitle">Login</span> - Delta CFO Agent</title>
+    <title>Login - Delta CFO Agent</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
 </head>
 <body>
     <div class="auth-container">
         <div class="auth-card">
             <div class="auth-header">
                 <h1>Delta CFO Agent</h1>
-                <p><span data-i18n="auth.login.tagline">AI-Powered Financial Intelligence</span></p>
+                <p data-i18n="auth.aiPoweredFinancialIntelligence">AI-Powered Financial Intelligence</p>
             </div>
 
             <div class="auth-tabs">
-                <a href="{{ url_for('login_page') }}" class="tab active"><span data-i18n="auth.login.tab">Login</span></a>
-                <a href="{{ url_for('register_page') }}" class="tab"><span data-i18n="auth.login.registerTab">Register</span></a>
+                <a href="{{ url_for('login_page') }}" class="tab active" data-i18n="auth.login">Login</a>
+                <a href="{{ url_for('register_page') }}" class="tab" data-i18n="auth.register">Register</a>
             </div>
 
             <form id="loginForm" class="auth-form">
                 <div class="form-group">
-                    <label for="email"><span data-i18n="auth.login.emailLabel">Email Address</span></label>
-                    <input type="email" id="email" name="email" required data-i18n-attr="placeholder" data-i18n="auth.login.emailPlaceholder" placeholder="your@email.com">
+                    <label for="email" data-i18n="auth.emailAddress">Email Address</label>
+                    <input type="email" id="email" name="email" required data-i18n-placeholder="auth.emailPlaceholder" placeholder="your@email.com">
                 </div>
 
                 <div class="form-group">
-                    <label for="password"><span data-i18n="auth.login.passwordLabel">Password</span></label>
-                    <input type="password" id="password" name="password" required data-i18n-attr="placeholder" data-i18n="auth.login.passwordPlaceholder" placeholder="Enter your password">
+                    <label for="password" data-i18n="auth.password">Password</label>
+                    <input type="password" id="password" name="password" required data-i18n-placeholder="auth.enterPassword" placeholder="Enter your password">
                 </div>
 
                 <div class="form-options">
                     <label class="checkbox-label">
                         <input type="checkbox" id="rememberMe">
-                        <span><span data-i18n="auth.login.rememberMe">Remember me</span></span>
+                        <span data-i18n="auth.rememberMe">Remember me</span>
                     </label>
-                    <a href="{{ url_for('forgot_password_page') }}" class="forgot-link"><span data-i18n="auth.login.forgotPassword">Forgot password?</span></a>
+                    <a href="{{ url_for('forgot_password_page') }}" class="forgot-link" data-i18n="auth.forgotPassword">Forgot password?</a>
                 </div>
 
                 <button type="submit" class="btn-primary" id="loginBtn">
-                    <span class="btn-text"><span data-i18n="auth.login.signInButton">Sign In</span></span>
+                    <span class="btn-text" data-i18n="auth.signIn">Sign In</span>
                     <span class="btn-loader" style="display: none;"></span>
                 </button>
 
                 <div class="divider">
-                    <span>OR</span>
+                    <span data-i18n="auth.or">OR</span>
                 </div>
 
                 <button type="button" class="btn-google" id="googleSignInBtn">
@@ -54,7 +55,7 @@
                         <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                         <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                     </svg>
-                    Continue with Google
+                    <span data-i18n="auth.continueWithGoogle">Continue with Google</span>
                 </button>
 
                 <div class="alert alert-error" id="errorAlert" style="display: none;"></div>
@@ -62,7 +63,7 @@
             </form>
 
             <div class="auth-footer">
-                <p><span data-i18n="auth.login.noAccount">Don\'t have an account?</span> <a href="{{ url_for('register_page') }}"><span data-i18n="auth.login.registerLink">Register here</span></a></p>
+                <p><span data-i18n="auth.dontHaveAccount">Don't have an account?</span> <a href="{{ url_for('register_page') }}" data-i18n="auth.registerHere">Register here</a></p>
             </div>
         </div>
     </div>
