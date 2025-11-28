@@ -17,7 +17,7 @@
     <div class="detail-page-container">
         <!-- Breadcrumb Navigation -->
         <nav class="breadcrumb-nav">
-            <a href="/" class="breadcrumb-link">Home</a>
+            <a href="/" class="breadcrumb-link" data-i18n="common.home">Home</a>
             <span class="breadcrumb-separator">/</span>
             {% block breadcrumb %}{% endblock %}
         </nav>
@@ -51,10 +51,10 @@
                 <div class="detail-tabs">
                     <div class="tab-nav">
                         {% block tab_nav %}
-                        <button class="tab-button active" data-tab="overview">Overview</button>
-                        <button class="tab-button" data-tab="details">Details</button>
-                        <button class="tab-button" data-tab="matches">Matches</button>
-                        <button class="tab-button" data-tab="activity">Activity</button>
+                        <button class="tab-button active" data-tab="overview" data-i18n="tabs.overview">Overview</button>
+                        <button class="tab-button" data-tab="details" data-i18n="tabs.details">Details</button>
+                        <button class="tab-button" data-tab="matches" data-i18n="tabs.matches">Matches</button>
+                        <button class="tab-button" data-tab="activity" data-i18n="tabs.activity">Activity</button>
                         {% endblock %}
                     </div>
 
@@ -88,7 +88,7 @@
             <div class="detail-sidebar">
                 <!-- Statistics Card -->
                 <div class="detail-card sidebar-card">
-                    <h3 class="sidebar-card-title">Statistics</h3>
+                    <h3 class="sidebar-card-title" data-i18n="sidebar.statistics">Statistics</h3>
                     <div class="sidebar-stats">
                         {% block sidebar_stats %}{% endblock %}
                     </div>
@@ -96,7 +96,7 @@
 
                 <!-- Quick Actions Card -->
                 <div class="detail-card sidebar-card">
-                    <h3 class="sidebar-card-title">Quick Actions</h3>
+                    <h3 class="sidebar-card-title" data-i18n="sidebar.quickActions">Quick Actions</h3>
                     <div class="quick-actions">
                         {% block quick_actions %}{% endblock %}
                     </div>
@@ -104,7 +104,7 @@
 
                 <!-- Related Records Card -->
                 <div class="detail-card sidebar-card">
-                    <h3 class="sidebar-card-title">Related</h3>
+                    <h3 class="sidebar-card-title" data-i18n="sidebar.related">Related</h3>
                     <div class="related-records">
                         {% block related_records %}{% endblock %}
                     </div>
@@ -116,7 +116,7 @@
     <!-- Loading Overlay -->
     <div id="loading-overlay" class="loading-overlay" style="display: none;">
         <div class="loading-spinner"></div>
-        <p class="loading-text">Loading...</p>
+        <p class="loading-text" data-i18n="common.loading">Loading...</p>
     </div>
 
     <!-- Toast Notification -->
