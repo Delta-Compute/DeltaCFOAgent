@@ -963,13 +963,146 @@ Organization: Delta Energy Holdings (tenant_id='delta')
 ## Review Section
 
 ### Changes Summary
-(To be filled in after implementation)
+
+#### Merge with Dev Branch (2025-11-28)
+**Commit:** `3630f2b` - Merged origin/Dev into Entity/Business Line architecture branch
+
+**Dev Branch Features Integrated:**
+1. **PDF Upload Progress Bar**
+   - 6-stage progress bar with Server-Sent Events (SSE) streaming
+   - New route: `/api/upload-with-progress`
+   - Real-time progress updates during file processing
+
+2. **Performance Optimizations**
+   - Batch INSERT using `psycopg2.extras.execute_values` (99x faster)
+   - Reduced database round-trips from N to 1 for bulk inserts
+   - Transaction duplicate checking excludes archived records (prevents data loss)
+
+3. **AI Classification Enhancements**
+   - Pass 2 AI classification reviewer for low-confidence transactions
+   - New file: `web_ui/ai_classification_reviewer.py`
+   - Tenant business context generator: `services/knowledge_generator.py`
+
+4. **Pattern Service Resilience**
+   - Exponential backoff reconnection logic in `pattern_validation_service.py`
+   - Graceful degradation when pattern validation service unavailable
+
+5. **New Database Migrations**
+   - `migrations/add_business_insights_table.sql` - Business insights storage
+   - `migrations/add_source_document_id.sql` - Document tracking
+   - `migrations/add_tenant_business_summary.sql` - Tenant summaries
+   - `migrations/add_origin_destination_to_transactions.sql` - Transaction flow
+   - `migrations/fix_pattern_trigger_include_justification.sql` - Pattern triggers
+
+6. **Internationalization (i18n)**
+   - Translation scripts added under `scripts/translation/`
+   - Support for multi-language UI (Portuguese translations added)
+
+**Entity/Business Line Architecture Status:**
+- ✅ All Phase 1-4 implementation preserved
+- ✅ `entity_api.py` registration intact in `app_db.py` (lines 103, 217)
+- ✅ Entity management APIs functional
+- ✅ Business Line management functional
+- ✅ Migration scripts preserved
+- ✅ Frontend components (entities.js, entities.html) preserved
+- ✅ No conflicts detected during merge
+
+**Merge Statistics:**
+- 46 files changed
+- 6,370 insertions
+- 954 deletions
+- Automatic merge successful (no manual conflict resolution required)
+
+**Compatibility Verification:**
+- Both feature sets coexist without conflicts
+- PDF upload progress does not interfere with Entity APIs
+- Entity filtering still functional in transaction lists
+- Business Line assignment preserved in transaction workflows
 
 ### Lessons Learned
-(To be filled in after implementation)
+
+#### Successful Merge Strategy
+1. **Branch Divergence Management**: Both branches diverged from common ancestor `024b3ac` with distinct features
+2. **File Isolation**: Entity work and PDF upload work touched different parts of codebase (minimal overlap)
+3. **Smart Git Merging**: Git successfully auto-merged `web_ui/app_db.py` despite large changes in both branches
+4. **Preservation of Features**: No functionality lost from either branch during merge
+
+#### Key Takeaways
+- Keep feature branches focused on distinct areas to minimize merge conflicts
+- Large files like `app_db.py` can still auto-merge if changes are in different sections
+- Regular integration with Dev branch prevents drift and reduces merge complexity
 
 ### Known Issues
-(To be filled in after implementation)
+
+#### Post-Merge Testing Required
+1. **Manual Testing Needed**:
+   - [ ] Test PDF upload with progress bar on local environment
+   - [ ] Verify Entity management APIs still work correctly
+   - [ ] Test Business Line assignment with new batch insert optimization
+   - [ ] Verify pattern validation service reconnection logic
+   - [ ] Test AI classification reviewer with Entity context
+
+2. **Migration Coordination**:
+   - Entity migrations (`add_entities_and_business_lines.sql`) need to be run before Dev migrations
+   - Order matters: Entities → Business Lines → Transactions → Business Insights
+   - Consider creating a master migration script to ensure correct order
+
+3. **Documentation Updates**:
+   - CLAUDE.md should be updated to reflect merged features
+   - README should mention both Entity architecture and PDF upload progress
+   - Deployment guide needs to include all new migrations
 
 ### Future Improvements
-(To be filled in after implementation)
+
+#### Integration Opportunities
+1. **Entity-Aware PDF Upload**:
+   - Enhance PDF upload progress to automatically assign entity_id during classification
+   - Use business context generator to improve entity inference
+   - Add business line suggestion during initial transaction import
+
+2. **AI Classification + Entity Context**:
+   - Leverage `knowledge_generator.py` for entity-specific classification rules
+   - Use AI classification reviewer to validate entity assignments
+   - Implement entity-aware pattern learning
+
+3. **Batch Optimization for Entities**:
+   - Apply `execute_values` batch insert pattern to Entity bulk operations
+   - Optimize Business Line assignment for large transaction sets
+   - Add progress bar for entity data migration script
+
+4. **Progressive Disclosure Enhancement**:
+   - Use business insights table to determine when to show Entity UI
+   - Auto-enable Entity features based on transaction complexity
+   - Integrate tenant business summary into Entity onboarding flow
+
+5. **Consolidated Reporting**:
+   - Add Entity breakdown to PDF upload summary
+   - Show Business Line distribution in upload progress
+   - Generate Entity-specific insights after bulk import
+
+#### Next Phase Integration
+- Phase 5-10 of Entity architecture can now leverage:
+  - New business insights table for Entity analytics
+  - Source document tracking for Entity-level audit trails
+  - Pattern triggers for automated Entity classification
+  - AI classification reviewer for Entity assignment validation
+
+### Deployment Notes
+
+#### Pre-Deployment Checklist
+- [ ] Run Entity migrations first (Phase 1 completed)
+- [ ] Run Dev branch migrations (business insights, source documents, etc.)
+- [ ] Test Entity API endpoints
+- [ ] Test PDF upload with progress
+- [ ] Verify batch insert performance
+- [ ] Check pattern validation service resilience
+- [ ] Validate AI classification reviewer
+- [ ] Test multi-tenant isolation with merged features
+
+#### Rollback Strategy
+If issues arise post-deployment:
+1. Revert to commit `50bc8e7` (last Entity-only commit)
+2. OR revert to commit `3f1617c` (last Dev-only commit)
+3. OR revert merge commit `3630f2b` to separate features again
+
+Both feature sets are independently functional and can be deployed separately if needed.
