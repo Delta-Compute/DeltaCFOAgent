@@ -1,392 +1,96 @@
-# Spanish Language & Latin American Currencies Support - Implementation Plan
+# DeltaCFO Onboarding System - Development Plan
 
-## Overview
-Add Spanish language (es) support and Latin American currencies (ARS, CLP, COP, MXN, PEN, UYU, BOB, VES, PYG) plus ensure Euro (EUR) is consistently supported across the entire application.
-
-## Current State Analysis
-
-### Existing i18n Framework
-- **Location**: `web_ui/static/js/i18n.js` (vanilla JS implementation)
-- **Translation Files**: `web_ui/static/locales/en.json` (53KB, ~1444 keys) and `pt.json` (58KB)
-- **Languages Supported**: English (en), Portuguese (pt-BR)
-- **Storage**: localStorage for client preference, database for user preference
-- **API Endpoint**: `POST /api/user/language` to save preference
-- **DOM Translation**: Uses `data-i18n` attributes
-
-### Current Currency Support
-- **Defined in Locales**: USD, EUR, GBP, BRL
-- **Used in Code**: USD, BRL, PYG (Paraguay), EUR, GBP
-- **In historical_currency_converter.py**: Any currency via external API
+**Version:** 1.0
+**Created:** December 1, 2025
+**Target Completion:** 4-5 weeks
 
 ---
 
-## Implementation Tasks
+## Current Progress
 
-### Phase 1: Core i18n Infrastructure Updates
+### Phase 0: Bug Fixes & Foundation (Days 1-2) - COMPLETE
+- [x] **Task 0.1.1**: Create bot_conversations table (already existed)
+- [x] **Task 0.1.2**: Fix get_business_entities() → get_entities_with_business_lines()
+- [x] **Task 0.1.3**: Verify onboarding completes end-to-end
+- [x] **Task 0.2.1**: Audit existing file upload code (saved to docs/file_ingestion_audit.md)
+- [x] **Task 0.2.2**: Create unified file type detector (web_ui/services/file_detector.py)
 
-#### Task 1.1: Update i18n.js to Support Spanish
-- [ ] Add 'es' to supported languages array (line 101)
-- [ ] Load Spanish translations in init() (line 25-28)
-- [ ] Add Spanish locale for formatNumber (es-ES or es-419)
-- [ ] Add Spanish locale for formatDate
-- [ ] Add Spanish currency formatting
+### Phase 1: Universal File Ingestion (Days 3-6)
+- [ ] Task 1.1.1: Enhance CSV column detection
+- [ ] Task 1.1.2: Add column mapping UI for edge cases
+- [ ] Task 1.2.1: Enhance PDF text extraction
+- [ ] Task 1.2.2: Implement PDF type classification
+- [ ] Task 1.2.3: Implement PDF transaction extraction
+- [ ] Task 1.3.1: Implement XLS/XLSX parser
+- [ ] Task 1.3.2: Add Excel column mapping UI
+- [ ] Task 1.4.1: Implement receipt/invoice image parser
+- [ ] Task 1.5.1: Create unified ingestion endpoint
+- [ ] Task 1.5.2: Create ingestion queue for background processing
 
-**File**: `web_ui/static/js/i18n.js`
+### Phase 2: Classification Preview (Days 7-9)
+- [ ] Task 2.1.1: Add Step 6 to wizard flow
+- [ ] Task 2.1.2: Create onboarding-specific upload handler
+- [ ] Task 2.2.1: Create classification preview endpoint
+- [ ] Task 2.2.2: Build preview modal component
+- [ ] Task 2.2.3: Wire preview modal to upload flow
+- [ ] Task 2.3.1: Implement transaction persistence
+- [ ] Task 2.3.2: Update wizard completion flow
 
-#### Task 1.2: Create Spanish Translation File
-- [ ] Create `web_ui/static/locales/es.json`
-- [ ] Copy structure from en.json
-- [ ] Translate all 1444+ keys to Spanish
-- [ ] Use Latin American Spanish (es-419) conventions
+### Phase 3: Industry Templates 2.0 (Days 10-13)
+- [ ] Task 3.1.1: Design enhanced template schema
+- [ ] Task 3.1.2: Create template application function
+- [ ] Task 3.2.1: Create Technology/SaaS template
+- [ ] Task 3.2.2: Create Crypto/Blockchain template
+- [ ] Task 3.2.3: Create Retail/E-commerce template
+- [ ] Task 3.2.4: Create Consulting/Professional Services template
+- [ ] Task 3.2.5: Create Healthcare template
+- [ ] Task 3.2.6: Create Generic template
+- [ ] Task 3.3.1: Add structure type to onboarding
+- [ ] Task 3.3.2: Store structure type in database
+- [ ] Task 3.3.3: Apply structure-specific setup
 
-**New File**: `web_ui/static/locales/es.json`
+### Phase 4: Entity & Business Line Flow (Days 14-17) - COMPLETE
+- [x] Task 4.1: Update OnboardingBot Service (entity/BL methods)
+- [x] Task 4.2: Update Onboarding API Routes
+- [x] Task 4.3: Update Conversation Prompts (ambiguous terms handling)
+- [x] Task 4.4: Update Frontend Bot UI (entity/BL badges)
+- [x] Task 4.5: Testing and validation
 
-#### Task 1.3: Update Database Migration
-- [ ] Update `add_language_preferences.sql` to include 'es' in CHECK constraint
-- [ ] Create new migration file `add_spanish_language.sql`
-- [ ] Update both `users` and `tenant_configuration` tables
+### Phase 5: Completion % & Progressive Disclosure (Days 18-19) - COMPLETE
+- [x] Task 5.1: Create get_completion_milestones() method (5 milestones with weights)
+- [x] Task 5.2: Create /api/onboarding/capabilities endpoint
+- [x] Task 5.3: Update frontend progress UI with milestone indicators
+- [x] Task 5.4: Apply progressive disclosure to navbar (data-capability attributes)
 
-**Files**:
-- `migrations/add_spanish_language.sql` (new)
-- `migrations/apply_spanish_language_migration.py` (new)
+### Phase 6: Intercompany Setup (Days 20-21)
+- [ ] Task 6.1.1: Add intercompany question to AI chat
+- [ ] Task 6.1.2: Create intercompany relationships table
+- [ ] Task 6.2.1: Add is_intercompany to transactions
+- [ ] Task 6.2.2: Implement intercompany auto-detection
+- [ ] Task 6.2.3: Add intercompany toggle to dashboard
 
-#### Task 1.4: Update Language Switcher UI
-- [ ] Add Spanish option to `_navbar.html` language dropdown
-- [ ] Add Spanish flag emoji or icon
-- [ ] Update click handlers
-
-**File**: `web_ui/templates/_navbar.html`
-
----
-
-### Phase 2: Currency Support Expansion
-
-#### Task 2.1: Add Latin American Currencies to Locales
-Update all three locale files (en.json, pt.json, es.json) with:
-- [ ] ARS - Argentine Peso
-- [ ] CLP - Chilean Peso
-- [ ] COP - Colombian Peso
-- [ ] MXN - Mexican Peso
-- [ ] PEN - Peruvian Nuevo Sol
-- [ ] UYU - Uruguayan Peso
-- [ ] BOB - Bolivian Boliviano
-- [ ] VES - Venezuelan Bolivar
-- [ ] PYG - Paraguayan Guarani (already exists in code)
-
-**Files**:
-- `web_ui/static/locales/en.json`
-- `web_ui/static/locales/pt.json`
-- `web_ui/static/locales/es.json`
-
-#### Task 2.2: Update Currency Formatting in i18n.js
-- [ ] Add currency symbol map for all currencies
-- [ ] Add formatCurrencyWithCode(amount, currencyCode) method
-- [ ] Handle different decimal places (e.g., CLP has 0 decimals)
-
-**File**: `web_ui/static/js/i18n.js`
-
-#### Task 2.3: Update Backend Currency Validation
-- [ ] Update currency validation in `app_db.py` (line ~9665)
-- [ ] Add all new currencies to allowed list
-- [ ] Update invoice form currency dropdown
-
-**Files**:
-- `web_ui/app_db.py`
-- `invoice_processing/improved_visual_system.py` (if still used)
+### Phase 7: Testing & Polish (Days 22-24)
+- [ ] Task 7.1.1: Create test tenant scenarios
+- [ ] Task 7.1.2: Test file ingestion across formats
+- [ ] Task 7.2.1: Fix bugs from testing
+- [ ] Task 7.3.1: Update developer documentation
+- [ ] Task 7.3.2: Create user-facing help content
 
 ---
 
-### Phase 3: Template Translation Gaps
+## SaaS-First Architecture Rules
 
-The following templates have ZERO i18n implementation and need data-i18n attributes added:
+**NO DELTA-SPECIFIC CODE ALLOWED**
 
-#### Task 3.1: Core Dashboard Templates
-- [ ] `dashboard.html` - All filter labels, table headers, buttons
-- [ ] `files.html` - Upload sections, progress text, file table
-
-#### Task 3.2: Workforce Templates
-- [ ] `workforce.html` - Tabs, table headers, form labels, modals
-
-#### Task 3.3: Invoice Templates
-- [ ] `invoice_detail.html` - All labels, buttons, sidebar
-- [ ] `create_invoice.html` - All form fields, dropdowns, buttons
-- [ ] `invoices.html` (if not already covered)
-
-#### Task 3.4: Authentication Templates
-- [ ] `auth/login.html` - Form labels, buttons, links
-- [ ] `auth/register.html` - Form labels, user type options, buttons
-- [ ] `auth/profile.html` - All labels and info sections
-- [ ] `auth/accept_invitation.html` - All text and buttons
-- [ ] `auth/forgot_password.html` - Form labels and buttons
-
-#### Task 3.5: Management Templates
-- [ ] `users.html` - All invitation forms and labels
-- [ ] `whitelisted_accounts.html` - Tabs, forms, card labels
-- [ ] `transaction_detail.html` - All labels and buttons
-- [ ] `payslip_detail.html` - All labels and sections
-- [ ] `shareholders.html` - All form labels
-
-#### Task 3.6: Other Templates
-- [ ] `business_overview.html` - Bot interface, loading states
-- [ ] `tenant_management.html` - Forms and labels
+- DO NOT hardcode "Delta", "Alps", "Paraguay", or any client names
+- DO NOT create Delta-specific patterns, entities, or business lines
+- DO NOT assume crypto/mining is the only industry
+- DO use industry templates that ANY tenant can select
+- DO make all patterns, entities, BLs configurable per tenant
+- DO test with non-crypto industries (retail, consulting, etc.)
 
 ---
 
-### Phase 4: JavaScript Hardcoded Strings
+## Task Details
 
-#### Task 4.1: tenant_knowledge.js (~83 instances)
-- [ ] Replace all alert() messages with i18n.t() calls
-- [ ] Replace all confirm() messages with i18n.t() calls
-- [ ] Replace innerHTML loading/empty states with translations
-- [ ] Add translation keys to es.json
-
-#### Task 4.2: script_advanced.js (~70 instances)
-- [ ] Replace confirm dialogs
-- [ ] Replace showNotification messages
-- [ ] Replace innerHTML content
-- [ ] Replace placeholder text
-
-#### Task 4.3: workforce.js (~16 instances)
-- [ ] Replace alert messages
-- [ ] Replace confirm dialogs
-- [ ] Replace modal titles
-
-#### Task 4.4: invoice_*.js files
-- [ ] invoice_matches.js (~3 instances)
-- [ ] invoice_attachments.js (~12 instances)
-- [ ] invoice_payments.js (~11 instances)
-- [ ] invoice_detail.js (~5 instances)
-
-#### Task 4.5: payslip_*.js files
-- [ ] payslip_detail.js (~7 instances)
-- [ ] payslip_matches.js (~4 instances)
-
-#### Task 4.6: Other JS files
-- [ ] transaction_detail.js (~5 instances)
-- [ ] auth.js (~12 instances)
-- [ ] homepage.js (~7 instances)
-- [ ] payment_receipts.js (~8 instances)
-- [ ] whitelisted_accounts.js (~5 instances)
-- [ ] shareholders.js (~7 instances)
-- [ ] tenant_management.js (~4 instances)
-- [ ] cfo_dashboard.js (~15 instances - NOTE: has mixed EN/PT)
-- [ ] activity_timeline.js (~1 instance)
-- [ ] pattern_notifications.js (~3 instances)
-
----
-
-### Phase 5: Translation Keys to Add
-
-#### Task 5.1: New Top-Level Sections for es.json
-Based on the analysis, add these translation key sections:
-- [ ] `currencies` - All currency names and symbols
-- [ ] `errors` - All error messages
-- [ ] `confirmations` - All confirmation dialogs
-- [ ] `notifications` - All toast/notification messages
-- [ ] `loading` - All loading states
-- [ ] `empty` - All empty state messages
-
-#### Task 5.2: Update en.json with Missing Keys
-- [ ] Add all hardcoded strings found in JS files
-- [ ] Add all hardcoded strings found in templates
-- [ ] Maintain consistent key naming convention
-
-#### Task 5.3: Update pt.json with Missing Keys
-- [ ] Mirror all new keys from en.json
-- [ ] Translate to Portuguese
-
----
-
-### Phase 6: Testing & Validation
-
-#### Task 6.1: Unit Tests
-- [ ] Test language switching works for all 3 languages
-- [ ] Test currency formatting for all currencies
-- [ ] Test all translation keys exist in all locales
-
-#### Task 6.2: Manual Testing Checklist
-- [ ] Switch to Spanish, verify all pages render correctly
-- [ ] Switch to Portuguese, verify no regressions
-- [ ] Switch to English, verify no regressions
-- [ ] Test all currency dropdowns show new currencies
-- [ ] Test currency formatting displays correctly
-- [ ] Test date formatting for each locale
-- [ ] Test number formatting for each locale
-
-#### Task 6.3: Translation Validation Script
-- [ ] Create script to compare keys between en.json, pt.json, es.json
-- [ ] Report missing translations
-- [ ] Report unused translation keys
-
----
-
-## File Change Summary
-
-### New Files to Create
-1. `web_ui/static/locales/es.json` - Spanish translations (~1500 keys)
-2. `migrations/add_spanish_language.sql` - Database migration
-3. `migrations/apply_spanish_language_migration.py` - Migration script
-4. `tests/test_i18n.py` - Translation tests
-
-### Files to Modify
-
-**Core i18n:**
-- `web_ui/static/js/i18n.js` - Add Spanish support, currency formatting
-
-**Locale Files:**
-- `web_ui/static/locales/en.json` - Add missing keys, currencies
-- `web_ui/static/locales/pt.json` - Add missing keys, currencies
-
-**Templates (add data-i18n attributes):**
-- `web_ui/templates/_navbar.html` - Language switcher
-- `web_ui/templates/dashboard.html`
-- `web_ui/templates/files.html`
-- `web_ui/templates/workforce.html`
-- `web_ui/templates/invoice_detail.html`
-- `web_ui/templates/create_invoice.html`
-- `web_ui/templates/transaction_detail.html`
-- `web_ui/templates/payslip_detail.html`
-- `web_ui/templates/whitelisted_accounts.html`
-- `web_ui/templates/shareholders.html`
-- `web_ui/templates/business_overview.html`
-- `web_ui/templates/users.html`
-- `web_ui/templates/tenant_management.html`
-- `web_ui/templates/auth/login.html`
-- `web_ui/templates/auth/register.html`
-- `web_ui/templates/auth/profile.html`
-- `web_ui/templates/auth/accept_invitation.html`
-- `web_ui/templates/auth/forgot_password.html`
-
-**JavaScript (replace hardcoded strings):**
-- `web_ui/static/js/tenant_knowledge.js`
-- `web_ui/static/js/workforce.js`
-- `web_ui/static/js/invoice_matches.js`
-- `web_ui/static/js/invoice_attachments.js`
-- `web_ui/static/js/invoice_payments.js`
-- `web_ui/static/js/invoice_detail.js`
-- `web_ui/static/js/payslip_detail.js`
-- `web_ui/static/js/payslip_matches.js`
-- `web_ui/static/js/transaction_detail.js`
-- `web_ui/static/js/auth.js`
-- `web_ui/static/js/homepage.js`
-- `web_ui/static/js/payment_receipts.js`
-- `web_ui/static/js/whitelisted_accounts.js`
-- `web_ui/static/js/shareholders.js`
-- `web_ui/static/js/tenant_management.js`
-- `web_ui/static/js/activity_timeline.js`
-- `web_ui/static/js/pattern_notifications.js`
-- `web_ui/static/script_advanced.js`
-- `web_ui/static/cfo_dashboard.js`
-
-**Backend:**
-- `web_ui/app_db.py` - Currency validation
-
----
-
-## Currencies Reference
-
-| Code | Name (English) | Name (Spanish) | Name (Portuguese) | Symbol | Decimals |
-|------|----------------|----------------|-------------------|--------|----------|
-| USD | US Dollar | Dolar estadounidense | Dolar Americano | $ | 2 |
-| EUR | Euro | Euro | Euro | E | 2 |
-| GBP | British Pound | Libra esterlina | Libra Esterlina | GBP | 2 |
-| BRL | Brazilian Real | Real brasileno | Real Brasileiro | R$ | 2 |
-| ARS | Argentine Peso | Peso argentino | Peso Argentino | $ | 2 |
-| CLP | Chilean Peso | Peso chileno | Peso Chileno | $ | 0 |
-| COP | Colombian Peso | Peso colombiano | Peso Colombiano | $ | 0 |
-| MXN | Mexican Peso | Peso mexicano | Peso Mexicano | $ | 2 |
-| PEN | Peruvian Sol | Sol peruano | Sol Peruano | S/ | 2 |
-| UYU | Uruguayan Peso | Peso uruguayo | Peso Uruguaio | $U | 2 |
-| BOB | Bolivian Boliviano | Boliviano | Boliviano | Bs | 2 |
-| VES | Venezuelan Bolivar | Bolivar venezolano | Bolivar Venezuelano | Bs.S | 2 |
-| PYG | Paraguayan Guarani | Guarani paraguayo | Guarani Paraguaio | Gs | 0 |
-
----
-
-## Estimation
-
-### Translation Work
-- ~1444 keys to translate to Spanish
-- ~200+ new keys to add for hardcoded strings
-- Total: ~1650 translation keys for Spanish
-
-### Code Changes
-- 1 new locale file
-- 2 migration files
-- ~20 template files with data-i18n additions
-- ~20 JavaScript files with string replacements
-- 1 backend file update
-
----
-
-## Success Criteria
-
-- [ ] Spanish language option appears in language switcher
-- [ ] All UI text displays correctly in Spanish
-- [ ] All Latin American currencies available in dropdowns
-- [ ] Currency formatting respects locale (decimal separators)
-- [ ] Date formatting respects locale
-- [ ] Number formatting respects locale
-- [ ] No console errors when switching languages
-- [ ] All existing English/Portuguese functionality works
-- [ ] Database migration runs without errors
-- [ ] All translation keys exist in all 3 locale files
-
----
-
-## Review Section
-
-### Phase 1 & 2 - COMPLETED (Nov 2024)
-- Created es.json with full Spanish translations (~1500 keys)
-- Updated i18n.js to support Spanish language and Latin American currencies
-- Added all Latin American currencies (ARS, CLP, COP, MXN, PEN, UYU, BOB, VES, PYG)
-- Updated _navbar.html with Spanish language option
-- Database migration files created
-
-### Phase 3 - COMPLETED (Nov 2024)
-
-#### Completed Template Updates:
-- [x] `files.html` - Added data-i18n attributes to upload sections, progress text, file tables, status badges
-- [x] `workforce.html` - Added data-i18n to stats, tabs, table headers, modals, form labels
-- [x] `invoices.html` - Added data-i18n to stats, filters, table headers, selection toolbar
-- [x] `revenue.html` - Added data-i18n to header, matching controls, section titles, filter tabs, bulk actions
-- [x] `business_overview.html` - Added data-i18n to hero section, metrics, portfolio, structure, onboarding bot
-
-#### Remaining Template Updates (Phase 3B - Future Work):
-- [x] `auth/login.html` - Form labels, buttons, links (requires adding auth keys to locales)
-- [x] `auth/register.html` - Form labels, buttons
-- [x] `auth/forgot_password.html` - Form labels, buttons
-- [x] `invoice_detail.html` - Labels, buttons
-- [x] `create_invoice.html` - Form fields
-- [ ] `expenses.html` - Stats, filters (template does not exist)
-
-### Phase 3B - COMPLETED (Nov 2024)
-
-#### Completed Template Updates:
-- [x] `_detail_base.html` - Added data-i18n to breadcrumb (Home), tabs (Overview, Details, Matches, Activity), sidebar titles (Statistics, Quick Actions, Related), loading text
-- [x] `invoice_detail.html` - Added data-i18n to all labels, buttons, status badges, quick info, sidebar stats, action buttons
-- [x] `create_invoice.html` - Added data-i18n to all form labels, placeholders, buttons; Added Latin American currencies to dropdown
-- [x] `auth/login.html` - Added i18n.js script, data-i18n to all form elements, tabs, buttons, links
-- [x] `auth/register.html` - Added i18n.js script, data-i18n to all form elements, user type options, tabs, buttons
-- [x] `auth/forgot_password.html` - Added i18n.js script, data-i18n to all form elements, buttons, links
-
-#### Locale File Updates:
-- Added `auth` section to all locale files (en.json, es.json, pt.json) with 40+ authentication-related keys
-- Added `currencies` section with long format currency names (e.g., "USD - US Dollar")
-- Added `tabs` section for detail page tabs
-- Added `sidebar` section for sidebar titles
-- Added `stats` section for sidebar statistics
-- Added `navigation` section for breadcrumb links
-- Added 60+ new invoice-related keys for detail and create pages
-- Added `common.home`, `common.remove`, `common.never` keys
-
-### Issues Encountered
-- Auth templates don't include i18n.js (FIXED: added script tag to each auth template)
-- Some templates are very large (invoices.html ~28k tokens)
-- `expenses.html` template does not exist
-
-### Notes
-- All translation keys for Phase 3 templates already exist in locale files (added in Phase 1-2)
-- The i18n system loads automatically via _navbar.html which is included in most templates
-- Auth templates now include i18n.js script directly in the head section
-- Standalone templates (create_invoice.html) also have i18n.js included directly
+See `/Users/whitdhamer/Downloads/onboarding_dev_plan.md` for full subtask breakdown.

@@ -191,18 +191,59 @@ def complete_tenant_setup():
         """
         db_manager.execute_query(link_query, (tenant_user_id, user['id'], tenant_id, user['id']))
 
-        # 2.5. Create business entities if provided
+        # 2.5. Create entities and business lines if provided
+        entity_id_map = {}  # Map entity codes to UUIDs
         for entity in entities:
-            db_manager.execute_query("""
-                INSERT INTO business_entities
-                (tenant_id, name, description, entity_type, active)
-                VALUES (%s, %s, %s, %s, true)
+            entity_code = entity.get('code', entity.get('name', '').upper()[:4])
+            entity_name = entity.get('name')
+
+            if not entity_name:
+                continue
+
+            # Create entity
+            result = db_manager.execute_query("""
+                INSERT INTO entities
+                (tenant_id, code, name, legal_name, entity_type, base_currency,
+                 fiscal_year_end, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, true)
+                RETURNING id
             """, (
                 tenant_id,
-                entity.get('name'),
-                entity.get('description', ''),
-                entity.get('entity_type', 'subsidiary')
-            ))
+                entity_code,
+                entity_name,
+                entity.get('legal_name', entity_name),
+                entity.get('entity_type', 'LLC'),
+                entity.get('base_currency', 'USD'),
+                entity.get('fiscal_year_end', '12-31')
+            ), fetch_one=True)
+
+            if result:
+                entity_id = str(result['id'])
+                entity_id_map[entity_code] = entity_id
+
+                # Create default business line for this entity
+                db_manager.execute_query("""
+                    INSERT INTO business_lines
+                    (entity_id, code, name, description, is_default, is_active)
+                    VALUES (%s, 'DEFAULT', %s, 'General operations', true, true)
+                """, (entity_id, f"{entity_name} - General"))
+
+        # Create additional business lines if provided
+        business_lines = data.get('business_lines', [])
+        for bl in business_lines:
+            entity_code = bl.get('entity_code')
+            if entity_code and entity_code in entity_id_map:
+                db_manager.execute_query("""
+                    INSERT INTO business_lines
+                    (entity_id, code, name, description, color_hex, is_default, is_active)
+                    VALUES (%s, %s, %s, %s, %s, false, true)
+                """, (
+                    entity_id_map[entity_code],
+                    bl.get('code'),
+                    bl.get('name'),
+                    bl.get('description', ''),
+                    bl.get('color_hex', '#3B82F6')
+                ))
 
         # 3. Create custom categories if provided
         if coa.get('custom_categories'):
@@ -304,33 +345,81 @@ def complete_tenant_setup():
 @require_auth
 def get_entities():
     """
-    Get all business entities for current tenant.
+    Get all entities with their business lines for current tenant.
 
     Returns:
         {
             "success": true,
             "entities": [
-                {"id": 1, "name": "...", "description": "...", "entity_type": "...", "active": true}
+                {
+                    "id": "uuid",
+                    "code": "DLLC",
+                    "name": "Delta Mining LLC",
+                    "entity_type": "LLC",
+                    "is_active": true,
+                    "business_lines": [
+                        {
+                            "id": "uuid",
+                            "code": "HOST",
+                            "name": "Hosting Services",
+                            "is_default": false
+                        }
+                    ]
+                }
             ]
         }
     """
     try:
         tenant_id = get_current_tenant_id()
 
+        # Get entities
         entities = db_manager.execute_query("""
-            SELECT id, tenant_id, name, description, entity_type, active, created_at
-            FROM business_entities
-            WHERE tenant_id = %s AND active = true
+            SELECT id, tenant_id, code, name, legal_name, entity_type,
+                   base_currency, is_active, created_at
+            FROM entities
+            WHERE tenant_id = %s AND is_active = true
             ORDER BY name
         """, (tenant_id,), fetch_all=True)
 
+        # Get business lines
+        business_lines = db_manager.execute_query("""
+            SELECT bl.id, bl.entity_id, bl.code, bl.name, bl.description,
+                   bl.color_hex, bl.is_default
+            FROM business_lines bl
+            JOIN entities e ON bl.entity_id = e.id
+            WHERE e.tenant_id = %s AND bl.is_active = true
+            ORDER BY e.name, bl.name
+        """, (tenant_id,), fetch_all=True)
+
+        # Build result with business lines nested under entities
+        result_entities = []
+        if entities:
+            for entity in entities:
+                entity_dict = dict(entity)
+                entity_dict['id'] = str(entity_dict['id'])
+                entity_dict['business_lines'] = [
+                    {
+                        'id': str(bl['id']),
+                        'code': bl['code'],
+                        'name': bl['name'],
+                        'description': bl['description'],
+                        'color_hex': bl['color_hex'],
+                        'is_default': bl['is_default']
+                    }
+                    for bl in business_lines
+                    if str(bl['entity_id']) == entity_dict['id']
+                ]
+                result_entities.append(entity_dict)
+
         return jsonify({
             'success': True,
-            'entities': [dict(e) for e in entities] if entities else []
+            'entities': result_entities
         }), 200
 
     except Exception as e:
         logger.error(f"Get entities error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': 'server_error',
@@ -342,54 +431,165 @@ def get_entities():
 @require_auth
 def create_entity():
     """
-    Create a new business entity for current tenant.
+    Create a new entity with default business line for current tenant.
 
     Request Body:
         {
-            "name": "Entity Name",
-            "description": "Optional description",
-            "entity_type": "subsidiary|vendor|customer|internal"
+            "code": "DLLC",  // Required: Short code
+            "name": "Delta Mining LLC",  // Required
+            "legal_name": "Delta Mining LLC",  // Optional
+            "entity_type": "LLC",  // Optional
+            "base_currency": "USD"  // Optional
         }
 
     Returns:
         {
             "success": true,
-            "entity": {"id": 1, "name": "...", ...}
+            "entity": {...},
+            "default_business_line": {...}
         }
     """
     try:
         tenant_id = get_current_tenant_id()
         data = request.get_json()
 
-        if not data.get('name'):
+        if not data.get('code') or not data.get('name'):
             return jsonify({
                 'success': False,
                 'error': 'missing_field',
-                'message': 'name is required'
+                'message': 'code and name are required'
             }), 400
 
-        # Insert entity with tenant_id
-        result = db_manager.execute_query("""
-            INSERT INTO business_entities
-            (tenant_id, name, description, entity_type, active)
-            VALUES (%s, %s, %s, %s, true)
-            RETURNING id, tenant_id, name, description, entity_type, active, created_at
+        # Insert entity
+        entity_result = db_manager.execute_query("""
+            INSERT INTO entities
+            (tenant_id, code, name, legal_name, entity_type, base_currency,
+             fiscal_year_end, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, true)
+            RETURNING id, tenant_id, code, name, legal_name, entity_type,
+                      base_currency, is_active, created_at
         """, (
             tenant_id,
+            data['code'],
             data['name'],
-            data.get('description', ''),
-            data.get('entity_type', 'subsidiary')
+            data.get('legal_name', data['name']),
+            data.get('entity_type', 'LLC'),
+            data.get('base_currency', 'USD'),
+            data.get('fiscal_year_end', '12-31')
         ), fetch_one=True)
 
-        logger.info(f"Created business entity: {data['name']} for tenant: {tenant_id}")
+        entity_id = str(entity_result['id'])
+
+        # Create default business line
+        bl_result = db_manager.execute_query("""
+            INSERT INTO business_lines
+            (entity_id, code, name, description, is_default, is_active)
+            VALUES (%s, 'DEFAULT', %s, 'General operations', true, true)
+            RETURNING id, entity_id, code, name, description, is_default, created_at
+        """, (entity_id, f"{data['name']} - General"), fetch_one=True)
+
+        logger.info(f"Created entity: {data['name']} with default business line for tenant: {tenant_id}")
+
+        # Convert UUIDs to strings for JSON
+        entity_dict = dict(entity_result)
+        entity_dict['id'] = entity_id
+        bl_dict = dict(bl_result)
+        bl_dict['id'] = str(bl_dict['id'])
+        bl_dict['entity_id'] = entity_id
 
         return jsonify({
             'success': True,
-            'entity': dict(result)
+            'entity': entity_dict,
+            'default_business_line': bl_dict
         }), 201
 
     except Exception as e:
         logger.error(f"Create entity error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': 'server_error',
+            'message': f'An error occurred: {str(e)}'
+        }), 500
+
+
+@onboarding_bp.route('/business-lines', methods=['POST'])
+@require_auth
+def create_business_line():
+    """
+    Create a new business line under an entity.
+
+    Request Body:
+        {
+            "entity_id": "uuid",  // Required
+            "code": "HOST",  // Required
+            "name": "Hosting Services",  // Required
+            "description": "Web hosting operations",  // Optional
+            "color_hex": "#3B82F6"  // Optional
+        }
+
+    Returns:
+        {
+            "success": true,
+            "business_line": {...}
+        }
+    """
+    try:
+        tenant_id = get_current_tenant_id()
+        data = request.get_json()
+
+        if not data.get('entity_id') or not data.get('code') or not data.get('name'):
+            return jsonify({
+                'success': False,
+                'error': 'missing_field',
+                'message': 'entity_id, code, and name are required'
+            }), 400
+
+        # Verify entity belongs to tenant
+        entity_check = db_manager.execute_query("""
+            SELECT id FROM entities
+            WHERE id = %s AND tenant_id = %s
+        """, (data['entity_id'], tenant_id), fetch_one=True)
+
+        if not entity_check:
+            return jsonify({
+                'success': False,
+                'error': 'invalid_entity',
+                'message': 'Entity not found or access denied'
+            }), 404
+
+        # Insert business line
+        result = db_manager.execute_query("""
+            INSERT INTO business_lines
+            (entity_id, code, name, description, color_hex, is_default, is_active)
+            VALUES (%s, %s, %s, %s, %s, false, true)
+            RETURNING id, entity_id, code, name, description, color_hex,
+                      is_default, is_active, created_at
+        """, (
+            data['entity_id'],
+            data['code'],
+            data['name'],
+            data.get('description', ''),
+            data.get('color_hex', '#3B82F6')
+        ), fetch_one=True)
+
+        logger.info(f"Created business line: {data['name']} for tenant: {tenant_id}")
+
+        # Convert UUIDs to strings
+        bl_dict = dict(result)
+        bl_dict['id'] = str(bl_dict['id'])
+        bl_dict['entity_id'] = str(bl_dict['entity_id'])
+
+        return jsonify({
+            'success': True,
+            'business_line': bl_dict
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Create business line error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': 'server_error',
@@ -802,4 +1002,54 @@ def chat():
             'success': False,
             'error': 'server_error',
             'message': 'An error occurred processing your message'
+        }), 500
+
+
+@onboarding_bp.route('/capabilities', methods=['GET'])
+@require_auth
+def get_capabilities():
+    """
+    Get tenant capabilities based on setup completion milestones.
+
+    Returns completion percentage, milestone status, capabilities,
+    and next steps for incomplete milestones.
+
+    Returns:
+        {
+            'success': True,
+            'completion_percentage': 65,
+            'milestones': {...},
+            'capabilities': {...},
+            'next_steps': [...]
+        }
+    """
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'error': 'no_tenant',
+                'message': 'No tenant context available'
+            }), 400
+
+        bot = OnboardingBot(db_manager, tenant_id)
+        milestones_data = bot.get_completion_milestones()
+
+        return jsonify({
+            'success': True,
+            'completion_percentage': milestones_data.get('completion_percentage', 0),
+            'milestones': milestones_data.get('milestones', {}),
+            'capabilities': milestones_data.get('capabilities', {}),
+            'next_steps': milestones_data.get('next_steps', []),
+            'is_fully_setup': milestones_data.get('is_fully_setup', False)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Get capabilities error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': 'server_error',
+            'message': 'An error occurred fetching capabilities'
         }), 500

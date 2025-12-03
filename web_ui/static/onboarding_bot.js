@@ -329,6 +329,26 @@
         scrollToBottom();
     }
 
+    // Add badge showing created items (entities or business lines)
+    function addCreatedItemsBadge(label, items, badgeType) {
+        if (!items || items.length === 0) return;
+
+        const badgeDiv = document.createElement('div');
+        badgeDiv.className = 'chat-message bot-message created-items-badge';
+
+        // Badge color based on type
+        const badgeClass = badgeType === 'primary' ? 'badge-primary' : 'badge-info';
+
+        badgeDiv.innerHTML = `
+            <div class="created-items-container">
+                <span class="created-items-label ${badgeClass}">${label}:</span>
+                <span class="created-items-list">${items.join(', ')}</span>
+            </div>
+        `;
+        messagesContainer.appendChild(badgeDiv);
+        scrollToBottom();
+    }
+
     // Send message
     async function sendMessage() {
         if (botState.isProcessing) return;
@@ -602,10 +622,8 @@
                 // Display the context-aware greeting from backend
                 addBotMessage(data.greeting);
 
-                // Update progress bar with current completion
-                if (data.completion_percentage !== undefined) {
-                    updateProgress(data.completion_percentage);
-                }
+                // Fetch and update milestone indicators
+                fetchAndUpdateMilestones();
 
                 botState.isProcessing = false;
             } else {
@@ -733,6 +751,14 @@
 
                 // Display AI response
                 addBotMessage(data.response);
+
+                // Show badges for created entities and business lines
+                if (data.entities_created && data.entities_created.length > 0) {
+                    addCreatedItemsBadge('Entities Created', data.entities_created, 'primary');
+                }
+                if (data.business_lines_created && data.business_lines_created.length > 0) {
+                    addCreatedItemsBadge('Business Lines Created', data.business_lines_created, 'info');
+                }
 
                 // Update progress bar with completion percentage (silently, no chat message)
                 if (data.completion_percentage !== undefined) {
@@ -1092,6 +1118,77 @@
             progressBar.style.width = `${percent}%`;
             progressText.textContent = `${percent}%`;
         }
+    }
+
+    // Fetch and update milestone indicators
+    async function fetchAndUpdateMilestones() {
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                return; // Not authenticated, skip milestone fetch
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+            const response = await fetch('/api/onboarding/capabilities', {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
+
+            if (!response.ok) {
+                console.warn('[OnboardingBot] Failed to fetch capabilities');
+                return;
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                // Update progress bar with milestone-based percentage
+                updateProgress(data.completion_percentage);
+
+                // Update milestone indicators
+                updateMilestoneIndicators(data.milestones);
+
+                // Store capabilities for progressive disclosure
+                botState.capabilities = data.capabilities;
+                botState.milestones = data.milestones;
+            }
+        } catch (error) {
+            console.warn('[OnboardingBot] Error fetching milestones:', error);
+        }
+    }
+
+    // Update milestone indicator UI
+    function updateMilestoneIndicators(milestones) {
+        if (!milestones) return;
+
+        const milestonesContainer = document.getElementById('onboardingMilestones');
+        if (!milestonesContainer) return;
+
+        Object.entries(milestones).forEach(([key, milestone]) => {
+            const item = milestonesContainer.querySelector(`[data-milestone="${key}"]`);
+            if (item) {
+                const icon = item.querySelector('.milestone-icon');
+                const label = item.querySelector('.milestone-label');
+
+                if (milestone.complete) {
+                    // Mark as complete - green checkmark overlay
+                    item.style.opacity = '1';
+                    if (label) label.style.color = '#10b981';
+                    item.title = `${milestone.name} - Complete`;
+                } else {
+                    // Mark as incomplete - grayed out
+                    item.style.opacity = '0.5';
+                    if (label) label.style.color = '#94a3b8';
+
+                    // Build tooltip with details
+                    let tooltip = `${milestone.name} - Incomplete`;
+                    if (milestone.details) {
+                        if (milestone.details.count !== undefined && milestone.details.required !== undefined) {
+                            tooltip += ` (${milestone.details.count}/${milestone.details.required})`;
+                        }
+                    }
+                    item.title = tooltip;
+                }
+            }
+        });
     }
 
     // Show/hide loading indicator
