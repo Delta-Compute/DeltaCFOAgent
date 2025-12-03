@@ -141,7 +141,20 @@ class I18n {
             if (attr) {
                 el.setAttribute(attr, translation);
             } else {
-                el.textContent = translation;
+                // Check if element has child elements that should be preserved
+                const childElements = Array.from(el.children);
+                if (childElements.length > 0) {
+                    // Find the first text node and update only that
+                    const textNode = Array.from(el.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+                    if (textNode) {
+                        textNode.textContent = translation + ' ';
+                    } else {
+                        // Insert text before child elements
+                        el.insertBefore(document.createTextNode(translation + ' '), el.firstChild);
+                    }
+                } else {
+                    el.textContent = translation;
+                }
             }
         });
     }

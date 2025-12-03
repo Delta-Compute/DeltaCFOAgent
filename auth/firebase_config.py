@@ -58,19 +58,34 @@ def initialize_firebase() -> firebase_admin.App:
 
         # Option 2: Load from file path in environment variable
         service_account_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
-        if service_account_path and os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
-            _firebase_app = firebase_admin.initialize_app(cred)
-            logger.info(f"Firebase initialized from {service_account_path}")
-            return _firebase_app
+        if service_account_path:
+            # If relative path, check in project root
+            if not os.path.isabs(service_account_path):
+                # Get project root (3 levels up from auth/firebase_config.py)
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                service_account_path = os.path.join(project_root, service_account_path)
+                logger.info(f"Resolving relative path to: {service_account_path}")
+
+            if os.path.exists(service_account_path):
+                cred = credentials.Certificate(service_account_path)
+                _firebase_app = firebase_admin.initialize_app(cred)
+                logger.info(f"Firebase initialized from {service_account_path}")
+                return _firebase_app
 
         # Option 3: Use Google Application Default Credentials (for Cloud Run)
         google_app_creds = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-        if google_app_creds and os.path.exists(google_app_creds):
-            cred = credentials.Certificate(google_app_creds)
-            _firebase_app = firebase_admin.initialize_app(cred)
-            logger.info("Firebase initialized from GOOGLE_APPLICATION_CREDENTIALS")
-            return _firebase_app
+        if google_app_creds:
+            # If relative path, check in project root
+            if not os.path.isabs(google_app_creds):
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                google_app_creds = os.path.join(project_root, google_app_creds)
+                logger.info(f"Resolving relative GOOGLE_APPLICATION_CREDENTIALS to: {google_app_creds}")
+
+            if os.path.exists(google_app_creds):
+                cred = credentials.Certificate(google_app_creds)
+                _firebase_app = firebase_admin.initialize_app(cred)
+                logger.info(f"Firebase initialized from GOOGLE_APPLICATION_CREDENTIALS: {google_app_creds}")
+                return _firebase_app
 
         # Option 4: Try default initialization (works in some GCP environments)
         try:

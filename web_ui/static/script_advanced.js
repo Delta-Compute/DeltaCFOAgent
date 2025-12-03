@@ -8,6 +8,57 @@ let perPageSize = 50;
 let totalPages = 1;
 let isLoading = false;
 let excludeInternalTransfers = false;
+let showCryptoAmount = false; // Toggle between USD and Crypto display
+
+// Toggle between USD and Crypto amount display
+function toggleAmountDisplay() {
+    showCryptoAmount = !showCryptoAmount;
+
+    // Update toggle button text and style
+    const toggleBtn = document.getElementById('amountToggleBtn');
+    if (toggleBtn) {
+        if (showCryptoAmount) {
+            toggleBtn.textContent = '¤';
+            toggleBtn.title = 'Showing original currency - Click for USD';
+            toggleBtn.style.background = 'linear-gradient(to bottom, #f5a623, #e09000)';
+            toggleBtn.style.borderColor = '#c77d00';
+        } else {
+            toggleBtn.textContent = '$';
+            toggleBtn.title = 'Showing USD - Click for original currency';
+            toggleBtn.style.background = 'linear-gradient(to bottom, #4a90d9, #357abd)';
+            toggleBtn.style.borderColor = '#2d6da3';
+        }
+    }
+
+    // Toggle visibility of all amount spans in the table
+    document.querySelectorAll('.amount-cell').forEach(cell => {
+        const usdSpan = cell.querySelector('.usd-amount');
+        const cryptoSpan = cell.querySelector('.crypto-amount');
+        if (usdSpan && cryptoSpan) {
+            usdSpan.style.display = showCryptoAmount ? 'none' : '';
+            cryptoSpan.style.display = showCryptoAmount ? '' : 'none';
+        }
+    });
+
+    console.log('[TOGGLE] Amount display mode:', showCryptoAmount ? 'Original' : 'USD');
+}
+
+// Toggle Quick Actions dropdown menu
+function toggleQuickActionsMenu() {
+    const menu = document.getElementById('quickActionsMenu');
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(event) {
+    const menu = document.getElementById('quickActionsMenu');
+    const btn = document.getElementById('quickActionsBtn');
+    if (menu && btn && !btn.contains(event.target) && !menu.contains(event.target)) {
+        menu.style.display = 'none';
+    }
+});
 
 // Cache for dynamically loaded dropdown options
 let cachedAccountingCategories = [];
@@ -530,8 +581,10 @@ async function loadDropdownOptions() {
     try {
         const entitiesResponse = await fetch('/api/entities');
         const entitiesData = await entitiesResponse.json();
-        cachedEntities = entitiesData.entities || [];
-        console.log(`✅ Loaded ${cachedEntities.length} business entities from API`);
+        // API returns entity objects with name property - extract names for dropdown use
+        const rawEntities = entitiesData.entities || [];
+        cachedEntities = rawEntities.map(e => typeof e === 'string' ? e : e.name);
+        console.log(`Loaded ${cachedEntities.length} business entities from API`);
     } catch (error) {
         console.error('Failed to load entities:', error);
         // Use empty fallback if API fails - entities should come from database
@@ -605,7 +658,11 @@ function setupEventListeners() {
     // Column sorting
     document.querySelectorAll('.sortable').forEach(th => {
         th.style.cursor = 'pointer';
-        th.addEventListener('click', () => {
+        th.addEventListener('click', (event) => {
+            // Skip sorting if clicking on the amount toggle button
+            if (event.target.classList.contains('amount-toggle-btn')) {
+                return;
+            }
             const sortField = th.dataset.sort;
             sortTransactions(sortField);
         });
@@ -1431,16 +1488,16 @@ function renderTransactionTable(transactions) {
                 <td class="editable-field wallet-field" data-field="destination" data-transaction-id="${transaction.transaction_id}" data-full-address="${transaction.destination || ''}">
                     ${transaction.destination_display || transaction.destination || 'Unknown'}
                 </td>
-                <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}">
-                    ${truncateText(transaction.description, 40) || 'N/A'}
+                <td class="editable-field description-cell" data-field="description" data-transaction-id="${transaction.transaction_id}" title="${(transaction.description || '').replace(/"/g, '&quot;')}">
+                    ${truncateText(transaction.description, 60) || 'N/A'}
                 </td>
                 <td class="${amountClass} amount-cell" data-amount="${Math.abs(amount)}" onclick="filterByMinAmount(${Math.abs(amount)})" style="cursor: pointer; position: relative;" title="Click to filter transactions >= this amount">
-                    ${formattedAmount}
+                    <span class="usd-amount" style="${showCryptoAmount ? 'display:none' : ''}">${formattedAmount}</span>
+                    <span class="crypto-amount" style="${showCryptoAmount ? '' : 'display:none'}">${formatCryptoAmount(transaction.crypto_amount, transaction.currency) || formattedAmount}</span>
                     <span class="amount-filter-dot" style="display: none; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; background: #28a745; border-radius: 50%;"></span>
                 </td>
-                <td class="crypto-cell">${formatCryptoAmount(transaction.crypto_amount, transaction.currency)}</td>
-                <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}">
-                    <span class="entity-category ${getCategoryClass(transaction.amount)}">${transaction.classified_entity?.replace(' N/A', '') || 'Unclassified'}</span>
+                <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}" style="padding-right: 15px; border-right: 1px solid #eee;">
+                    <span class="entity-category ${getCategoryClass(transaction.amount)}" style="max-width: 140px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${transaction.classified_entity?.replace(' N/A', '') || 'Unclassified'}</span>
                 </td>
                 <td class="editable-field smart-dropdown primary-category-cell" data-field="accounting_category" data-transaction-id="${transaction.transaction_id}">
                     ${transaction.accounting_category || 'N/A'}
@@ -1451,29 +1508,18 @@ function renderTransactionTable(transactions) {
                 <td class="editable-field" data-field="justification" data-transaction-id="${transaction.transaction_id}">
                     ${renderJustificationWithInvoiceLink(transaction)}
                 </td>
-                <td>
-                    <span class="confidence-score ${confidenceClass}">${confidence}</span>
-                </td>
-                <td class="source-cell">
+                <td class="source-cell" title="${transaction.source_file || ''}" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                     ${transaction.source_document_id
-                        ? `<a href="#" onclick="event.preventDefault(); viewSourceFile('${transaction.source_document_id}');" style="color: #007bff; text-decoration: none; cursor: pointer;" title="Click to view source file">
-                            📄 ${truncateText(transaction.source_file, 22) || 'View File'}
+                        ? `<a href="#" onclick="event.preventDefault(); viewSourceFile('${transaction.source_document_id}');" style="color: #007bff; text-decoration: none; cursor: pointer;" title="${transaction.source_file || 'View source file'}">
+                            📄 ${truncateText(transaction.source_file, 25) || 'View File'}
                            </a>`
                         : (truncateText(transaction.source_file, 25) || 'N/A')
                     }
                 </td>
-                <td>
-                    <button class="btn-secondary btn-sm" onclick="getAISmartSuggestions('${transaction.transaction_id || ''}', ${JSON.stringify(transaction).replace(/'/g, "\\'").replace(/"/g, '&quot;')})" title="Get AI-powered suggestions for this transaction">
-                        🤖 AI
+                <td style="text-align: center;">
+                    <button class="btn-sm ${confidenceClass}" onclick="getAISmartSuggestions('${transaction.transaction_id || ''}', ${JSON.stringify(transaction).replace(/'/g, "\\'").replace(/"/g, '&quot;')})" title="AI Confidence: ${confidence} - Click for suggestions" style="padding: 4px 8px; font-weight: 600; font-size: 0.75rem; border-radius: 4px; border: none; cursor: pointer;">
+                        ${confidence}
                     </button>
-                    ${transaction.is_archived
-                        ? `<button class="btn-secondary btn-sm" onclick="unarchiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
-                            📤 Unarchive
-                           </button>`
-                        : `<button class="btn-secondary btn-sm" onclick="archiveTransaction('${transaction.transaction_id || ''}')" style="margin-left: 5px;">
-                            🗄️ Archive
-                           </button>`
-                    }
                 </td>
             </tr>
         `;
@@ -3571,9 +3617,20 @@ function updateSortIndicators() {
             ? (currentSortDirection === 'asc' ? ' ↑' : ' ↓')
             : ' ↕';
 
-        // Remove existing arrows and add new one
-        let text = header.textContent.replace(/\s[↑↓↕]/g, '');
-        header.textContent = text + arrow;
+        // Special handling for Amount header - preserve the toggle button
+        const toggleBtn = header.querySelector('.amount-toggle-btn');
+        if (toggleBtn) {
+            // Get just the text node, not the button
+            const textNode = Array.from(header.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+            if (textNode) {
+                let text = textNode.textContent.replace(/\s[↑↓↕]/g, '').trim();
+                textNode.textContent = text + arrow;
+            }
+        } else {
+            // Normal header - replace all text content
+            let text = header.textContent.replace(/\s[↑↓↕]/g, '');
+            header.textContent = text + arrow;
+        }
 
         // Add active styling
         if (currentSortField === field) {
@@ -6315,17 +6372,22 @@ async function handleDragFillEnd(e) {
     }
 
     // Apply updates if any
+    console.log(`[DRAG-FILL] Built ${updates.length} updates, affectedRows: ${dragFillState.affectedRows.length}, fieldName: ${dragFillState.fieldName}, value: ${dragFillState.value}`);
     if (updates.length > 0) {
+        console.log(`[DRAG-FILL] Sending ${updates.length} updates to API:`, updates);
         showToast(`Updating ${updates.length} transactions...`, 'info');
 
         try {
             const response = await fetch('/api/bulk_update_transactions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
                 body: JSON.stringify({ updates })
             });
 
+            console.log(`[DRAG-FILL] API response status: ${response.status}`);
             const result = await response.json();
+            console.log(`[DRAG-FILL] API result:`, result);
 
             if (result.success) {
                 // Create undo snapshot
@@ -6340,12 +6402,16 @@ async function handleDragFillEnd(e) {
                         `tr[data-transaction-id="${update.transaction_id}"] td[data-field="${update.field}"]`
                     );
                     if (cell) {
-                        if (cell.classList.contains('smart-dropdown')) {
-                            const span = cell.querySelector('span');
-                            if (span) span.textContent = update.value;
+                        // Check for span inside (entity cells have spans, category/subcategory don't)
+                        const span = cell.querySelector('span');
+                        if (span) {
+                            span.textContent = update.value;
                         } else {
                             cell.textContent = update.value;
                         }
+                        console.log(`[DRAG-FILL] Updated cell: ${update.field} = ${update.value}`);
+                    } else {
+                        console.warn(`[DRAG-FILL] Cell not found: transaction=${update.transaction_id}, field=${update.field}`);
                     }
                 });
 

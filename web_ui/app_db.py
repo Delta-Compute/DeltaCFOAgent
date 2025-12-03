@@ -9001,30 +9001,54 @@ def api_get_subcategories():
 
 @app.route('/api/entities', methods=['GET'])
 def api_get_entities():
-    """API endpoint to fetch distinct business entities from database"""
+    """API endpoint to fetch entities from the entities table"""
     try:
         from database import db_manager
         tenant_id = get_current_tenant_id()
 
-        # Query from business_entities table
+        # Query from entities table (new normalized structure)
         query = """
-            SELECT name, entity_type, id
-            FROM business_entities
+            SELECT id, code, name, legal_name, entity_type, base_currency, is_active
+            FROM entities
             WHERE tenant_id = %s
-            AND active = true
+            AND is_active = true
             ORDER BY name
         """
 
         entities = db_manager.execute_query(query, (tenant_id,), fetch_all=True)
 
-        # Return just the names as strings for backward compatibility
-        entity_names = [e['name'] for e in entities] if entities else []
+        if entities:
+            entity_list = []
+            entity_names = []
+            for e in entities:
+                entity_list.append({
+                    'id': str(e['id']),
+                    'code': e['code'],
+                    'name': e['name'],
+                    'legal_name': e.get('legal_name'),
+                    'entity_type': e.get('entity_type'),
+                    'base_currency': e.get('base_currency'),
+                    'is_active': e.get('is_active', True)
+                })
+                entity_names.append(e['name'])
 
-        return jsonify({'entities': entity_names})
+            return jsonify({
+                'success': True,
+                'entities': entity_names,  # For backward compatibility (dropdown)
+                'entity_list': entity_list,  # Full entity objects
+                'count': len(entity_list)
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'entities': [],
+                'entity_list': [],
+                'count': 0
+            })
 
     except Exception as e:
         logging.error(f"Failed to fetch entities: {e}")
-        return jsonify({'error': str(e), 'entities': []}), 500
+        return jsonify({'success': False, 'error': str(e), 'entities': []}), 500
 
 @app.route('/api/bulk_update_transactions', methods=['POST'])
 def api_bulk_update_transactions():
@@ -9393,7 +9417,7 @@ def files_page():
                 (r'caixa', 'Caixa Econômica', 'Checking'),
                 (r'nubank|nu\s*bank', 'Nubank', 'Credit Card'),
                 (r'inter', 'Banco Inter', 'Checking'),
-                (r'c6\s*bank|c6bank', 'C6 Bank', 'Checking'),
+                (r'c6\s*bank|c6bank|c6[_ ]', 'C6 Bank', 'Checking'),
             ]
             for pattern, name, category in brazilian_banks:
                 if re.search(pattern, filename, re.IGNORECASE):
@@ -9453,9 +9477,36 @@ def files_page():
             account_category = 'Other'
             return account_id, account_type, account_category
 
+        # Helper function to parse date from various formats
+        def parse_date_flexible(date_val):
+            """Parse a date from string or date object, handling multiple formats"""
+            if date_val is None:
+                return None
+            if isinstance(date_val, datetime):
+                return date_val
+            if hasattr(date_val, 'year'):  # It's a date object
+                return datetime.combine(date_val, datetime.min.time())
+            if isinstance(date_val, str):
+                # Try multiple date formats
+                formats = ['%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d', '%d/%m/%Y']
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_val, fmt)
+                    except ValueError:
+                        continue
+            return None
+
         # Helper function to parse date range
         def parse_date_range(filename, earliest_txn, latest_txn):
-            """Extract date range from filename or transaction dates"""
+            """Extract date range from actual transaction dates (source of truth)"""
+            # Always use actual transaction dates as the primary source
+            start = parse_date_flexible(earliest_txn)
+            end = parse_date_flexible(latest_txn)
+
+            if start is not None and end is not None:
+                return start, end
+
+            # Only fall back to filename dates if transaction dates unavailable
             date_pattern = re.search(r'(\d{8}).*?(\d{8})', filename)
             if date_pattern:
                 try:
@@ -9465,21 +9516,7 @@ def files_page():
                 except:
                     pass
 
-            # Fall back to transaction dates
-            try:
-                if isinstance(earliest_txn, str):
-                    start = datetime.strptime(earliest_txn, '%Y-%m-%d')
-                else:
-                    start = earliest_txn
-
-                if isinstance(latest_txn, str):
-                    end = datetime.strptime(latest_txn, '%Y-%m-%d')
-                else:
-                    end = latest_txn
-
-                return start, end
-            except:
-                return None, None
+            return None, None
 
         # Process files and group by account
         accounts = defaultdict(list)
@@ -9514,26 +9551,60 @@ def files_page():
         # Process each account group
         account_groups = []
         for account_id, files in accounts.items():
+            # Normalize all dates to datetime for consistent comparison
+            for f in files:
+                if f['start_date'] and not isinstance(f['start_date'], datetime):
+                    f['start_date'] = datetime.combine(f['start_date'], datetime.min.time())
+                if f['end_date'] and not isinstance(f['end_date'], datetime):
+                    f['end_date'] = datetime.combine(f['end_date'], datetime.min.time())
+
             # Sort files by start date
             files.sort(key=lambda f: f['start_date'] if f['start_date'] else datetime.min)
 
-            # Detect gaps between files
+            # Detect gaps using merged date ranges approach
+            # First, collect all valid date ranges and merge overlapping ones
+            date_ranges = []
+            for f in files:
+                if f['start_date'] and f['end_date']:
+                    date_ranges.append((f['start_date'], f['end_date']))
+
+            # Sort ranges by start date and merge overlapping/adjacent ranges
+            date_ranges.sort(key=lambda r: r[0])
+
+            merged_ranges = []
+            for start, end in date_ranges:
+                if merged_ranges and start <= merged_ranges[-1][1] + timedelta(days=1):
+                    # Extend the previous range if overlapping or adjacent
+                    merged_ranges[-1] = (merged_ranges[-1][0], max(merged_ranges[-1][1], end))
+                else:
+                    merged_ranges.append((start, end))
+
+            # Find gaps in the merged ranges
+            gaps = []
+            for i in range(1, len(merged_ranges)):
+                prev_end = merged_ranges[i-1][1]
+                curr_start = merged_ranges[i][0]
+                gap_days = (curr_start - prev_end).days - 1
+                if gap_days > 7:  # More than a week gap
+                    gaps.append({
+                        'days': gap_days,
+                        'months': gap_days // 30,
+                        'from': prev_end.strftime('%Y-%m-%d'),
+                        'to': curr_start.strftime('%Y-%m-%d')
+                    })
+
+            # Assign gaps to files (gap appears before the first file that starts after the gap)
             for i in range(len(files)):
                 files[i]['gap_before'] = None
-                if i > 0:
-                    prev_end = files[i-1]['end_date']
-                    curr_start = files[i]['start_date']
 
-                    if prev_end and curr_start:
-                        gap_days = (curr_start - prev_end).days - 1
-                        if gap_days > 7:  # More than a week gap
-                            gap_months = gap_days // 30
-                            files[i]['gap_before'] = {
-                                'days': gap_days,
-                                'months': gap_months,
-                                'from': prev_end.strftime('%Y-%m-%d'),
-                                'to': curr_start.strftime('%Y-%m-%d')
-                            }
+            for gap in gaps:
+                gap_end = datetime.strptime(gap['to'], '%Y-%m-%d')
+                # Find the first file that starts at or after the gap end
+                for f in files:
+                    if f['start_date'] and f['start_date'] >= gap_end:
+                        if f['gap_before'] is None:
+                            f['gap_before'] = gap
+                        break
 
             # Calculate account statistics
             total_files = len(files)
@@ -9548,17 +9619,18 @@ def files_page():
             overall_start = min(all_start_dates) if all_start_dates else None
             overall_end = max(all_end_dates) if all_end_dates else None
 
-            # Calculate coverage (days covered vs total span)
+            # Calculate coverage using MERGED ranges (avoids counting overlapping days twice)
             total_days_covered = sum(
-                (f['end_date'] - f['start_date']).days + 1
-                for f in files if f['start_date'] and f['end_date']
+                (end - start).days + 1
+                for start, end in merged_ranges
             )
 
             total_span_days = None
             coverage_pct = None
             if overall_start and overall_end:
                 total_span_days = (overall_end - overall_start).days + 1
-                coverage_pct = (total_days_covered / total_span_days * 100) if total_span_days > 0 else 100
+                # Coverage should never exceed 100%
+                coverage_pct = min(100.0, (total_days_covered / total_span_days * 100)) if total_span_days > 0 else 100
 
             account_groups.append({
                 'id': account_id,

@@ -123,7 +123,7 @@
       "selectAll": "Selecionar Tudo",
       "headers": {
         "checkbox": "",
-        "date": "Ação",
+        "date": "Data",
         "origin": "Origem",
         "destination": "Destino",
         "description": "Descrição",
@@ -135,7 +135,8 @@
         "justification": "Justificativa",
         "confidence": "Confiança",
         "source": "Fonte",
-        "actions": "Ações"
+        "actions": "Ações",
+        "aiConfidence": "IA"
       },
       "loading": "Carregando transações...",
       "noTransactions": "Nenhuma transação encontrada"

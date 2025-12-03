@@ -3,19 +3,21 @@ Smart Document Ingestion System - Claude AI Required
 ====================================================
 
 This system uses Claude AI to automatically analyze and process ANY CSV format without manual configuration.
+The system is completely FORMAT-AGNOSTIC - it analyzes actual column structure and data patterns,
+not specific bank or exchange formats.
 
 KEY FEATURES:
-- Automatic format detection (crypto exchanges, banks, investment accounts, etc.)
+- Format-agnostic column detection based on data content
 - Intelligent column mapping to standardized format (Date, Description, Amount)
 - Dynamic description creation for files without clear description columns
 - Handles debit/credit splits, multi-currency, and complex formats
-- 95%+ accuracy with Claude AI analysis
+- Origin/Destination derivation for transaction flow tracking
+- Self-correcting structure analysis
 
-SUPPORTED FORMATS:
-- Chase Bank (checking, credit cards)
-- Crypto Exchanges (MEXC, Coinbase, Binance, etc.)
-- Investment Accounts
-- Generic Bank Statements
+SUPPORTED INPUTS:
+- Any bank statement CSV
+- Any crypto exchange export (deposits, withdrawals, trades)
+- Any investment account export
 - Any CSV with financial transaction data
 
 REQUIREMENTS:
@@ -156,13 +158,15 @@ class SmartDocumentIngestion:
             return None
 
     def _build_analysis_prompt(self, sample_content: str, file_path: str) -> str:
-        """Build prompt for Claude to analyze document structure AND provide parsing instructions"""
+        """Build prompt for Claude to analyze document structure AND provide parsing instructions.
+        This prompt is FORMAT-AGNOSTIC - it analyzes actual column content, not specific bank/exchange formats."""
         file_name = os.path.basename(file_path)
 
         return f"""
-You are analyzing a financial CSV file to provide COMPLETE PARSING INSTRUCTIONS for ANY format.
+You are analyzing a financial CSV file to provide COMPLETE PARSING INSTRUCTIONS.
 
-Your job is to tell me EXACTLY HOW TO READ this file, not just identify what type it is.
+IMPORTANT: This is a FORMAT-AGNOSTIC analysis. Do NOT try to identify specific banks or exchanges.
+Instead, analyze the ACTUAL COLUMN STRUCTURE AND DATA PATTERNS to determine how to parse this file.
 
 File: {file_name}
 Content sample:
@@ -177,92 +181,54 @@ Analyze the physical structure of this CSV file:
 - Are there trailing commas that need to be cleaned?
 
 STEP 2: COLUMN MAPPING REQUIREMENTS
-Analyze ALL columns and map them to standard financial transaction fields:
+Analyze ALL columns and map them to standard financial transaction fields based on column names and data content:
 
 REQUIRED MAPPINGS:
-- DATE: Look for any date/time columns ("Transaction Date", "Date", "Post Date", "Time", "Timestamp")
-- DESCRIPTION: Look for descriptive text ("Description", "Merchant", "Details", "Status", "Notes", "Memo")
-- AMOUNT: Look for monetary values ("Amount", "Debit", "Credit", "Transaction Amount", "Deposit Amount", "Value")
+- DATE: Look for any date/time columns ("Transaction Date", "Date", "Post Date", "Time", "Timestamp", etc.)
+- DESCRIPTION: Look for descriptive text ("Description", "Merchant", "Details", "Status", "Notes", "Memo", etc.)
+- AMOUNT: Look for monetary values ("Amount", "Debit", "Credit", "Transaction Amount", "Deposit Amount", "Value", etc.)
 
 OPTIONAL MAPPINGS:
 - TYPE: Transaction type/category ("Type", "Transaction Type", "Category", "Status")
-- CURRENCY: Currency info ("Currency", "Crypto", "Asset", "Symbol")
-
-  CRITICAL: CRYPTOCURRENCY CURRENCY MAPPING
-  For cryptocurrency exchanges (Coinbase, Binance, MEXC, Kraken, Gemini, etc.):
-  - The currency_column should represent THE ASSET BEING TRANSACTED (BTC, ETH, USDT, SOL, etc.)
-  - DO NOT map "Price Currency", "Quote Currency", or "Spot Price Currency" columns to currency_column
-  - These "Price Currency" columns show what the price is QUOTED in (usually USD), NOT what is being traded
-
-  Example - Coinbase CSV has multiple currency-related columns:
-  - "Asset" column contains: BTC, ETH, USDT (the crypto being transacted) ✅ CORRECT
-  - "Price Currency" column contains: USD, USD, USD (what price is quoted in) ❌ WRONG
-  - CORRECT MAPPING: currency_column = "Asset"
-  - WRONG MAPPING: currency_column = "Price Currency"
-
-  The currency_column should answer: "What asset/currency is being MOVED in this transaction?"
-  NOT "What currency is the price DISPLAYED in?"
-
-  For traditional bank statements:
-  - Map the actual currency column (USD, EUR, BRL, GBP, etc.)
-  - This is straightforward as there's usually only one currency column
-
-- REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number", "Hash")
+- CURRENCY: Currency or asset being transacted
+  * For crypto files: Map the column containing the asset symbol (BTC, ETH, USDT, etc.)
+  * For fiat files: Map the currency column (USD, EUR, BRL, etc.)
+  * IMPORTANT: If multiple currency-related columns exist, choose the one representing WHAT IS BEING MOVED,
+    not what prices are quoted in. Look for columns named "Asset", "Crypto", "Currency", "Symbol".
+- REFERENCE: Reference numbers ("Reference", "TxID", "Transaction ID", "Check Number", "Hash", etc.)
 - BALANCE: Account balance ("Balance", "Running Balance")
-- ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Card Number", "Wallet", "Portfolio", "UID")
+- ACCOUNT_IDENTIFIER: Account/card/wallet identifiers ("Card", "Account", "Account Number", "Wallet", "Portfolio", "UID")
 - DIRECTION: Transaction direction/flow ("Direction", "Type", "Flow", "Side", "In/Out", "Operation Type")
-  * If this column exists, identify values that mean INCOMING vs OUTGOING
-  * Incoming values (amount should be positive): "In", "Incoming", "Received", "Deposit", "Credit", "Credited"
-  * Outgoing values (amount should be negative): "Out", "Outgoing", "Sent", "Withdrawal", "Debit", "Sent"
-- ORIGIN: Source of funds ("From", "Sender", "Origin", "Source", can also be derived from Network/blockchain for crypto)
-- DESTINATION: Destination of funds ("To", "Recipient", "Destination", can be exchange name for crypto deposits)
-- NETWORK: Blockchain network ("Network", "Chain", "Protocol") - used to derive Origin for crypto
+  * If this column exists, identify values that mean INCOMING vs OUTGOING from the actual data
+  * Common incoming values: "In", "Incoming", "Received", "Deposit", "Credit", "Buy", "Receive"
+  * Common outgoing values: "Out", "Outgoing", "Sent", "Withdrawal", "Debit", "Send", "Sell"
+- ORIGIN: Source of funds ("From", "Sender", "Origin", "Source")
+- DESTINATION: Destination of funds ("To", "Recipient", "Destination", "Withdrawal Address")
+- NETWORK: Blockchain/network info if present ("Network", "Chain", "Protocol")
 - ADDITIONAL: Any other relevant columns
 
 CRITICAL: MULTI-ACCOUNT DETECTION
 If the file contains transactions from MULTIPLE accounts/cards/wallets in a single CSV:
-- Identify the column that distinguishes between accounts (e.g., "Card", "Account Number")
+- Identify the column that distinguishes between accounts
 - Note this in "account_identifier_column" field
-- This enables intelligent entity mapping and routing per account
 
-SPECIAL CASES TO HANDLE:
-- Crypto exchange DEPOSITS (MEXC, Coinbase, Binance):
-  * May have "Crypto", "Network", "Status", "Progress", "Deposit Amount", "TxID", "Deposit Address"
-  * For deposits TO exchange:
-    - Origin = Network/blockchain (from "Network" column, e.g., "Ethereum(ERC20)" -> "Ethereum")
-    - Destination = Exchange name (derive from filename like "MEXC_Deposits" -> "MEXC Exchange")
-  * Network column often contains blockchain info like "Bitcoin(BTC)", "Tron(TRC20)", "Ethereum(ERC20)"
-  * Map "Crypto" -> currency_column, "TxID" -> reference_column
-  * Amounts should be POSITIVE (money coming in)
+DATA PATTERN ANALYSIS (instead of format recognition):
+Based on the actual columns and data you see:
 
-- Crypto exchange WITHDRAWALS (MEXC, Coinbase, Binance):
-  * May have columns: "Status", "Withdrawal Address", "Request Amount", "Settlement Amount", "Trading Fee", "TxID", "Crypto", "Network", "UID"
-  * CRITICAL MAPPINGS for withdrawals:
-    - origin_column = NULL (will be derived from exchange name in filename)
-    - destination_column = "Withdrawal Address" (the actual blockchain wallet address where funds were sent)
-    - reference_column = "TxID" (blockchain transaction hash)
-    - currency_column = "Crypto" (e.g., USDT, BTC, TAO)
-    - network_column = "Network" (e.g., "Ethereum(ERC20)", "Tron(TRC20)", "Bittensor(TAO)")
-    - amount_column = "Settlement Amount" preferred over "Request Amount" (actual amount after fees)
-  * For withdrawals FROM exchange:
-    - Origin = Exchange name (derive from filename, e.g., "MEXC" from "MEXC_withdraws..." -> "MEXC Exchange")
-    - Destination = Actual withdrawal address from "Withdrawal Address" column (preserve full address)
-  * Amounts should be NEGATIVE (money leaving = expenses)
-  * Status often contains "Withdrawal Successful" or similar
-  * special_handling should be "crypto_withdrawal"
-  * exchange_name should be extracted from filename (e.g., "MEXC" from "MEXC_withdraws_...")
+1. CRYPTO TRANSACTION PATTERNS:
+   - If you see columns like "Crypto", "Asset", "Network", "TxID", "Withdrawal Address" -> crypto_format
+   - If amounts appear to be deposits (positive, incoming) -> set special_handling to "crypto_deposit"
+   - If amounts appear to be withdrawals (outgoing, has withdrawal address) -> set special_handling to "crypto_withdrawal"
 
-- Bank statements: May have "Debit"/"Credit" instead of "Amount"
-- Credit cards: May have "Transaction Date" vs "Post Date"
-- Investment accounts: May have "Symbol", "Quantity", "Price"
+2. BANK STATEMENT PATTERNS:
+   - If you see "Debit"/"Credit" columns instead of single "Amount" -> debit_credit_split processing
+   - If you see "Posting Date" vs "Transaction Date" -> prefer the posting date for accounting
 
-FILENAME ANALYSIS:
-- Extract exchange name from filename patterns like "MEXC_withdraws", "Coinbase_deposits", "Binance_transactions"
-- Use filename context to determine transaction direction (deposits vs withdrawals)
-- Example: "MEXC_withdraws_sep_-_oct_2025_-_Sheet1.csv" -> exchange_name = "MEXC", special_handling = "crypto_withdrawal"
+3. INVESTMENT PATTERNS:
+   - If you see "Quantity", "Price", "Symbol" -> calculate_from_quantity_price processing
 
-CRITICAL: ORIGIN/DESTINATION DERIVATION LOGIC
-Instead of just identifying the file type, provide EXECUTABLE LOGIC for deriving Origin and Destination per row:
+ORIGIN/DESTINATION DERIVATION LOGIC:
+Provide logic for deriving Origin and Destination based on the actual columns present:
 
 METHOD 1 - Direct Column Mapping (preferred when columns exist):
 If there are clear "From"/"To" or "Source"/"Destination" columns, set:
@@ -271,42 +237,35 @@ If there are clear "From"/"To" or "Source"/"Destination" columns, set:
 - origin_destination_logic.method: "direct_mapping"
 
 METHOD 2 - Per-Row Conditional Logic (for mixed transaction types):
-When transactions have different types (withdrawals, deposits, buys, sends, etc.) in the SAME file:
-- Provide conditional logic in origin_destination_logic.per_row_conditions
-- Each condition should be a Python-evaluable expression using row data
-- Example for Coinbase with mixed transaction types:
+When transactions have different types in the SAME file, provide conditional logic:
+- Use actual column names from this file in row['Column Name'] expressions
+- Each condition should be a Python-evaluable expression
+- Example structure (use actual column names from THIS file):
   {{
-    "condition": "row['Transaction Type'] == 'Send'",
-    "origin": "'Coinbase Exchange'",
-    "destination": "row['Notes']"  // The wallet address from Notes column
-  }}
-  {{
-    "condition": "row['Transaction Type'] in ['Buy', 'Receive', 'Convert']",
-    "origin": "row['Notes'] if 'from' in str(row['Notes']).lower() else 'External Source'",
-    "destination": "'Coinbase Exchange'"
+    "condition": "row['Type Column'] == 'Some Value'",
+    "origin": "'Source Name' or row['Source Column']",
+    "destination": "'Dest Name' or row['Dest Column']"
   }}
 
-METHOD 3 - Exchange Name Based (for uniform transaction files):
-If ALL transactions are the same type (all withdrawals OR all deposits):
-- Set exchange_name from filename
-- Set method to "exchange_name_based"
-- Set special_handling to "crypto_withdrawal" or "crypto_deposit"
+METHOD 3 - Direction-Based Logic (when direction column exists):
+If there's a direction column indicating incoming/outgoing:
+- For incoming: Origin = external source, Destination = account owner
+- For outgoing: Origin = account owner, Destination = recipient from data
 
 RULES:
-1. ALWAYS provide origin_destination_logic object, even if columns exist
-2. For mixed files, ALWAYS use per_row_conditions - don't rely on special_handling string checks
+1. ALWAYS provide origin_destination_logic object
+2. Use ACTUAL column names from the sample data
 3. Conditions are evaluated IN ORDER - first matching condition wins
-4. Use actual column names in row['Column Name'] expressions
-5. String literals must be in quotes: 'Coinbase Exchange', not Coinbase Exchange
-6. Access DataFrame columns with: row['Exact Column Name']
+4. String literals must be in quotes: 'External Source', not External Source
+5. Access DataFrame columns with: row['Exact Column Name']
 
 CREATE DESCRIPTION RULES:
 If no clear description column exists, provide rules to create one from available columns.
-Example: "Combine Status + Crypto + Network" or "Use Merchant + Category"
+Example: "Combine Type + Currency + Reference" or "Use Status + Notes"
 
 STEP 3: DATA CLEANING INSTRUCTIONS
 For each mapped column, provide cleaning instructions:
-- Does the amount column have currency symbols ($, €, etc.) that need removal?
+- Does the amount column have currency symbols ($, EUR, etc.) that need removal?
 - Does the amount column have commas for thousands that need removal?
 - Are amounts in parentheses negative? (e.g., "($100.00)" = -100.00)
 - Does the date need timezone handling?
@@ -322,7 +281,7 @@ Please respond with a JSON object containing COMPLETE PARSING AND PROCESSING INS
         "has_footer_rows": false,               // Are there summary/total rows at bottom?
         "footer_row_count": 0                   // How many rows to skip from bottom
     }},
-    "format": "chase_checking|chase_credit|coinbase|mexc_deposits|crypto_exchange|bank_statement|investment|other",
+    "format": "bank_statement|crypto_exchange|investment|generic",
     "date_column": "exact_column_name_for_dates_or_null",
     "description_column": "exact_column_name_or_null",
     "amount_column": "exact_column_name_or_null",
@@ -342,28 +301,26 @@ Please respond with a JSON object containing COMPLETE PARSING AND PROCESSING INS
     "description_creation_rule": "rule_for_creating_description_if_missing",
     "origin_destination_rule": "rule_for_deriving_origin_and_destination_or_null",
     "origin_destination_logic": {{
-        "method": "direct_mapping|per_row_logic|exchange_name_based|null",
-        "exchange_name": "MEXC|Coinbase|Binance|null",
+        "method": "direct_mapping|per_row_logic|direction_based|null",
         "logic_explanation": "Natural language explanation of how to derive Origin and Destination",
         "per_row_conditions": [
             {{
-                "condition": "if row['Transaction Type'] == 'Send'",
-                "origin": "'Coinbase Exchange'",
-                "destination": "row['Notes']"
+                "condition": "row['Type'] == 'Send'",
+                "origin": "'Account Owner'",
+                "destination": "row['Recipient']"
             }},
             {{
-                "condition": "if row['Transaction Type'] in ['Buy', 'Receive', 'Convert']",
-                "origin": "'External Source'",
-                "destination": "'Coinbase Exchange'"
+                "condition": "row['Type'] in ['Receive', 'Deposit']",
+                "origin": "row['Sender'] if 'Sender' in row else 'External Source'",
+                "destination": "'Account Owner'"
             }}
         ]
     }},
-    "exchange_name": "MEXC|Coinbase|Binance|null",
     "amount_processing": "single_column|debit_credit_split|calculate_from_quantity_price",
     "date_format": "detected_date_format_pattern",
     "column_cleaning_rules": {{
         "amount_column": {{
-            "remove_currency_symbols": true,     // Remove $, €, £, etc.
+            "remove_currency_symbols": true,     // Remove $, EUR, GBP, etc.
             "remove_commas": true,                // Remove thousand separators
             "parentheses_mean_negative": false,   // Is ($100) = -100?
             "multiply_by": 1                      // Any scaling needed? (e.g., cents to dollars)
@@ -377,17 +334,17 @@ Please respond with a JSON object containing COMPLETE PARSING AND PROCESSING INS
     "confidence": 0.95,
     "processing_method": "python_pandas|claude_extraction",
     "additional_columns": ["list_of_other_important_columns"],
-    "notes": "Detailed analysis of the file format and any special considerations"
+    "notes": "Detailed analysis of the file structure and column mappings based on actual data patterns"
 }}
 
 CRITICAL RULES:
 1. Use EXACT column names from the header row - be precise with capitalization and spacing
-2. Provide SPECIFIC parsing instructions so NO hardcoded format checks are needed
+2. Analyze the ACTUAL DATA CONTENT, not the filename or assumed format
 3. The file_structure section should tell me EXACTLY how to use pandas.read_csv()
 4. The column_cleaning_rules should tell me EXACTLY how to clean each column
 5. If you see rows before the actual header (like metadata, titles, blank rows), put them in skip_rows_before_header
-6. Example: Coinbase CSVs have 3 rows before headers -> skip_rows_before_header: [0, 1, 2], header_row_index: 3
-7. For standard CSVs with header on row 0, use: skip_rows_before_header: [], header_row_index: 0
+6. For files with metadata rows before headers: skip_rows_before_header: [0, 1, 2], header_row_index: 3
+7. For standard CSVs with header on row 0: skip_rows_before_header: [], header_row_index: 0
 
 Only respond with the JSON object, no other text.
 """
@@ -1084,16 +1041,15 @@ Respond with JSON ONLY (no other text):
                         standardized_df['Destination'] = df[destination_col].astype(str)
                         mapped_columns.append(destination_col)
 
-            elif derivation_method == 'exchange_name_based':
-                # METHOD 3: Exchange-based (for uniform transaction files)
-                exchange_name = origin_destination_logic.get('exchange_name') or structure_info.get('exchange_name')
+            elif derivation_method in ['exchange_name_based', 'direction_based']:
+                # METHOD 3: Direction-based (for uniform transaction files - all deposits OR all withdrawals)
                 special_handling = structure_info.get('special_handling', 'standard')
 
-                print(f" Exchange-based logic: {exchange_name}, handling: {special_handling}")
+                print(f" Direction-based logic, handling: {special_handling}")
 
                 if 'withdrawal' in special_handling.lower():
-                    # All withdrawals FROM exchange
-                    standardized_df['Origin'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+                    # All withdrawals - money leaving the source account
+                    standardized_df['Origin'] = 'Source Account'
 
                     if destination_col and destination_col in df.columns:
                         standardized_df['Destination'] = df[destination_col].astype(str)
@@ -1109,14 +1065,14 @@ Respond with JSON ONLY (no other text):
                     print(" Applied withdrawal logic (negated amounts)")
 
                 elif 'deposit' in special_handling.lower():
-                    # All deposits TO exchange
+                    # All deposits - money coming into the destination account
                     if network_col and network_col in df.columns:
                         standardized_df['Origin'] = df[network_col].astype(str).str.replace(r'\([^)]*\)', '', regex=True).str.strip()
                         mapped_columns.append(network_col)
                     else:
-                        standardized_df['Origin'] = 'Blockchain'
+                        standardized_df['Origin'] = 'External Source'
 
-                    standardized_df['Destination'] = f"{exchange_name} Exchange" if exchange_name else "Exchange"
+                    standardized_df['Destination'] = 'Destination Account'
                     print(" Applied deposit logic")
 
             else:

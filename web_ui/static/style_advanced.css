@@ -188,7 +188,7 @@ header h1 {
     background: white;
     padding: 2rem;
     border-radius: 12px;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
@@ -357,9 +357,19 @@ th {
 #transactionTable th {
     position: sticky;
     top: 0;
-    background: #f7fafc;
+    background: #e2e8f0;
     z-index: 10;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+    color: #2d3748;
+    text-align: left;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+#transactionTable td {
+    text-align: left;
 }
 
 /* Alternating row colors */
@@ -487,18 +497,79 @@ tbody tr:hover {
 }
 
 .confidence-high {
-    background-color: #dcfce7;
+    background: linear-gradient(to bottom, #dcfce7, #bbf7d0);
     color: #166534;
+    border: 1px solid #86efac;
+    box-shadow: 0 1px 3px rgba(22, 101, 52, 0.2);
+}
+
+.confidence-high:hover {
+    background: linear-gradient(to bottom, #bbf7d0, #86efac);
+    box-shadow: 0 2px 4px rgba(22, 101, 52, 0.3);
 }
 
 .confidence-medium {
-    background-color: #fef3c7;
+    background: linear-gradient(to bottom, #fef3c7, #fde68a);
     color: #92400e;
+    border: 1px solid #fcd34d;
+    box-shadow: 0 1px 3px rgba(146, 64, 14, 0.2);
+}
+
+.confidence-medium:hover {
+    background: linear-gradient(to bottom, #fde68a, #fcd34d);
+    box-shadow: 0 2px 4px rgba(146, 64, 14, 0.3);
 }
 
 .confidence-low {
-    background-color: #fee2e2;
+    background: linear-gradient(to bottom, #fee2e2, #fecaca);
     color: #991b1b;
+    border: 1px solid #fca5a5;
+    box-shadow: 0 1px 3px rgba(153, 27, 27, 0.2);
+}
+
+.confidence-low:hover {
+    background: linear-gradient(to bottom, #fecaca, #fca5a5);
+    box-shadow: 0 2px 4px rgba(153, 27, 27, 0.3);
+}
+
+/* Amount Toggle Button in Header */
+#amountToggleBtn,
+.amount-toggle-btn {
+    cursor: pointer !important;
+    font-size: 9px !important;
+    font-weight: 700 !important;
+    padding: 2px 5px !important;
+    margin-left: 5px !important;
+    background: #3b82f6 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 10px !important;
+    vertical-align: middle !important;
+    line-height: 1.2 !important;
+    box-shadow: none !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.3px !important;
+    transition: all 0.15s ease !important;
+    white-space: nowrap !important;
+    display: inline-block !important;
+}
+
+#amountToggleBtn:hover,
+.amount-toggle-btn:hover {
+    background: #2563eb !important;
+    transform: scale(1.05);
+}
+
+/* Ensure Amount column header doesn't clip the button */
+th[data-sort="amount"] {
+    overflow: visible !important;
+    white-space: nowrap !important;
+}
+
+#amountToggleBtn:active,
+.amount-toggle-btn:active {
+    background: #1d4ed8 !important;
+    transform: scale(0.98);
 }
 
 /* Amount Formatting */
@@ -628,6 +699,37 @@ th:nth-child(14), td:nth-child(14) { /* Actions */
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Quick tooltip for description cell */
+.description-cell {
+    position: relative;
+    max-width: 300px;
+}
+
+.description-cell:hover::after {
+    content: attr(title);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    background: #333;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    white-space: normal;
+    max-width: 400px;
+    min-width: 200px;
+    z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    word-wrap: break-word;
+    line-height: 1.4;
+}
+
+/* Hide tooltip if title is empty */
+.description-cell[title=""]:hover::after,
+.description-cell:not([title]):hover::after {
+    display: none;
 }
 
 .crypto-cell {

@@ -123,7 +123,7 @@
       "selectAll": "Select All",
       "headers": {
         "checkbox": "",
-        "date": "Action",
+        "date": "Date",
         "origin": "Origin",
         "destination": "Destination",
         "description": "Description",
@@ -135,7 +135,8 @@
         "justification": "Justification",
         "confidence": "Confidence",
         "source": "Source",
-        "actions": "Actions"
+        "actions": "Actions",
+        "aiConfidence": "AI"
       },
       "loading": "Loading transactions...",
       "noTransactions": "No transactions found"
