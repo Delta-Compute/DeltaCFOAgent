@@ -503,11 +503,13 @@ class OnboardingBot:
 When user mentions organizational structure:
 - "subsidiary", "separate company", "different tax ID", "incorporated in" → Create LEGAL ENTITY
 - "division", "department", "profit center", "business unit", "business line" → Create BUSINESS LINE
+- "branch", "office", "location" → AMBIGUOUS - Ask: "Is [name] a separate legal entity with its own tax ID, or a division/branch within your main company?"
 
 Examples:
 - "We have Delta Mining in Delaware and Delta Paraguay" → 2 legal entities
 - "We have 3 divisions: Hosting, Validator, Property" → 1 entity with 3 business lines
 - "Our LLC has a hosting division and validator operations" → 1 entity + 2 business lines
+- "We have a branch in Miami" → Ask clarifying question before creating
 
 **Response Format** (JSON):
 {{
@@ -580,9 +582,10 @@ Examples:
 **CRITICAL EXTRACTION RULES:**
 - **Always extract ALL mentioned info**, even if not directly asked
 - **Entity vs Business Line**: CRITICAL distinction!
-  * "subsidiary", "separate company", "different tax ID" → LEGAL ENTITY (entities array)
-  * "division", "department", "profit center", "business line" → BUSINESS LINE (business_lines array)
-  * If unclear, ask: "Is this a separate legal entity with its own tax ID, or a division within your company?"
+  * "subsidiary", "separate company", "different tax ID", "incorporated in" → LEGAL ENTITY (entities array)
+  * "division", "department", "profit center", "business line", "business unit" → BUSINESS LINE (business_lines array)
+  * "branch", "office", "location" → AMBIGUOUS - Ask: "Is [name] a separate legal entity with its own tax ID, or a division/branch within your main company?"
+  * If unclear, ask clarifying question BEFORE creating anything
 - **Don't repeat questions**: Check current data first
 - **Smart Industry Inference**: AUTOMATICALLY infer industry from business description. Examples:
   * "sell hair extensions", "megahair", "beauty products" → "Retail - Beauty & Personal Care"
@@ -872,6 +875,205 @@ Examples:
             'current_data': current_data
         }
 
+    def get_completion_milestones(self) -> Dict[str, Any]:
+        """
+        Get completion status with meaningful milestones that reflect actual usage.
+
+        Milestones:
+        - Profile (20%): company_name + description + industry
+        - Entities (20%): At least 1 entity created
+        - Accounts (20%): At least 1 bank account or crypto wallet
+        - Transactions (25%): At least 10 transactions uploaded
+        - Patterns (15%): At least 3 classification patterns
+
+        Returns:
+            Dictionary with milestones, completion percentage, capabilities, and next steps
+        """
+        # Get tenant profile data
+        current_data = self.get_current_tenant_data()
+
+        # Get entity count
+        structure = self.get_entities_with_business_lines()
+        entity_count = structure.get('entity_count', 0)
+        entity_names = [e.get('name', '') for e in structure.get('entities', [])[:5]]
+
+        # Get account counts
+        bank_accounts_result = self.db_manager.execute_query("""
+            SELECT COUNT(*) as count FROM bank_accounts
+            WHERE tenant_id = %s AND is_active = TRUE
+        """, (self.tenant_id,), fetch_one=True)
+        bank_account_count = bank_accounts_result['count'] if bank_accounts_result else 0
+
+        crypto_wallets_result = self.db_manager.execute_query("""
+            SELECT COUNT(*) as count FROM wallet_addresses
+            WHERE tenant_id = %s AND is_active = TRUE
+        """, (self.tenant_id,), fetch_one=True)
+        crypto_wallet_count = crypto_wallets_result['count'] if crypto_wallets_result else 0
+
+        # Get transaction count and date range
+        transactions_result = self.db_manager.execute_query("""
+            SELECT COUNT(*) as count,
+                   MIN(date) as min_date,
+                   MAX(date) as max_date
+            FROM transactions
+            WHERE tenant_id = %s
+        """, (self.tenant_id,), fetch_one=True)
+        transaction_count = transactions_result['count'] if transactions_result else 0
+        min_date = transactions_result['min_date'] if transactions_result else None
+        max_date = transactions_result['max_date'] if transactions_result else None
+
+        # Get classification pattern count
+        patterns_result = self.db_manager.execute_query("""
+            SELECT COUNT(*) as count FROM classification_patterns
+            WHERE tenant_id = %s AND is_active = TRUE
+        """, (self.tenant_id,), fetch_one=True)
+        pattern_count = patterns_result['count'] if patterns_result else 0
+
+        # Define milestones
+        milestones = {}
+
+        # Profile milestone (20%)
+        profile_fields = ['company_name', 'company_description', 'industry']
+        profile_complete = all(current_data.get(f) for f in profile_fields)
+        milestones['profile'] = {
+            'id': 'profile',
+            'name': 'Business Profile',
+            'complete': profile_complete,
+            'weight': 20,
+            'icon': 'building',
+            'details': {
+                'company_name': current_data.get('company_name'),
+                'industry': current_data.get('industry'),
+                'has_description': bool(current_data.get('company_description'))
+            }
+        }
+
+        # Entities milestone (20%)
+        entities_complete = entity_count >= 1
+        milestones['entities'] = {
+            'id': 'entities',
+            'name': 'Legal Entities',
+            'complete': entities_complete,
+            'weight': 20,
+            'icon': 'sitemap',
+            'details': {
+                'count': entity_count,
+                'names': entity_names,
+                'required': 1
+            }
+        }
+
+        # Accounts milestone (20%)
+        total_accounts = bank_account_count + crypto_wallet_count
+        accounts_complete = total_accounts >= 1
+        milestones['accounts'] = {
+            'id': 'accounts',
+            'name': 'Financial Accounts',
+            'complete': accounts_complete,
+            'weight': 20,
+            'icon': 'bank',
+            'details': {
+                'bank_accounts': bank_account_count,
+                'crypto_wallets': crypto_wallet_count,
+                'total': total_accounts,
+                'required': 1
+            }
+        }
+
+        # Transactions milestone (25%)
+        transactions_complete = transaction_count >= 10
+        milestones['transactions'] = {
+            'id': 'transactions',
+            'name': 'Transaction Data',
+            'complete': transactions_complete,
+            'weight': 25,
+            'icon': 'exchange',
+            'details': {
+                'count': transaction_count,
+                'required': 10,
+                'date_range': f"{min_date} to {max_date}" if min_date and max_date else None
+            }
+        }
+
+        # Patterns milestone (15%)
+        patterns_complete = pattern_count >= 3
+        milestones['patterns'] = {
+            'id': 'patterns',
+            'name': 'Classification Patterns',
+            'complete': patterns_complete,
+            'weight': 15,
+            'icon': 'brain',
+            'details': {
+                'count': pattern_count,
+                'required': 3
+            }
+        }
+
+        # Calculate total completion percentage
+        completion_percentage = sum(
+            m['weight'] for m in milestones.values() if m['complete']
+        )
+
+        # Determine capabilities based on milestones
+        capabilities = {
+            'dashboard': True,  # Always enabled
+            'entities': profile_complete,  # Requires profile
+            'accounts': profile_complete,  # Requires profile
+            'transactions': entities_complete,  # Requires entities
+            'analytics': transactions_complete,  # Requires 10+ transactions
+            'reports': transactions_complete,  # Requires transactions
+            'workforce': transactions_complete,  # Requires transactions
+            'invoices': transactions_complete,  # Requires transactions
+            'patterns': entities_complete  # Requires entities
+        }
+
+        # Build next steps for incomplete milestones
+        next_steps = []
+        if not profile_complete:
+            missing = [f.replace('_', ' ').title() for f in profile_fields if not current_data.get(f)]
+            next_steps.append({
+                'milestone': 'profile',
+                'message': f"Complete your business profile: {', '.join(missing)}",
+                'action_url': '/?openBot=true',
+                'action_label': 'Complete Profile'
+            })
+        if not entities_complete:
+            next_steps.append({
+                'milestone': 'entities',
+                'message': 'Add at least one legal entity to organize your finances',
+                'action_url': '/entities',
+                'action_label': 'Add Entity'
+            })
+        if not accounts_complete:
+            next_steps.append({
+                'milestone': 'accounts',
+                'message': 'Add a bank account or crypto wallet to enable reconciliation',
+                'action_url': '/whitelisted-accounts',
+                'action_label': 'Add Account'
+            })
+        if not transactions_complete:
+            next_steps.append({
+                'milestone': 'transactions',
+                'message': f'Upload transactions ({transaction_count}/10 minimum)',
+                'action_url': '/files',
+                'action_label': 'Upload Transactions'
+            })
+        if not patterns_complete:
+            next_steps.append({
+                'milestone': 'patterns',
+                'message': f'Create classification patterns ({pattern_count}/3 minimum)',
+                'action_url': '/tenant-knowledge',
+                'action_label': 'Add Patterns'
+            })
+
+        return {
+            'completion_percentage': completion_percentage,
+            'milestones': milestones,
+            'capabilities': capabilities,
+            'next_steps': next_steps,
+            'is_fully_setup': completion_percentage >= 80
+        }
+
     def start_new_session(self) -> str:
         """
         Start a new onboarding session
@@ -887,7 +1089,8 @@ Examples:
         current_data = status.get('current_data', {})
 
         # Check if tenant has business entities (sign of actual usage)
-        entities = self.get_business_entities()
+        structure = self.get_entities_with_business_lines()
+        entities = structure.get('entities', [])
         has_entities = len(entities) > 0
 
         # Build greeting based on what we already know

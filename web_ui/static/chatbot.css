@@ -445,6 +445,80 @@
 }
 
 /* ========================================
+   Created Items Badges (Entities/Business Lines)
+   ======================================== */
+
+.created-items-badge {
+    max-width: 100%;
+}
+
+.created-items-container {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.created-items-label {
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.created-items-label.badge-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.created-items-label.badge-info {
+    background: #06b6d4;
+    color: white;
+}
+
+.created-items-list {
+    color: #166534;
+    font-weight: 500;
+}
+
+/* ========================================
+   Milestone Indicators
+   ======================================== */
+
+.milestone-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transition: opacity 0.3s, transform 0.2s;
+    cursor: default;
+    min-width: 50px;
+}
+
+.milestone-item:hover {
+    transform: scale(1.1);
+}
+
+.milestone-icon {
+    display: block;
+    font-size: 1rem;
+    line-height: 1;
+}
+
+.milestone-label {
+    display: block;
+    font-size: 0.65rem;
+    margin-top: 2px;
+    white-space: nowrap;
+}
+
+/* ========================================
    Utility Classes
    ======================================== */
 

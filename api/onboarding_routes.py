@@ -1003,3 +1003,53 @@ def chat():
             'error': 'server_error',
             'message': 'An error occurred processing your message'
         }), 500
+
+
+@onboarding_bp.route('/capabilities', methods=['GET'])
+@require_auth
+def get_capabilities():
+    """
+    Get tenant capabilities based on setup completion milestones.
+
+    Returns completion percentage, milestone status, capabilities,
+    and next steps for incomplete milestones.
+
+    Returns:
+        {
+            'success': True,
+            'completion_percentage': 65,
+            'milestones': {...},
+            'capabilities': {...},
+            'next_steps': [...]
+        }
+    """
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({
+                'success': False,
+                'error': 'no_tenant',
+                'message': 'No tenant context available'
+            }), 400
+
+        bot = OnboardingBot(db_manager, tenant_id)
+        milestones_data = bot.get_completion_milestones()
+
+        return jsonify({
+            'success': True,
+            'completion_percentage': milestones_data.get('completion_percentage', 0),
+            'milestones': milestones_data.get('milestones', {}),
+            'capabilities': milestones_data.get('capabilities', {}),
+            'next_steps': milestones_data.get('next_steps', []),
+            'is_fully_setup': milestones_data.get('is_fully_setup', False)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Get capabilities error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'error': 'server_error',
+            'message': 'An error occurred fetching capabilities'
+        }), 500
