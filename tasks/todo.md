@@ -1,392 +1,418 @@
-# Spanish Language & Latin American Currencies Support - Implementation Plan
+# Frontend Refactoring: Flask/Jinja to Next.js + React
 
 ## Overview
-Add Spanish language (es) support and Latin American currencies (ARS, CLP, COP, MXN, PEN, UYU, BOB, VES, PYG) plus ensure Euro (EUR) is consistently supported across the entire application.
 
-## Current State Analysis
+Migrate the DeltaCFOAgent frontend from Flask/Jinja templates to a modern Next.js + React stack while keeping the Flask backend as the API layer.
 
-### Existing i18n Framework
-- **Location**: `web_ui/static/js/i18n.js` (vanilla JS implementation)
-- **Translation Files**: `web_ui/static/locales/en.json` (53KB, ~1444 keys) and `pt.json` (58KB)
-- **Languages Supported**: English (en), Portuguese (pt-BR)
-- **Storage**: localStorage for client preference, database for user preference
-- **API Endpoint**: `POST /api/user/language` to save preference
-- **DOM Translation**: Uses `data-i18n` attributes
+### Current State
+- **Templates**: 27 HTML files (30,321 lines)
+- **JavaScript**: 26 files (11,154 lines)
+- **CSS**: 7 files (5,306 lines)
+- **API Routes**: 150+ Flask REST endpoints (working and stable)
 
-### Current Currency Support
-- **Defined in Locales**: USD, EUR, GBP, BRL
-- **Used in Code**: USD, BRL, PYG (Paraguay), EUR, GBP
-- **In historical_currency_converter.py**: Any currency via external API
+### Target Stack
+| Aspect     | Technology                         |
+|------------|------------------------------------|
+| Framework  | Next.js 16 (App Router) + React 19 |
+| UI Library | shadcn/ui (New York style)         |
+| Styling    | Tailwind CSS v4                    |
+| Icons      | Lucide React                       |
+| Fonts      | Sora (headings) + DM Sans (body)   |
+| Forms      | react-hook-form + Zod              |
+| Auth       | NextAuth v4 (with Firebase)        |
+| Toasts     | Sonner                             |
+| i18n       | next-intl                          |
 
----
-
-## Implementation Tasks
-
-### Phase 1: Core i18n Infrastructure Updates
-
-#### Task 1.1: Update i18n.js to Support Spanish
-- [ ] Add 'es' to supported languages array (line 101)
-- [ ] Load Spanish translations in init() (line 25-28)
-- [ ] Add Spanish locale for formatNumber (es-ES or es-419)
-- [ ] Add Spanish locale for formatDate
-- [ ] Add Spanish currency formatting
-
-**File**: `web_ui/static/js/i18n.js`
-
-#### Task 1.2: Create Spanish Translation File
-- [ ] Create `web_ui/static/locales/es.json`
-- [ ] Copy structure from en.json
-- [ ] Translate all 1444+ keys to Spanish
-- [ ] Use Latin American Spanish (es-419) conventions
-
-**New File**: `web_ui/static/locales/es.json`
-
-#### Task 1.3: Update Database Migration
-- [ ] Update `add_language_preferences.sql` to include 'es' in CHECK constraint
-- [ ] Create new migration file `add_spanish_language.sql`
-- [ ] Update both `users` and `tenant_configuration` tables
-
-**Files**:
-- `migrations/add_spanish_language.sql` (new)
-- `migrations/apply_spanish_language_migration.py` (new)
-
-#### Task 1.4: Update Language Switcher UI
-- [ ] Add Spanish option to `_navbar.html` language dropdown
-- [ ] Add Spanish flag emoji or icon
-- [ ] Update click handlers
-
-**File**: `web_ui/templates/_navbar.html`
+### Architecture Decision
+**Keep Flask as API backend** - The 150+ API endpoints are stable and well-tested. The Next.js app will:
+1. Run as a separate frontend application
+2. Call the Flask API via HTTP
+3. Handle client-side state, routing, and rendering
 
 ---
 
-### Phase 2: Currency Support Expansion
+## Phase 1: Project Setup & Configuration
 
-#### Task 2.1: Add Latin American Currencies to Locales
-Update all three locale files (en.json, pt.json, es.json) with:
-- [ ] ARS - Argentine Peso
-- [ ] CLP - Chilean Peso
-- [ ] COP - Colombian Peso
-- [ ] MXN - Mexican Peso
-- [ ] PEN - Peruvian Nuevo Sol
-- [ ] UYU - Uruguayan Peso
-- [ ] BOB - Bolivian Boliviano
-- [ ] VES - Venezuelan Bolivar
-- [ ] PYG - Paraguayan Guarani (already exists in code)
+### Task 1.1: Initialize Next.js Project
+- [ ] Create `frontend/` directory at project root
+- [ ] Initialize Next.js 16 with App Router: `npx create-next-app@latest frontend --typescript --tailwind --eslint --app --src-dir`
+- [ ] Configure TypeScript strict mode
+- [ ] Set up path aliases (@/components, @/lib, etc.)
 
-**Files**:
-- `web_ui/static/locales/en.json`
-- `web_ui/static/locales/pt.json`
-- `web_ui/static/locales/es.json`
+### Task 1.2: Install Core Dependencies
+- [ ] Install shadcn/ui: `npx shadcn@latest init`
+- [ ] Install all 23 shadcn components (button, input, card, dialog, etc.)
+- [ ] Install lucide-react for icons
+- [ ] Install sonner for toasts
+- [ ] Install react-hook-form + @hookform/resolvers + zod
+- [ ] Install next-auth for authentication
+- [ ] Install next-intl for i18n
 
-#### Task 2.2: Update Currency Formatting in i18n.js
-- [ ] Add currency symbol map for all currencies
-- [ ] Add formatCurrencyWithCode(amount, currencyCode) method
-- [ ] Handle different decimal places (e.g., CLP has 0 decimals)
+### Task 1.3: Configure Design System
+- [ ] Create globals.css with design tokens:
+  - Background: #FAFAF9 (warm off-white)
+  - Foreground: #18181B (dark zinc)
+  - Primary: #4F46E5 (deep indigo)
+  - Secondary: #F4F4F5 (cool gray)
+  - Accent: #FEF3C7 (warm amber)
+  - Destructive: #DC2626 (red)
+- [ ] Configure fonts: Sora (headings) + DM Sans (body) + JetBrains Mono (code)
+- [ ] Set up Tailwind CSS v4 with custom theme
 
-**File**: `web_ui/static/js/i18n.js`
-
-#### Task 2.3: Update Backend Currency Validation
-- [ ] Update currency validation in `app_db.py` (line ~9665)
-- [ ] Add all new currencies to allowed list
-- [ ] Update invoice form currency dropdown
-
-**Files**:
-- `web_ui/app_db.py`
-- `invoice_processing/improved_visual_system.py` (if still used)
-
----
-
-### Phase 3: Template Translation Gaps
-
-The following templates have ZERO i18n implementation and need data-i18n attributes added:
-
-#### Task 3.1: Core Dashboard Templates
-- [ ] `dashboard.html` - All filter labels, table headers, buttons
-- [ ] `files.html` - Upload sections, progress text, file table
-
-#### Task 3.2: Workforce Templates
-- [ ] `workforce.html` - Tabs, table headers, form labels, modals
-
-#### Task 3.3: Invoice Templates
-- [ ] `invoice_detail.html` - All labels, buttons, sidebar
-- [ ] `create_invoice.html` - All form fields, dropdowns, buttons
-- [ ] `invoices.html` (if not already covered)
-
-#### Task 3.4: Authentication Templates
-- [ ] `auth/login.html` - Form labels, buttons, links
-- [ ] `auth/register.html` - Form labels, user type options, buttons
-- [ ] `auth/profile.html` - All labels and info sections
-- [ ] `auth/accept_invitation.html` - All text and buttons
-- [ ] `auth/forgot_password.html` - Form labels and buttons
-
-#### Task 3.5: Management Templates
-- [ ] `users.html` - All invitation forms and labels
-- [ ] `whitelisted_accounts.html` - Tabs, forms, card labels
-- [ ] `transaction_detail.html` - All labels and buttons
-- [ ] `payslip_detail.html` - All labels and sections
-- [ ] `shareholders.html` - All form labels
-
-#### Task 3.6: Other Templates
-- [ ] `business_overview.html` - Bot interface, loading states
-- [ ] `tenant_management.html` - Forms and labels
+### Task 1.4: Configure API Integration
+- [ ] Create lib/api.ts for Flask API client
+- [ ] Configure environment variables for API URL
+- [ ] Set up CORS handling between Next.js and Flask
+- [ ] Create typed API response interfaces
 
 ---
 
-### Phase 4: JavaScript Hardcoded Strings
+## Phase 2: Core Layout & Navigation
 
-#### Task 4.1: tenant_knowledge.js (~83 instances)
-- [ ] Replace all alert() messages with i18n.t() calls
-- [ ] Replace all confirm() messages with i18n.t() calls
-- [ ] Replace innerHTML loading/empty states with translations
-- [ ] Add translation keys to es.json
+### Task 2.1: Create Root Layout
+- [ ] app/layout.tsx with:
+  - SessionProvider (NextAuth)
+  - Toaster (Sonner - top-right)
+  - Font loading
+  - Metadata configuration
 
-#### Task 4.2: script_advanced.js (~70 instances)
-- [ ] Replace confirm dialogs
-- [ ] Replace showNotification messages
-- [ ] Replace innerHTML content
-- [ ] Replace placeholder text
+### Task 2.2: Create Dashboard Layout
+- [ ] app/(dashboard)/layout.tsx with:
+  - Auth check (redirect to /login if not authenticated)
+  - Tenant check (redirect to /onboarding if no tenant)
+  - Top navigation bar (DashboardNav)
+  - Main content container (max-w-7xl)
+  - CopilotChatWrapper (floating AI chat)
 
-#### Task 4.3: workforce.js (~16 instances)
-- [ ] Replace alert messages
-- [ ] Replace confirm dialogs
-- [ ] Replace modal titles
+### Task 2.3: Create Navigation Components
+- [ ] components/dashboard/dashboard-nav.tsx:
+  - Logo
+  - Tenant Switcher dropdown
+  - Navigation links (Overview, Revenue, Invoices, etc.)
+  - Search input
+  - Settings dropdown
+  - User menu (avatar, logout)
+  - Mobile hamburger menu
+- [ ] Active state styling: bg-indigo-50 text-indigo-700
+- [ ] Sticky top, white background, z-50
 
-#### Task 4.4: invoice_*.js files
-- [ ] invoice_matches.js (~3 instances)
-- [ ] invoice_attachments.js (~12 instances)
-- [ ] invoice_payments.js (~11 instances)
-- [ ] invoice_detail.js (~5 instances)
-
-#### Task 4.5: payslip_*.js files
-- [ ] payslip_detail.js (~7 instances)
-- [ ] payslip_matches.js (~4 instances)
-
-#### Task 4.6: Other JS files
-- [ ] transaction_detail.js (~5 instances)
-- [ ] auth.js (~12 instances)
-- [ ] homepage.js (~7 instances)
-- [ ] payment_receipts.js (~8 instances)
-- [ ] whitelisted_accounts.js (~5 instances)
-- [ ] shareholders.js (~7 instances)
-- [ ] tenant_management.js (~4 instances)
-- [ ] cfo_dashboard.js (~15 instances - NOTE: has mixed EN/PT)
-- [ ] activity_timeline.js (~1 instance)
-- [ ] pattern_notifications.js (~3 instances)
+### Task 2.4: Create Utility Components
+- [ ] lib/utils.ts - cn() class merge helper
+- [ ] components/ui/loading.tsx - Loading spinners/skeletons
+- [ ] components/ui/error-boundary.tsx - Error handling
+- [ ] components/ui/data-table.tsx - Reusable table component
 
 ---
 
-### Phase 5: Translation Keys to Add
+## Phase 3: Authentication System
 
-#### Task 5.1: New Top-Level Sections for es.json
-Based on the analysis, add these translation key sections:
-- [ ] `currencies` - All currency names and symbols
-- [ ] `errors` - All error messages
-- [ ] `confirmations` - All confirmation dialogs
-- [ ] `notifications` - All toast/notification messages
-- [ ] `loading` - All loading states
-- [ ] `empty` - All empty state messages
+### Task 3.1: Configure NextAuth
+- [ ] Create app/api/auth/[...nextauth]/route.ts
+- [ ] Configure Firebase as authentication provider
+- [ ] Set up JWT session strategy
+- [ ] Handle token refresh
 
-#### Task 5.2: Update en.json with Missing Keys
-- [ ] Add all hardcoded strings found in JS files
-- [ ] Add all hardcoded strings found in templates
-- [ ] Maintain consistent key naming convention
+### Task 3.2: Create Auth Pages
+- [ ] app/(auth)/login/page.tsx - Centered card, gradient background
+- [ ] app/(auth)/register/page.tsx - User registration
+- [ ] app/(auth)/forgot-password/page.tsx - Password reset
+- [ ] app/(auth)/accept-invitation/page.tsx - Email invitation flow
 
-#### Task 5.3: Update pt.json with Missing Keys
-- [ ] Mirror all new keys from en.json
-- [ ] Translate to Portuguese
-
----
-
-### Phase 6: Testing & Validation
-
-#### Task 6.1: Unit Tests
-- [ ] Test language switching works for all 3 languages
-- [ ] Test currency formatting for all currencies
-- [ ] Test all translation keys exist in all locales
-
-#### Task 6.2: Manual Testing Checklist
-- [ ] Switch to Spanish, verify all pages render correctly
-- [ ] Switch to Portuguese, verify no regressions
-- [ ] Switch to English, verify no regressions
-- [ ] Test all currency dropdowns show new currencies
-- [ ] Test currency formatting displays correctly
-- [ ] Test date formatting for each locale
-- [ ] Test number formatting for each locale
-
-#### Task 6.3: Translation Validation Script
-- [ ] Create script to compare keys between en.json, pt.json, es.json
-- [ ] Report missing translations
-- [ ] Report unused translation keys
+### Task 3.3: Create Auth Hooks & Context
+- [ ] hooks/use-auth.ts - Authentication state hook
+- [ ] hooks/use-tenant.ts - Tenant context hook
+- [ ] context/auth-context.tsx - Auth provider
+- [ ] context/tenant-context.tsx - Tenant provider
 
 ---
 
-## File Change Summary
+## Phase 4: Page Migration (Priority Order)
 
-### New Files to Create
-1. `web_ui/static/locales/es.json` - Spanish translations (~1500 keys)
-2. `migrations/add_spanish_language.sql` - Database migration
-3. `migrations/apply_spanish_language_migration.py` - Migration script
-4. `tests/test_i18n.py` - Translation tests
+### Task 4.1: Business Overview (Homepage)
+- [ ] app/(dashboard)/page.tsx
+- [ ] Components:
+  - HeroSection with company branding
+  - KPICards with animated counters
+  - HoldingsGrid for business entities
+  - QuickActions panel
+- [ ] API integration: /api/homepage/content
 
-### Files to Modify
+### Task 4.2: Dashboard (Transactions)
+- [ ] app/(dashboard)/dashboard/page.tsx
+- [ ] Components:
+  - TransactionFilters (date, category, entity, status)
+  - TransactionStats cards
+  - TransactionsTable with sorting/pagination
+  - BulkActionsToolbar
+- [ ] API integration: /api/transactions
 
-**Core i18n:**
-- `web_ui/static/js/i18n.js` - Add Spanish support, currency formatting
+### Task 4.3: Revenue Recognition
+- [ ] app/(dashboard)/revenue/page.tsx
+- [ ] Components:
+  - MatchingStats cards
+  - PendingMatchesTable
+  - ConfirmedMatchesTable
+  - MatchingModal with confidence scoring
+  - BulkMatchActions
+- [ ] API integration: /api/revenue/*
 
-**Locale Files:**
-- `web_ui/static/locales/en.json` - Add missing keys, currencies
-- `web_ui/static/locales/pt.json` - Add missing keys, currencies
+### Task 4.4: Invoices
+- [ ] app/(dashboard)/invoices/page.tsx
+- [ ] app/(dashboard)/invoices/[id]/page.tsx (detail)
+- [ ] app/(dashboard)/invoices/create/page.tsx
+- [ ] Components:
+  - InvoiceFilters
+  - InvoicesTable
+  - InvoiceDetailCard
+  - AttachmentsUploader
+  - PaymentTracker
+- [ ] API integration: /api/invoices/*
 
-**Templates (add data-i18n attributes):**
-- `web_ui/templates/_navbar.html` - Language switcher
-- `web_ui/templates/dashboard.html`
-- `web_ui/templates/files.html`
-- `web_ui/templates/workforce.html`
-- `web_ui/templates/invoice_detail.html`
-- `web_ui/templates/create_invoice.html`
-- `web_ui/templates/transaction_detail.html`
-- `web_ui/templates/payslip_detail.html`
-- `web_ui/templates/whitelisted_accounts.html`
-- `web_ui/templates/shareholders.html`
-- `web_ui/templates/business_overview.html`
-- `web_ui/templates/users.html`
-- `web_ui/templates/tenant_management.html`
-- `web_ui/templates/auth/login.html`
-- `web_ui/templates/auth/register.html`
-- `web_ui/templates/auth/profile.html`
-- `web_ui/templates/auth/accept_invitation.html`
-- `web_ui/templates/auth/forgot_password.html`
+### Task 4.5: File Manager
+- [ ] app/(dashboard)/files/page.tsx
+- [ ] Components:
+  - TransactionUploadSection
+  - InvoiceUploadSection
+  - ProcessingProgress
+  - FileHistoryTable
+- [ ] API integration: /api/upload/*
 
-**JavaScript (replace hardcoded strings):**
-- `web_ui/static/js/tenant_knowledge.js`
-- `web_ui/static/js/workforce.js`
-- `web_ui/static/js/invoice_matches.js`
-- `web_ui/static/js/invoice_attachments.js`
-- `web_ui/static/js/invoice_payments.js`
-- `web_ui/static/js/invoice_detail.js`
-- `web_ui/static/js/payslip_detail.js`
-- `web_ui/static/js/payslip_matches.js`
-- `web_ui/static/js/transaction_detail.js`
-- `web_ui/static/js/auth.js`
-- `web_ui/static/js/homepage.js`
-- `web_ui/static/js/payment_receipts.js`
-- `web_ui/static/js/whitelisted_accounts.js`
-- `web_ui/static/js/shareholders.js`
-- `web_ui/static/js/tenant_management.js`
-- `web_ui/static/js/activity_timeline.js`
-- `web_ui/static/js/pattern_notifications.js`
-- `web_ui/static/script_advanced.js`
-- `web_ui/static/cfo_dashboard.js`
+### Task 4.6: Workforce/Payroll
+- [ ] app/(dashboard)/workforce/page.tsx
+- [ ] Components:
+  - WorkforceTabs (Members / Payslips)
+  - WorkforceTable
+  - PayslipsTable
+  - PayslipMatchingModal
+- [ ] API integration: /api/workforce/*, /api/payslips/*
 
-**Backend:**
-- `web_ui/app_db.py` - Currency validation
+### Task 4.7: Shareholders
+- [ ] app/(dashboard)/shareholders/page.tsx
+- [ ] Components:
+  - ShareholdersList
+  - EquityContributionsTable
+  - OwnershipChart
+- [ ] API integration: /api/shareholders/*
+
+### Task 4.8: Whitelisted Accounts
+- [ ] app/(dashboard)/accounts/page.tsx
+- [ ] Components:
+  - AccountsTabs (Bank / Crypto)
+  - BankAccountsTable
+  - CryptoWalletsTable
+  - AccountFormModal
+- [ ] API integration: /api/bank-accounts, /api/wallets
+
+### Task 4.9: Settings & Management
+- [ ] app/(dashboard)/settings/page.tsx (tabbed form sections)
+- [ ] app/(dashboard)/tenant-knowledge/page.tsx
+- [ ] app/(dashboard)/users/page.tsx
+- [ ] Components:
+  - SettingsTabs
+  - KnowledgePatternEditor
+  - UserManagementTable
+  - InvitationForm
+
+### Task 4.10: Reports
+- [ ] app/(dashboard)/reports/page.tsx
+- [ ] app/(dashboard)/reports/pl-trend/page.tsx
+- [ ] Components:
+  - ReportSelector
+  - PLTrendChart
+  - DateRangePicker
+  - ExportButtons
 
 ---
 
-## Currencies Reference
+## Phase 5: Internationalization (i18n)
 
-| Code | Name (English) | Name (Spanish) | Name (Portuguese) | Symbol | Decimals |
-|------|----------------|----------------|-------------------|--------|----------|
-| USD | US Dollar | Dolar estadounidense | Dolar Americano | $ | 2 |
-| EUR | Euro | Euro | Euro | E | 2 |
-| GBP | British Pound | Libra esterlina | Libra Esterlina | GBP | 2 |
-| BRL | Brazilian Real | Real brasileno | Real Brasileiro | R$ | 2 |
-| ARS | Argentine Peso | Peso argentino | Peso Argentino | $ | 2 |
-| CLP | Chilean Peso | Peso chileno | Peso Chileno | $ | 0 |
-| COP | Colombian Peso | Peso colombiano | Peso Colombiano | $ | 0 |
-| MXN | Mexican Peso | Peso mexicano | Peso Mexicano | $ | 2 |
-| PEN | Peruvian Sol | Sol peruano | Sol Peruano | S/ | 2 |
-| UYU | Uruguayan Peso | Peso uruguayo | Peso Uruguaio | $U | 2 |
-| BOB | Bolivian Boliviano | Boliviano | Boliviano | Bs | 2 |
-| VES | Venezuelan Bolivar | Bolivar venezolano | Bolivar Venezuelano | Bs.S | 2 |
-| PYG | Paraguayan Guarani | Guarani paraguayo | Guarani Paraguaio | Gs | 0 |
+### Task 5.1: Configure next-intl
+- [ ] Set up next-intl with middleware
+- [ ] Configure supported locales: en, pt, es
+- [ ] Create messages directory structure
+
+### Task 5.2: Migrate Translation Files
+- [ ] Convert web_ui/static/locales/en.json to Next.js format
+- [ ] Convert web_ui/static/locales/pt.json
+- [ ] Convert web_ui/static/locales/es.json
+- [ ] Create useTranslations hook usage patterns
+
+### Task 5.3: Language Switcher
+- [ ] Add language switcher to navigation
+- [ ] Persist preference to localStorage and API
+- [ ] Handle locale routing
 
 ---
 
-## Estimation
+## Phase 6: Shared Components Library
 
-### Translation Work
-- ~1444 keys to translate to Spanish
-- ~200+ new keys to add for hardcoded strings
-- Total: ~1650 translation keys for Spanish
+### Task 6.1: Status & Priority Badges
+- [ ] components/ui/status-badge.tsx
+- [ ] components/ui/priority-badge.tsx
+- [ ] Color-coded variants matching design system
 
-### Code Changes
-- 1 new locale file
-- 2 migration files
-- ~20 template files with data-i18n additions
-- ~20 JavaScript files with string replacements
-- 1 backend file update
+### Task 6.2: Data Display Components
+- [ ] components/dashboard/stats-card.tsx
+- [ ] components/dashboard/data-table.tsx (sortable, paginated)
+- [ ] components/dashboard/empty-state.tsx
+- [ ] components/dashboard/loading-skeleton.tsx
+
+### Task 6.3: Form Components
+- [ ] components/forms/currency-input.tsx
+- [ ] components/forms/date-picker.tsx
+- [ ] components/forms/file-uploader.tsx
+- [ ] components/forms/entity-selector.tsx
+
+### Task 6.4: Modal Dialogs
+- [ ] components/modals/confirm-dialog.tsx
+- [ ] components/modals/form-dialog.tsx
+- [ ] components/modals/matching-dialog.tsx
+
+---
+
+## Phase 7: Testing & QA
+
+### Task 7.1: Unit Tests
+- [ ] Set up Jest + React Testing Library
+- [ ] Write tests for utility functions
+- [ ] Write tests for hooks
+- [ ] Write tests for critical components
+
+### Task 7.2: Integration Tests
+- [ ] Test API integration layer
+- [ ] Test authentication flow
+- [ ] Test form submissions
+
+### Task 7.3: E2E Tests (Optional)
+- [ ] Set up Playwright
+- [ ] Test critical user journeys
+
+---
+
+## Phase 8: Deployment Configuration
+
+### Task 8.1: Docker Configuration
+- [ ] Create frontend/Dockerfile
+- [ ] Configure multi-stage build
+- [ ] Set up environment variables
+
+### Task 8.2: Cloud Run Deployment
+- [ ] Create cloudbuild-frontend.yaml
+- [ ] Configure Cloud Run service
+- [ ] Set up routing (frontend vs API)
+
+### Task 8.3: Production Checklist
+- [ ] Configure production API URL
+- [ ] Set up error monitoring (Sentry)
+- [ ] Configure performance monitoring
+- [ ] Set up CDN for static assets
+
+---
+
+## File Structure
+
+```
+frontend/
+  src/
+    app/
+      (auth)/
+        login/page.tsx
+        register/page.tsx
+        forgot-password/page.tsx
+      (dashboard)/
+        layout.tsx
+        page.tsx                    # Business Overview
+        dashboard/page.tsx          # Transactions
+        revenue/page.tsx
+        invoices/
+          page.tsx
+          [id]/page.tsx
+          create/page.tsx
+        files/page.tsx
+        workforce/page.tsx
+        shareholders/page.tsx
+        accounts/page.tsx           # Whitelisted Accounts
+        settings/page.tsx
+        tenant-knowledge/page.tsx
+        users/page.tsx
+        reports/
+          page.tsx
+          pl-trend/page.tsx
+      api/
+        auth/[...nextauth]/route.ts
+      layout.tsx
+      globals.css
+    components/
+      ui/                           # shadcn/ui components
+      dashboard/
+        dashboard-nav.tsx
+        stats-card.tsx
+        data-table.tsx
+        ...
+      forms/
+      modals/
+    lib/
+      api.ts                        # Flask API client
+      utils.ts                      # cn() helper
+      auth.ts                       # NextAuth config
+    hooks/
+      use-auth.ts
+      use-tenant.ts
+      use-api.ts
+    context/
+      auth-context.tsx
+      tenant-context.tsx
+    types/
+      api.ts                        # API response types
+      models.ts                     # Data models
+    messages/
+      en.json
+      pt.json
+      es.json
+  public/
+    fonts/
+    images/
+  next.config.js
+  tailwind.config.ts
+  components.json                   # shadcn config
+  package.json
+```
+
+---
+
+## Migration Strategy
+
+1. **Parallel Operation**: Run both Flask templates and Next.js during migration
+2. **Feature Flags**: Use feature flags to toggle between old/new UI
+3. **Incremental Migration**: Migrate one page at a time
+4. **API Compatibility**: No changes to Flask API required
+5. **Testing**: Test each page thoroughly before moving to next
 
 ---
 
 ## Success Criteria
 
-- [ ] Spanish language option appears in language switcher
-- [ ] All UI text displays correctly in Spanish
-- [ ] All Latin American currencies available in dropdowns
-- [ ] Currency formatting respects locale (decimal separators)
-- [ ] Date formatting respects locale
-- [ ] Number formatting respects locale
-- [ ] No console errors when switching languages
-- [ ] All existing English/Portuguese functionality works
-- [ ] Database migration runs without errors
-- [ ] All translation keys exist in all 3 locale files
+- [ ] All 27 pages migrated to React components
+- [ ] All API integrations working
+- [ ] Authentication working with Firebase
+- [ ] i18n working for all 3 languages
+- [ ] Responsive design on all screen sizes
+- [ ] No regressions in functionality
+- [ ] Performance equal or better than current
+- [ ] All tests passing
+
+---
+
+## Notes
+
+- **Keep Flask Backend**: All 150+ API endpoints remain unchanged
+- **No Database Changes**: Frontend-only refactoring
+- **Gradual Rollout**: Can deploy incrementally
+- **Fallback Available**: Flask templates remain as fallback
 
 ---
 
 ## Review Section
 
-### Phase 1 & 2 - COMPLETED (Nov 2024)
-- Created es.json with full Spanish translations (~1500 keys)
-- Updated i18n.js to support Spanish language and Latin American currencies
-- Added all Latin American currencies (ARS, CLP, COP, MXN, PEN, UYU, BOB, VES, PYG)
-- Updated _navbar.html with Spanish language option
-- Database migration files created
+*(To be updated as work progresses)*
 
-### Phase 3 - COMPLETED (Nov 2024)
-
-#### Completed Template Updates:
-- [x] `files.html` - Added data-i18n attributes to upload sections, progress text, file tables, status badges
-- [x] `workforce.html` - Added data-i18n to stats, tabs, table headers, modals, form labels
-- [x] `invoices.html` - Added data-i18n to stats, filters, table headers, selection toolbar
-- [x] `revenue.html` - Added data-i18n to header, matching controls, section titles, filter tabs, bulk actions
-- [x] `business_overview.html` - Added data-i18n to hero section, metrics, portfolio, structure, onboarding bot
-
-#### Remaining Template Updates (Phase 3B - Future Work):
-- [x] `auth/login.html` - Form labels, buttons, links (requires adding auth keys to locales)
-- [x] `auth/register.html` - Form labels, buttons
-- [x] `auth/forgot_password.html` - Form labels, buttons
-- [x] `invoice_detail.html` - Labels, buttons
-- [x] `create_invoice.html` - Form fields
-- [ ] `expenses.html` - Stats, filters (template does not exist)
-
-### Phase 3B - COMPLETED (Nov 2024)
-
-#### Completed Template Updates:
-- [x] `_detail_base.html` - Added data-i18n to breadcrumb (Home), tabs (Overview, Details, Matches, Activity), sidebar titles (Statistics, Quick Actions, Related), loading text
-- [x] `invoice_detail.html` - Added data-i18n to all labels, buttons, status badges, quick info, sidebar stats, action buttons
-- [x] `create_invoice.html` - Added data-i18n to all form labels, placeholders, buttons; Added Latin American currencies to dropdown
-- [x] `auth/login.html` - Added i18n.js script, data-i18n to all form elements, tabs, buttons, links
-- [x] `auth/register.html` - Added i18n.js script, data-i18n to all form elements, user type options, tabs, buttons
-- [x] `auth/forgot_password.html` - Added i18n.js script, data-i18n to all form elements, buttons, links
-
-#### Locale File Updates:
-- Added `auth` section to all locale files (en.json, es.json, pt.json) with 40+ authentication-related keys
-- Added `currencies` section with long format currency names (e.g., "USD - US Dollar")
-- Added `tabs` section for detail page tabs
-- Added `sidebar` section for sidebar titles
-- Added `stats` section for sidebar statistics
-- Added `navigation` section for breadcrumb links
-- Added 60+ new invoice-related keys for detail and create pages
-- Added `common.home`, `common.remove`, `common.never` keys
-
-### Issues Encountered
-- Auth templates don't include i18n.js (FIXED: added script tag to each auth template)
-- Some templates are very large (invoices.html ~28k tokens)
-- `expenses.html` template does not exist
-
-### Notes
-- All translation keys for Phase 3 templates already exist in locale files (added in Phase 1-2)
-- The i18n system loads automatically via _navbar.html which is included in most templates
-- Auth templates now include i18n.js script directly in the head section
-- Standalone templates (create_invoice.html) also have i18n.js included directly
