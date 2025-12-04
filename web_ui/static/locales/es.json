@@ -11,6 +11,7 @@
     "invoices": "Facturas",
     "workforce": "Personal",
     "files": "Gestor de Archivos",
+    "entities": "Entidades",
     "knowledge": "Conocimiento",
     "switchTenant": "Cambiar Inquilino",
     "language": "Idioma",
@@ -1004,13 +1005,15 @@
     "subtitle": "Gestiona patrones de clasificacion, entidades comerciales y configuracion de aprendizaje de IA",
     "tabs": {
       "patterns": "Patrones de Clasificacion",
+      "classificationSetup": "Configuracion de Clasificacion",
       "entities": "Entidades Comerciales",
       "categories": "Categorias",
       "subcategories": "Subcategorias",
       "bankAccounts": "Cuentas Bancarias",
       "cryptoWallets": "Billeteras Cripto",
       "notifications": "Notificaciones",
-      "settings": "Configuracion"
+      "settings": "Configuracion",
+      "businessSummary": "Resumen de Negocio IA"
     },
     "stats": {
       "totalPatterns": "Total de Patrones",

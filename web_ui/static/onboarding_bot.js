@@ -258,12 +258,58 @@
     function addBotMessage(text) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'chat-message bot-message';
+
+        // Format the text: convert newlines to <br> and style bullet points
+        const formattedText = formatBotMessage(text);
+
         messageDiv.innerHTML = `
-            <div class="message-content">${text}</div>
+            <div class="message-content">${formattedText}</div>
             <div class="message-time">${getCurrentTime()}</div>
         `;
         messagesContainer.appendChild(messageDiv);
         scrollToBottom();
+    }
+
+    // Format bot message text for proper HTML display
+    function formatBotMessage(text) {
+        if (!text) return '';
+
+        // Split by double newlines to create paragraphs
+        const paragraphs = text.split(/\n\n+/);
+
+        return paragraphs.map(para => {
+            // Check if paragraph contains bullet points
+            if (para.includes('•')) {
+                const lines = para.split('\n');
+                let html = '';
+                let inList = false;
+
+                lines.forEach(line => {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('•')) {
+                        if (!inList) {
+                            html += '<ul class="bot-list">';
+                            inList = true;
+                        }
+                        html += `<li>${trimmed.substring(1).trim()}</li>`;
+                    } else {
+                        if (inList) {
+                            html += '</ul>';
+                            inList = false;
+                        }
+                        if (trimmed) {
+                            html += `<p>${trimmed}</p>`;
+                        }
+                    }
+                });
+
+                if (inList) html += '</ul>';
+                return html;
+            } else {
+                // Regular paragraph - convert single newlines to <br>
+                return `<p>${para.replace(/\n/g, '<br>')}</p>`;
+            }
+        }).join('');
     }
 
     // Add option buttons for configure mode

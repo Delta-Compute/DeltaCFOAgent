@@ -40,10 +40,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadPageNotifications();
             } else if (targetTab === 'settings') {
                 loadSettings();
-            } else if (targetTab === 'categories') {
-                loadCategories();
-            } else if (targetTab === 'subcategories') {
-                loadSubcategories();
+            } else if (targetTab === 'classification-setup') {
+                initClassificationSetup();
             }
         });
     });
@@ -1141,6 +1139,246 @@ Are you sure you want to proceed?`;
         alert('Failed to merge subcategories. Please try again.');
     }
 }
+
+// ===================================
+// CLASSIFICATION SETUP TAB (3-column layout)
+// ===================================
+
+let classificationSetupInitialized = false;
+
+async function initClassificationSetup() {
+    // Check if tenant is a holdco (has more than 1 entity)
+    const isHoldco = await checkIsHoldco();
+
+    // Show/hide entities column based on holdco status
+    const entitiesColumn = document.getElementById('entitiesColumn');
+    const grid = document.querySelector('.classification-setup-grid');
+
+    if (entitiesColumn && grid) {
+        if (isHoldco) {
+            entitiesColumn.style.display = 'flex';
+            grid.classList.remove('two-columns');
+        } else {
+            entitiesColumn.style.display = 'none';
+            grid.classList.add('two-columns');
+        }
+    }
+
+    // Load all columns
+    await Promise.all([
+        loadEntitiesColumn(),
+        loadCategoriesColumn(),
+        loadSubcategoriesColumn()
+    ]);
+
+    classificationSetupInitialized = true;
+}
+
+async function checkIsHoldco() {
+    try {
+        const response = await fetch('/api/business-entities');
+        const data = await response.json();
+
+        if (data.success) {
+            const entityCount = (data.entities || []).length;
+            return entityCount > 1;
+        }
+        return false;
+    } catch (error) {
+        console.error('Error checking holdco status:', error);
+        return false;
+    }
+}
+
+// --- Entities Column ---
+async function loadEntitiesColumn() {
+    const entitiesList = document.getElementById('entitiesList');
+    if (!entitiesList) return;
+
+    entitiesList.innerHTML = '<div class="loading" style="padding: 1rem; text-align: center; color: #64748b;">Loading...</div>';
+
+    try {
+        const response = await fetch('/api/business-entities');
+        const data = await response.json();
+
+        if (data.success) {
+            entities = data.entities || [];
+            renderEntitiesColumn(entities);
+        } else {
+            entitiesList.innerHTML = '<div class="column-empty">Error loading entities</div>';
+        }
+    } catch (error) {
+        console.error('Error loading entities:', error);
+        entitiesList.innerHTML = '<div class="column-empty">Failed to load entities</div>';
+    }
+}
+
+function renderEntitiesColumn(entitiesToRender) {
+    const entitiesList = document.getElementById('entitiesList');
+    if (!entitiesList) return;
+
+    if (entitiesToRender.length === 0) {
+        entitiesList.innerHTML = '<div class="column-empty">No entities found. Click + to add one.</div>';
+        return;
+    }
+
+    entitiesList.innerHTML = entitiesToRender.map(entity => `
+        <div class="column-item" data-entity="${escapeHtml(entity.name)}">
+            <div class="column-item-name">${escapeHtml(entity.name)}</div>
+            <div class="column-item-meta">
+                ${entity.type ? `<span>${escapeHtml(entity.type)}</span>` : ''}
+                ${entity.transaction_count ? `<span>${entity.transaction_count} txns</span>` : ''}
+            </div>
+            <div class="column-item-actions">
+                <button class="column-item-btn edit" onclick="editEntity('${escapeHtml(entity.name)}')">Edit</button>
+                <button class="column-item-btn delete" onclick="deleteEntity('${escapeHtml(entity.name)}')">Delete</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- Categories Column ---
+async function loadCategoriesColumn() {
+    const categoriesList = document.getElementById('categoriesList');
+    if (!categoriesList) return;
+
+    categoriesList.innerHTML = '<div class="loading" style="padding: 1rem; text-align: center; color: #64748b;">Loading...</div>';
+
+    try {
+        const response = await fetch('/api/categories-with-counts');
+        const data = await response.json();
+
+        if (data.success) {
+            categories = data.categories || [];
+            renderCategoriesColumn(categories);
+        } else {
+            categoriesList.innerHTML = '<div class="column-empty">Error loading categories</div>';
+        }
+    } catch (error) {
+        console.error('Error loading categories:', error);
+        categoriesList.innerHTML = '<div class="column-empty">Failed to load categories</div>';
+    }
+}
+
+function renderCategoriesColumn(categoriesToRender) {
+    const categoriesList = document.getElementById('categoriesList');
+    if (!categoriesList) return;
+
+    if (categoriesToRender.length === 0) {
+        categoriesList.innerHTML = '<div class="column-empty">No categories found. Categories are created from transaction classifications.</div>';
+        return;
+    }
+
+    categoriesList.innerHTML = categoriesToRender.map(category => `
+        <div class="column-item" data-category="${escapeHtml(category.name)}">
+            <div class="column-item-name">${escapeHtml(category.name)}</div>
+            <div class="column-item-meta">${category.count || 0} transactions</div>
+            <div class="column-item-actions">
+                <button class="column-item-btn edit" onclick="renameCategory('${escapeHtml(category.name)}')">Rename</button>
+                <button class="column-item-btn edit" onclick="mergeCategory('${escapeHtml(category.name)}')" style="background: #dcfce7; color: #166534;">Merge</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- Subcategories Column ---
+async function loadSubcategoriesColumn() {
+    const subcategoriesList = document.getElementById('subcategoriesList');
+    if (!subcategoriesList) return;
+
+    subcategoriesList.innerHTML = '<div class="loading" style="padding: 1rem; text-align: center; color: #64748b;">Loading...</div>';
+
+    try {
+        const response = await fetch('/api/subcategories-with-counts');
+        const data = await response.json();
+
+        if (data.success) {
+            subcategories = data.subcategories || [];
+            renderSubcategoriesColumn(subcategories);
+        } else {
+            subcategoriesList.innerHTML = '<div class="column-empty">Error loading subcategories</div>';
+        }
+    } catch (error) {
+        console.error('Error loading subcategories:', error);
+        subcategoriesList.innerHTML = '<div class="column-empty">Failed to load subcategories</div>';
+    }
+}
+
+function renderSubcategoriesColumn(subcategoriesToRender) {
+    const subcategoriesList = document.getElementById('subcategoriesList');
+    if (!subcategoriesList) return;
+
+    if (subcategoriesToRender.length === 0) {
+        subcategoriesList.innerHTML = '<div class="column-empty">No subcategories found. Subcategories are created from transaction classifications.</div>';
+        return;
+    }
+
+    subcategoriesList.innerHTML = subcategoriesToRender.map(subcategory => `
+        <div class="column-item" data-subcategory="${escapeHtml(subcategory.name)}">
+            <div class="column-item-name">${escapeHtml(subcategory.name)}</div>
+            <div class="column-item-meta">${subcategory.count || 0} transactions</div>
+            <div class="column-item-actions">
+                <button class="column-item-btn edit" onclick="renameSubcategory('${escapeHtml(subcategory.name)}')">Rename</button>
+                <button class="column-item-btn edit" onclick="mergeSubcategory('${escapeHtml(subcategory.name)}')" style="background: #dcfce7; color: #166534;">Merge</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- Column Search Filters ---
+function filterEntitiesColumn() {
+    const search = document.getElementById('entitySearchInput')?.value.toLowerCase() || '';
+
+    if (!search) {
+        renderEntitiesColumn(entities);
+        return;
+    }
+
+    const filtered = entities.filter(e =>
+        e.name.toLowerCase().includes(search) ||
+        (e.type && e.type.toLowerCase().includes(search))
+    );
+
+    renderEntitiesColumn(filtered);
+}
+
+function filterCategoriesColumn() {
+    const search = document.getElementById('categorySearchInput')?.value.toLowerCase() || '';
+
+    if (!search) {
+        renderCategoriesColumn(categories);
+        return;
+    }
+
+    const filtered = categories.filter(c =>
+        c.name.toLowerCase().includes(search)
+    );
+
+    renderCategoriesColumn(filtered);
+}
+
+function filterSubcategoriesColumn() {
+    const search = document.getElementById('subcategorySearchInput')?.value.toLowerCase() || '';
+
+    if (!search) {
+        renderSubcategoriesColumn(subcategories);
+        return;
+    }
+
+    const filtered = subcategories.filter(s =>
+        s.name.toLowerCase().includes(search)
+    );
+
+    renderSubcategoriesColumn(filtered);
+}
+
+// Update the search event listeners for columns
+document.addEventListener('DOMContentLoaded', function() {
+    // Column search listeners
+    document.getElementById('entitySearchInput')?.addEventListener('input', filterEntitiesColumn);
+    document.getElementById('categorySearchInput')?.addEventListener('input', filterCategoriesColumn);
+    document.getElementById('subcategorySearchInput')?.addEventListener('input', filterSubcategoriesColumn);
+});
 
 // ===================================
 // SETTINGS

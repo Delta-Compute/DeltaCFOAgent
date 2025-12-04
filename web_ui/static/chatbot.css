@@ -251,11 +251,40 @@
 }
 
 .message-content p {
-    margin: 0 0 8px 0;
+    margin: 0 0 12px 0;
 }
 
 .message-content p:last-child {
     margin-bottom: 0;
+}
+
+/* Bot message lists */
+.message-content .bot-list {
+    margin: 8px 0 12px 0;
+    padding-left: 8px;
+    list-style: none;
+}
+
+.message-content .bot-list li {
+    position: relative;
+    padding-left: 20px;
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.message-content .bot-list li:last-child {
+    margin-bottom: 0;
+}
+
+.message-content .bot-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 50%;
 }
 
 .message-time {

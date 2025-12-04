@@ -1041,7 +1041,7 @@ Examples:
             next_steps.append({
                 'milestone': 'entities',
                 'message': 'Add at least one legal entity to organize your finances',
-                'action_url': '/entities',
+                'action_url': '/tenant-knowledge',
                 'action_label': 'Add Entity'
             })
         if not accounts_complete:

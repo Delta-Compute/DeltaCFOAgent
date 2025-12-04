@@ -11,6 +11,7 @@
     "invoices": "Faturas",
     "workforce": "Força de Trabalho",
     "files": "Gerenciador de Arquivos",
+    "entities": "Entidades",
     "knowledge": "Conhecimento",
     "switchTenant": "Trocar Empresa",
     "language": "Idioma",
@@ -1005,13 +1006,15 @@
     "subtitle": "Gerencie padrões de classificação, entidades de negócio e configurações de aprendizado IA",
     "tabs": {
       "patterns": "Padrões de Classificação",
+      "classificationSetup": "Configuração de Classificação",
       "entities": "Entidades de Negócio",
       "categories": "Categorias",
       "subcategories": "Subcategorias",
       "bankAccounts": "Contas Bancárias",
       "cryptoWallets": "Carteiras Cripto",
       "notifications": "Notificações",
-      "settings": "Configurações"
+      "settings": "Configurações",
+      "businessSummary": "Resumo do Negócio IA"
     },
     "stats": {
       "totalPatterns": "Total de Padrões",

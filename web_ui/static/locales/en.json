@@ -11,6 +11,7 @@
     "invoices": "Invoices",
     "workforce": "Workforce",
     "files": "File Manager",
+    "entities": "Entities",
     "knowledge": "Knowledge",
     "switchTenant": "Switch Tenant",
     "language": "Language",
@@ -1005,13 +1006,15 @@
     "subtitle": "Manage classification patterns, business entities, and AI learning settings",
     "tabs": {
       "patterns": "Classification Patterns",
+      "classificationSetup": "Classification Setup",
       "entities": "Business Entities",
       "categories": "Categories",
       "subcategories": "Subcategories",
       "bankAccounts": "Bank Accounts",
       "cryptoWallets": "Crypto Wallets",
       "notifications": "Notifications",
-      "settings": "Settings"
+      "settings": "Settings",
+      "businessSummary": "AI Business Summary"
     },
     "stats": {
       "totalPatterns": "Total Patterns",

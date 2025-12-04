@@ -14,6 +14,7 @@ from flask import Blueprint, request, jsonify
 from middleware.auth_middleware import require_auth, get_current_user
 from web_ui.database import db_manager
 from web_ui.tenant_context import get_current_tenant_id
+from web_ui.services.onboarding_bot import OnboardingBot
 import anthropic
 
 logger = logging.getLogger(__name__)
