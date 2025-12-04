@@ -390,3 +390,80 @@ Based on the analysis, add these translation key sections:
 - The i18n system loads automatically via _navbar.html which is included in most templates
 - Auth templates now include i18n.js script directly in the head section
 - Standalone templates (create_invoice.html) also have i18n.js included directly
+
+---
+
+# Month-End Closing Feature - Implementation Plan
+
+## Status: PROPOSAL READY FOR REVIEW
+
+**Full proposal document:** `tasks/month-end-closing-proposal.md`
+
+## Overview
+
+A comprehensive month-end closing workflow system inspired by industry leaders (FloQast, BlackLine, NetSuite) that enables CFOs and controllers to systematically close accounting periods with proper workflow management, reconciliation tracking, approval chains, and audit trails.
+
+## Key Components
+
+1. **Accounting Periods Management** - Create, lock, and close fiscal periods
+2. **Closing Checklist** - Configurable workflow with auto-checks
+3. **Reconciliation Dashboard** - Unified view of invoice, payroll, and bank matching status
+4. **Adjusting Entries** - Create, approve, and post period adjustments
+5. **Approval Workflow** - Multi-level approval chain with audit trail
+6. **Transaction Locking** - Prevent modifications in closed periods
+
+## Implementation Phases
+
+### Phase 1: Core Infrastructure (MVP) - 3-4 weeks
+- [ ] Database migration for new tables
+- [ ] Period CRUD operations
+- [ ] Basic checklist management
+- [ ] Transaction date validation against locked periods
+- [ ] Close dashboard UI
+
+### Phase 2: Reconciliation Integration - 2 weeks
+- [ ] Integrate revenue_matcher metrics
+- [ ] Integrate payslip_matcher metrics
+- [ ] Auto-check logic
+- [ ] Reconciliation dashboard
+
+### Phase 3: Adjusting Entries - 2 weeks
+- [ ] Adjusting entries CRUD
+- [ ] Entry approval workflow
+- [ ] Entry posting to transactions
+
+### Phase 4: Approval & Audit - 2 weeks
+- [ ] Submit for approval workflow
+- [ ] CFO/Controller approval actions
+- [ ] Activity log system
+- [ ] Notifications
+
+### Phase 5: Advanced Features - 3-4 weeks
+- [ ] AI-suggested adjusting entries
+- [ ] Anomaly detection
+- [ ] Pre-close report generation
+
+## Database Tables to Create
+
+1. `cfo_accounting_periods` - Period tracking with status
+2. `close_checklist_templates` - Reusable checklist templates
+3. `close_checklist_items` - Period-specific checklist instances
+4. `close_adjusting_entries` - Adjustment entries with approval
+5. `close_activity_log` - Audit trail
+6. `period_locks` - Granular locking (A/P, A/R, Payroll, All)
+
+## Leverage Points (Already Exists)
+
+- Financial statement generation (32 API endpoints)
+- Revenue/Invoice matching engine (`revenue_matcher.py`)
+- Payroll matching engine (`payslip_matcher.py`)
+- Multi-tenant architecture
+- User permissions system
+- AI integration (Claude)
+
+## Next Steps
+
+1. Review proposal with stakeholders
+2. Prioritize phases based on business needs
+3. Create detailed tasks for Phase 1
+4. Begin database migration development
