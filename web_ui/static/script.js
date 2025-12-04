@@ -1,9 +1,13 @@
 // Delta CFO Agent - Dashboard JavaScript
 
 let currentTransactions = [];
+let entities = [];
+let businessLines = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     // Load initial data
+    loadEntities();
+    loadBusinessLines();
     loadTransactions();
 
     // Set up event listeners
@@ -19,6 +23,12 @@ function setupEventListeners() {
 
     // Refresh button
     document.getElementById('refreshData').addEventListener('click', loadTransactions);
+
+    // Entity filter change - cascade to business line filter
+    document.getElementById('entityFilter').addEventListener('change', function() {
+        const entityId = this.value;
+        populateBusinessLineFilter(entityId);
+    });
 
     // Quick filter buttons
     document.getElementById('filterTodos').addEventListener('click', () => {
@@ -49,6 +59,7 @@ function setupEventListeners() {
 function clearFilters() {
     // Clear all filter inputs
     document.getElementById('entityFilter').value = '';
+    document.getElementById('businessLineFilter').value = '';
     document.getElementById('transactionType').value = '';
     document.getElementById('sourceFile').value = '';
     document.getElementById('needsReview').value = '';
@@ -58,6 +69,9 @@ function clearFilters() {
     document.getElementById('endDate').value = '';
     document.getElementById('keywordFilter').value = '';
 
+    // Reset business line filter to show all
+    populateBusinessLineFilter('');
+
     // Reload transactions
     loadTransactions();
 }
@@ -65,8 +79,11 @@ function clearFilters() {
 function buildFilterQuery() {
     const params = new URLSearchParams();
 
-    const entity = document.getElementById('entityFilter').value;
-    if (entity) params.append('entity', entity);
+    const entityId = document.getElementById('entityFilter').value;
+    if (entityId) params.append('entity_id', entityId);
+
+    const businessLineId = document.getElementById('businessLineFilter').value;
+    if (businessLineId) params.append('business_line_id', businessLineId);
 
     const transactionType = document.getElementById('transactionType').value;
     if (transactionType) params.append('transaction_type', transactionType);
@@ -110,7 +127,7 @@ async function loadTransactions() {
     } catch (error) {
         console.error('Error loading transactions:', error);
         document.getElementById('transactionTableBody').innerHTML =
-            '<tr><td colspan="7" class="loading">Error loading transactions</td></tr>';
+            '<tr><td colspan="8" class="loading">Error loading transactions</td></tr>';
     }
 }
 
@@ -118,7 +135,7 @@ function renderTransactionTable(transactions) {
     const tbody = document.getElementById('transactionTableBody');
 
     if (transactions.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="loading">No transactions found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="loading">No transactions found</td></tr>';
         return;
     }
 
@@ -136,12 +153,23 @@ function renderTransactionTable(transactions) {
         const confidenceClass = transaction.confidence && parseFloat(transaction.confidence) < 0.8 ?
             'warning' : '';
 
+        // Get entity and business line information
+        const entityName = transaction.entity_name || transaction.classified_entity || 'N/A';
+        const entityCode = transaction.entity_code ? `(${transaction.entity_code})` : '';
+        const businessLineName = transaction.business_line_name || '-';
+        const businessLineCode = transaction.business_line_code ? `(${transaction.business_line_code})` : '';
+
         return `
             <tr>
                 <td>${transaction.Date || 'N/A'}</td>
                 <td>${transaction.Description || 'N/A'}</td>
                 <td class="${amountClass}">${formattedAmount}</td>
-                <td>${transaction.classified_entity || 'N/A'}</td>
+                <td>
+                    ${entityName} ${entityCode}
+                </td>
+                <td>
+                    ${businessLineName} ${businessLineCode}
+                </td>
                 <td class="${confidenceClass}">${confidence}</td>
                 <td>${transaction.source_file || 'N/A'}</td>
                 <td>
@@ -189,4 +217,83 @@ function formatDate(dateString) {
     } catch {
         return dateString;
     }
+}
+
+// ========================================
+// ENTITY & BUSINESS LINE MANAGEMENT
+// ========================================
+
+async function loadEntities() {
+    try {
+        const response = await fetch('/api/entities');
+        const result = await response.json();
+
+        if (result.success && result.entities) {
+            entities = result.entities;
+            populateEntityFilter();
+        } else {
+            console.error('Failed to load entities:', result.error);
+        }
+    } catch (error) {
+        console.error('Error loading entities:', error);
+    }
+}
+
+async function loadBusinessLines() {
+    try {
+        const response = await fetch('/api/business-lines');
+        const result = await response.json();
+
+        if (result.success && result.business_lines) {
+            businessLines = result.business_lines;
+            populateBusinessLineFilter(''); // Show all initially
+        } else {
+            console.error('Failed to load business lines:', result.error);
+        }
+    } catch (error) {
+        console.error('Error loading business lines:', error);
+    }
+}
+
+function populateEntityFilter() {
+    const entityFilter = document.getElementById('entityFilter');
+
+    entityFilter.innerHTML = '<option value="">All Entities</option>' +
+        entities.filter(e => e.is_active).map(entity => `
+            <option value="${entity.id}">
+                ${escapeHtml(entity.name)} (${escapeHtml(entity.code)})
+            </option>
+        `).join('');
+}
+
+function populateBusinessLineFilter(entityId) {
+    const blFilter = document.getElementById('businessLineFilter');
+
+    let filteredBusinessLines = businessLines.filter(bl => bl.is_active);
+
+    if (entityId) {
+        filteredBusinessLines = filteredBusinessLines.filter(bl => bl.entity_id === entityId);
+    }
+
+    blFilter.innerHTML = '<option value="">All Business Lines</option>' +
+        filteredBusinessLines.map(bl => {
+            const entity = entities.find(e => e.id === bl.entity_id);
+            const entityLabel = entity ? ` - ${entity.code}` : '';
+            return `
+                <option value="${bl.id}">
+                    ${escapeHtml(bl.name)} (${escapeHtml(bl.code)})${entityLabel}
+                </option>
+            `;
+        }).join('');
+}
+
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
 }

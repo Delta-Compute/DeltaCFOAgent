@@ -58,12 +58,18 @@
             <h2>🔍 Filters</h2>
             <div class="filter-grid">
                 <div class="filter-group">
-                    <label for="entityFilter">Business Entity:</label>
+                    <label for="entityFilter">Legal Entity:</label>
                     <select id="entityFilter">
                         <option value="">All Entities</option>
-                        {% for entity, count in stats.entities %}
-                        <option value="{{ entity }}">{{ entity }} ({{ count }})</option>
-                        {% endfor %}
+                        <!-- Dynamically populated from entities table -->
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="businessLineFilter">Business Line:</label>
+                    <select id="businessLineFilter">
+                        <option value="">All Business Lines</option>
+                        <!-- Dynamically populated based on entity selection -->
                     </select>
                 </div>
 
@@ -150,6 +156,7 @@
                             <th>Description</th>
                             <th>Amount</th>
                             <th>Entity</th>
+                            <th>Business Line</th>
                             <th>Confidence</th>
                             <th>Source</th>
                             <th>Actions</th>
@@ -157,7 +164,7 @@
                     </thead>
                     <tbody id="transactionTableBody">
                         <tr>
-                            <td colspan="7" class="loading">Loading transactions...</td>
+                            <td colspan="8" class="loading">Loading transactions...</td>
                         </tr>
                     </tbody>
                 </table>

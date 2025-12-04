@@ -258,12 +258,58 @@
     function addBotMessage(text) {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'chat-message bot-message';
+
+        // Format the text: convert newlines to <br> and style bullet points
+        const formattedText = formatBotMessage(text);
+
         messageDiv.innerHTML = `
-            <div class="message-content">${text}</div>
+            <div class="message-content">${formattedText}</div>
             <div class="message-time">${getCurrentTime()}</div>
         `;
         messagesContainer.appendChild(messageDiv);
         scrollToBottom();
+    }
+
+    // Format bot message text for proper HTML display
+    function formatBotMessage(text) {
+        if (!text) return '';
+
+        // Split by double newlines to create paragraphs
+        const paragraphs = text.split(/\n\n+/);
+
+        return paragraphs.map(para => {
+            // Check if paragraph contains bullet points
+            if (para.includes('•')) {
+                const lines = para.split('\n');
+                let html = '';
+                let inList = false;
+
+                lines.forEach(line => {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith('•')) {
+                        if (!inList) {
+                            html += '<ul class="bot-list">';
+                            inList = true;
+                        }
+                        html += `<li>${trimmed.substring(1).trim()}</li>`;
+                    } else {
+                        if (inList) {
+                            html += '</ul>';
+                            inList = false;
+                        }
+                        if (trimmed) {
+                            html += `<p>${trimmed}</p>`;
+                        }
+                    }
+                });
+
+                if (inList) html += '</ul>';
+                return html;
+            } else {
+                // Regular paragraph - convert single newlines to <br>
+                return `<p>${para.replace(/\n/g, '<br>')}</p>`;
+            }
+        }).join('');
     }
 
     // Add option buttons for configure mode
@@ -326,6 +372,26 @@
             <div class="message-time">${getCurrentTime()}</div>
         `;
         messagesContainer.appendChild(messageDiv);
+        scrollToBottom();
+    }
+
+    // Add badge showing created items (entities or business lines)
+    function addCreatedItemsBadge(label, items, badgeType) {
+        if (!items || items.length === 0) return;
+
+        const badgeDiv = document.createElement('div');
+        badgeDiv.className = 'chat-message bot-message created-items-badge';
+
+        // Badge color based on type
+        const badgeClass = badgeType === 'primary' ? 'badge-primary' : 'badge-info';
+
+        badgeDiv.innerHTML = `
+            <div class="created-items-container">
+                <span class="created-items-label ${badgeClass}">${label}:</span>
+                <span class="created-items-list">${items.join(', ')}</span>
+            </div>
+        `;
+        messagesContainer.appendChild(badgeDiv);
         scrollToBottom();
     }
 
@@ -602,10 +668,8 @@
                 // Display the context-aware greeting from backend
                 addBotMessage(data.greeting);
 
-                // Update progress bar with current completion
-                if (data.completion_percentage !== undefined) {
-                    updateProgress(data.completion_percentage);
-                }
+                // Fetch and update milestone indicators
+                fetchAndUpdateMilestones();
 
                 botState.isProcessing = false;
             } else {
@@ -733,6 +797,14 @@
 
                 // Display AI response
                 addBotMessage(data.response);
+
+                // Show badges for created entities and business lines
+                if (data.entities_created && data.entities_created.length > 0) {
+                    addCreatedItemsBadge('Entities Created', data.entities_created, 'primary');
+                }
+                if (data.business_lines_created && data.business_lines_created.length > 0) {
+                    addCreatedItemsBadge('Business Lines Created', data.business_lines_created, 'info');
+                }
 
                 // Update progress bar with completion percentage (silently, no chat message)
                 if (data.completion_percentage !== undefined) {
@@ -1092,6 +1164,77 @@
             progressBar.style.width = `${percent}%`;
             progressText.textContent = `${percent}%`;
         }
+    }
+
+    // Fetch and update milestone indicators
+    async function fetchAndUpdateMilestones() {
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                return; // Not authenticated, skip milestone fetch
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+            const response = await fetch('/api/onboarding/capabilities', {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
+
+            if (!response.ok) {
+                console.warn('[OnboardingBot] Failed to fetch capabilities');
+                return;
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                // Update progress bar with milestone-based percentage
+                updateProgress(data.completion_percentage);
+
+                // Update milestone indicators
+                updateMilestoneIndicators(data.milestones);
+
+                // Store capabilities for progressive disclosure
+                botState.capabilities = data.capabilities;
+                botState.milestones = data.milestones;
+            }
+        } catch (error) {
+            console.warn('[OnboardingBot] Error fetching milestones:', error);
+        }
+    }
+
+    // Update milestone indicator UI
+    function updateMilestoneIndicators(milestones) {
+        if (!milestones) return;
+
+        const milestonesContainer = document.getElementById('onboardingMilestones');
+        if (!milestonesContainer) return;
+
+        Object.entries(milestones).forEach(([key, milestone]) => {
+            const item = milestonesContainer.querySelector(`[data-milestone="${key}"]`);
+            if (item) {
+                const icon = item.querySelector('.milestone-icon');
+                const label = item.querySelector('.milestone-label');
+
+                if (milestone.complete) {
+                    // Mark as complete - green checkmark overlay
+                    item.style.opacity = '1';
+                    if (label) label.style.color = '#10b981';
+                    item.title = `${milestone.name} - Complete`;
+                } else {
+                    // Mark as incomplete - grayed out
+                    item.style.opacity = '0.5';
+                    if (label) label.style.color = '#94a3b8';
+
+                    // Build tooltip with details
+                    let tooltip = `${milestone.name} - Incomplete`;
+                    if (milestone.details) {
+                        if (milestone.details.count !== undefined && milestone.details.required !== undefined) {
+                            tooltip += ` (${milestone.details.count}/${milestone.details.required})`;
+                        }
+                    }
+                    item.title = tooltip;
+                }
+            }
+        });
     }
 
     // Show/hide loading indicator

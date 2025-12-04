@@ -99,6 +99,9 @@ from main import DeltaCFOAgent
 # Import reporting API
 from reporting_api import register_reporting_routes
 
+# Import entity and business line API
+from entity_api import register_entity_routes
+
 # Import Firebase authentication
 try:
     import sys
@@ -217,6 +220,9 @@ init_tenant_context(app)
 
 # Register CFO reporting routes
 register_reporting_routes(app)
+
+# Register entity and business line routes
+register_entity_routes(app)
 
 # NOTE: Global cfo_agent removed - DeltaCFOAgent instances are created
 # per-request with proper tenant_id context in route handlers
@@ -1496,7 +1502,11 @@ def get_db_connection():
         raise
 
 def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='date', sort_direction='desc'):
-    """Load transactions from database with filtering, sorting, and pagination"""
+    """Load transactions from database with filtering, sorting, and pagination
+
+    Now supports entity_id and business_line_id filtering while maintaining
+    backward compatibility with VARCHAR entity field.
+    """
     from database import db_manager
     tenant_id = get_current_tenant_id()
 
@@ -1512,66 +1522,76 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
         # Build WHERE clause from filters
         placeholder = "%s" if is_postgresql else "?"
         where_conditions = [
-            "(archived = FALSE OR archived IS NULL)",
-            f"tenant_id = {placeholder}"
+            "(t.archived = FALSE OR t.archived IS NULL)",
+            f"t.tenant_id = {placeholder}"
         ]
         params = [tenant_id]
 
         if filters:
-            if filters.get('entity'):
-                where_conditions.append("classified_entity = %s" if is_postgresql else "classified_entity = ?")
+            # NEW: Support entity_id FK filter (preferred)
+            if filters.get('entity_id'):
+                where_conditions.append(f"t.entity_id = {placeholder}")
+                params.append(filters['entity_id'])
+            # Backward compatibility: Support VARCHAR entity filter
+            elif filters.get('entity'):
+                where_conditions.append(f"t.classified_entity = {placeholder}")
                 params.append(filters['entity'])
+
+            # NEW: Support business_line_id filter
+            if filters.get('business_line_id'):
+                where_conditions.append(f"t.business_line_id = {placeholder}")
+                params.append(filters['business_line_id'])
 
             if filters.get('transaction_type'):
                 # Map "Revenue" -> positive amounts, "Expense" -> negative amounts
                 if filters['transaction_type'] == 'Revenue':
-                    where_conditions.append("amount > 0")
+                    where_conditions.append("t.amount > 0")
                 elif filters['transaction_type'] == 'Expense':
-                    where_conditions.append("amount < 0")
+                    where_conditions.append("t.amount < 0")
 
             if filters.get('source_file'):
-                where_conditions.append("source_file = %s" if is_postgresql else "source_file = ?")
+                where_conditions.append(f"t.source_file = {placeholder}")
                 params.append(filters['source_file'])
 
             if filters.get('needs_review'):
                 if filters['needs_review'] == 'true':
-                    where_conditions.append("(confidence < 0.7 OR needs_review = TRUE)")
+                    where_conditions.append("(t.confidence < 0.7 OR t.needs_review = TRUE)")
 
             if filters.get('min_amount'):
-                where_conditions.append("ABS(amount) >= %s" if is_postgresql else "ABS(amount) >= ?")
+                where_conditions.append(f"ABS(t.amount) >= {placeholder}")
                 params.append(float(filters['min_amount']))
 
             if filters.get('max_amount'):
-                where_conditions.append("ABS(amount) <= %s" if is_postgresql else "ABS(amount) <= ?")
+                where_conditions.append(f"ABS(t.amount) <= {placeholder}")
                 params.append(float(filters['max_amount']))
 
             if filters.get('start_date'):
                 if is_postgresql:
                     # Cast TEXT column to DATE for comparison (date column is TEXT, not DATE type)
-                    where_conditions.append("date::date >= %s::date")
+                    where_conditions.append("t.date::date >= %s::date")
                 else:
-                    where_conditions.append("date >= ?")
+                    where_conditions.append("t.date >= ?")
                 params.append(filters['start_date'])
 
             if filters.get('end_date'):
                 if is_postgresql:
                     # Cast TEXT column to DATE for comparison (date column is TEXT, not DATE type)
-                    where_conditions.append("date::date <= %s::date")
+                    where_conditions.append("t.date::date <= %s::date")
                 else:
-                    where_conditions.append("date <= ?")
+                    where_conditions.append("t.date <= ?")
                 params.append(filters['end_date'])
 
             if filters.get('keyword'):
                 # EXPANDED SEARCH: Search across multiple fields for better matching
                 if is_postgresql:
                     where_conditions.append(
-                        "(description ILIKE %s OR classification_reason ILIKE %s OR "
-                        "justification ILIKE %s OR origin ILIKE %s OR destination ILIKE %s)"
+                        "(t.description ILIKE %s OR t.classification_reason ILIKE %s OR "
+                        "t.justification ILIKE %s OR t.origin ILIKE %s OR t.destination ILIKE %s)"
                     )
                 else:
                     where_conditions.append(
-                        "(description LIKE ? OR classification_reason LIKE ? OR "
-                        "justification LIKE ? OR origin LIKE ? OR destination LIKE ?)"
+                        "(t.description LIKE ? OR t.classification_reason LIKE ? OR "
+                        "t.justification LIKE ? OR t.origin LIKE ? OR t.destination LIKE ?)"
                     )
                 keyword_pattern = f"%{filters['keyword']}%"
                 params.extend([keyword_pattern] * 5)  # 5 fields to search
@@ -1581,19 +1601,19 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
             if filters.get('accounting_category'):
                 if is_postgresql:
                     where_conditions.append(
-                        "COALESCE(subcategory, accounting_category, classified_entity, "
-                        "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s"
+                        "COALESCE(t.subcategory, t.accounting_category, t.classified_entity, "
+                        "CASE WHEN t.amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = %s"
                     )
                 else:
                     where_conditions.append(
-                        "COALESCE(subcategory, accounting_category, classified_entity, "
-                        "CASE WHEN amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = ?"
+                        "COALESCE(t.subcategory, t.accounting_category, t.classified_entity, "
+                        "CASE WHEN t.amount > 0 THEN 'Other Revenue' ELSE 'Other Expenses' END) = ?"
                     )
                 params.append(filters['accounting_category'])
 
             # SANKEY INTEGRATION: Filter by specific subcategory (exact match)
             if filters.get('subcategory'):
-                where_conditions.append("subcategory = %s" if is_postgresql else "subcategory = ?")
+                where_conditions.append(f"t.subcategory = {placeholder}")
                 params.append(filters['subcategory'])
 
             # DRILL-DOWN INTEGRATION: Filter by origin field (exact match)
@@ -1610,28 +1630,28 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
             archived_filter = filters.get('show_archived')
             if archived_filter == 'true':
                 # Show only archived transactions
-                where_conditions = [c for c in where_conditions if 'archived' not in c]
-                where_conditions.append("archived = TRUE")
+                where_conditions = [c for c in where_conditions if 'archived' not in c.lower()]
+                where_conditions.append("t.archived = TRUE")
             elif archived_filter == 'all':
                 # Show both archived and non-archived transactions
-                where_conditions = [c for c in where_conditions if 'archived' not in c]
+                where_conditions = [c for c in where_conditions if 'archived' not in c.lower()]
             # If empty string or None, keep default behavior (active only)
 
             # Handle internal transaction filter
             internal_filter = filters.get('is_internal')
             if internal_filter == 'true':
                 # Show only internal transactions
-                where_conditions.append("is_internal_transaction = TRUE")
+                where_conditions.append("t.is_internal_transaction = TRUE")
             elif internal_filter == 'false':
                 # Show only non-internal transactions
-                where_conditions.append("(is_internal_transaction = FALSE OR is_internal_transaction IS NULL)")
+                where_conditions.append("(t.is_internal_transaction = FALSE OR t.is_internal_transaction IS NULL)")
             # If not specified, show all (both internal and non-internal)
 
             # Handle exclude internal transfers filter (based on entity name)
             exclude_internal_filter = filters.get('exclude_internal')
             if exclude_internal_filter == 'true':
                 # Exclude transactions where entity is "Internal Transfer"
-                where_conditions.append("(classified_entity != %s AND classified_entity IS NOT NULL)" if is_postgresql else "(classified_entity != ? AND classified_entity IS NOT NULL)")
+                where_conditions.append(f"(t.classified_entity != {placeholder} AND t.classified_entity IS NOT NULL)")
                 params.append('Internal Transfer')
 
         where_clause = " AND ".join(where_conditions)
@@ -1644,8 +1664,14 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
             print(f"   WHERE clause: {where_clause}")
             print(f"   Params: {params}")
 
-        # Get total count with filters
-        count_query = f"SELECT COUNT(*) as total FROM transactions WHERE {where_clause}"
+        # Get total count with filters (use LEFT JOIN for entities and business_lines)
+        count_query = f"""
+            SELECT COUNT(*) as total
+            FROM transactions t
+            LEFT JOIN entities e ON t.entity_id = e.id
+            LEFT JOIN business_lines bl ON t.business_line_id = bl.id
+            WHERE {where_clause}
+        """
         if params:
             cursor.execute(count_query, tuple(params))
         else:
@@ -1664,8 +1690,26 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
             sort_direction_upper = 'DESC'
 
         # Get transactions with filters, sorting, and pagination
+        # Include entity and business_line data in the response
         offset = (page - 1) * per_page if page > 0 else 0
-        query = f"SELECT * FROM transactions WHERE {where_clause} ORDER BY {sort_field} {sort_direction_upper} LIMIT {per_page} OFFSET {offset}"
+        query = f"""
+            SELECT
+                t.*,
+                e.id as entity_uuid,
+                e.code as entity_code,
+                e.name as entity_name,
+                e.base_currency as entity_currency,
+                bl.id as business_line_uuid,
+                bl.code as business_line_code,
+                bl.name as business_line_name,
+                bl.color_hex as business_line_color
+            FROM transactions t
+            LEFT JOIN entities e ON t.entity_id = e.id
+            LEFT JOIN business_lines bl ON t.business_line_id = bl.id
+            WHERE {where_clause}
+            ORDER BY t.{sort_field} {sort_direction_upper}
+            LIMIT {per_page} OFFSET {offset}
+        """
 
         # Debug logging for the actual query
         if filters and (filters.get('start_date') or filters.get('end_date')):
@@ -1684,8 +1728,39 @@ def load_transactions_from_db(filters=None, page=1, per_page=50, sort_field='dat
         for row in results:
             if is_postgresql:
                 transaction = dict(row)
+                # Format entity and business_line objects for frontend
+                if transaction.get('entity_uuid'):
+                    transaction['entity'] = {
+                        'id': str(transaction['entity_uuid']),
+                        'code': transaction['entity_code'],
+                        'name': transaction['entity_name'],
+                        'currency': transaction['entity_currency']
+                    }
+                    # Remove redundant fields
+                    del transaction['entity_uuid']
+                    del transaction['entity_code']
+                    del transaction['entity_name']
+                    del transaction['entity_currency']
+                else:
+                    transaction['entity'] = None
+
+                if transaction.get('business_line_uuid'):
+                    transaction['business_line'] = {
+                        'id': str(transaction['business_line_uuid']),
+                        'code': transaction['business_line_code'],
+                        'name': transaction['business_line_name'],
+                        'color': transaction['business_line_color']
+                    }
+                    # Remove redundant fields
+                    del transaction['business_line_uuid']
+                    del transaction['business_line_code']
+                    del transaction['business_line_name']
+                    del transaction['business_line_color']
+                else:
+                    transaction['business_line'] = None
             else:
                 transaction = dict(row)
+
             transactions.append(transaction)
 
         return transactions, total_count
@@ -2263,6 +2338,44 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
                 logger.error(f"VALIDATION FAILED: Invalid {field} value for transaction {transaction_id}")
                 conn.close()
                 return (False, None)
+
+        elif field == 'entity_id':
+            # NEW: Validate entity_id FK - must exist and belong to tenant
+            if value and value != 'null' and value != '':
+                cursor.execute(
+                    f"SELECT id FROM entities WHERE id = {placeholder} AND tenant_id = {placeholder}",
+                    (value, tenant_id)
+                )
+                entity_check = cursor.fetchone()
+                if not entity_check:
+                    logger.error(f"VALIDATION FAILED: Entity ID '{value}' not found or access denied for tenant {tenant_id}")
+                    conn.close()
+                    return (False, None)
+                validated_value = value
+            else:
+                # Allow NULL for entity_id
+                validated_value = None
+
+        elif field == 'business_line_id':
+            # NEW: Validate business_line_id FK - must exist and belong to an entity owned by tenant
+            if value and value != 'null' and value != '':
+                cursor.execute(
+                    f"""
+                    SELECT bl.id FROM business_lines bl
+                    JOIN entities e ON bl.entity_id = e.id
+                    WHERE bl.id = {placeholder} AND e.tenant_id = {placeholder}
+                    """,
+                    (value, tenant_id)
+                )
+                bl_check = cursor.fetchone()
+                if not bl_check:
+                    logger.error(f"VALIDATION FAILED: Business line ID '{value}' not found or access denied for tenant {tenant_id}")
+                    conn.close()
+                    return (False, None)
+                validated_value = value
+            else:
+                # Allow NULL for business_line_id
+                validated_value = None
 
         # Update the field with validated value
         update_query = f"UPDATE transactions SET {field} = {placeholder} WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}"
@@ -5027,11 +5140,16 @@ def _deprecated_api_switch_tenant(tenant_id):
 
 @app.route('/api/transactions')
 def api_transactions():
-    """API endpoint to get filtered transactions with pagination"""
+    """API endpoint to get filtered transactions with pagination
+
+    NEW: Now supports entity_id and business_line_id filtering
+    """
     try:
         # Get filter parameters
         filters = {
-            'entity': request.args.get('entity'),
+            'entity': request.args.get('entity'),  # Backward compatibility (VARCHAR)
+            'entity_id': request.args.get('entity_id'),  # NEW: FK filter (preferred)
+            'business_line_id': request.args.get('business_line_id'),  # NEW: FK filter
             'transaction_type': request.args.get('transaction_type'),
             'source_file': request.args.get('source_file'),
             'needs_review': request.args.get('needs_review'),
@@ -9107,30 +9225,54 @@ def api_get_subcategories():
 
 @app.route('/api/entities', methods=['GET'])
 def api_get_entities():
-    """API endpoint to fetch distinct business entities from database"""
+    """API endpoint to fetch entities from the entities table"""
     try:
         from database import db_manager
         tenant_id = get_current_tenant_id()
 
-        # Query from business_entities table
+        # Query from entities table (new normalized structure)
         query = """
-            SELECT name, entity_type, id
-            FROM business_entities
+            SELECT id, code, name, legal_name, entity_type, base_currency, is_active
+            FROM entities
             WHERE tenant_id = %s
-            AND active = true
+            AND is_active = true
             ORDER BY name
         """
 
         entities = db_manager.execute_query(query, (tenant_id,), fetch_all=True)
 
-        # Return just the names as strings for backward compatibility
-        entity_names = [e['name'] for e in entities] if entities else []
+        if entities:
+            entity_list = []
+            entity_names = []
+            for e in entities:
+                entity_list.append({
+                    'id': str(e['id']),
+                    'code': e['code'],
+                    'name': e['name'],
+                    'legal_name': e.get('legal_name'),
+                    'entity_type': e.get('entity_type'),
+                    'base_currency': e.get('base_currency'),
+                    'is_active': e.get('is_active', True)
+                })
+                entity_names.append(e['name'])
 
-        return jsonify({'entities': entity_names})
+            return jsonify({
+                'success': True,
+                'entities': entity_names,  # For backward compatibility (dropdown)
+                'entity_list': entity_list,  # Full entity objects
+                'count': len(entity_list)
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'entities': [],
+                'entity_list': [],
+                'count': 0
+            })
 
     except Exception as e:
         logging.error(f"Failed to fetch entities: {e}")
-        return jsonify({'error': str(e), 'entities': []}), 500
+        return jsonify({'success': False, 'error': str(e), 'entities': []}), 500
 
 @app.route('/api/bulk_update_transactions', methods=['POST'])
 def api_bulk_update_transactions():
@@ -9226,6 +9368,79 @@ def api_bulk_update_transactions():
 
     except Exception as e:
         logging.error(f"[BULK_UPDATE] Endpoint error: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/api/transactions/assign-entity-business-line', methods=['POST'])
+def api_assign_entity_business_line():
+    """
+    NEW: Bulk assign entity_id and/or business_line_id to multiple transactions
+
+    Request body:
+    {
+        "transaction_ids": ["tx1", "tx2", "tx3"],
+        "entity_id": "uuid-of-entity",  // optional
+        "business_line_id": "uuid-of-business-line"  // optional
+    }
+
+    Returns:
+    {
+        "success": true,
+        "updated_count": 3,
+        "failed_count": 0,
+        "errors": []
+    }
+    """
+    try:
+        data = request.get_json()
+        transaction_ids = data.get('transaction_ids', [])
+        entity_id = data.get('entity_id')
+        business_line_id = data.get('business_line_id')
+
+        if not transaction_ids:
+            return jsonify({'error': 'No transaction IDs provided', 'success': False}), 400
+
+        if not entity_id and not business_line_id:
+            return jsonify({'error': 'Either entity_id or business_line_id must be provided', 'success': False}), 400
+
+        updated_count = 0
+        failed_count = 0
+        errors = []
+
+        # Process each transaction
+        for transaction_id in transaction_ids:
+            try:
+                # Update entity_id if provided
+                if entity_id:
+                    success, _ = update_transaction_field(transaction_id, 'entity_id', entity_id)
+                    if not success:
+                        raise Exception(f"Failed to update entity_id for transaction {transaction_id}")
+
+                # Update business_line_id if provided
+                if business_line_id:
+                    success, _ = update_transaction_field(transaction_id, 'business_line_id', business_line_id)
+                    if not success:
+                        raise Exception(f"Failed to update business_line_id for transaction {transaction_id}")
+
+                updated_count += 1
+                logging.info(f"[BULK_ASSIGN] Updated transaction {transaction_id}: entity_id={entity_id}, business_line_id={business_line_id}")
+
+            except Exception as e:
+                failed_count += 1
+                errors.append({
+                    'transaction_id': transaction_id,
+                    'error': str(e)
+                })
+                logging.error(f"[BULK_ASSIGN] Failed to update transaction {transaction_id}: {e}")
+
+        return jsonify({
+            'success': failed_count == 0,
+            'updated_count': updated_count,
+            'failed_count': failed_count,
+            'errors': errors if errors else None
+        })
+
+    except Exception as e:
+        logging.error(f"[BULK_ASSIGN] Endpoint error: {e}")
         return jsonify({'error': str(e), 'success': False}), 500
 
 @app.route('/api/update_similar_categories', methods=['POST'])
@@ -9499,7 +9714,7 @@ def files_page():
                 (r'caixa', 'Caixa Econômica', 'Checking'),
                 (r'nubank|nu\s*bank', 'Nubank', 'Credit Card'),
                 (r'inter', 'Banco Inter', 'Checking'),
-                (r'c6\s*bank|c6bank', 'C6 Bank', 'Checking'),
+                (r'c6\s*bank|c6bank|c6[_ ]', 'C6 Bank', 'Checking'),
             ]
             for pattern, name, category in brazilian_banks:
                 if re.search(pattern, filename, re.IGNORECASE):
@@ -9559,9 +9774,36 @@ def files_page():
             account_category = 'Other'
             return account_id, account_type, account_category
 
+        # Helper function to parse date from various formats
+        def parse_date_flexible(date_val):
+            """Parse a date from string or date object, handling multiple formats"""
+            if date_val is None:
+                return None
+            if isinstance(date_val, datetime):
+                return date_val
+            if hasattr(date_val, 'year'):  # It's a date object
+                return datetime.combine(date_val, datetime.min.time())
+            if isinstance(date_val, str):
+                # Try multiple date formats
+                formats = ['%Y-%m-%d', '%m/%d/%Y', '%Y/%m/%d', '%d/%m/%Y']
+                for fmt in formats:
+                    try:
+                        return datetime.strptime(date_val, fmt)
+                    except ValueError:
+                        continue
+            return None
+
         # Helper function to parse date range
         def parse_date_range(filename, earliest_txn, latest_txn):
-            """Extract date range from filename or transaction dates"""
+            """Extract date range from actual transaction dates (source of truth)"""
+            # Always use actual transaction dates as the primary source
+            start = parse_date_flexible(earliest_txn)
+            end = parse_date_flexible(latest_txn)
+
+            if start is not None and end is not None:
+                return start, end
+
+            # Only fall back to filename dates if transaction dates unavailable
             date_pattern = re.search(r'(\d{8}).*?(\d{8})', filename)
             if date_pattern:
                 try:
@@ -9571,21 +9813,7 @@ def files_page():
                 except:
                     pass
 
-            # Fall back to transaction dates
-            try:
-                if isinstance(earliest_txn, str):
-                    start = datetime.strptime(earliest_txn, '%Y-%m-%d')
-                else:
-                    start = earliest_txn
-
-                if isinstance(latest_txn, str):
-                    end = datetime.strptime(latest_txn, '%Y-%m-%d')
-                else:
-                    end = latest_txn
-
-                return start, end
-            except:
-                return None, None
+            return None, None
 
         # Process files and group by account
         accounts = defaultdict(list)
@@ -9620,26 +9848,60 @@ def files_page():
         # Process each account group
         account_groups = []
         for account_id, files in accounts.items():
+            # Normalize all dates to datetime for consistent comparison
+            for f in files:
+                if f['start_date'] and not isinstance(f['start_date'], datetime):
+                    f['start_date'] = datetime.combine(f['start_date'], datetime.min.time())
+                if f['end_date'] and not isinstance(f['end_date'], datetime):
+                    f['end_date'] = datetime.combine(f['end_date'], datetime.min.time())
+
             # Sort files by start date
             files.sort(key=lambda f: f['start_date'] if f['start_date'] else datetime.min)
 
-            # Detect gaps between files
+            # Detect gaps using merged date ranges approach
+            # First, collect all valid date ranges and merge overlapping ones
+            date_ranges = []
+            for f in files:
+                if f['start_date'] and f['end_date']:
+                    date_ranges.append((f['start_date'], f['end_date']))
+
+            # Sort ranges by start date and merge overlapping/adjacent ranges
+            date_ranges.sort(key=lambda r: r[0])
+
+            merged_ranges = []
+            for start, end in date_ranges:
+                if merged_ranges and start <= merged_ranges[-1][1] + timedelta(days=1):
+                    # Extend the previous range if overlapping or adjacent
+                    merged_ranges[-1] = (merged_ranges[-1][0], max(merged_ranges[-1][1], end))
+                else:
+                    merged_ranges.append((start, end))
+
+            # Find gaps in the merged ranges
+            gaps = []
+            for i in range(1, len(merged_ranges)):
+                prev_end = merged_ranges[i-1][1]
+                curr_start = merged_ranges[i][0]
+                gap_days = (curr_start - prev_end).days - 1
+                if gap_days > 7:  # More than a week gap
+                    gaps.append({
+                        'days': gap_days,
+                        'months': gap_days // 30,
+                        'from': prev_end.strftime('%Y-%m-%d'),
+                        'to': curr_start.strftime('%Y-%m-%d')
+                    })
+
+            # Assign gaps to files (gap appears before the first file that starts after the gap)
             for i in range(len(files)):
                 files[i]['gap_before'] = None
-                if i > 0:
-                    prev_end = files[i-1]['end_date']
-                    curr_start = files[i]['start_date']
 
-                    if prev_end and curr_start:
-                        gap_days = (curr_start - prev_end).days - 1
-                        if gap_days > 7:  # More than a week gap
-                            gap_months = gap_days // 30
-                            files[i]['gap_before'] = {
-                                'days': gap_days,
-                                'months': gap_months,
-                                'from': prev_end.strftime('%Y-%m-%d'),
-                                'to': curr_start.strftime('%Y-%m-%d')
-                            }
+            for gap in gaps:
+                gap_end = datetime.strptime(gap['to'], '%Y-%m-%d')
+                # Find the first file that starts at or after the gap end
+                for f in files:
+                    if f['start_date'] and f['start_date'] >= gap_end:
+                        if f['gap_before'] is None:
+                            f['gap_before'] = gap
+                        break
 
             # Calculate account statistics
             total_files = len(files)
@@ -9654,17 +9916,18 @@ def files_page():
             overall_start = min(all_start_dates) if all_start_dates else None
             overall_end = max(all_end_dates) if all_end_dates else None
 
-            # Calculate coverage (days covered vs total span)
+            # Calculate coverage using MERGED ranges (avoids counting overlapping days twice)
             total_days_covered = sum(
-                (f['end_date'] - f['start_date']).days + 1
-                for f in files if f['start_date'] and f['end_date']
+                (end - start).days + 1
+                for start, end in merged_ranges
             )
 
             total_span_days = None
             coverage_pct = None
             if overall_start and overall_end:
                 total_span_days = (overall_end - overall_start).days + 1
-                coverage_pct = (total_days_covered / total_span_days * 100) if total_span_days > 0 else 100
+                # Coverage should never exceed 100%
+                coverage_pct = min(100.0, (total_days_covered / total_span_days * 100)) if total_span_days > 0 else 100
 
             account_groups.append({
                 'id': account_id,
@@ -20674,6 +20937,16 @@ def api_update_wallet_displays():
         return jsonify({
             'error': str(e)
         }), 500
+
+
+# ============================================================================
+# ENTITY & BUSINESS LINE MANAGEMENT PAGE
+# ============================================================================
+
+@app.route('/entities')
+def entities_page():
+    """Redirect to tenant-knowledge page (entities management consolidated there)"""
+    return redirect('/tenant-knowledge')
 
 
 # ============================================================================

@@ -29,30 +29,26 @@
 
         <div class="main-layout">
             <div class="dashboard-content">
-                <header>
-                    <h1 data-i18n="dashboard.title">Advanced Transaction Dashboard</h1>
-                    <div class="stats-summary">
-                        <div class="stat-card">
-                            <h3 data-i18n="dashboard.stats.total">Total Transactions</h3>
-                            <div class="stat-number">{{ stats.total_transactions }}</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3 data-i18n="dashboard.stats.revenue">Total Revenue</h3>
-                            <div class="stat-number positive">${{ "%.2f"|format(stats.total_revenue) }}</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3 data-i18n="dashboard.stats.expenses">Total Expenses</h3>
-                            <div class="stat-number negative">${{ "%.2f"|format(stats.total_expenses) }}</div>
-                        </div>
-                        <div class="stat-card">
-                            <h3 data-i18n="dashboard.stats.needsReview">Needs Review</h3>
-                            <div class="stat-number warning">{{ stats.needs_review }}</div>
-                        </div>
-                    </div>
-                    <div class="date-range">
-                        📅 Data Range: {{ stats.date_range.min }} to {{ stats.date_range.max }}
-                    </div>
-                </header>
+
+        <!-- KPI Summary -->
+        <div class="stats-summary">
+            <div class="stat-card">
+                <h3 data-i18n="dashboard.stats.total">Total Transactions</h3>
+                <div class="stat-number" id="kpiTotalTransactions">{{ stats.total_transactions }}</div>
+            </div>
+            <div class="stat-card">
+                <h3 data-i18n="dashboard.stats.revenue">Total Revenue</h3>
+                <div class="stat-number positive" id="kpiTotalRevenue">${{ "%.2f"|format(stats.total_revenue) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3 data-i18n="dashboard.stats.expenses">Total Expenses</h3>
+                <div class="stat-number negative" id="kpiTotalExpenses">${{ "%.2f"|format(stats.total_expenses) }}</div>
+            </div>
+            <div class="stat-card">
+                <h3 data-i18n="dashboard.stats.needsReview">Needs Review</h3>
+                <div class="stat-number warning" id="kpiNeedsReview">{{ stats.needs_review }}</div>
+            </div>
+        </div>
 
         <!-- Filter Controls -->
         <div class="filter-section">
@@ -119,40 +115,58 @@
                     <label for="keywordFilter" data-i18n="dashboard.filters.keywordSearch">Keyword Search:</label>
                     <input type="text" id="keywordFilter" data-i18n-placeholder="dashboard.filters.keywordPlaceholder">
                 </div>
+
             </div>
 
-            <div class="quick-filters">
-                <h3 data-i18n="dashboard.filters.quickFiltersTitle">🔍 Quick Filters:</h3>
-                <button id="filterTodos" class="btn-quick todo-filter" data-i18n="dashboard.filters.todosOnly">📝 To Do's Only</button>
-                <button id="filterExcludeTransfers" class="btn-quick" data-i18n="dashboard.filters.excludeTransfers">🚫 Exclude Internal Transfers</button>
-                <button id="filter2025" class="btn-quick" data-i18n="dashboard.filters.year2025">2025 Full Year</button>
-                <button id="filter2024" class="btn-quick" data-i18n="dashboard.filters.year2024">2024 Full Year</button>
-                <button id="filterYTD" class="btn-quick" data-i18n="dashboard.filters.ytd2025">2025 YTD</button>
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                <span style="font-weight: 500; color: #4a5568;">Quick Filters:</span>
+                <button id="filterTodos" class="btn-quick todo-filter" data-i18n="dashboard.filters.todosOnly">To Do's</button>
+                <button id="filterExcludeTransfers" class="btn-quick" data-i18n="dashboard.filters.excludeTransfers">No Transfers</button>
+                <button id="filter2025" class="btn-quick" data-i18n="dashboard.filters.year2025">2025</button>
+                <button id="filter2024" class="btn-quick" data-i18n="dashboard.filters.year2024">2024</button>
+                <button id="filterYTD" class="btn-quick" data-i18n="dashboard.filters.ytd2025">YTD</button>
+                <span style="color: #999; margin: 0 8px; font-weight: 300;">|</span>
+                <button id="applyFilters" class="btn-primary" data-i18n="dashboard.filters.applyFilters">Apply Filters</button>
+                <button id="clearFilters" class="btn-secondary" data-i18n="dashboard.filters.clearAll">Clear All</button>
             </div>
 
-            <button id="applyFilters" class="btn-primary" data-i18n="dashboard.filters.applyFilters">Apply Filters</button>
-            <button id="clearFilters" class="btn-secondary" data-i18n="dashboard.filters.clearAll">Clear All</button>
+            <div style="display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                <!-- AI Enhancements -->
+                <span style="font-weight: 500; color: #4a5568;">AI Enhancements:</span>
+                <div style="display: flex; gap: 6px; padding: 4px 8px; background: #e8f0fe; border-radius: 6px;">
+                    <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()" data-i18n="dashboard.buttons.runInvoiceMatching" style="padding: 6px 12px;">Invoice Matching</button>
+                    <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()" data-i18n="dashboard.buttons.enrichBlockchain" style="padding: 6px 12px;">Enrich Blockchain</button>
+                    <button id="findDuplicates" class="btn-primary" onclick="findDuplicates()" data-i18n="dashboard.buttons.findDuplicates" style="padding: 6px 12px;">Find Duplicates</button>
+                </div>
+            </div>
         </div>
 
         <!-- Transaction Table -->
         <div class="table-section">
-            <div class="table-header">
-                <h2 data-i18n="dashboard.table.title">📋 Advanced Transaction Management</h2>
-                <div class="table-info">
+            <div class="table-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div class="table-info" style="display: flex; align-items: center; gap: 20px;">
                     <span id="tableInfo" data-i18n="dashboard.table.info">Loading...</span>
-                    <button id="refreshData" class="btn-secondary" data-i18n="dashboard.buttons.refresh">🔄 Refresh</button>
-                    <button id="runInvoiceMatching" class="btn-primary" onclick="runInvoiceMatching()" data-i18n="dashboard.buttons.runInvoiceMatching">💰 Run Invoice Matching</button>
-                    <button id="runBlockchainEnrichment" class="btn-primary" onclick="runBlockchainEnrichment()" data-i18n="dashboard.buttons.enrichBlockchain">🔗 Enrich Blockchain Transactions</button>
-                    <button id="findDuplicates" class="btn-primary" onclick="findDuplicates()" data-i18n="dashboard.buttons.findDuplicates">🔍 Find Duplicates</button>
-                    <button id="exportCSV" class="btn-secondary" data-i18n="dashboard.buttons.exportCSV">📥 Export CSV</button>
-                    <button id="archiveSelected" class="btn-secondary" style="display: none;" data-i18n="dashboard.buttons.archiveSelected">🗄️ Archive Selected</button>
-                    <button id="showArchived" class="btn-secondary" data-i18n="dashboard.buttons.showArchived">📦 Show Archived</button>
-                    <button id="undoBtn" class="btn-secondary" disabled title="Undo last change (Ctrl+Z)">
-                        <span data-i18n="dashboard.buttons.undo">↶ Undo</span> <span id="undoCount">(0)</span>
+                    <span style="color: #666; font-size: 0.9em;">|</span>
+                    <span style="color: #666; font-size: 0.9em;">Data Range: {{ stats.date_range.min }} to {{ stats.date_range.max }}</span>
+                </div>
+                <!-- Quick Actions Dropdown -->
+                <div style="position: relative; display: inline-block;">
+                    <button id="quickActionsBtn" class="btn-secondary" style="padding: 6px 12px;" onclick="toggleQuickActionsMenu()">
+                        Quick Actions ▼
                     </button>
-                    <button id="redoBtn" class="btn-secondary" disabled title="Redo (Ctrl+Y)">
-                        <span data-i18n="dashboard.buttons.redo">↷ Redo</span> <span id="redoCount">(0)</span>
-                    </button>
+                    <div id="quickActionsMenu" style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 160px; margin-top: 4px;">
+                        <button id="refreshData" data-i18n="dashboard.buttons.refresh" style="width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; border-radius: 6px 6px 0 0; color: #333;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">Refresh</button>
+                        <button id="exportCSV" data-i18n="dashboard.buttons.exportCSV" style="width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; color: #333;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">Export CSV</button>
+                        <button id="showArchived" data-i18n="dashboard.buttons.showArchived" style="width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; color: #333;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">Show Archived</button>
+                        <button id="archiveSelected" style="display: none; width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; color: #333;" data-i18n="dashboard.buttons.archiveSelected" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">Archive Selected</button>
+                        <hr style="margin: 4px 0; border: none; border-top: 1px solid #eee;">
+                        <button id="undoBtn" disabled title="Undo last change (Ctrl+Z)" style="width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; color: #333;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">
+                            <span data-i18n="dashboard.buttons.undo">Undo</span> <span id="undoCount">(0)</span>
+                        </button>
+                        <button id="redoBtn" disabled title="Redo (Ctrl+Y)" style="width: 100%; padding: 10px 16px; border: none; background: none; text-align: left; cursor: pointer; border-radius: 0 0 6px 6px; color: #333;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='none'">
+                            <span data-i18n="dashboard.buttons.redo">Redo</span> <span id="redoCount">(0)</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -161,24 +175,22 @@
                     <thead>
                         <tr>
                             <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAll"></th>
-                            <th class="sortable" data-sort="date" data-i18n="dashboard.table.headers.date">Action ↕</th>
+                            <th class="sortable" data-sort="date" data-i18n="dashboard.table.headers.date">Date ↕</th>
                             <th class="sortable" data-sort="origin" data-i18n="dashboard.table.headers.origin">Origin ↕</th>
                             <th class="sortable" data-sort="destination" data-i18n="dashboard.table.headers.destination">Destination ↕</th>
                             <th class="sortable" data-sort="description" data-i18n="dashboard.table.headers.description">Description ↕</th>
-                            <th class="sortable" data-sort="amount" data-i18n="dashboard.table.headers.amount">Amount ↕</th>
-                            <th data-i18n="dashboard.table.headers.crypto">Crypto</th>
+                            <th class="sortable" data-sort="amount">Amount ↕ <button id="amountToggleBtn" class="amount-toggle-btn" onclick="event.stopPropagation(); event.preventDefault(); toggleAmountDisplay(); return false;" title="Showing USD - Click for original currency">$</button></th>
                             <th class="sortable" data-sort="classified_entity" data-i18n="dashboard.table.headers.entity">Entity ↕</th>
                             <th class="sortable" data-sort="accounting_category" data-i18n="dashboard.table.headers.primaryCategory">Primary Category ↕</th>
                             <th class="sortable" data-sort="subcategory" data-i18n="dashboard.table.headers.subcategory">Subcategory ↕</th>
                             <th data-i18n="dashboard.table.headers.justification">Justification</th>
-                            <th class="sortable" data-sort="confidence" data-i18n="dashboard.table.headers.confidence">Confidence ↕</th>
                             <th class="sortable" data-sort="source_file" data-i18n="dashboard.table.headers.source">Source ↕</th>
-                            <th data-i18n="dashboard.table.headers.actions">Actions</th>
+                            <th class="sortable" data-sort="confidence" data-i18n="dashboard.table.headers.aiConfidence" style="min-width: 70px; text-align: center;">AI ↕</th>
                         </tr>
                     </thead>
                     <tbody id="transactionTableBody">
                         <tr>
-                            <td colspan="14" class="loading" data-i18n="dashboard.table.loading">Loading transactions...</td>
+                            <td colspan="12" class="loading" data-i18n="dashboard.table.loading">Loading transactions...</td>
                         </tr>
                     </tbody>
                 </table>

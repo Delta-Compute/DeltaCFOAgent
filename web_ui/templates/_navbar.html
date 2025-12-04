@@ -21,14 +21,14 @@
     <!-- Navigation Links -->
     <div class="nav-links" id="navLinks">
         <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}" data-i18n="nav.home">Home</a>
-        <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}" data-i18n="nav.dashboard">Transaction Manager</a>
-        <a href="/revenue" class="nav-link {% if request.path == '/revenue' %}active{% endif %}" data-i18n="nav.revenue">Revenue Recognition</a>
-        <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}" data-i18n="nav.reports">Reports</a>
-        <a href="/invoices" class="nav-link {% if request.path == '/invoices' %}active{% endif %}" data-i18n="nav.invoices">Invoices</a>
-        <a href="/workforce" class="nav-link {% if request.path == '/workforce' %}active{% endif %}" data-i18n="nav.workforce">Workforce</a>
+        <a href="/dashboard" class="nav-link {% if request.path == '/dashboard' %}active{% endif %}" data-i18n="nav.dashboard" data-capability="transactions">Transaction Manager</a>
+        <a href="/revenue" class="nav-link {% if request.path == '/revenue' %}active{% endif %}" data-i18n="nav.revenue" data-capability="analytics">Revenue Recognition</a>
+        <a href="/reports" class="nav-link {% if request.path == '/reports' %}active{% endif %}" data-i18n="nav.reports" data-capability="reports">Reports</a>
+        <a href="/invoices" class="nav-link {% if request.path == '/invoices' %}active{% endif %}" data-i18n="nav.invoices" data-capability="invoices">Invoices</a>
+        <a href="/workforce" class="nav-link {% if request.path == '/workforce' %}active{% endif %}" data-i18n="nav.workforce" data-capability="workforce">Workforce</a>
         <a href="/month-end-close" class="nav-link {% if request.path == '/month-end-close' %}active{% endif %}" data-i18n="nav.monthEndClose">Month-End Close</a>
         <a href="/files" class="nav-link {% if request.path == '/files' %}active{% endif %}" data-i18n="nav.files">File Manager</a>
-        <a href="/tenant-knowledge" class="nav-link {% if request.path == '/tenant-knowledge' %}active{% endif %}" data-i18n="nav.knowledge">Knowledge</a>
+        <a href="/tenant-knowledge" class="nav-link {% if request.path == '/tenant-knowledge' %}active{% endif %}" data-i18n="nav.knowledge" data-capability="patterns">Knowledge</a>
     </div>
 
     <!-- User Account Menu -->
@@ -96,6 +96,9 @@
 <script>
     // Mobile menu toggle
     document.addEventListener('DOMContentLoaded', function() {
+        // Safety: Remove any stuck menu-open class on page load
+        document.body.classList.remove('menu-open');
+
         const mobileMenuToggle = document.getElementById('mobileMenuToggle');
         const navLinks = document.getElementById('navLinks');
         const mobileMenuOverlay = document.getElementById('mobileMenuOverlay');
@@ -154,5 +157,86 @@
                 }
             });
         });
+
+        // Progressive disclosure - check capabilities and update nav links
+        applyProgressiveDisclosure();
     });
+
+    // Fetch capabilities and apply progressive disclosure to nav links
+    async function applyProgressiveDisclosure() {
+        try {
+            const auth = window.auth;
+            if (!auth || !auth.currentUser) {
+                // Not authenticated yet, wait for Firebase
+                setTimeout(applyProgressiveDisclosure, 1000);
+                return;
+            }
+
+            const idToken = await auth.currentUser.getIdToken();
+            const response = await fetch('/api/onboarding/capabilities', {
+                headers: { 'Authorization': `Bearer ${idToken}` }
+            });
+
+            if (!response.ok) {
+                console.warn('[ProgressiveDisclosure] Failed to fetch capabilities');
+                return;
+            }
+
+            const data = await response.json();
+            if (!data.success) return;
+
+            const capabilities = data.capabilities || {};
+            const nextSteps = data.next_steps || [];
+
+            // Store globally for other scripts to access
+            window.tenantCapabilities = capabilities;
+            window.tenantNextSteps = nextSteps;
+
+            // Apply to nav links
+            const navLinks = document.querySelectorAll('[data-capability]');
+            navLinks.forEach(link => {
+                const requiredCapability = link.getAttribute('data-capability');
+                const hasCapability = capabilities[requiredCapability];
+
+                if (!hasCapability) {
+                    // Find the relevant next step for tooltip
+                    const relevantStep = nextSteps.find(step => {
+                        const capMap = {
+                            'profile': 'entities',
+                            'entities': 'transactions',
+                            'transactions': 'analytics',
+                            'accounts': 'accounts'
+                        };
+                        return capMap[step.milestone] === requiredCapability ||
+                               step.milestone === requiredCapability;
+                    });
+
+                    // Style as disabled
+                    link.style.opacity = '0.5';
+                    link.style.pointerEvents = 'none';
+                    link.style.position = 'relative';
+
+                    // Add lock icon
+                    if (!link.querySelector('.lock-icon')) {
+                        const lockIcon = document.createElement('span');
+                        lockIcon.className = 'lock-icon';
+                        lockIcon.textContent = ' ';
+                        lockIcon.style.fontSize = '0.7em';
+                        link.appendChild(lockIcon);
+                    }
+
+                    // Add tooltip
+                    if (relevantStep) {
+                        link.title = relevantStep.message;
+                    } else {
+                        link.title = 'Complete setup to unlock this feature';
+                    }
+                }
+            });
+
+            console.log('[ProgressiveDisclosure] Applied capabilities:', capabilities);
+        } catch (error) {
+            console.warn('[ProgressiveDisclosure] Error:', error);
+        }
+    }
 </script>

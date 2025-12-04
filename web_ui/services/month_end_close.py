@@ -1137,6 +1137,141 @@ class MonthEndCloseService:
             return {'total': 0, 'classified': 0, 'unclassified': 0, 'classified_rate': 0, 'error': str(e)}
 
     @staticmethod
+    def get_statement_coverage_stats(tenant_id: str, start_date: str, end_date: str) -> Dict:
+        """
+        Get statement coverage statistics for all bank accounts in a date range.
+        Checks:
+        - All bank accounts have transactions (statements uploaded) for the period
+        - No gaps in date coverage
+        - Overall coverage percentage
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Get all bank accounts for tenant
+                cursor.execute("""
+                    SELECT id, account_name, institution_name
+                    FROM bank_accounts
+                    WHERE tenant_id = %s
+                """, (tenant_id,))
+                accounts = cursor.fetchall()
+
+                if not accounts:
+                    return {
+                        'total_accounts': 0,
+                        'accounts_with_coverage': 0,
+                        'accounts_without_coverage': 0,
+                        'overall_coverage_pct': 100.0,
+                        'has_gaps': False,
+                        'message': 'No bank accounts configured'
+                    }
+
+                # Parse dates
+                period_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                period_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                period_days = (period_end - period_start).days + 1
+
+                account_results = []
+                total_coverage = 0
+                accounts_with_data = 0
+                has_any_gaps = False
+
+                for account_id, account_name, institution in accounts:
+                    # Get transaction date range for this account in the period
+                    # Match by source_file containing account identifier or by origin/destination
+                    cursor.execute("""
+                        SELECT MIN(date), MAX(date), COUNT(*)
+                        FROM transactions
+                        WHERE tenant_id = %s
+                        AND date >= %s AND date <= %s
+                        AND archived = false
+                    """, (tenant_id, start_date, end_date))
+
+                    row = cursor.fetchone()
+                    min_date, max_date, txn_count = row if row else (None, None, 0)
+
+                    if txn_count > 0:
+                        accounts_with_data += 1
+                        days_covered = (max_date - min_date).days + 1 if min_date and max_date else 0
+                        coverage_pct = min(100.0, (days_covered / period_days) * 100) if period_days > 0 else 100.0
+
+                        # Check for gaps (days without transactions)
+                        cursor.execute("""
+                            SELECT date FROM transactions
+                            WHERE tenant_id = %s
+                            AND date >= %s AND date <= %s
+                            AND archived = false
+                            ORDER BY date
+                        """, (tenant_id, start_date, end_date))
+                        dates = [r[0] for r in cursor.fetchall()]
+
+                        gaps = []
+                        if dates:
+                            unique_dates = sorted(set(dates))
+                            for i in range(1, len(unique_dates)):
+                                gap_days = (unique_dates[i] - unique_dates[i-1]).days
+                                if gap_days > 7:  # More than 7 days is a gap
+                                    gaps.append({
+                                        'from': unique_dates[i-1].isoformat(),
+                                        'to': unique_dates[i].isoformat(),
+                                        'days': gap_days
+                                    })
+
+                        if gaps:
+                            has_any_gaps = True
+
+                        total_coverage += coverage_pct
+                        account_results.append({
+                            'account_id': str(account_id),
+                            'account_name': account_name,
+                            'institution': institution,
+                            'transactions': txn_count,
+                            'coverage_pct': round(coverage_pct, 1),
+                            'has_gaps': len(gaps) > 0,
+                            'gaps': gaps
+                        })
+                    else:
+                        account_results.append({
+                            'account_id': str(account_id),
+                            'account_name': account_name,
+                            'institution': institution,
+                            'transactions': 0,
+                            'coverage_pct': 0,
+                            'has_gaps': True,
+                            'gaps': [{'from': start_date, 'to': end_date, 'days': period_days}]
+                        })
+                        has_any_gaps = True
+
+                cursor.close()
+
+                overall_coverage = total_coverage / len(accounts) if accounts else 100.0
+
+                return {
+                    'total_accounts': len(accounts),
+                    'accounts_with_coverage': accounts_with_data,
+                    'accounts_without_coverage': len(accounts) - accounts_with_data,
+                    'overall_coverage_pct': round(overall_coverage, 1),
+                    'has_gaps': has_any_gaps,
+                    'period_start': start_date,
+                    'period_end': end_date,
+                    'period_days': period_days,
+                    'accounts': account_results
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting statement coverage stats: {e}")
+            return {
+                'total_accounts': 0,
+                'accounts_with_coverage': 0,
+                'overall_coverage_pct': 0,
+                'has_gaps': True,
+                'error': str(e)
+            }
+
+    @staticmethod
     def get_unmatched_items(period_id: str, tenant_id: str, item_type: str = 'all',
                             page: int = 1, per_page: int = 20) -> Tuple[List[Dict], int]:
         """Get unmatched items (invoices, payslips, or transactions) for a period."""
@@ -1369,17 +1504,27 @@ class MonthEndCloseService:
             }
 
         elif auto_check_type == 'bank_reconciled':
-            # For now, use transaction classification as proxy
-            # In future, implement dedicated bank reconciliation tracking
-            stats = MonthEndCloseService.get_transaction_classification_stats(tenant_id, start_date, end_date)
+            # Legacy - redirect to statement_coverage
+            stats = MonthEndCloseService.get_statement_coverage_stats(tenant_id, start_date, end_date)
             result = {
-                'matched': stats.get('classified', 0),
-                'total': stats.get('total', 0),
-                'percentage': stats.get('classified_rate', 0),
+                'matched': stats.get('accounts_with_coverage', 0),
+                'total': stats.get('total_accounts', 0),
+                'percentage': stats.get('overall_coverage_pct', 0),
                 'threshold': threshold,
-                'passed': stats.get('classified_rate', 0) >= threshold,
-                'details': stats,
-                'note': 'Using transaction classification as proxy for bank reconciliation'
+                'passed': stats.get('overall_coverage_pct', 0) >= threshold and not stats.get('has_gaps', True),
+                'details': stats
+            }
+
+        elif auto_check_type == 'statement_coverage':
+            # Check bank account statement coverage for the period
+            stats = MonthEndCloseService.get_statement_coverage_stats(tenant_id, start_date, end_date)
+            result = {
+                'matched': stats.get('accounts_with_coverage', 0),
+                'total': stats.get('total_accounts', 0),
+                'percentage': stats.get('overall_coverage_pct', 0),
+                'threshold': threshold,
+                'passed': stats.get('overall_coverage_pct', 0) >= threshold and not stats.get('has_gaps', True),
+                'details': stats
             }
 
         else:

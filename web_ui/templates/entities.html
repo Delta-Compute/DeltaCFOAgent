@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entity & Business Line Management - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <style>
+        .entities-container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .page-header {
+            background: linear-gradient(135deg, #1e40af 0%, #3730a3 50%, #1e3a8a 100%);
+            color: white;
+            padding: 3rem 2rem;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .tab-button {
+            padding: 1rem 2rem;
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid transparent;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .tab-button.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+
+        .tab-button:hover {
+            color: #3b82f6;
+            background: #f8fafc;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .add-button {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 1rem;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+            transition: all 0.3s;
+            margin-bottom: 2rem;
+        }
+
+        .add-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.4);
+        }
+
+        .entity-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-left: 4px solid #3b82f6;
+            transition: all 0.3s;
+        }
+
+        .entity-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+
+        .entity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .entity-name-section {
+            flex: 1;
+        }
+
+        .entity-name {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.25rem;
+        }
+
+        .entity-code {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            background: #e0e7ff;
+            color: #3730a3;
+            margin-left: 0.5rem;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .status-inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .entity-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.25rem;
+        }
+
+        .detail-value {
+            font-size: 1rem;
+            color: #1e293b;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .btn-edit {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-edit:hover {
+            background: #059669;
+        }
+
+        .btn-delete {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-delete:hover {
+            background: #dc2626;
+        }
+
+        .btn-view {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-view:hover {
+            background: #2563eb;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .close-button {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-input,
+        .form-select,
+        .form-textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        .form-input:focus,
+        .form-select:focus,
+        .form-textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        .submit-button {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            color: white;
+            padding: 0.75rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 1rem;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .submit-button:hover {
+            background: linear-gradient(135deg, #2563eb, #1e40af);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #64748b;
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #3b82f6;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+        }
+
+        .business-line-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            border-left: 4px solid;
+            transition: all 0.3s;
+        }
+
+        .business-line-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+
+        .business-line-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 1rem;
+        }
+
+        .business-line-name {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .default-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: #fef3c7;
+            color: #92400e;
+            margin-left: 0.5rem;
+        }
+
+        .entity-filter {
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 1.5rem;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Bar -->
+    {% include '_navbar.html' %}
+
+    <!-- Page Header -->
+    <div class="page-header">
+        <h1 class="page-title">Entity & Business Line Management</h1>
+        <p class="page-subtitle">Manage legal entities and their business lines for financial reporting</p>
+    </div>
+
+    <div class="entities-container">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-button active" data-tab="entitiesTab">Legal Entities</button>
+            <button class="tab-button" data-tab="businessLinesTab">Business Lines</button>
+        </div>
+
+        <!-- Entities Tab -->
+        <div id="entitiesTab" class="tab-content active">
+            <button class="add-button" id="addEntityBtn">+ Add Entity</button>
+
+            <!-- Statistics -->
+            <div class="stats-grid" id="entityStats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalEntities">0</div>
+                    <div class="stat-label">Total Entities</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="activeEntities">0</div>
+                    <div class="stat-label">Active Entities</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalBusinessLines">0</div>
+                    <div class="stat-label">Total Business Lines</div>
+                </div>
+            </div>
+
+            <!-- Entities List -->
+            <div id="entitiesList"></div>
+        </div>
+
+        <!-- Business Lines Tab -->
+        <div id="businessLinesTab" class="tab-content">
+            <button class="add-button" id="addBusinessLineBtn">+ Add Business Line</button>
+
+            <!-- Entity Filter -->
+            <select class="entity-filter" id="entityFilter">
+                <option value="">All Entities</option>
+            </select>
+
+            <!-- Business Lines List -->
+            <div id="businessLinesList"></div>
+        </div>
+    </div>
+
+    <!-- Entity Modal -->
+    <div id="entityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="entityModalTitle">Add Entity</h2>
+                <button class="close-button" onclick="closeEntityModal()">&times;</button>
+            </div>
+            <form id="entityForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="entityCode">Entity Code *</label>
+                        <input type="text" id="entityCode" class="form-input" required placeholder="e.g., DLLC, DPY">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="entityName">Entity Name *</label>
+                        <input type="text" id="entityName" class="form-input" required placeholder="e.g., Delta Mining LLC">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="legalName">Legal Name</label>
+                    <input type="text" id="legalName" class="form-input" placeholder="Official registered name">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="taxId">Tax ID</label>
+                        <input type="text" id="taxId" class="form-input" placeholder="EIN, CNPJ, RUC, etc.">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="entityType">Entity Type</label>
+                        <select id="entityType" class="form-select">
+                            <option value="">Select Type</option>
+                            <option value="LLC">LLC</option>
+                            <option value="S-Corp">S-Corp</option>
+                            <option value="C-Corp">C-Corp</option>
+                            <option value="SA">SA (Sociedad Anónima)</option>
+                            <option value="Ltda">Ltda (Limited)</option>
+                            <option value="Partnership">Partnership</option>
+                            <option value="Sole Proprietorship">Sole Proprietorship</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="taxJurisdiction">Tax Jurisdiction</label>
+                        <input type="text" id="taxJurisdiction" class="form-input" placeholder="e.g., US-Delaware, Paraguay">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="baseCurrency">Base Currency</label>
+                        <select id="baseCurrency" class="form-select">
+                            <option value="USD">USD - US Dollar</option>
+                            <option value="EUR">EUR - Euro</option>
+                            <option value="GBP">GBP - British Pound</option>
+                            <option value="BRL">BRL - Brazilian Real</option>
+                            <option value="PYG">PYG - Paraguayan Guaraní</option>
+                            <option value="ARS">ARS - Argentine Peso</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="incorporationDate">Incorporation Date</label>
+                        <input type="date" id="incorporationDate" class="form-input">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="fiscalYearEnd">Fiscal Year End</label>
+                        <input type="text" id="fiscalYearEnd" class="form-input" value="12-31" placeholder="MM-DD">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="address">Address</label>
+                    <textarea id="address" class="form-textarea" placeholder="Entity address"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="countryCode">Country Code</label>
+                        <input type="text" id="countryCode" class="form-input" placeholder="e.g., US, BR, PY" maxlength="2">
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="isActive" checked>
+                            <label class="form-label" for="isActive" style="margin: 0;">Active</label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-button">Save Entity</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Business Line Modal -->
+    <div id="businessLineModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="businessLineModalTitle">Add Business Line</h2>
+                <button class="close-button" onclick="closeBusinessLineModal()">&times;</button>
+            </div>
+            <form id="businessLineForm">
+                <div class="form-group">
+                    <label class="form-label" for="blEntityId">Entity *</label>
+                    <select id="blEntityId" class="form-select" required>
+                        <option value="">Select Entity</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="blCode">Code *</label>
+                        <input type="text" id="blCode" class="form-input" required placeholder="e.g., HOST, VAL">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="blName">Name *</label>
+                        <input type="text" id="blName" class="form-input" required placeholder="e.g., Hosting Services">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="blDescription">Description</label>
+                    <textarea id="blDescription" class="form-textarea" placeholder="Business line description"></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="blColorHex">Color (for UI)</label>
+                        <input type="color" id="blColorHex" class="form-input" value="#3B82F6">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="blStartDate">Start Date</label>
+                        <input type="date" id="blStartDate" class="form-input">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="blIsActive" checked>
+                            <label class="form-label" for="blIsActive" style="margin: 0;">Active</label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="blIsDefault">
+                            <label class="form-label" for="blIsDefault" style="margin: 0;">Default for Entity</label>
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="submit-button">Save Business Line</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='js/entities.js') }}?v={{ cache_buster }}"></script>
+    <script>
+        // Modal helper functions (global scope)
+        function closeEntityModal() {
+            document.getElementById('entityModal').classList.remove('active');
+        }
+
+        function closeBusinessLineModal() {
+            document.getElementById('businessLineModal').classList.remove('active');
+        }
+
+        // Initialize manager
+        document.addEventListener('DOMContentLoaded', () => {
+            window.entitiesManager = new EntitiesManager();
+            window.entitiesManager.init();
+        });
+    </script>
+</body>
+</html>
