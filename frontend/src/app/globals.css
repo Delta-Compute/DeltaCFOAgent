@@ -1,0 +1,427 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   DeltaCFO Design System
+   Based on Scout UI reference
+   ============================================ */
+
+@layer base {
+  :root {
+    /* Background Colors */
+    --background: 30 20% 98%;           /* #FAFAF9 warm off-white */
+    --foreground: 240 10% 10%;          /* #18181B dark zinc */
+
+    /* Card & Surface Colors */
+    --card: 0 0% 100%;                  /* white */
+    --card-foreground: 240 10% 10%;     /* dark zinc */
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 10%;
+
+    /* Primary - Deep Indigo */
+    --primary: 243 75% 59%;             /* #4F46E5 */
+    --primary-foreground: 0 0% 100%;    /* white */
+
+    /* Secondary - Cool Gray */
+    --secondary: 240 5% 96%;            /* #F4F4F5 */
+    --secondary-foreground: 240 10% 10%;
+
+    /* Muted */
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    /* Accent - Warm Amber */
+    --accent: 48 96% 89%;               /* #FEF3C7 */
+    --accent-foreground: 240 10% 10%;
+
+    /* Destructive - Red */
+    --destructive: 0 84% 60%;           /* #DC2626 */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Border & Input */
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 243 75% 59%;                /* primary */
+
+    /* Border Radius */
+    --radius: 0.5rem;
+
+    /* Status Colors */
+    --status-success: 142 76% 36%;      /* green */
+    --status-warning: 38 92% 50%;       /* amber */
+    --status-error: 0 84% 60%;          /* red */
+    --status-info: 199 89% 48%;         /* blue */
+
+    /* Chart Colors */
+    --chart-1: 243 75% 59%;
+    --chart-2: 199 89% 48%;
+    --chart-3: 142 76% 36%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 4%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 4%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4% 16%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 48 96% 89%;
+    --accent-foreground: 240 10% 10%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+    --ring: 243 75% 59%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading font-semibold tracking-tight;
+  }
+
+  h1 {
+    @apply text-4xl lg:text-5xl;
+  }
+
+  h2 {
+    @apply text-3xl lg:text-4xl;
+  }
+
+  h3 {
+    @apply text-2xl lg:text-3xl;
+  }
+
+  h4 {
+    @apply text-xl lg:text-2xl;
+  }
+
+  h5 {
+    @apply text-lg lg:text-xl;
+  }
+
+  h6 {
+    @apply text-base lg:text-lg;
+  }
+}
+
+/* ============================================
+   Component Utilities
+   ============================================ */
+
+@layer components {
+  /* Container */
+  .container-main {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Cards */
+  .card-base {
+    @apply bg-card rounded-lg border shadow-sm;
+  }
+
+  .card-interactive {
+    @apply card-base transition-shadow hover:shadow-md;
+  }
+
+  /* Stats Card */
+  .stats-card {
+    @apply card-base p-6;
+  }
+
+  .stats-card-value {
+    @apply text-3xl font-bold font-heading text-foreground;
+  }
+
+  .stats-card-label {
+    @apply text-sm text-muted-foreground mt-1;
+  }
+
+  .stats-card-change {
+    @apply text-sm mt-2 flex items-center gap-1;
+  }
+
+  .stats-card-change-positive {
+    @apply text-green-600;
+  }
+
+  .stats-card-change-negative {
+    @apply text-red-600;
+  }
+
+  /* Status Badges */
+  .badge-base {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .status-new {
+    @apply badge-base bg-blue-100 text-blue-800;
+  }
+
+  .status-pending {
+    @apply badge-base bg-yellow-100 text-yellow-800;
+  }
+
+  .status-confirmed {
+    @apply badge-base bg-green-100 text-green-800;
+  }
+
+  .status-paid {
+    @apply badge-base bg-green-100 text-green-800;
+  }
+
+  .status-rejected {
+    @apply badge-base bg-red-100 text-red-800;
+  }
+
+  .status-draft {
+    @apply badge-base bg-gray-100 text-gray-800;
+  }
+
+  .status-overdue {
+    @apply badge-base bg-red-100 text-red-800;
+  }
+
+  .status-partial {
+    @apply badge-base bg-orange-100 text-orange-800;
+  }
+
+  /* Priority Badges */
+  .priority-high {
+    @apply badge-base bg-red-100 text-red-800;
+  }
+
+  .priority-medium {
+    @apply badge-base bg-yellow-100 text-yellow-800;
+  }
+
+  .priority-low {
+    @apply badge-base bg-blue-100 text-blue-800;
+  }
+
+  /* Confidence Badges */
+  .confidence-high {
+    @apply badge-base bg-green-100 text-green-800;
+  }
+
+  .confidence-medium {
+    @apply badge-base bg-yellow-100 text-yellow-800;
+  }
+
+  .confidence-low {
+    @apply badge-base bg-red-100 text-red-800;
+  }
+
+  /* Navigation */
+  .nav-link {
+    @apply flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors;
+    @apply text-muted-foreground hover:text-foreground hover:bg-muted;
+  }
+
+  .nav-link-active {
+    @apply bg-indigo-50 text-indigo-700;
+  }
+
+  /* Form Elements */
+  .form-label {
+    @apply text-sm font-medium text-foreground;
+  }
+
+  .form-description {
+    @apply text-sm text-muted-foreground;
+  }
+
+  .form-error {
+    @apply text-sm text-destructive;
+  }
+
+  /* Tables */
+  .table-header {
+    @apply bg-muted/50 text-muted-foreground text-left text-sm font-medium;
+  }
+
+  .table-row {
+    @apply border-b transition-colors hover:bg-muted/50;
+  }
+
+  .table-cell {
+    @apply py-3 px-4;
+  }
+
+  /* Empty States */
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-12 text-center;
+  }
+
+  .empty-state-icon {
+    @apply w-12 h-12 text-muted-foreground mb-4;
+  }
+
+  .empty-state-title {
+    @apply text-lg font-medium text-foreground;
+  }
+
+  .empty-state-description {
+    @apply text-sm text-muted-foreground mt-1 max-w-sm;
+  }
+
+  /* Loading States */
+  .skeleton {
+    @apply animate-pulse bg-muted rounded;
+  }
+
+  .spinner {
+    @apply animate-spin rounded-full border-2 border-current border-t-transparent;
+  }
+
+  /* Filters Bar */
+  .filters-bar {
+    @apply flex flex-wrap items-center gap-3 p-4 bg-card rounded-lg border mb-6;
+  }
+
+  /* Page Header */
+  .page-header {
+    @apply mb-8;
+  }
+
+  .page-title {
+    @apply text-2xl font-bold font-heading text-foreground;
+  }
+
+  .page-description {
+    @apply text-muted-foreground mt-1;
+  }
+
+  /* Modal/Dialog Backdrop */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/50 z-50;
+  }
+
+  /* Scrollbar Styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground));
+  }
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+@layer utilities {
+  /* Text Utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Focus Ring */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2;
+  }
+
+  /* Truncate with Ellipsis */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .truncate-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Currency Display */
+  .currency-positive {
+    @apply text-green-600;
+  }
+
+  .currency-negative {
+    @apply text-red-600;
+  }
+
+  /* Grid Layouts */
+  .stats-grid {
+    @apply grid gap-4 sm:grid-cols-2 lg:grid-cols-4;
+  }
+
+  .cards-grid {
+    @apply grid gap-6 sm:grid-cols-2 lg:grid-cols-3;
+  }
+
+  /* Animation Utilities */
+  .animate-in {
+    animation: fade-in 0.2s ease-out;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Confidence Bar */
+  .confidence-bar {
+    @apply h-2 rounded-full bg-muted overflow-hidden;
+  }
+
+  .confidence-bar-fill {
+    @apply h-full rounded-full transition-all duration-300;
+  }
+
+  .confidence-bar-high {
+    @apply bg-green-500;
+  }
+
+  .confidence-bar-medium {
+    @apply bg-yellow-500;
+  }
+
+  .confidence-bar-low {
+    @apply bg-red-500;
+  }
+}
