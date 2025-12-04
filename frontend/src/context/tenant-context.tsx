@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import { useAuth } from "./auth-context";
 
 // Types
@@ -36,18 +36,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [availableTenants, setAvailableTenants] = useState<Tenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load tenant data when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadTenantData();
-    } else {
-      setCurrentTenant(null);
-      setAvailableTenants([]);
-      setIsLoading(false);
-    }
-  }, [isAuthenticated]);
-
-  async function loadTenantData() {
+  // Load tenant data function
+  const loadTenantData = useCallback(async () => {
     setIsLoading(true);
     try {
       // Get current tenant config
@@ -79,7 +69,18 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  // Load tenant data when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadTenantData();
+    } else {
+      setCurrentTenant(null);
+      setAvailableTenants([]);
+      setIsLoading(false);
+    }
+  }, [isAuthenticated, loadTenantData]);
 
   async function switchTenant(tenantId: string) {
     setIsLoading(true);
