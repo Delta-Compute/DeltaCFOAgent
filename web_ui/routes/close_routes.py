@@ -743,3 +743,316 @@ def run_single_auto_check(item_id):
     except Exception as e:
         logger.error(f"Error running single auto-check: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# ADJUSTING ENTRIES ROUTES (PHASE 3)
+# ========================================
+
+@close_bp.route('/periods/<period_id>/entries', methods=['GET'])
+def list_adjusting_entries(period_id):
+    """List adjusting entries for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        status = request.args.get('status')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+
+        entries, total = MonthEndCloseService.list_adjusting_entries(
+            period_id, tenant_id, status=status, page=page, per_page=per_page
+        )
+
+        # Also get summary
+        summary = MonthEndCloseService.get_entries_summary(period_id, tenant_id)
+
+        return jsonify({
+            'entries': entries,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page if per_page > 0 else 0,
+            'summary': summary
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing adjusting entries: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/entries', methods=['POST'])
+def create_adjusting_entry(period_id):
+    """Create a new adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body required'}), 400
+
+        required = ['entry_type', 'description', 'debit_account', 'credit_account', 'amount']
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            return jsonify({'error': f'Missing required fields: {missing}'}), 400
+
+        entry = MonthEndCloseService.create_adjusting_entry(
+            period_id=period_id,
+            tenant_id=tenant_id,
+            entry_type=data['entry_type'],
+            description=data['description'],
+            debit_account=data['debit_account'],
+            credit_account=data['credit_account'],
+            amount=float(data['amount']),
+            currency=data.get('currency', 'USD'),
+            entity=data.get('entity'),
+            notes=data.get('notes'),
+            is_reversing=data.get('is_reversing', False),
+            user_id=user_id
+        )
+
+        return jsonify({'entry': entry, 'message': 'Entry created successfully'}), 201
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error creating adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>', methods=['GET'])
+def get_adjusting_entry(entry_id):
+    """Get a single adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify(entry)
+
+    except Exception as e:
+        logger.error(f"Error getting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>', methods=['PUT'])
+def update_adjusting_entry(entry_id):
+    """Update an adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        data = request.get_json() or {}
+
+        entry = MonthEndCloseService.update_adjusting_entry(
+            entry_id=entry_id,
+            tenant_id=tenant_id,
+            entry_type=data.get('entry_type'),
+            description=data.get('description'),
+            debit_account=data.get('debit_account'),
+            credit_account=data.get('credit_account'),
+            amount=float(data['amount']) if data.get('amount') else None,
+            currency=data.get('currency'),
+            entity=data.get('entity'),
+            notes=data.get('notes'),
+            user_id=user_id
+        )
+
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'entry': entry, 'message': 'Entry updated'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error updating adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>', methods=['DELETE'])
+def delete_adjusting_entry(entry_id):
+    """Delete an adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        success = MonthEndCloseService.delete_adjusting_entry(entry_id, tenant_id, user_id)
+        if not success:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'message': 'Entry deleted'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error deleting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>/submit', methods=['POST'])
+def submit_adjusting_entry(entry_id):
+    """Submit an adjusting entry for approval."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        entry = MonthEndCloseService.submit_adjusting_entry(entry_id, tenant_id, user_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'entry': entry, 'message': 'Entry submitted for approval'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error submitting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>/approve', methods=['POST'])
+def approve_adjusting_entry(entry_id):
+    """Approve an adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        entry = MonthEndCloseService.approve_adjusting_entry(entry_id, tenant_id, user_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'entry': entry, 'message': 'Entry approved'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error approving adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>/reject', methods=['POST'])
+def reject_adjusting_entry(entry_id):
+    """Reject an adjusting entry."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        data = request.get_json() or {}
+        reason = data.get('reason')
+        if not reason:
+            return jsonify({'error': 'Rejection reason is required'}), 400
+
+        entry = MonthEndCloseService.reject_adjusting_entry(entry_id, tenant_id, reason, user_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'entry': entry, 'message': 'Entry rejected'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error rejecting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>/post', methods=['POST'])
+def post_adjusting_entry(entry_id):
+    """Post an approved adjusting entry to transactions."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        entry = MonthEndCloseService.post_adjusting_entry(entry_id, tenant_id, user_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({
+            'entry': entry,
+            'message': f"Entry posted to transactions (ID: {entry.get('transaction_id')})"
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error posting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/entries/<entry_id>/revert', methods=['POST'])
+def revert_adjusting_entry(entry_id):
+    """Revert a rejected entry back to draft."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        entry = MonthEndCloseService.revert_adjusting_entry(entry_id, tenant_id, user_id)
+        if not entry:
+            return jsonify({'error': 'Entry not found'}), 404
+
+        return jsonify({'entry': entry, 'message': 'Entry reverted to draft'})
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f"Error reverting adjusting entry: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/entries-summary', methods=['GET'])
+def get_entries_summary(period_id):
+    """Get summary of adjusting entries for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        summary = MonthEndCloseService.get_entries_summary(period_id, tenant_id)
+        return jsonify(summary)
+
+    except Exception as e:
+        logger.error(f"Error getting entries summary: {e}")
+        return jsonify({'error': str(e)}), 500

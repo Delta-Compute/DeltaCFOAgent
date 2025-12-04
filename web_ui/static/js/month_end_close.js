@@ -1029,3 +1029,583 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// ========================================
+// ADJUSTING ENTRIES (PHASE 3)
+// ========================================
+
+let entriesData = [];
+let currentEntriesFilter = 'all';
+let currentEntriesPage = 1;
+let entriesPerPage = 10;
+let entriesTotalPages = 1;
+let editingEntryId = null;
+
+async function loadAdjustingEntries() {
+    if (!currentPeriodId) return;
+
+    const tbody = document.getElementById('entriesTableBody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="6" style="text-align: center; padding: 2rem;">
+                <div class="spinner" style="margin: 0 auto;"></div>
+            </td>
+        </tr>
+    `;
+
+    try {
+        let url = `/api/close/periods/${currentPeriodId}/entries?page=${currentEntriesPage}&per_page=${entriesPerPage}`;
+        if (currentEntriesFilter !== 'all') {
+            url += `&status=${currentEntriesFilter}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.error) {
+            tbody.innerHTML = `<tr><td colspan="6" class="entries-empty">${data.error}</td></tr>`;
+            return;
+        }
+
+        entriesData = data.entries;
+        entriesTotalPages = data.pages || 1;
+
+        // Update stats
+        loadEntriesSummary();
+
+        if (entriesData.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="entries-empty">
+                        <p>No adjusting entries for this period.</p>
+                        <button class="btn btn-primary btn-sm" onclick="showCreateEntryModal()" style="margin-top: 0.5rem;">
+                            Create First Entry
+                        </button>
+                    </td>
+                </tr>
+            `;
+            document.getElementById('entriesPagination').style.display = 'none';
+            return;
+        }
+
+        renderEntriesTable(entriesData);
+        updateEntriesPagination();
+
+    } catch (error) {
+        console.error('Error loading entries:', error);
+        tbody.innerHTML = `<tr><td colspan="6" class="entries-empty">Failed to load entries</td></tr>`;
+    }
+}
+
+async function loadEntriesSummary() {
+    if (!currentPeriodId) return;
+
+    try {
+        const response = await fetch(`/api/close/periods/${currentPeriodId}/entries-summary`);
+        const data = await response.json();
+
+        if (data.error) {
+            console.error('Error loading entries summary:', data.error);
+            return;
+        }
+
+        // Update counts
+        document.getElementById('entriesDraftCount').textContent = data.by_status?.draft || 0;
+        document.getElementById('entriesPendingCount').textContent = data.by_status?.pending_approval || 0;
+        document.getElementById('entriesPostedCount').textContent = data.by_status?.posted || 0;
+
+    } catch (error) {
+        console.error('Error loading entries summary:', error);
+    }
+}
+
+function renderEntriesTable(entries) {
+    const tbody = document.getElementById('entriesTableBody');
+    const canModify = currentPeriod && (currentPeriod.status === 'in_progress' || currentPeriod.status === 'open');
+
+    tbody.innerHTML = entries.map(entry => {
+        const actions = getEntryActions(entry, canModify);
+        return `
+            <tr data-entry-id="${entry.id}">
+                <td><span class="entry-type-badge ${entry.entry_type}">${formatEntryType(entry.entry_type)}</span></td>
+                <td>
+                    <div>${escapeHtml(entry.description)}</div>
+                    ${entry.entity ? `<small style="color: #64748b;">${escapeHtml(entry.entity)}</small>` : ''}
+                </td>
+                <td>
+                    <div class="entry-accounts">
+                        <div>Dr: ${escapeHtml(entry.debit_account)}</div>
+                        <div>Cr: ${escapeHtml(entry.credit_account)}</div>
+                    </div>
+                </td>
+                <td class="entry-amount">${formatCurrency(entry.amount, entry.currency)}</td>
+                <td><span class="entry-status-badge ${entry.status}">${formatEntryStatus(entry.status)}</span></td>
+                <td class="entry-actions">${actions}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function getEntryActions(entry, canModify) {
+    let actions = [];
+
+    // View button always available
+    actions.push(`<button class="entry-btn" onclick="viewEntry('${entry.id}')" title="View">View</button>`);
+
+    if (canModify) {
+        switch (entry.status) {
+            case 'draft':
+                actions.push(`<button class="entry-btn" onclick="editEntry('${entry.id}')" title="Edit">Edit</button>`);
+                actions.push(`<button class="entry-btn submit" onclick="submitEntry('${entry.id}')" title="Submit">Submit</button>`);
+                actions.push(`<button class="entry-btn delete" onclick="deleteEntry('${entry.id}')" title="Delete">Del</button>`);
+                break;
+            case 'pending_approval':
+                actions.push(`<button class="entry-btn approve" onclick="approveEntry('${entry.id}')" title="Approve">Approve</button>`);
+                actions.push(`<button class="entry-btn reject" onclick="showRejectEntryModal('${entry.id}')" title="Reject">Reject</button>`);
+                break;
+            case 'approved':
+                actions.push(`<button class="entry-btn post" onclick="postEntry('${entry.id}')" title="Post">Post</button>`);
+                break;
+            case 'rejected':
+                actions.push(`<button class="entry-btn" onclick="editEntry('${entry.id}')" title="Edit">Edit</button>`);
+                actions.push(`<button class="entry-btn" onclick="revertEntry('${entry.id}')" title="Revert to Draft">Revert</button>`);
+                break;
+            case 'posted':
+                // No actions for posted entries
+                break;
+        }
+    }
+
+    return actions.join('');
+}
+
+function filterEntries(status) {
+    currentEntriesFilter = status;
+    currentEntriesPage = 1;
+
+    // Update filter tabs
+    document.querySelectorAll('.entry-filter').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === status);
+    });
+
+    loadAdjustingEntries();
+}
+
+function updateEntriesPagination() {
+    const pagination = document.getElementById('entriesPagination');
+
+    if (entriesTotalPages <= 1) {
+        pagination.style.display = 'none';
+        return;
+    }
+
+    pagination.style.display = 'flex';
+    document.getElementById('entriesPageInfo').textContent = `Page ${currentEntriesPage} of ${entriesTotalPages}`;
+    document.getElementById('entriesPrevBtn').disabled = currentEntriesPage <= 1;
+    document.getElementById('entriesNextBtn').disabled = currentEntriesPage >= entriesTotalPages;
+}
+
+function prevEntriesPage() {
+    if (currentEntriesPage > 1) {
+        currentEntriesPage--;
+        loadAdjustingEntries();
+    }
+}
+
+function nextEntriesPage() {
+    if (currentEntriesPage < entriesTotalPages) {
+        currentEntriesPage++;
+        loadAdjustingEntries();
+    }
+}
+
+// Create/Edit Entry Modal
+
+function showCreateEntryModal() {
+    editingEntryId = null;
+    document.getElementById('entryModalTitle').textContent = 'Create Adjusting Entry';
+    document.getElementById('saveEntryBtn').textContent = 'Create';
+
+    // Reset form
+    document.getElementById('entryId').value = '';
+    document.getElementById('entryType').value = 'accrual';
+    document.getElementById('entryDescription').value = '';
+    document.getElementById('entryDebitAccount').value = '';
+    document.getElementById('entryCreditAccount').value = '';
+    document.getElementById('entryAmount').value = '';
+    document.getElementById('entryCurrency').value = 'USD';
+    document.getElementById('entryEntity').value = '';
+    document.getElementById('entryNotes').value = '';
+    document.getElementById('entryIsReversing').checked = false;
+
+    document.getElementById('entryModal').classList.add('active');
+}
+
+async function editEntry(entryId) {
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        const entry = data.entry;
+        editingEntryId = entry.id;
+
+        document.getElementById('entryModalTitle').textContent = 'Edit Adjusting Entry';
+        document.getElementById('saveEntryBtn').textContent = 'Save';
+
+        // Populate form
+        document.getElementById('entryId').value = entry.id;
+        document.getElementById('entryType').value = entry.entry_type;
+        document.getElementById('entryDescription').value = entry.description || '';
+        document.getElementById('entryDebitAccount').value = entry.debit_account || '';
+        document.getElementById('entryCreditAccount').value = entry.credit_account || '';
+        document.getElementById('entryAmount').value = entry.amount || '';
+        document.getElementById('entryCurrency').value = entry.currency || 'USD';
+        document.getElementById('entryEntity').value = entry.entity || '';
+        document.getElementById('entryNotes').value = entry.notes || '';
+        document.getElementById('entryIsReversing').checked = entry.is_reversing || false;
+
+        document.getElementById('entryModal').classList.add('active');
+
+    } catch (error) {
+        console.error('Error loading entry:', error);
+        showNotification('Failed to load entry', 'error');
+    }
+}
+
+async function saveEntry() {
+    const entryData = {
+        entry_type: document.getElementById('entryType').value,
+        description: document.getElementById('entryDescription').value.trim(),
+        debit_account: document.getElementById('entryDebitAccount').value.trim(),
+        credit_account: document.getElementById('entryCreditAccount').value.trim(),
+        amount: parseFloat(document.getElementById('entryAmount').value) || 0,
+        currency: document.getElementById('entryCurrency').value,
+        entity: document.getElementById('entryEntity').value.trim() || null,
+        notes: document.getElementById('entryNotes').value.trim() || null,
+        is_reversing: document.getElementById('entryIsReversing').checked
+    };
+
+    // Validate required fields
+    if (!entryData.description || !entryData.debit_account || !entryData.credit_account || entryData.amount <= 0) {
+        showNotification('Please fill in all required fields', 'error');
+        return;
+    }
+
+    try {
+        let response;
+        if (editingEntryId) {
+            // Update existing entry
+            response = await fetch(`/api/close/entries/${editingEntryId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(entryData)
+            });
+        } else {
+            // Create new entry
+            response = await fetch(`/api/close/periods/${currentPeriodId}/entries`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(entryData)
+            });
+        }
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        closeModal('entryModal');
+        showNotification(editingEntryId ? 'Entry updated' : 'Entry created', 'success');
+        loadAdjustingEntries();
+
+    } catch (error) {
+        console.error('Error saving entry:', error);
+        showNotification('Failed to save entry', 'error');
+    }
+}
+
+async function viewEntry(entryId) {
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}`);
+        const data = await response.json();
+
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        const entry = data.entry;
+        const content = document.getElementById('viewEntryContent');
+
+        content.innerHTML = `
+            <div style="display: grid; gap: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span class="entry-type-badge ${entry.entry_type}">${formatEntryType(entry.entry_type)}</span>
+                    <span class="entry-status-badge ${entry.status}">${formatEntryStatus(entry.status)}</span>
+                </div>
+
+                <div>
+                    <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Description</label>
+                    <p style="margin: 0.25rem 0 0 0;">${escapeHtml(entry.description)}</p>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Debit Account</label>
+                        <p style="margin: 0.25rem 0 0 0;">${escapeHtml(entry.debit_account)}</p>
+                    </div>
+                    <div>
+                        <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Credit Account</label>
+                        <p style="margin: 0.25rem 0 0 0;">${escapeHtml(entry.credit_account)}</p>
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Amount</label>
+                        <p style="margin: 0.25rem 0 0 0; font-size: 1.25rem; font-weight: 600;">${formatCurrency(entry.amount, entry.currency)}</p>
+                    </div>
+                    ${entry.entity ? `
+                    <div>
+                        <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Entity</label>
+                        <p style="margin: 0.25rem 0 0 0;">${escapeHtml(entry.entity)}</p>
+                    </div>
+                    ` : ''}
+                </div>
+
+                ${entry.notes ? `
+                <div>
+                    <label style="font-weight: 600; color: #64748b; font-size: 0.85rem;">Notes</label>
+                    <p style="margin: 0.25rem 0 0 0;">${escapeHtml(entry.notes)}</p>
+                </div>
+                ` : ''}
+
+                ${entry.is_reversing ? `
+                <div style="padding: 0.75rem; background: #fef3c7; border-radius: 6px; color: #b45309;">
+                    This is a reversing entry that will automatically reverse in the next period.
+                </div>
+                ` : ''}
+
+                ${entry.rejection_reason ? `
+                <div style="padding: 0.75rem; background: #fee2e2; border-radius: 6px; color: #dc2626;">
+                    <strong>Rejection Reason:</strong> ${escapeHtml(entry.rejection_reason)}
+                </div>
+                ` : ''}
+
+                ${entry.transaction_id ? `
+                <div style="padding: 0.75rem; background: #dcfce7; border-radius: 6px; color: #16a34a;">
+                    Posted to transaction #${entry.transaction_id}
+                </div>
+                ` : ''}
+
+                <div style="font-size: 0.85rem; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 1rem; margin-top: 0.5rem;">
+                    <div>Created: ${formatDateTime(entry.created_at)}</div>
+                    ${entry.submitted_at ? `<div>Submitted: ${formatDateTime(entry.submitted_at)}</div>` : ''}
+                    ${entry.approved_at ? `<div>Approved: ${formatDateTime(entry.approved_at)}</div>` : ''}
+                    ${entry.posted_at ? `<div>Posted: ${formatDateTime(entry.posted_at)}</div>` : ''}
+                </div>
+            </div>
+        `;
+
+        document.getElementById('viewEntryModal').classList.add('active');
+
+    } catch (error) {
+        console.error('Error loading entry:', error);
+        showNotification('Failed to load entry details', 'error');
+    }
+}
+
+// Entry Actions
+
+async function submitEntry(entryId) {
+    if (!confirm('Submit this entry for approval?')) return;
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}/submit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification('Entry submitted for approval', 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error submitting entry:', error);
+        showNotification('Failed to submit entry', 'error');
+    }
+}
+
+async function approveEntry(entryId) {
+    if (!confirm('Approve this entry?')) return;
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification('Entry approved', 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error approving entry:', error);
+        showNotification('Failed to approve entry', 'error');
+    }
+}
+
+function showRejectEntryModal(entryId) {
+    document.getElementById('rejectEntryId').value = entryId;
+    document.getElementById('entryRejectReason').value = '';
+    document.getElementById('rejectEntryModal').classList.add('active');
+}
+
+async function confirmRejectEntry() {
+    const entryId = document.getElementById('rejectEntryId').value;
+    const reason = document.getElementById('entryRejectReason').value.trim();
+
+    if (!reason) {
+        showNotification('Please provide a reason for rejection', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        closeModal('rejectEntryModal');
+        showNotification('Entry rejected', 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error rejecting entry:', error);
+        showNotification('Failed to reject entry', 'error');
+    }
+}
+
+async function postEntry(entryId) {
+    if (!confirm('Post this entry to the general ledger? This will create a transaction record.')) return;
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}/post`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification(`Entry posted. Transaction #${data.entry.transaction_id} created.`, 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error posting entry:', error);
+        showNotification('Failed to post entry', 'error');
+    }
+}
+
+async function revertEntry(entryId) {
+    if (!confirm('Revert this entry to draft status for editing?')) return;
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}/revert`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification('Entry reverted to draft', 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error reverting entry:', error);
+        showNotification('Failed to revert entry', 'error');
+    }
+}
+
+async function deleteEntry(entryId) {
+    if (!confirm('Are you sure you want to delete this entry? This action cannot be undone.')) return;
+
+    try {
+        const response = await fetch(`/api/close/entries/${entryId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification('Entry deleted', 'success');
+        loadAdjustingEntries();
+    } catch (error) {
+        console.error('Error deleting entry:', error);
+        showNotification('Failed to delete entry', 'error');
+    }
+}
+
+// Utility functions for entries
+
+function formatEntryType(type) {
+    const typeMap = {
+        'accrual': 'Accrual',
+        'depreciation': 'Depreciation',
+        'prepaid': 'Prepaid',
+        'deferral': 'Deferral',
+        'correction': 'Correction',
+        'reclassification': 'Reclassification',
+        'other': 'Other'
+    };
+    return typeMap[type] || type;
+}
+
+function formatEntryStatus(status) {
+    const statusMap = {
+        'draft': 'Draft',
+        'pending_approval': 'Pending',
+        'approved': 'Approved',
+        'posted': 'Posted',
+        'rejected': 'Rejected'
+    };
+    return statusMap[status] || status;
+}
+
+// Modify loadPeriod to also load adjusting entries
+const originalLoadPeriod = loadPeriod;
+loadPeriod = async function(periodId) {
+    await originalLoadPeriod(periodId);
+    if (periodId) {
+        loadAdjustingEntries();
+    }
+};

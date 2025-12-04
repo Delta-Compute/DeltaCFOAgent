@@ -671,6 +671,212 @@
             background: #f8fafc;
         }
 
+        /* Adjusting Entries Section */
+        .entries-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .entries-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .entries-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .entries-stats {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .entry-stat {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            background: #f8fafc;
+            text-align: center;
+        }
+
+        .entry-stat-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .entry-stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+
+        .entries-filters {
+            display: flex;
+            gap: 0.5rem;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            flex-wrap: wrap;
+        }
+
+        .entry-filter {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .entry-filter.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .entry-filter:hover:not(.active) {
+            background: #f8fafc;
+        }
+
+        .entries-table-container {
+            padding: 1rem;
+            overflow-x: auto;
+        }
+
+        .entries-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .entries-table th,
+        .entries-table td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .entries-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .entries-table tr:hover td {
+            background: #f8fafc;
+        }
+
+        .entry-type-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .entry-type-badge.accrual { background: #dbeafe; color: #1d4ed8; }
+        .entry-type-badge.depreciation { background: #fef3c7; color: #b45309; }
+        .entry-type-badge.prepaid { background: #dcfce7; color: #16a34a; }
+        .entry-type-badge.deferral { background: #e0e7ff; color: #4338ca; }
+        .entry-type-badge.correction { background: #fee2e2; color: #dc2626; }
+        .entry-type-badge.reclassification { background: #f3e8ff; color: #7c3aed; }
+        .entry-type-badge.other { background: #e2e8f0; color: #475569; }
+
+        .entry-status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .entry-status-badge.draft { background: #e2e8f0; color: #475569; }
+        .entry-status-badge.pending_approval { background: #fef3c7; color: #b45309; }
+        .entry-status-badge.approved { background: #dbeafe; color: #1d4ed8; }
+        .entry-status-badge.posted { background: #dcfce7; color: #16a34a; }
+        .entry-status-badge.rejected { background: #fee2e2; color: #dc2626; }
+
+        .entry-amount {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-weight: 600;
+        }
+
+        .entry-accounts {
+            font-size: 0.85rem;
+            color: #64748b;
+        }
+
+        .entry-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .entry-btn {
+            padding: 0.35rem 0.6rem;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .entry-btn:hover {
+            background: #f8fafc;
+        }
+
+        .entry-btn.submit { color: #3b82f6; border-color: #3b82f6; }
+        .entry-btn.submit:hover { background: #eff6ff; }
+        .entry-btn.approve { color: #10b981; border-color: #10b981; }
+        .entry-btn.approve:hover { background: #ecfdf5; }
+        .entry-btn.reject { color: #ef4444; border-color: #ef4444; }
+        .entry-btn.reject:hover { background: #fef2f2; }
+        .entry-btn.post { color: #7c3aed; border-color: #7c3aed; }
+        .entry-btn.post:hover { background: #f5f3ff; }
+        .entry-btn.delete { color: #ef4444; border-color: #ef4444; }
+        .entry-btn.delete:hover { background: #fef2f2; }
+
+        .entries-empty {
+            text-align: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+
+        .entries-pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .pagination-info {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        /* Entry Form Modal */
+        .entry-form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-helper {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 0.25rem;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .page-header {
@@ -684,6 +890,15 @@
 
             .actions-section {
                 flex-wrap: wrap;
+            }
+
+            .entries-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .entry-form-row {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -850,6 +1065,71 @@
                     <div class="loading">
                         <div class="spinner"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Adjusting Entries Section -->
+            <div class="entries-section">
+                <div class="entries-header">
+                    <div>
+                        <h2 class="entries-title" data-i18n="close.adjustingEntries">Adjusting Entries</h2>
+                    </div>
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <div class="entries-stats">
+                            <div class="entry-stat">
+                                <div id="entriesDraftCount" class="entry-stat-value">0</div>
+                                <div class="entry-stat-label" data-i18n="close.draft">Draft</div>
+                            </div>
+                            <div class="entry-stat">
+                                <div id="entriesPendingCount" class="entry-stat-value">0</div>
+                                <div class="entry-stat-label" data-i18n="close.pending">Pending</div>
+                            </div>
+                            <div class="entry-stat">
+                                <div id="entriesPostedCount" class="entry-stat-value">0</div>
+                                <div class="entry-stat-label" data-i18n="close.posted">Posted</div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="showCreateEntryModal()" data-i18n="close.newEntry">
+                            + New Entry
+                        </button>
+                    </div>
+                </div>
+                <div class="entries-filters">
+                    <button class="entry-filter active" onclick="filterEntries('all')" data-filter="all" data-i18n="common.all">All</button>
+                    <button class="entry-filter" onclick="filterEntries('draft')" data-filter="draft" data-i18n="close.draft">Draft</button>
+                    <button class="entry-filter" onclick="filterEntries('pending_approval')" data-filter="pending_approval" data-i18n="close.pendingApproval">Pending Approval</button>
+                    <button class="entry-filter" onclick="filterEntries('approved')" data-filter="approved" data-i18n="close.approved">Approved</button>
+                    <button class="entry-filter" onclick="filterEntries('posted')" data-filter="posted" data-i18n="close.posted">Posted</button>
+                    <button class="entry-filter" onclick="filterEntries('rejected')" data-filter="rejected" data-i18n="close.rejected">Rejected</button>
+                </div>
+                <div class="entries-table-container">
+                    <table class="entries-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="close.type">Type</th>
+                                <th data-i18n="close.description">Description</th>
+                                <th data-i18n="close.accounts">Accounts</th>
+                                <th data-i18n="close.amount">Amount</th>
+                                <th data-i18n="close.status">Status</th>
+                                <th data-i18n="close.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="entriesTableBody">
+                            <tr>
+                                <td colspan="6" class="entries-empty">
+                                    <p data-i18n="close.noEntries">No adjusting entries for this period.</p>
+                                    <button class="btn btn-primary btn-sm" onclick="showCreateEntryModal()" style="margin-top: 0.5rem;" data-i18n="close.createFirstEntry">
+                                        Create First Entry
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="entriesPagination" class="entries-pagination" style="display: none;">
+                    <button class="btn btn-secondary btn-sm" onclick="prevEntriesPage()" id="entriesPrevBtn" disabled>Previous</button>
+                    <span id="entriesPageInfo" class="pagination-info">Page 1 of 1</span>
+                    <button class="btn btn-secondary btn-sm" onclick="nextEntriesPage()" id="entriesNextBtn" disabled>Next</button>
                 </div>
             </div>
 
@@ -1047,6 +1327,120 @@
             <div class="modal-footer">
                 <span id="unmatchedCount" style="flex: 1; text-align: left; color: #64748b;">0 items</span>
                 <button class="btn btn-secondary" onclick="closeModal('unmatchedModal')" data-i18n="common.close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Entry Modal -->
+    <div id="entryModal" class="modal-overlay">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 id="entryModalTitle" class="modal-title" data-i18n="close.createEntry">Create Adjusting Entry</h3>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="entryId" value="">
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.entryType">Entry Type</label>
+                    <select id="entryType" class="form-select">
+                        <option value="accrual" data-i18n="close.accrual">Accrual</option>
+                        <option value="depreciation" data-i18n="close.depreciation">Depreciation</option>
+                        <option value="prepaid" data-i18n="close.prepaid">Prepaid</option>
+                        <option value="deferral" data-i18n="close.deferral">Deferral</option>
+                        <option value="correction" data-i18n="close.correction">Correction</option>
+                        <option value="reclassification" data-i18n="close.reclassification">Reclassification</option>
+                        <option value="other" data-i18n="close.other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.description">Description</label>
+                    <input type="text" id="entryDescription" class="form-input" placeholder="e.g., Accrued salaries for December">
+                </div>
+                <div class="entry-form-row">
+                    <div class="form-group">
+                        <label class="form-label" data-i18n="close.debitAccount">Debit Account</label>
+                        <input type="text" id="entryDebitAccount" class="form-input" placeholder="e.g., 6100 - Salary Expense">
+                        <p class="form-helper" data-i18n="close.debitAccountHelper">Account to debit (increase)</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" data-i18n="close.creditAccount">Credit Account</label>
+                        <input type="text" id="entryCreditAccount" class="form-input" placeholder="e.g., 2100 - Accrued Payroll">
+                        <p class="form-helper" data-i18n="close.creditAccountHelper">Account to credit (increase)</p>
+                    </div>
+                </div>
+                <div class="entry-form-row">
+                    <div class="form-group">
+                        <label class="form-label" data-i18n="close.amount">Amount</label>
+                        <input type="number" id="entryAmount" class="form-input" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" data-i18n="close.currency">Currency</label>
+                        <select id="entryCurrency" class="form-select">
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="BRL">BRL</option>
+                            <option value="GBP">GBP</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.entity">Entity (Optional)</label>
+                    <input type="text" id="entryEntity" class="form-input" placeholder="e.g., Delta Technologies">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.notes">Notes (Optional)</label>
+                    <textarea id="entryNotes" class="form-textarea" placeholder="Additional notes about this entry..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" id="entryIsReversing">
+                        <span data-i18n="close.reversingEntry">This is a reversing entry</span>
+                    </label>
+                    <p class="form-helper" data-i18n="close.reversingHelper">Reversing entries automatically reverse in the next period</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('entryModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="saveEntry()" id="saveEntryBtn" data-i18n="common.save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Entry Modal -->
+    <div id="rejectEntryModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.rejectEntryTitle">Reject Entry</h3>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="rejectEntryId" value="">
+                <p data-i18n="close.rejectEntryInfo">The entry will be sent back for corrections.</p>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.rejectionReason">Reason for Rejection</label>
+                    <textarea id="entryRejectReason" class="form-textarea" placeholder="Explain what needs to be corrected..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('rejectEntryModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmRejectEntry()" data-i18n="close.reject">Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Entry Modal -->
+    <div id="viewEntryModal" class="modal-overlay">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.entryDetails">Entry Details</h3>
+            </div>
+            <div class="modal-body">
+                <div id="viewEntryContent">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('viewEntryModal')" data-i18n="common.close">Close</button>
             </div>
         </div>
     </div>

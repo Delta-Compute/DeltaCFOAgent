@@ -1421,3 +1421,538 @@ class MonthEndCloseService:
             result['update_error'] = str(e)
 
         return result
+
+    # ========================================
+    # ADJUSTING ENTRIES (PHASE 3)
+    # ========================================
+
+    # Entry status constants
+    ENTRY_DRAFT = 'draft'
+    ENTRY_PENDING = 'pending_approval'
+    ENTRY_APPROVED = 'approved'
+    ENTRY_POSTED = 'posted'
+    ENTRY_REJECTED = 'rejected'
+
+    # Entry type constants
+    ENTRY_TYPES = ['accrual', 'depreciation', 'prepaid', 'deferral', 'correction', 'reclassification', 'other']
+
+    @staticmethod
+    def list_adjusting_entries(period_id: str, tenant_id: str,
+                                status: Optional[str] = None,
+                                page: int = 1, per_page: int = 20) -> Tuple[List[Dict], int]:
+        """List adjusting entries for a period."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Build query
+                where_clause = "WHERE period_id = %s AND tenant_id = %s"
+                params = [period_id, tenant_id]
+
+                if status:
+                    where_clause += " AND status = %s"
+                    params.append(status)
+
+                # Get total count
+                cursor.execute(f"""
+                    SELECT COUNT(*) FROM close_adjusting_entries {where_clause}
+                """, params)
+                total = cursor.fetchone()[0]
+
+                # Get entries
+                offset = (page - 1) * per_page
+                cursor.execute(f"""
+                    SELECT id, period_id, tenant_id, entry_type, description,
+                           debit_account, credit_account, amount, currency, entity,
+                           status, created_by, submitted_at, approved_by, approved_at,
+                           rejected_by, rejected_at, rejection_reason, posted_at, posted_by,
+                           transaction_id, is_reversing, reversal_period_id, original_entry_id,
+                           notes, supporting_documents, created_at, updated_at
+                    FROM close_adjusting_entries
+                    {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s
+                """, params + [per_page, offset])
+
+                columns = [desc[0] for desc in cursor.description]
+                entries = []
+                for row in cursor.fetchall():
+                    entry = dict(zip(columns, row))
+                    # Convert UUIDs and dates to strings
+                    for key in ['id', 'period_id', 'created_by', 'approved_by', 'rejected_by',
+                                'posted_by', 'reversal_period_id', 'original_entry_id']:
+                        if entry.get(key):
+                            entry[key] = str(entry[key])
+                    for key in ['submitted_at', 'approved_at', 'rejected_at', 'posted_at', 'created_at', 'updated_at']:
+                        if entry.get(key):
+                            entry[key] = entry[key].isoformat()
+                    if entry.get('amount'):
+                        entry['amount'] = float(entry['amount'])
+                    entries.append(entry)
+
+                cursor.close()
+                return entries, total
+
+        except Exception as e:
+            logger.error(f"Error listing adjusting entries: {e}")
+            return [], 0
+
+    @staticmethod
+    def get_adjusting_entry(entry_id: str, tenant_id: str) -> Optional[Dict]:
+        """Get a single adjusting entry."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, period_id, tenant_id, entry_type, description,
+                           debit_account, credit_account, amount, currency, entity,
+                           status, created_by, submitted_at, approved_by, approved_at,
+                           rejected_by, rejected_at, rejection_reason, posted_at, posted_by,
+                           transaction_id, is_reversing, reversal_period_id, original_entry_id,
+                           notes, supporting_documents, created_at, updated_at
+                    FROM close_adjusting_entries
+                    WHERE id = %s AND tenant_id = %s
+                """, (entry_id, tenant_id))
+
+                row = cursor.fetchone()
+                cursor.close()
+
+                if not row:
+                    return None
+
+                columns = [desc[0] for desc in cursor.description]
+                entry = dict(zip(columns, row))
+
+                # Convert UUIDs and dates to strings
+                for key in ['id', 'period_id', 'created_by', 'approved_by', 'rejected_by',
+                            'posted_by', 'reversal_period_id', 'original_entry_id']:
+                    if entry.get(key):
+                        entry[key] = str(entry[key])
+                for key in ['submitted_at', 'approved_at', 'rejected_at', 'posted_at', 'created_at', 'updated_at']:
+                    if entry.get(key):
+                        entry[key] = entry[key].isoformat()
+                if entry.get('amount'):
+                    entry['amount'] = float(entry['amount'])
+
+                return entry
+
+        except Exception as e:
+            logger.error(f"Error getting adjusting entry: {e}")
+            return None
+
+    @staticmethod
+    def create_adjusting_entry(period_id: str, tenant_id: str, entry_type: str,
+                                description: str, debit_account: str, credit_account: str,
+                                amount: float, currency: str = 'USD', entity: Optional[str] = None,
+                                notes: Optional[str] = None, is_reversing: bool = False,
+                                user_id: Optional[str] = None) -> Optional[Dict]:
+        """Create a new adjusting entry."""
+        # Validate period
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            raise ValueError("Period not found")
+
+        if period['status'] in [MonthEndCloseService.STATUS_LOCKED, MonthEndCloseService.STATUS_CLOSED]:
+            raise ValueError("Cannot create entries for locked/closed period")
+
+        # Validate entry type
+        if entry_type not in MonthEndCloseService.ENTRY_TYPES:
+            raise ValueError(f"Invalid entry type. Must be one of: {MonthEndCloseService.ENTRY_TYPES}")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO close_adjusting_entries
+                    (period_id, tenant_id, entry_type, description, debit_account, credit_account,
+                     amount, currency, entity, notes, is_reversing, created_by, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft')
+                    RETURNING id
+                """, (period_id, tenant_id, entry_type, description, debit_account, credit_account,
+                      amount, currency, entity, notes, is_reversing, user_id))
+
+                entry_id = str(cursor.fetchone()[0])
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    period_id, tenant_id, 'entry_created', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'entry_type': entry_type, 'amount': amount}
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error creating adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def update_adjusting_entry(entry_id: str, tenant_id: str,
+                                entry_type: Optional[str] = None,
+                                description: Optional[str] = None,
+                                debit_account: Optional[str] = None,
+                                credit_account: Optional[str] = None,
+                                amount: Optional[float] = None,
+                                currency: Optional[str] = None,
+                                entity: Optional[str] = None,
+                                notes: Optional[str] = None,
+                                user_id: Optional[str] = None) -> Optional[Dict]:
+        """Update an adjusting entry (only if draft)."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_DRAFT:
+            raise ValueError("Can only update draft entries")
+
+        # Validate entry type if provided
+        if entry_type and entry_type not in MonthEndCloseService.ENTRY_TYPES:
+            raise ValueError(f"Invalid entry type. Must be one of: {MonthEndCloseService.ENTRY_TYPES}")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                updates = []
+                params = []
+
+                if entry_type is not None:
+                    updates.append("entry_type = %s")
+                    params.append(entry_type)
+                if description is not None:
+                    updates.append("description = %s")
+                    params.append(description)
+                if debit_account is not None:
+                    updates.append("debit_account = %s")
+                    params.append(debit_account)
+                if credit_account is not None:
+                    updates.append("credit_account = %s")
+                    params.append(credit_account)
+                if amount is not None:
+                    updates.append("amount = %s")
+                    params.append(amount)
+                if currency is not None:
+                    updates.append("currency = %s")
+                    params.append(currency)
+                if entity is not None:
+                    updates.append("entity = %s")
+                    params.append(entity)
+                if notes is not None:
+                    updates.append("notes = %s")
+                    params.append(notes)
+
+                if updates:
+                    updates.append("updated_at = CURRENT_TIMESTAMP")
+                    params.extend([entry_id, tenant_id])
+
+                    cursor.execute(f"""
+                        UPDATE close_adjusting_entries
+                        SET {', '.join(updates)}
+                        WHERE id = %s AND tenant_id = %s
+                    """, params)
+
+                    conn.commit()
+
+                cursor.close()
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error updating adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def delete_adjusting_entry(entry_id: str, tenant_id: str, user_id: Optional[str] = None) -> bool:
+        """Delete an adjusting entry (only if draft)."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return False
+
+        if entry['status'] != MonthEndCloseService.ENTRY_DRAFT:
+            raise ValueError("Can only delete draft entries")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    DELETE FROM close_adjusting_entries
+                    WHERE id = %s AND tenant_id = %s
+                """, (entry_id, tenant_id))
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_deleted', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'entry_type': entry['entry_type'], 'amount': entry['amount']}
+                )
+
+                return True
+
+        except Exception as e:
+            logger.error(f"Error deleting adjusting entry: {e}")
+            return False
+
+    @staticmethod
+    def submit_adjusting_entry(entry_id: str, tenant_id: str, user_id: Optional[str] = None) -> Optional[Dict]:
+        """Submit an adjusting entry for approval."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_DRAFT:
+            raise ValueError("Can only submit draft entries")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE close_adjusting_entries
+                    SET status = 'pending_approval',
+                        submitted_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND tenant_id = %s
+                """, (entry_id, tenant_id))
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_submitted', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'amount': entry['amount']}
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error submitting adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def approve_adjusting_entry(entry_id: str, tenant_id: str, user_id: Optional[str] = None) -> Optional[Dict]:
+        """Approve an adjusting entry."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_PENDING:
+            raise ValueError("Can only approve entries pending approval")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE close_adjusting_entries
+                    SET status = 'approved',
+                        approved_by = %s,
+                        approved_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND tenant_id = %s
+                """, (user_id, entry_id, tenant_id))
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_approved', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'amount': entry['amount']}
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error approving adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def reject_adjusting_entry(entry_id: str, tenant_id: str, reason: str,
+                                user_id: Optional[str] = None) -> Optional[Dict]:
+        """Reject an adjusting entry."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_PENDING:
+            raise ValueError("Can only reject entries pending approval")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE close_adjusting_entries
+                    SET status = 'rejected',
+                        rejected_by = %s,
+                        rejected_at = CURRENT_TIMESTAMP,
+                        rejection_reason = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND tenant_id = %s
+                """, (user_id, reason, entry_id, tenant_id))
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_rejected', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'reason': reason}
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error rejecting adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def post_adjusting_entry(entry_id: str, tenant_id: str, user_id: Optional[str] = None) -> Optional[Dict]:
+        """Post an approved adjusting entry to the transactions table."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_APPROVED:
+            raise ValueError("Can only post approved entries")
+
+        period = MonthEndCloseService.get_period(entry['period_id'], tenant_id)
+        if not period:
+            raise ValueError("Period not found")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Create transaction record for the adjusting entry
+                # Using the period end date as the transaction date
+                transaction_date = period['end_date']
+
+                # Build description for transaction
+                tx_description = f"[Adjusting Entry] {entry['description']}"
+                if entry['entity']:
+                    tx_description = f"[{entry['entity']}] {tx_description}"
+
+                # Insert the transaction (as a debit entry)
+                cursor.execute("""
+                    INSERT INTO transactions
+                    (tenant_id, date, description, amount, currency, category, subcategory,
+                     entity, justification, confidence, source)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING transaction_id
+                """, (
+                    tenant_id,
+                    transaction_date,
+                    tx_description,
+                    entry['amount'],
+                    entry['currency'],
+                    'Adjusting Entry',
+                    entry['entry_type'].replace('_', ' ').title(),
+                    entry['entity'],
+                    f"Debit: {entry['debit_account']}, Credit: {entry['credit_account']}",
+                    1.0,  # High confidence for manual entries
+                    'adjusting_entry'
+                ))
+
+                transaction_id = cursor.fetchone()[0]
+
+                # Update the entry with posted status
+                cursor.execute("""
+                    UPDATE close_adjusting_entries
+                    SET status = 'posted',
+                        posted_by = %s,
+                        posted_at = CURRENT_TIMESTAMP,
+                        transaction_id = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND tenant_id = %s
+                """, (user_id, transaction_id, entry_id, tenant_id))
+
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_posted', 'adjusting_entry', entry_id,
+                    user_id=user_id, details={'transaction_id': transaction_id, 'amount': entry['amount']}
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error posting adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def revert_adjusting_entry(entry_id: str, tenant_id: str, user_id: Optional[str] = None) -> Optional[Dict]:
+        """Revert a rejected entry back to draft status for editing."""
+        entry = MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+        if not entry:
+            return None
+
+        if entry['status'] != MonthEndCloseService.ENTRY_REJECTED:
+            raise ValueError("Can only revert rejected entries")
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE close_adjusting_entries
+                    SET status = 'draft',
+                        rejection_reason = NULL,
+                        rejected_by = NULL,
+                        rejected_at = NULL,
+                        submitted_at = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s AND tenant_id = %s
+                """, (entry_id, tenant_id))
+                conn.commit()
+                cursor.close()
+
+                # Log activity
+                MonthEndCloseService.log_activity(
+                    entry['period_id'], tenant_id, 'entry_reverted', 'adjusting_entry', entry_id,
+                    user_id=user_id
+                )
+
+                return MonthEndCloseService.get_adjusting_entry(entry_id, tenant_id)
+
+        except Exception as e:
+            logger.error(f"Error reverting adjusting entry: {e}")
+            raise
+
+    @staticmethod
+    def get_entries_summary(period_id: str, tenant_id: str) -> Dict:
+        """Get summary statistics for adjusting entries in a period."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE status = 'draft') as draft,
+                        COUNT(*) FILTER (WHERE status = 'pending_approval') as pending,
+                        COUNT(*) FILTER (WHERE status = 'approved') as approved,
+                        COUNT(*) FILTER (WHERE status = 'posted') as posted,
+                        COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+                        COALESCE(SUM(amount), 0) as total_amount,
+                        COALESCE(SUM(CASE WHEN status = 'posted' THEN amount ELSE 0 END), 0) as posted_amount
+                    FROM close_adjusting_entries
+                    WHERE period_id = %s AND tenant_id = %s
+                """, (period_id, tenant_id))
+
+                row = cursor.fetchone()
+                cursor.close()
+
+                return {
+                    'total': row[0] or 0,
+                    'draft': row[1] or 0,
+                    'pending': row[2] or 0,
+                    'approved': row[3] or 0,
+                    'posted': row[4] or 0,
+                    'rejected': row[5] or 0,
+                    'total_amount': float(row[6] or 0),
+                    'posted_amount': float(row[7] or 0)
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting entries summary: {e}")
+            return {
+                'total': 0, 'draft': 0, 'pending': 0, 'approved': 0,
+                'posted': 0, 'rejected': 0, 'total_amount': 0, 'posted_amount': 0
+            }

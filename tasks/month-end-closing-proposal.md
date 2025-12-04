@@ -628,14 +628,61 @@ CLOSE_PERMISSIONS = {
 | Unmatched items modal | Done | `web_ui/templates/month_end_close.html` |
 | Frontend reconciliation JS | Done | `web_ui/static/js/month_end_close.js` (lines 786-1028) |
 
+### Phase 3: Adjusting Entries - COMPLETED
+
+| Component | Status | File(s) |
+|-----------|--------|---------|
+| Adjusting entries service methods (12) | Done | `web_ui/services/month_end_close.py` (lines 1425-1958) |
+| `list_adjusting_entries()` | Done | List entries with pagination and status filter |
+| `get_adjusting_entry()` | Done | Get single entry details |
+| `create_adjusting_entry()` | Done | Create new adjusting entry |
+| `update_adjusting_entry()` | Done | Update draft/rejected entry |
+| `delete_adjusting_entry()` | Done | Delete draft entry |
+| `submit_adjusting_entry()` | Done | Submit entry for approval |
+| `approve_adjusting_entry()` | Done | Approve entry |
+| `reject_adjusting_entry()` | Done | Reject entry with reason |
+| `post_adjusting_entry()` | Done | Post entry to transactions table |
+| `revert_adjusting_entry()` | Done | Revert rejected entry to draft |
+| `get_entries_summary()` | Done | Get counts by status and type |
+| API endpoints (11) | Done | `web_ui/routes/close_routes.py` (lines 747-1058) |
+| Entries UI section | Done | `web_ui/templates/month_end_close.html` |
+| Create/Edit Entry modal | Done | `web_ui/templates/month_end_close.html` |
+| Reject Entry modal | Done | `web_ui/templates/month_end_close.html` |
+| View Entry modal | Done | `web_ui/templates/month_end_close.html` |
+| Frontend entries JS | Done | `web_ui/static/js/month_end_close.js` (lines 1033-1611) |
+| Entry status badges (CSS) | Done | `web_ui/templates/month_end_close.html` |
+| Entry type badges (CSS) | Done | `web_ui/templates/month_end_close.html` |
+
+**Entry Types Supported:**
+- Accrual
+- Depreciation
+- Prepaid
+- Deferral
+- Correction
+- Reclassification
+- Other
+
+**Entry Workflow:**
+1. Create entry (draft status)
+2. Submit for approval (pending_approval status)
+3. Approve or Reject (approved/rejected status)
+4. Post to transactions (posted status, creates transaction record)
+
+**Entry Features:**
+- Full CRUD operations
+- Status filtering
+- Pagination
+- Approval workflow
+- Rejection with reason
+- Revert rejected entries
+- Post approved entries to transactions table
+- Reversing entry flag support
+- Entity assignment
+- Multi-currency support
+
 ### Remaining Work
 
-**Phase 1-2: COMPLETE**
-
-**Phase 3: Adjusting Entries (Not Started)**
-- Adjusting entries CRUD
-- Entry approval workflow
-- Entry posting to transactions
+**Phase 1-3: COMPLETE**
 
 **Phase 4: Approval & Audit (Not Started)**
 - Submit for approval workflow enhancements
@@ -646,12 +693,14 @@ CLOSE_PERMISSIONS = {
 - AI-suggested adjusting entries
 - Anomaly detection
 - Pre-close report generation
+- Auto-reversal of accruals (partial: flag supported, auto-creation not yet implemented)
 
 ## Next Steps
 
-1. **Apply migration** to database: `python migrations/apply_month_end_closing_migration.py`
+1. **Apply migration** to database (if not already done): `python migrations/apply_month_end_closing_migration.py`
 2. **Test the feature** by navigating to `/month-end-close`
-3. **Implement Phase 2** - Reconciliation integration
+3. **Test adjusting entries** - Create, submit, approve, and post entries
+4. **Implement Phase 4** - Approval workflow enhancements and notifications
 
 ---
 
