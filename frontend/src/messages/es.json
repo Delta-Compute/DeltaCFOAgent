@@ -1,0 +1,1596 @@
+{
+  "app": {
+    "title": "Delta CFO Agent",
+    "tagline": "Agente CFO con IA de autoaprendizaje propietario de Delta"
+  },
+  "nav": {
+    "home": "Inicio",
+    "dashboard": "Gestor de Transacciones",
+    "revenue": "Reconocimiento de Ingresos",
+    "reports": "Informes",
+    "invoices": "Facturas",
+    "workforce": "Personal",
+    "files": "Gestor de Archivos",
+    "knowledge": "Conocimiento",
+    "shareholders": "Accionistas",
+    "accounts": "Cuentas",
+    "settings": "Configuracion",
+    "users": "Usuarios",
+    "switchTenant": "Cambiar Inquilino",
+    "language": "Idioma",
+    "accountSettings": "Configuracion de Cuenta",
+    "manageUsers": "Gestionar Usuarios",
+    "createTenant": "+ Crear Nuevo Inquilino",
+    "signOut": "Cerrar Sesion",
+    "loading": "Cargando..."
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "add": "Agregar",
+    "close": "Cerrar",
+    "confirm": "Confirmar",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "export": "Exportar",
+    "import": "Importar",
+    "upload": "Subir",
+    "download": "Descargar",
+    "refresh": "Actualizar",
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Exito",
+    "warning": "Advertencia",
+    "info": "Informacion",
+    "yes": "Si",
+    "no": "No",
+    "ok": "OK",
+    "back": "Atras",
+    "next": "Siguiente",
+    "previous": "Anterior",
+    "submit": "Enviar",
+    "reset": "Restablecer",
+    "clear": "Limpiar",
+    "select": "Seleccionar",
+    "selectAll": "Seleccionar Todo",
+    "deselectAll": "Deseleccionar Todo",
+    "actions": "Acciones",
+    "view": "Ver",
+    "details": "Detalles",
+    "status": "Estado",
+    "date": "Fecha",
+    "amount": "Monto",
+    "description": "Descripcion",
+    "category": "Categoria",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "home": "Inicio",
+    "remove": "Eliminar",
+    "never": "Nunca"
+  },
+  "dashboard": {
+    "pageTitle": "Panel de Transacciones Avanzado",
+    "title": "Gestor de Transacciones",
+    "subtitle": "Gestiona y clasifica tus transacciones",
+    "upload": "Subir Transacciones",
+    "dataRange": "Rango de Datos:",
+    "stats": {
+      "total": "Total de Transacciones",
+      "revenue": "Ingresos Totales",
+      "expenses": "Gastos Totales",
+      "needsReview": "Necesita Revision"
+    },
+    "revenueSync": {
+      "title": "Actualizacion de Reconocimiento de Ingresos:",
+      "viewDetails": "Ver Detalles",
+      "dismiss": "Descartar",
+      "transactionsMatched": "{count} transaccion(es) vinculada(s) a facturas y reclasificada(s) como Ingresos."
+    },
+    "filters": {
+      "title": "Filtros Avanzados",
+      "showArchived": "Mostrar Archivados",
+      "hideArchived": "Ocultar Archivados",
+      "searchPlaceholder": "Buscar transacciones...",
+      "businessEntity": "Entidad Comercial:",
+      "allEntities": "Todas las Entidades",
+      "transactionType": "Tipo de Transaccion:",
+      "allTypes": "Todos los Tipos",
+      "revenueOnly": "Solo Ingresos",
+      "expensesOnly": "Solo Gastos",
+      "sourceFile": "Archivo Fuente:",
+      "allSources": "Todas las Fuentes",
+      "reviewStatus": "Estado de Revision:",
+      "allTransactions": "Todas las Transacciones",
+      "needsReviewOnly": "Solo Necesita Revision",
+      "minAmount": "Monto Minimo ($):",
+      "minAmountPlaceholder": "0.00",
+      "maxAmount": "Monto Maximo ($):",
+      "maxAmountPlaceholder": "Sin limite",
+      "startDate": "Fecha de Inicio:",
+      "endDate": "Fecha de Fin:",
+      "keywordSearch": "Busqueda por Palabra Clave:",
+      "keywordPlaceholder": "Buscar en descripciones de transacciones...",
+      "quickFiltersTitle": "Filtros Rapidos:",
+      "todosOnly": "Solo Pendientes",
+      "excludeTransfers": "Excluir Transferencias Internas",
+      "year2025": "Ano 2025 Completo",
+      "year2024": "Ano 2024 Completo",
+      "ytd2025": "2025 Hasta la Fecha",
+      "applyFilters": "Aplicar Filtros",
+      "clearAll": "Limpiar Todo"
+    },
+    "table": {
+      "title": "Gestion Avanzada de Transacciones",
+      "info": "Cargando...",
+      "selectAll": "Seleccionar Todo",
+      "headers": {
+        "checkbox": "",
+        "date": "Accion",
+        "origin": "Origen",
+        "destination": "Destino",
+        "description": "Descripcion",
+        "amount": "Monto",
+        "crypto": "Cripto",
+        "entity": "Entidad",
+        "primaryCategory": "Categoria Principal",
+        "subcategory": "Subcategoria",
+        "justification": "Justificacion",
+        "confidence": "Confianza",
+        "source": "Fuente",
+        "actions": "Acciones"
+      },
+      "loading": "Cargando transacciones...",
+      "noTransactions": "No se encontraron transacciones"
+    },
+    "buttons": {
+      "refresh": "Actualizar",
+      "runInvoiceMatching": "Ejecutar Vinculacion de Facturas",
+      "enrichBlockchain": "Enriquecer Transacciones Blockchain",
+      "findDuplicates": "Buscar Duplicados",
+      "exportCSV": "Exportar CSV",
+      "exportAll": "Exportar a CSV",
+      "archiveSelected": "Archivar Seleccionados",
+      "showArchived": "Mostrar Archivados",
+      "hideArchived": "Ocultar Archivados",
+      "undo": "Deshacer",
+      "redo": "Rehacer",
+      "aiSuggestions": "Sugerencias de IA",
+      "save": "Guardar",
+      "cancel": "Cancelar"
+    },
+    "pagination": {
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "pageInfo": "Pagina {current} de {total}",
+      "perPage": "Por pagina:",
+      "showing": "Mostrando {start} a {end} de {total} transacciones"
+    },
+    "modals": {
+      "aiSuggestions": {
+        "title": "Recomendaciones Inteligentes de IA",
+        "transactionInfo": "Transaccion:",
+        "amount": "Monto:",
+        "currentConfidence": "Confianza Actual:",
+        "aiAssessment": "Evaluacion de IA:",
+        "reasoning": "Razonamiento:",
+        "newConfidence": "Nueva Confianza:",
+        "context": "Contexto:",
+        "loading": "Cargando sugerencias de IA...",
+        "error": "Error al cargar sugerencias",
+        "noImprovements": "No se necesitan mejoras. La IA esta segura con la clasificacion actual."
+      },
+      "duplicates": {
+        "title": "Transacciones Duplicadas Detectadas",
+        "summary": "Resumen de Duplicados",
+        "comparisonTitle": "Comparacion de Clasificacion",
+        "headers": {
+          "action": "Accion",
+          "amount": "Monto",
+          "description": "Descripcion",
+          "categoryChange": "Categoria Anterior -> Nueva",
+          "confidence": "Confianza"
+        },
+        "overwriteButton": "Sobrescribir con el Ultimo Conocimiento del Negocio",
+        "discardButton": "Descartar Carga y Mantener Existente",
+        "whatHappens": "Que sucede con cada opcion?",
+        "overwriteInfo": "Elimina las transacciones antiguas y las reemplaza con datos recien procesados usando tu ultimo conocimiento del negocio y mapeo mejorado de Origen/Destino.",
+        "discardInfo": "Cancela la carga y mantiene tus transacciones existentes sin cambios."
+      },
+      "invoiceMatching": {
+        "title": "Resultados de Vinculacion de Facturas",
+        "loading": "Ejecutando algoritmo de vinculacion de facturas...",
+        "loadingDescription": "Analizando transacciones y facturas para encontrar coincidencias potenciales...",
+        "summary": "Resumen de Vinculacion",
+        "totalMatches": "Total de Coincidencias Encontradas:",
+        "reviewNote": "Revisa cada coincidencia a continuacion y acepta o rechaza segun tu evaluacion.",
+        "headers": {
+          "invoice": "Factura",
+          "transaction": "Transaccion",
+          "matchScore": "Puntuacion de Coincidencia",
+          "explanation": "Explicacion",
+          "actions": "Acciones"
+        },
+        "empty": "No se encontraron nuevas coincidencias",
+        "emptyDescription": "Todas las facturas ya estan vinculadas o no tienen transacciones correspondientes.",
+        "error": "Error al ejecutar la vinculacion de facturas:",
+        "accept": "Aceptar",
+        "reject": "Rechazar"
+      },
+      "findDuplicates": {
+        "title": "Deteccion de Transacciones Duplicadas",
+        "loading": "Buscando transacciones duplicadas...",
+        "loadingDescription": "Analizando transacciones por fecha, descripcion y monto...",
+        "summary": "Duplicados Encontrados",
+        "totalGroups": "Total de Grupos Duplicados:",
+        "totalTransactions": "Total de Transacciones Duplicadas:",
+        "reviewNote": "Revisa cada grupo a continuacion. Puedes usar casillas de verificacion para seleccionar transacciones especificas o usar las acciones masivas.",
+        "archiveAllButFirst": "Archivar Todos Menos el Primero (Todos los Grupos)",
+        "archiveSelected": "Archivar Seleccionados",
+        "selectAll": "Seleccionar Todo",
+        "deselectAll": "Deseleccionar Todo",
+        "empty": "No se encontraron duplicados!",
+        "emptyDescription": "Todas las transacciones parecen ser unicas.",
+        "error": "Error al buscar duplicados:"
+      }
+    },
+    "messages": {
+      "transactionSaved": "Transaccion guardada exitosamente",
+      "transactionArchived": "Transaccion archivada exitosamente",
+      "transactionsArchived": "{count} transacciones archivadas exitosamente",
+      "exportSuccess": "Exportacion completada exitosamente",
+      "exportFailed": "Exportacion fallida",
+      "matchingStarted": "Vinculacion de facturas iniciada...",
+      "blockchainEnrichmentStarted": "Enriquecimiento blockchain iniciado...",
+      "duplicateScanStarted": "Busqueda de duplicados iniciada...",
+      "undoSuccess": "Deshacer exitoso",
+      "redoSuccess": "Rehacer exitoso",
+      "noUndoHistory": "Nada que deshacer",
+      "noRedoHistory": "Nada que rehacer",
+      "confirmArchive": "Estas seguro de que deseas archivar las transacciones seleccionadas?",
+      "confirmDelete": "Estas seguro de que deseas eliminar esta transaccion?"
+    }
+  },
+  "invoices": {
+    "pageTitle": "Procesamiento de Facturas",
+    "title": "Facturas",
+    "subtitle": "Gestiona facturas y facturacion",
+    "createInvoice": "Crear Nueva Factura",
+    "stats": {
+      "totalInvoices": "Total de Facturas",
+      "totalAmount": "Monto Total",
+      "uniqueVendors": "Proveedores Unicos",
+      "uniqueCustomers": "Clientes Unicos",
+      "averageAmount": "Monto Promedio"
+    },
+    "selection": {
+      "selected": "factura(s) seleccionada(s)",
+      "editSelected": "Editar Seleccionadas",
+      "deleteSelected": "Eliminar Seleccionadas",
+      "clearSelection": "Limpiar Seleccion"
+    },
+    "filters": {
+      "title": "Filtros y Busqueda",
+      "keywordSearch": "Busqueda por Palabra Clave",
+      "searchPlaceholder": "Buscar en todos los campos (# factura, proveedor, cliente, notas...)",
+      "searchVendor": "Buscar Proveedor",
+      "vendorPlaceholder": "Ingrese nombre del proveedor...",
+      "searchCustomer": "Buscar Cliente",
+      "customerPlaceholder": "Ingrese nombre del cliente...",
+      "businessUnit": "Unidad de Negocio",
+      "allBusinessUnits": "Todas las Unidades de Negocio",
+      "category": "Categoria",
+      "allCategories": "Todas las Categorias",
+      "invoiceNumber": "Numero de Factura",
+      "invoiceNumberPlaceholder": "Buscar # factura...",
+      "dateFrom": "Fecha Desde",
+      "dateTo": "Fecha Hasta",
+      "amountMin": "Monto Minimo",
+      "amountMax": "Monto Maximo",
+      "amountPlaceholder": "0.00",
+      "currency": "Moneda",
+      "allCurrencies": "Todas las Monedas",
+      "applyFilters": "Aplicar Filtros",
+      "clearAll": "Limpiar Todo"
+    },
+    "businessUnits": {
+      "deltaLLC": "Delta LLC",
+      "deltaPropShop": "Delta Prop Shop LLC",
+      "deltaMining": "Delta Mining Paraguay S.A.",
+      "deltaBrazil": "Delta Brazil",
+      "personal": "Personal"
+    },
+    "categories": {
+      "technology": "Gastos de Tecnologia",
+      "utilities": "Servicios Publicos",
+      "insurance": "Seguros",
+      "professionalServices": "Servicios Profesionales",
+      "officeExpenses": "Gastos de Oficina",
+      "other": "Otros"
+    },
+    "table": {
+      "invoiceNumber": "Factura #",
+      "date": "Fecha",
+      "dueDate": "Fecha de Vencimiento",
+      "vendorFrom": "Proveedor (De)",
+      "customerTo": "Cliente (Para)",
+      "amount": "Monto",
+      "status": "Estado",
+      "currency": "Moneda",
+      "businessUnit": "Unidad de Negocio",
+      "category": "Categoria",
+      "actions": "Acciones",
+      "loading": "Cargando facturas...",
+      "noInvoices": "No se encontraron facturas"
+    },
+    "actions": {
+      "view": "Ver",
+      "edit": "Editar",
+      "delete": "Eliminar"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "partial": "Parcial",
+      "paid": "Pagado",
+      "overdue": "Vencido",
+      "cancelled": "Cancelado",
+      "draft": "Borrador",
+      "sent": "Enviado"
+    },
+    "modals": {
+      "details": {
+        "title": "Detalles de Factura",
+        "tabs": {
+          "overview": "Resumen",
+          "payments": "Pagos",
+          "attachments": "Adjuntos",
+          "transactionMatches": "Coincidencias de Transacciones"
+        }
+      },
+      "edit": {
+        "title": "Editar Factura",
+        "sections": {
+          "basicInfo": "Informacion Basica",
+          "vendorFrom": "Proveedor (De)",
+          "customerTo": "Cliente (Para)",
+          "financialDetails": "Detalles Financieros"
+        },
+        "fields": {
+          "invoiceNumber": "Numero de Factura",
+          "invoiceNumberRequired": "Numero de Factura *",
+          "invoiceDate": "Fecha de Factura *",
+          "dueDate": "Fecha de Vencimiento",
+          "vendorName": "Nombre del Proveedor *",
+          "vendorAddress": "Direccion del Proveedor",
+          "vendorTaxId": "ID Fiscal del Proveedor",
+          "customerName": "Nombre del Cliente",
+          "customerAddress": "Direccion del Cliente",
+          "customerTaxId": "ID Fiscal del Cliente",
+          "totalAmount": "Monto Total *",
+          "currency": "Moneda",
+          "businessUnit": "Unidad de Negocio",
+          "category": "Categoria"
+        },
+        "buttons": {
+          "cancel": "Cancelar",
+          "saveChanges": "Guardar Cambios"
+        }
+      }
+    },
+    "messages": {
+      "processingInvoice": "Procesando factura...",
+      "linkedTransaction": "Transaccion Vinculada",
+      "confirmDelete": "Estas seguro de que deseas eliminar esta factura?",
+      "deleteSuccess": "Factura eliminada exitosamente",
+      "deleteFailed": "Error al eliminar factura",
+      "saveSuccess": "Factura guardada exitosamente",
+      "saveFailed": "Error al guardar factura",
+      "loadFailed": "Error al cargar facturas"
+    },
+    "invoiceDetails": "Detalles de Factura",
+    "loadingInvoiceInfo": "Cargando informacion de factura...",
+    "invoiceNumber": "Numero de Factura",
+    "vendor": "Proveedor",
+    "invoiceDate": "Fecha de Factura",
+    "dueDate": "Fecha de Vencimiento",
+    "invoiceSummary": "Resumen de Factura",
+    "lineItems": "Lineas de Detalle",
+    "completeInvoiceDetails": "Detalles Completos de Factura",
+    "paymentInformation": "Informacion de Pago",
+    "linkedTransaction": "Transaccion Vinculada",
+    "noTransactionLinked": "Sin transaccion vinculada",
+    "potentialMatches": "Coincidencias Potenciales",
+    "pendingMatchesCount": "{count} coincidencias pendientes",
+    "unmatched": "Sin vincular",
+    "findMatchingTransactions": "Buscar Transacciones Coincidentes",
+    "sendPaymentReminder": "Enviar Recordatorio de Pago",
+    "duplicateInvoice": "Duplicar Factura",
+    "deleteInvoice": "Eliminar Factura",
+    "markAsPaid": "Marcar como Pagada",
+    "createNewInvoice": "Crear Nueva Factura",
+    "backToInvoices": "Volver a Facturas",
+    "currencyType": "Tipo de Moneda",
+    "fiatCurrency": "Moneda FIAT",
+    "cryptocurrency": "Criptomoneda",
+    "vendorFrom": "Proveedor (De)",
+    "selectVendor": "Seleccionar proveedor...",
+    "addCustomVendor": "+ Agregar Proveedor Personalizado...",
+    "enterCustomVendorName": "Ingresar nombre de proveedor personalizado",
+    "vendorAddress": "Direccion del Proveedor",
+    "vendorBusinessAddressPlaceholder": "Direccion comercial del proveedor",
+    "fiatCurrencyLabel": "Moneda FIAT",
+    "cryptocurrencyLabel": "Criptomoneda",
+    "selectCurrency": "Seleccionar Moneda",
+    "otherCustom": "Otro (Personalizado)",
+    "network": "Red",
+    "selectNetwork": "Seleccionar Red",
+    "customCryptocurrency": "Criptomoneda Personalizada",
+    "customCryptoPlaceholder": "ej., ETH, SOL, MATIC",
+    "customNetwork": "Red Personalizada",
+    "customNetworkPlaceholder": "ej., Polygon, Solana, Arbitrum",
+    "customerName": "Nombre del Cliente",
+    "customerNamePlaceholder": "ej., Alps Blockchain",
+    "customerAddress": "Direccion del Cliente",
+    "customerAddressPlaceholder": "Direccion de facturacion del cliente",
+    "descriptionPlaceholder": "ej., Servicios Profesionales - Octubre 2025",
+    "quantity": "Cantidad",
+    "unitPrice": "Precio Unitario",
+    "itemNamePlaceholder": "Nombre del articulo",
+    "itemDetailsPlaceholder": "Detalles del articulo (opcional)",
+    "addLineItem": "+ Agregar Linea",
+    "taxPercentage": "Porcentaje de Impuesto (%)",
+    "subtotal": "Subtotal:",
+    "tax": "Impuesto:",
+    "total": "Total:",
+    "paymentTerms": "Instrucciones de Pago / Terminos",
+    "paymentTermsPlaceholder": "Ingrese instrucciones de pago (ej., datos bancarios, informacion de transferencia, direccion de billetera crypto, terminos de pago o notas adicionales para el cliente)",
+    "generateInvoicePdf": "Generar PDF de Factura",
+    "generatingInvoice": "Generando PDF de factura y guardando en base de datos..."
+  },
+  "revenue": {
+    "pageTitle": "Panel de Reconocimiento de Ingresos",
+    "pageSubtitle": "Vinculacion automatizada de facturas y transacciones con inteligencia artificial",
+    "header": {
+      "title": "Panel de Reconocimiento de Ingresos",
+      "subtitle": "Vinculacion automatizada de facturas y transacciones con inteligencia artificial"
+    },
+    "stats": {
+      "totalInvoices": {
+        "label": "Total de Facturas",
+        "sublabel": "En el sistema"
+      },
+      "matchedInvoices": {
+        "label": "Facturas Vinculadas",
+        "sublabel": "Vinculadas exitosamente"
+      },
+      "unmatchedInvoices": {
+        "label": "Facturas No Vinculadas",
+        "sublabel": "Necesitan atencion"
+      },
+      "matchRate": {
+        "label": "Tasa de Vinculacion",
+        "sublabel": "Exito de automatizacion"
+      },
+      "pendingReview": {
+        "label": "Pendientes de Revision",
+        "sublabel": "Esperando aprobacion"
+      },
+      "recentActivity": {
+        "label": "Actividad Reciente",
+        "sublabel": "Ultimos 30 dias"
+      },
+      "unlinkedTransactions": {
+        "label": "Transacciones No Vinculadas",
+        "sublabel": "Total de transacciones sin factura"
+      },
+      "unlinkedRevenue": {
+        "label": "Transacciones de Ingresos No Vinculadas",
+        "sublabel": "Montos positivos que necesitan vinculacion"
+      }
+    },
+    "controls": {
+      "matching": {
+        "title": "Vinculacion de Facturas",
+        "description": "Encuentra y vincula automaticamente facturas con transacciones usando IA.",
+        "helpRunMatch": "Ejecutar Vinculacion: Analiza TODAS las facturas no vinculadas y encuentra coincidencias potenciales de transacciones. Esto crea coincidencias pendientes para revision.",
+        "helpAutoMatch": "Auto-Vincular ALTO: Confirma automaticamente todas las coincidencias pendientes de alta confianza (80%+). Usa esto cuando confies en las recomendaciones de la IA."
+      },
+      "buttons": {
+        "runMatch": "Ejecutar Vinculacion",
+        "autoMatchHigh": "Auto-Vincular ALTO",
+        "moreOptions": "Mas Opciones",
+        "refreshData": "Actualizar Datos",
+        "viewAllMatches": "Ver Todas las Coincidencias",
+        "approveSelected": "Aprobar Seleccionados",
+        "rejectSelected": "Rechazar Seleccionados",
+        "clearSelection": "Limpiar Seleccion",
+        "refreshUnlinked": "Actualizar No Vinculados",
+        "quickMatchAll": "Vinculacion Rapida de Todos",
+        "viewAllConfirmed": "Ver Todos Confirmados",
+        "quickMatch": "Vinculacion Rapida",
+        "viewDetails": "Ver Detalles",
+        "confirmMatch": "Confirmar Coincidencia",
+        "rejectMatch": "Rechazar Coincidencia",
+        "viewInvoice": "Ver Factura",
+        "viewTransaction": "Ver Transaccion",
+        "viewInDashboard": "Ver en Panel",
+        "viewFullDetails": "Ver Detalles Completos",
+        "close": "Cerrar"
+      },
+      "progress": {
+        "initializing": "Inicializando proceso de vinculacion...",
+        "status": "Estado:",
+        "time": "Tiempo:",
+        "optimizations": "Optimizaciones:",
+        "starting": "Iniciando...",
+        "calculating": "Calculando...",
+        "loading": "Cargando..."
+      },
+      "selected": {
+        "matchesSelected": "coincidencias seleccionadas",
+        "noSelection": "0 coincidencias seleccionadas"
+      }
+    },
+    "filters": {
+      "all": "Todos",
+      "highConfidence": "Alta Confianza",
+      "mediumConfidence": "Confianza Media",
+      "allUnlinked": "Todos No Vinculados",
+      "recent30Days": "Recientes (30 dias)",
+      "highValue": "Alto Valor ($1000+)"
+    },
+    "sections": {
+      "pendingMatches": {
+        "title": "Coincidencias Pendientes de Revision",
+        "empty": "No hay coincidencias pendientes!",
+        "emptyDescription": "Todas las facturas estan vinculadas o no se encontraron coincidencias. Intenta ejecutar el proceso de vinculacion para encontrar nuevas coincidencias."
+      },
+      "unlinkedInvoices": {
+        "title": "Facturas No Vinculadas Listas para Vinculacion",
+        "empty": "Excelente! Todas las facturas estan vinculadas!",
+        "emptyDescription": "No se encontraron facturas no vinculadas. Todas las facturas han sido vinculadas exitosamente a transacciones.",
+        "refreshButton": "Actualizar para Verificar Nuevas Facturas",
+        "quickMatchHelp": "Usa Vinculacion Rapida para encontrar automaticamente coincidencias potenciales de transacciones."
+      },
+      "recentMatches": {
+        "title": "Coincidencias Confirmadas Recientes"
+      }
+    },
+    "invoiceCard": {
+      "vendor": "Proveedor:",
+      "items": "Items:",
+      "status": "Estado:",
+      "description": "Descripcion:"
+    },
+    "matchCard": {
+      "invoiceDetails": "Detalles de Factura",
+      "transactionDetails": "Detalles de Transaccion",
+      "similarMatches": "Coincidencias Similares",
+      "vendorHistory": "Historial del Proveedor",
+      "matchCriteria": "Desglose de Criterios de Coincidencia",
+      "amountMatch": "Coincidencia de Monto",
+      "dateMatch": "Coincidencia de Fecha",
+      "entityMatch": "Coincidencia de Entidad",
+      "overallScore": "Puntuacion General"
+    },
+    "pagination": {
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "perPage": "Por pagina:",
+      "showing": "Mostrando {start} a {end} de {total} facturas"
+    },
+    "modals": {
+      "transactionDetails": {
+        "title": "Detalles de Transaccion",
+        "transactionId": "ID de Transaccion:",
+        "amount": "Monto:",
+        "date": "Fecha:",
+        "entity": "Entidad:",
+        "category": "Categoria:",
+        "description": "Descripcion:"
+      },
+      "invoiceDetails": {
+        "title": "Detalles de Factura",
+        "invoiceId": "ID de Factura:",
+        "invoiceNumber": "Numero de Factura:",
+        "customer": "Cliente:",
+        "issueDate": "Fecha de Emision:",
+        "dueDate": "Fecha de Vencimiento:",
+        "totalAmount": "Monto Total:",
+        "status": "Estado:",
+        "lineItems": "Items de Linea"
+      }
+    },
+    "messages": {
+      "matchingStarted": "Proceso de vinculacion iniciado...",
+      "matchConfirmed": "Coincidencia confirmada exitosamente",
+      "matchRejected": "Coincidencia rechazada exitosamente",
+      "matchFailed": "Error al confirmar coincidencia",
+      "rejectFailed": "Error al rechazar coincidencia",
+      "noSelection": "Por favor selecciona al menos una coincidencia",
+      "bulkApproveSuccess": "{count} coincidencias aprobadas exitosamente",
+      "bulkRejectSuccess": "{count} coincidencias rechazadas exitosamente",
+      "dataRefreshed": "Datos actualizados exitosamente",
+      "quickMatchStarted": "Proceso de vinculacion rapida iniciado...",
+      "autoMatchComplete": "Proceso de auto-vinculacion completado"
+    },
+    "confidence": {
+      "high": "ALTO",
+      "medium": "MEDIO",
+      "low": "BAJO"
+    }
+  },
+  "workforce": {
+    "pageTitle": "Gestion de Personal",
+    "title": "Gestion de Personal",
+    "subtitle": "Gestiona empleados, contratistas y recibos de nomina",
+    "tabs": {
+      "members": "Miembros del Personal",
+      "payslips": "Recibos de Nomina"
+    },
+    "stats": {
+      "activeMembers": "Miembros Activos",
+      "totalPayslips": "Total de Recibos",
+      "matchedPayslips": "Recibos Vinculados",
+      "matchRate": "Tasa de Vinculacion"
+    },
+    "members": {
+      "search": {
+        "placeholder": "Buscar por nombre, titulo, email..."
+      },
+      "buttons": {
+        "addMember": "+ Agregar Miembro",
+        "refresh": "Actualizar"
+      },
+      "table": {
+        "name": "Nombre",
+        "type": "Tipo",
+        "jobTitle": "Cargo",
+        "dateOfHire": "Fecha de Contratacion",
+        "payRate": "Tasa de Pago",
+        "status": "Estado",
+        "actions": "Acciones",
+        "loading": "Cargando miembros del personal...",
+        "noMembers": "No se encontraron miembros del personal"
+      }
+    },
+    "payslips": {
+      "search": {
+        "placeholder": "Buscar por empleado, numero de recibo..."
+      },
+      "buttons": {
+        "createPayslip": "+ Crear Recibo",
+        "refresh": "Actualizar"
+      },
+      "table": {
+        "payslipNumber": "Recibo #",
+        "employee": "Empleado",
+        "period": "Periodo",
+        "paymentDate": "Fecha de Pago",
+        "grossAmount": "Monto Bruto",
+        "netAmount": "Monto Neto",
+        "status": "Estado",
+        "actions": "Acciones",
+        "loading": "Cargando recibos de nomina...",
+        "noPayslips": "No se encontraron recibos de nomina"
+      }
+    },
+    "type": {
+      "employee": "Empleado",
+      "contractor": "Contratista"
+    },
+    "status": {
+      "active": "Activo",
+      "inactive": "Inactivo",
+      "draft": "Borrador",
+      "approved": "Aprobado",
+      "paid": "Pagado"
+    },
+    "modals": {
+      "member": {
+        "titleAdd": "Agregar Miembro del Personal",
+        "titleEdit": "Editar Miembro del Personal",
+        "fields": {
+          "fullName": "Nombre Completo *",
+          "employmentType": "Tipo de Empleo *",
+          "employmentTypePlaceholder": "Seleccionar tipo",
+          "status": "Estado",
+          "documentType": "Tipo de Documento",
+          "documentTypePlaceholder": "Seleccionar tipo",
+          "documentTypeSSN": "SSN",
+          "documentTypeEIN": "EIN",
+          "documentTypeTaxID": "ID Fiscal",
+          "documentTypePassport": "Pasaporte",
+          "documentNumber": "Numero de Documento",
+          "dateOfHire": "Fecha de Contratacion *",
+          "payRate": "Tasa de Pago *",
+          "currency": "Moneda",
+          "payFrequency": "Frecuencia de Pago *",
+          "payFrequencyPlaceholder": "Seleccionar frecuencia",
+          "payFrequencyHourly": "Por Hora",
+          "payFrequencyDaily": "Diario",
+          "payFrequencyWeekly": "Semanal",
+          "payFrequencyBiweekly": "Quincenal",
+          "payFrequencyMonthly": "Mensual",
+          "payFrequencyAnnual": "Anual",
+          "jobTitle": "Cargo",
+          "department": "Departamento",
+          "email": "Email",
+          "phone": "Telefono",
+          "notes": "Notas"
+        },
+        "buttons": {
+          "cancel": "Cancelar",
+          "saveMember": "Guardar Miembro"
+        }
+      },
+      "payslip": {
+        "titleCreate": "Crear Recibo de Nomina",
+        "titleEdit": "Editar Recibo de Nomina",
+        "fields": {
+          "employee": "Empleado *",
+          "employeePlaceholder": "Seleccionar empleado",
+          "payslipNumber": "Numero de Recibo *",
+          "periodStart": "Inicio del Periodo *",
+          "periodEnd": "Fin del Periodo *",
+          "paymentDate": "Fecha de Pago *",
+          "grossAmount": "Monto Bruto *",
+          "deductions": "Deducciones",
+          "netAmount": "Monto Neto *",
+          "paymentMethod": "Metodo de Pago",
+          "paymentMethodPlaceholder": "Seleccionar metodo",
+          "paymentMethodBankTransfer": "Transferencia Bancaria",
+          "paymentMethodCheck": "Cheque",
+          "paymentMethodCash": "Efectivo",
+          "paymentMethodCrypto": "Criptomoneda",
+          "paymentMethodWire": "Transferencia Electronica",
+          "status": "Estado",
+          "notes": "Notas"
+        },
+        "buttons": {
+          "cancel": "Cancelar",
+          "savePayslip": "Guardar Recibo"
+        }
+      }
+    },
+    "actions": {
+      "view": "Ver",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "findMatches": "Buscar Coincidencias"
+    },
+    "messages": {
+      "memberSaved": "Miembro del personal guardado exitosamente",
+      "memberDeleted": "Miembro del personal eliminado exitosamente",
+      "payslipSaved": "Recibo de nomina guardado exitosamente",
+      "payslipDeleted": "Recibo de nomina eliminado exitosamente",
+      "confirmDeleteMember": "Estas seguro de que deseas eliminar este miembro del personal?",
+      "confirmDeletePayslip": "Estas seguro de que deseas eliminar este recibo de nomina?",
+      "loadFailed": "Error al cargar datos",
+      "saveFailed": "Error al guardar",
+      "deleteFailed": "Error al eliminar"
+    }
+  },
+  "reports": {
+    "title": "Informes",
+    "subtitle": "Informes financieros y analiticas",
+    "generate": "Generar Informe",
+    "pageTitle": "Informes Financieros",
+    "stats": {
+      "totalRevenue": "Ingresos Totales",
+      "totalExpenses": "Gastos Totales",
+      "netProfit": "Ganancia Neta",
+      "cashPosition": "Posicion de Efectivo"
+    },
+    "messages": {
+      "loadFailed": "Error al cargar datos del panel. Por favor actualiza la pagina.",
+      "refreshFailed": "Error al actualizar datos del panel.",
+      "dreLoadFailed": "Error al cargar vista previa del Estado de Resultados. Por favor intenta de nuevo.",
+      "dreDownloadFailed": "Error al descargar PDF del Estado de Resultados. Por favor intenta de nuevo.",
+      "balanceSheetLoadFailed": "Error al cargar vista previa del Balance General. Por favor intenta de nuevo.",
+      "balanceSheetDownloadFailed": "Error al descargar PDF del Balance General. Por favor intenta de nuevo.",
+      "cashFlowLoadFailed": "Error al cargar vista previa del Flujo de Efectivo. Por favor intenta de nuevo.",
+      "cashFlowDownloadFailed": "Error al descargar PDF del Flujo de Efectivo. Por favor intenta de nuevo.",
+      "dmplLoadFailed": "Error al cargar vista previa del ECPN. Por favor intenta de nuevo.",
+      "dmplDownloadFailed": "Error al descargar PDF del ECPN. Por favor intenta de nuevo.",
+      "noShareholderData": "No hay datos de accionistas disponibles. Haz clic en 'Gestionar Accionistas' para agregar accionistas."
+    },
+    "tagline": "Panel de Analiticas Financieras en Tiempo Real",
+    "filters": {
+      "title": "Filtros de Informe",
+      "periodLabel": "Periodo de Tiempo:",
+      "periodAllTime": "Todo el Tiempo",
+      "periodMonthly": "Mensual",
+      "periodQuarterly": "Trimestral",
+      "periodYearly": "Anual",
+      "periodCustom": "Rango Personalizado",
+      "entityLabel": "Entidad Comercial:",
+      "entityAll": "Todas las Entidades",
+      "typeLabel": "Tipo de Transaccion:",
+      "typeTooltip": "Solo Externas: Ingresos/gastos reales del negocio (recomendado para informes financieros). Todas las Transacciones: Incluye transferencias internas entre cuentas (puede mostrar totales desequilibrados).",
+      "typeAll": "Todas las Transacciones",
+      "typeExternal": "Solo Externas (Recomendado)",
+      "typeInternal": "Solo Internas",
+      "startDate": "Fecha de Inicio:",
+      "endDate": "Fecha de Fin:",
+      "quickFiltersTitle": "Filtros Rapidos:",
+      "ytd": "2025 Hasta la Fecha",
+      "year2024": "Ano 2024 Completo",
+      "q4": "Q4 2024",
+      "lastMonth": "Ultimo Mes",
+      "refreshDashboard": "Actualizar Panel",
+      "resetFilters": "Limpiar Filtros",
+      "allTransactionsWarning": "\"Todas las Transacciones\" incluye transferencias internas que pueden mostrar totales desequilibrados. Usa \"Solo Externas\" para informes financieros precisos."
+    },
+    "section": {
+      "financialReports": "Informes Financieros",
+      "generatePDFInfo": "Genera estados financieros profesionales en formato PDF",
+      "chartsTitle": "Graficos de Analiticas Financieras",
+      "chartsSubtitle": "Visualizacion de Datos Financieros en Tiempo Real",
+      "sankeyTitle": "Analisis de Flujo Financiero",
+      "sankeyInfo": "Diagrama Sankey interactivo mostrando el flujo de dinero entre categorias"
+    },
+    "dre": {
+      "title": "Estado de Resultados",
+      "description": "Estado de Resultados",
+      "generateButton": "Generar Estado de Resultados",
+      "modalTitle": "Estado de Resultados (DRE)",
+      "summaryTitle": "Resumen del Periodo",
+      "totalRevenue": "Ingresos Totales",
+      "grossProfit": "Ganancia Bruta",
+      "netIncome": "Ingreso Neto",
+      "detailsTitle": "Detalles Financieros",
+      "tableItem": "Item",
+      "tableValue": "Valor",
+      "tablePercent": "% de Ingresos",
+      "periodLabel": "Periodo:",
+      "companyLabel": "Empresa:",
+      "generatedLabel": "Generado el:",
+      "closeButton": "Cerrar",
+      "downloadButton": "Descargar PDF"
+    },
+    "balanceSheet": {
+      "title": "Balance General",
+      "description": "Balance General",
+      "generateButton": "Generar Balance General"
+    },
+    "cashFlow": {
+      "title": "Estado de Flujo de Efectivo",
+      "description": "Estado de Flujo de Efectivo",
+      "generateButton": "Generar Estado de Flujo de Efectivo"
+    },
+    "dmpl": {
+      "title": "Estado de Cambios en el Patrimonio",
+      "description": "Estado de Cambios en el Patrimonio",
+      "generateButton": "Generar Estado de Cambios en el Patrimonio"
+    },
+    "charts": {
+      "revenueVsExpenses": "Ingresos vs Gastos",
+      "monthlyPL": "Tendencia Mensual de P&L",
+      "entityPerformance": "Desempeno por Entidad",
+      "cashFlowTrend": "Tendencia de Flujo de Efectivo",
+      "sankeyFlowAnalysis": "Este diagrama muestra como los ingresos fluyen a traves de diferentes categorias de gastos hacia la ganancia neta"
+    },
+    "loading": {
+      "data": "Cargando datos financieros...",
+      "pleaseWait": "Cargando..."
+    },
+    "error": {
+      "title": "Error"
+    },
+    "types": {
+      "balanceSheet": "Balance General",
+      "incomeStatement": "Estado de Resultados",
+      "cashFlow": "Flujo de Efectivo",
+      "taxReport": "Informe de Impuestos"
+    }
+  },
+  "files": {
+    "pageTitle": "Gestion de Archivos",
+    "title": "Gestor de Archivos",
+    "subtitle": "Sube y gestiona documentos",
+    "transactions": {
+      "title": "Subir Archivos de Transacciones (CSV/Excel/PDF)",
+      "dragDrop": "Arrastra y Suelta Archivos CSV, Excel o PDF Aqui",
+      "orClick": "O haz clic para seleccionar archivos",
+      "chooseFiles": "Elegir Archivos",
+      "progress": {
+        "processing": "Procesando...",
+        "uploading": "Subiendo archivo...",
+        "processingTransactions": "Procesando transacciones...",
+        "complete": "Completado!"
+      },
+      "supportedFormats": "Formatos soportados: CSV, Excel (XLS/XLSX), PDF"
+    },
+    "invoices": {
+      "title": "Subir Facturas",
+      "dragDrop": "Arrastra y suelta archivos de facturas aqui o haz clic para explorar",
+      "supportedFormats": "Formatos soportados: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX), ZIP, 7Z (Max 50MB total)",
+      "multipleHint": "Sube multiples archivos, un archivo ZIP o una sola factura",
+      "progress": {
+        "title": "Procesando Archivos...",
+        "progress": "Progreso:",
+        "complete": "Procesamiento Completo",
+        "successful": "Exitoso",
+        "failed": "Fallido"
+      }
+    },
+    "receipts": {
+      "title": "Subir Recibos de Pago",
+      "dragDrop": "Arrastra y suelta recibos de pago aqui o haz clic para explorar",
+      "supportedFormats": "Formatos soportados: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX)",
+      "aiHint": "Sube multiples archivos - la IA vinculara automaticamente los recibos con las facturas",
+      "customerFilter": {
+        "label": "Filtrar por Cliente (Opcional)",
+        "allCustomers": "Todos los Clientes (Sin Filtro)",
+        "loading": "Cargando clientes...",
+        "hint": "Selecciona un cliente para mejorar la precision de vinculacion. Solo se consideraran las facturas de este cliente."
+      },
+      "chooseFiles": "Elegir Archivos de Recibos",
+      "progress": {
+        "title": "Procesando Recibos de Pago...",
+        "processing": "Procesando Recibo...",
+        "extracting": "Extrayendo datos de pago con IA...",
+        "progress": "Progreso:",
+        "complete": "Procesamiento Completo",
+        "successful": "Exitoso",
+        "failed": "Fallido"
+      }
+    },
+    "accountGroups": {
+      "title": "Archivos Subidos por Cuenta",
+      "accountsWithFiles": "cuenta(s) con archivos subidos",
+      "empty": {
+        "title": "No hay archivos subidos aun",
+        "description": "Sube archivos CSV o PDF arriba para comenzar el seguimiento de transacciones."
+      },
+      "stats": {
+        "totalTxns": "Total Txns",
+        "active": "Activo",
+        "coverage": "Cobertura"
+      },
+      "badges": {
+        "gapsDetected": "Brechas Detectadas"
+      },
+      "categories": {
+        "checking": "Cuenta Corriente",
+        "creditCard": "Tarjeta de Credito",
+        "cryptoExchange": "Exchange de Cripto",
+        "cryptoWallet": "Billetera Cripto",
+        "other": "Otro"
+      }
+    },
+    "table": {
+      "headers": {
+        "fileName": "Nombre de Archivo",
+        "statementPeriod": "Periodo del Estado",
+        "transactions": "Transacciones",
+        "status": "Estado",
+        "actions": "Acciones"
+      },
+      "status": {
+        "active": "Activo",
+        "partiallyArchived": "Parcialmente Archivado",
+        "allArchived": "Todo Archivado"
+      },
+      "transactions": {
+        "total": "total",
+        "active": "activo",
+        "archived": "archivado"
+      },
+      "gaps": {
+        "detected": "Brecha Detectada:",
+        "missing": "Faltan {days} dias",
+        "months": "~{months} mes",
+        "monthsPlural": "~{months} meses",
+        "between": "entre {from} y {to}"
+      }
+    },
+    "buttons": {
+      "view": "Ver",
+      "chooseFiles": "Elegir Archivos",
+      "uploadFile": "Subir Archivo"
+    },
+    "messages": {
+      "uploadSuccess": "Archivo {filename} procesado exitosamente",
+      "uploadSuccessWithCount": "Archivo {filename} procesado exitosamente ({count} transacciones)",
+      "uploadFailed": "Error al subir: {error}",
+      "onlyAllowedFormats": "Solo se permiten archivos CSV, Excel (XLS/XLSX) y PDF",
+      "notAuthenticated": "No autenticado. Por favor inicia sesion.",
+      "duplicateDetection": "La deteccion de duplicados aun no esta completamente implementada en la vista jerarquica.",
+      "invoicesUploaded": "{count} factura(s) subida(s) exitosamente",
+      "completedWithErrors": "Completado con {count} error(es)"
+    }
+  },
+  "knowledge": {
+    "title": "Conocimiento del Inquilino",
+    "subtitle": "Gestiona patrones de clasificacion, entidades comerciales y configuracion de aprendizaje de IA",
+    "tabs": {
+      "patterns": "Patrones de Clasificacion",
+      "entities": "Entidades Comerciales",
+      "categories": "Categorias",
+      "subcategories": "Subcategorias",
+      "bankAccounts": "Cuentas Bancarias",
+      "cryptoWallets": "Billeteras Cripto",
+      "notifications": "Notificaciones",
+      "settings": "Configuracion"
+    },
+    "stats": {
+      "totalPatterns": "Total de Patrones",
+      "activePatterns": "Patrones Activos",
+      "highConfidence": "Alta Confianza",
+      "totalEntities": "Total de Entidades",
+      "classifiedTransactions": "Transacciones Clasificadas",
+      "unreadNotifications": "Notificaciones No Leidas",
+      "totalNotifications": "Total de Notificaciones"
+    },
+    "searchPlaceholder": {
+      "patterns": "Buscar patrones por descripcion, entidad o categoria...",
+      "entities": "Buscar entidades...",
+      "categories": "Buscar categorias...",
+      "subcategories": "Buscar subcategorias..."
+    },
+    "buttons": {
+      "addPattern": "Agregar Patron",
+      "testPatterns": "Probar Patrones",
+      "addEntity": "Agregar Entidad",
+      "addBankAccount": "Agregar Cuenta Bancaria",
+      "addWallet": "Agregar Billetera Cripto",
+      "allNotifications": "Todas las Notificaciones",
+      "unreadOnly": "Solo No Leidas",
+      "markAllRead": "Marcar Todas como Leidas",
+      "saveSettings": "Guardar Configuracion"
+    },
+    "loading": {
+      "patterns": "Cargando patrones de clasificacion...",
+      "entities": "Cargando entidades comerciales...",
+      "categories": "Cargando categorias...",
+      "subcategories": "Cargando subcategorias...",
+      "bankAccounts": "Cargando cuentas bancarias...",
+      "wallets": "Cargando billeteras cripto...",
+      "notifications": "Cargando notificaciones..."
+    },
+    "modals": {
+      "addPattern": "Agregar Patron de Clasificacion",
+      "editPattern": "Editar Patron de Clasificacion",
+      "addEntity": "Agregar Entidad Comercial",
+      "editEntity": "Editar Entidad Comercial",
+      "addBankAccount": "Agregar Cuenta Bancaria",
+      "editBankAccount": "Editar Cuenta Bancaria",
+      "addWallet": "Agregar Billetera Cripto",
+      "editWallet": "Editar Billetera Cripto",
+      "patternSuggestions": "Sugerencias de Patrones Auto-Aprendidos"
+    },
+    "patternForm": {
+      "descriptionPattern": "Patron de Descripcion",
+      "descriptionPlaceholder": "ej., COINBASE o TRANSF PIX o COMISION GAS",
+      "descriptionHint": "Ingresa la palabra clave o frase a coincidir. Los comodines se agregan automaticamente. Ejemplo: \"PAYPAL\" coincidira con cualquier descripcion que contenga PAYPAL",
+      "patternType": "Tipo de Patron",
+      "patternTypeSelect": "Seleccionar tipo...",
+      "patternTypeRevenue": "Ingreso",
+      "patternTypeExpense": "Gasto",
+      "patternTypeTransfer": "Transferencia",
+      "patternTypeTechnology": "Tecnologia",
+      "patternTypeCardMapping": "Mapeo de Tarjeta",
+      "entityName": "Nombre de Entidad",
+      "entityPlaceholder": "ej., Coinbase, Delta LLC (opcional)",
+      "entityHint": "Opcional - Deja en blanco para patrones que no mapean a una entidad especifica",
+      "accountingCategory": "Categoria Contable",
+      "categorySelect": "Seleccionar categoria...",
+      "categoryNote": "Las categorias se cargan desde tus datos de transacciones reales en el Gestor de Transacciones",
+      "subcategory": "Subcategoria",
+      "subcategoryPlaceholder": "ej., Comisiones de Exchange, Suministros de Oficina",
+      "subcategoryNote": "Las subcategorias se sugieren automaticamente desde tus datos de transacciones",
+      "justification": "Justificacion",
+      "justificationPlaceholder": "ej., Suscripcion mensual SaaS, Pago recurrente por alojamiento en la nube",
+      "justificationHint": "Texto de justificacion estandar a aplicar cuando este patron coincide con una transaccion",
+      "confidenceScore": "Puntuacion de Confianza",
+      "confidenceHint": "0.0 - 1.0 (mayor = mas confianza). Recomendado: 0.8+ para coincidencias exactas, 0.5-0.7 para coincidencias parciales",
+      "priority": "Prioridad",
+      "priorityHint": "Numero menor = mayor prioridad. Rango: 0-99 (critico), 100-499 (alto), 500-999 (normal)",
+      "active": "Activo",
+      "activeHint": "Los patrones inactivos no se usaran para clasificacion",
+      "notes": "Notas",
+      "notesPlaceholder": "Notas opcionales sobre este patron...",
+      "savePattern": "Guardar Patron"
+    },
+    "entityForm": {
+      "entityName": "Nombre de Entidad",
+      "entityPlaceholder": "ej., Delta LLC, Coinbase",
+      "renameHint": "Renombrar esta entidad actualizara todas las transacciones y patrones asociados.",
+      "entityType": "Tipo de Entidad",
+      "entityTypeSelect": "Seleccionar tipo...",
+      "entityTypeInternal": "Interna (Entidad de la Empresa)",
+      "entityTypeCustomer": "Cliente",
+      "entityTypeVendor": "Proveedor",
+      "entityTypePartner": "Socio",
+      "entityTypeExchange": "Exchange",
+      "entityTypeBank": "Banco",
+      "description": "Descripcion",
+      "descriptionPlaceholder": "Descripcion opcional...",
+      "mergeTitle": "Fusionar Entidad",
+      "mergeWarning": "Esto fusionara la entidad actual con otra entidad y actualizara todas las transacciones asociadas. Esta accion no se puede deshacer!",
+      "mergeTarget": "Fusionar con Entidad",
+      "mergeTargetSelect": "-- Seleccionar entidad destino --",
+      "mergeTargetHint": "Selecciona la entidad con la cual fusionar. Todas las transacciones seran reasignadas a esta entidad.",
+      "mergeButton": "Fusionar Entidad",
+      "saveEntity": "Guardar Entidad"
+    },
+    "bankAccountForm": {
+      "accountName": "Nombre de Cuenta",
+      "accountNamePlaceholder": "ej., Cuenta Operativa",
+      "institution": "Nombre de Institucion",
+      "institutionPlaceholder": "ej., Banco Santander",
+      "accountNumber": "Numero de Cuenta",
+      "accountNumberPlaceholder": "****1234 (ultimos 4 digitos o enmascarado)",
+      "routingNumber": "Numero de Ruta",
+      "routingNumberPlaceholder": "ej., 021000021",
+      "accountType": "Tipo de Cuenta",
+      "accountTypeSelect": "Seleccionar tipo...",
+      "accountTypeChecking": "Cuenta Corriente",
+      "accountTypeSavings": "Cuenta de Ahorros",
+      "accountTypeCredit": "Tarjeta de Credito",
+      "accountTypeInvestment": "Inversion",
+      "accountTypeLoan": "Prestamo",
+      "currency": "Moneda",
+      "currentBalance": "Saldo Actual",
+      "balancePlaceholder": "0.00",
+      "isPrimary": "Marcar como Cuenta Principal",
+      "notes": "Notas",
+      "notesPlaceholder": "Notas opcionales sobre esta cuenta...",
+      "saveAccount": "Guardar Cuenta Bancaria"
+    },
+    "walletForm": {
+      "address": "Direccion de Billetera",
+      "addressPlaceholder": "0x... o bc1...",
+      "entityName": "Nombre de Entidad",
+      "entityPlaceholder": "ej., Coinbase Exchange",
+      "walletType": "Tipo de Billetera",
+      "walletTypeSelect": "Seleccionar tipo...",
+      "walletTypeInternal": "Interna (Propiedad de la Empresa)",
+      "walletTypeExchange": "Exchange",
+      "walletTypeCustomer": "Cliente",
+      "walletTypeVendor": "Proveedor",
+      "walletTypePartner": "Socio",
+      "blockchain": "Blockchain",
+      "blockchainSelect": "Seleccionar blockchain...",
+      "blockchainEthereum": "Ethereum",
+      "blockchainBitcoin": "Bitcoin",
+      "blockchainPolygon": "Polygon",
+      "blockchainBSC": "Binance Smart Chain",
+      "blockchainArbitrum": "Arbitrum",
+      "blockchainOptimism": "Optimism",
+      "purpose": "Proposito",
+      "purposePlaceholder": "ej., Billetera principal de trading",
+      "notes": "Notas",
+      "notesPlaceholder": "Notas opcionales sobre esta billetera...",
+      "saveWallet": "Guardar Billetera"
+    },
+    "settings": {
+      "title": "Configuracion de Clasificacion",
+      "minConfidence": "Umbral Minimo de Confianza",
+      "minConfidenceHint": "Las transacciones con confianza por debajo de este umbral seran marcadas para revision",
+      "autoLearning": "Auto-Aprendizaje de Correcciones del Usuario",
+      "autoLearningEnabled": "Habilitado - Crear patrones de correcciones manuales",
+      "autoLearningDisabled": "Deshabilitado - Solo creacion manual de patrones",
+      "autoLearningHint": "Cuando esta habilitado, el sistema creara automaticamente patrones basados en tus correcciones manuales de transacciones",
+      "minOccurrences": "Minimo de Ocurrencias para Auto-Generacion de Patrones",
+      "minOccurrencesHint": "Numero minimo de clasificaciones identicas requeridas antes de auto-generar un patron"
+    },
+    "suggestions": {
+      "howItWorks": "Como funciona:",
+      "description": "Despues de clasificar manualmente el mismo patron de transaccion 50 veces, el sistema sugiere automaticamente crear un patron de clasificacion. Revisa y aprueba las sugerencias a continuacion para agregarlas a tus patrones activos."
+    }
+  },
+  "homepage": {
+    "pageTitle": "Resumen del Negocio",
+    "hero": {
+      "loading": "Cargando...",
+      "loadingCompanyInfo": "Cargando informacion de la empresa...",
+      "regenerateButton": "Regenerar con IA",
+      "loadingIndicator": "Cargando contenido...",
+      "generatedTimestamp": "Generado"
+    },
+    "metrics": {
+      "loading": "Cargando..."
+    },
+    "aiInsights": {
+      "loading": "Cargando analisis de IA...",
+      "title": "Analisis Generados por IA"
+    },
+    "portfolio": {
+      "sectionTitle": "Nuestro Portafolio",
+      "loading": "Cargando portafolio...",
+      "empty": "No hay items de portafolio disponibles"
+    },
+    "structure": {
+      "sectionTitle": "Estructura Organizacional",
+      "loading": "Cargando organizacion...",
+      "empty": "No hay estructura organizacional disponible"
+    },
+    "onboardingBot": {
+      "toggle": {
+        "tooltip": "Abrir Incorporacion del Negocio"
+      },
+      "header": {
+        "title": "Incorporacion del Negocio",
+        "subtitle": "Cuentanos sobre tu empresa"
+      },
+      "progress": {
+        "label": "Progreso de Configuracion",
+        "percentage": "{percent}%"
+      },
+      "input": {
+        "placeholder": "Escribe tu mensaje...",
+        "sendButton": "Enviar"
+      },
+      "messages": {
+        "welcome": "Bienvenido! Comencemos a configurar tu negocio.",
+        "error": "Ocurrio un error. Por favor intenta de nuevo."
+      }
+    }
+  },
+  "whitelistedAccounts": {
+    "pageTitle": "Cuentas Autorizadas",
+    "title": "Cuentas Autorizadas",
+    "subtitle": "Gestiona tus cuentas bancarias y billeteras de criptomonedas conectadas",
+    "tabs": {
+      "bankAccounts": "Cuentas Bancarias",
+      "cryptoWallets": "Billeteras Cripto"
+    },
+    "bankAccounts": {
+      "addButton": "Agregar Cuenta Bancaria",
+      "loading": "Cargando cuentas bancarias...",
+      "empty": {
+        "title": "Aun no hay cuentas bancarias",
+        "description": "Agrega tu primera cuenta bancaria para comenzar el seguimiento de transacciones."
+      },
+      "card": {
+        "accountName": "Nombre de Cuenta:",
+        "institution": "Institucion:",
+        "accountNumber": "Numero de Cuenta:",
+        "routingNumber": "Numero de Ruta:",
+        "accountType": "Tipo de Cuenta:",
+        "currency": "Moneda:",
+        "currentBalance": "Saldo Actual:",
+        "notes": "Notas:",
+        "primaryBadge": "Principal"
+      },
+      "accountTypes": {
+        "checking": "Cuenta Corriente",
+        "savings": "Cuenta de Ahorros",
+        "credit": "Tarjeta de Credito",
+        "investment": "Inversion",
+        "loan": "Prestamo"
+      },
+      "currencies": {
+        "usd": "USD - Dolar Estadounidense",
+        "eur": "EUR - Euro",
+        "gbp": "GBP - Libra Esterlina",
+        "brl": "BRL - Real Brasileno",
+        "ars": "ARS - Peso Argentino",
+        "clp": "CLP - Peso Chileno",
+        "cop": "COP - Peso Colombiano",
+        "mxn": "MXN - Peso Mexicano",
+        "pen": "PEN - Sol Peruano",
+        "uyu": "UYU - Peso Uruguayo",
+        "bob": "BOB - Boliviano",
+        "ves": "VES - Bolivar Venezolano",
+        "pyg": "PYG - Guarani Paraguayo"
+      },
+      "modal": {
+        "titleAdd": "Agregar Cuenta Bancaria",
+        "titleEdit": "Editar Cuenta Bancaria",
+        "fields": {
+          "accountName": "Nombre de Cuenta *",
+          "accountNamePlaceholder": "ej., Cuenta Operativa",
+          "institution": "Nombre de Institucion *",
+          "institutionPlaceholder": "ej., Banco Santander",
+          "accountNumber": "Numero de Cuenta",
+          "accountNumberPlaceholder": "****1234 (ultimos 4 digitos o enmascarado)",
+          "routingNumber": "Numero de Ruta",
+          "routingNumberPlaceholder": "ej., 021000021",
+          "accountType": "Tipo de Cuenta *",
+          "accountTypePlaceholder": "Seleccionar tipo...",
+          "currency": "Moneda",
+          "currentBalance": "Saldo Actual",
+          "currentBalancePlaceholder": "0.00",
+          "isPrimary": "Marcar como Cuenta Principal",
+          "notes": "Notas",
+          "notesPlaceholder": "Notas opcionales sobre esta cuenta..."
+        },
+        "buttons": {
+          "save": "Guardar Cuenta Bancaria",
+          "cancel": "Cancelar"
+        }
+      }
+    },
+    "cryptoWallets": {
+      "addButton": "Agregar Billetera Cripto",
+      "loading": "Cargando billeteras cripto...",
+      "empty": {
+        "title": "Aun no hay billeteras cripto",
+        "description": "Agrega tu primera billetera cripto para rastrear transacciones blockchain."
+      },
+      "card": {
+        "address": "Direccion de Billetera:",
+        "entityName": "Nombre de Entidad:",
+        "walletType": "Tipo de Billetera:",
+        "blockchain": "Blockchain:",
+        "purpose": "Proposito:",
+        "notes": "Notas:"
+      },
+      "walletTypes": {
+        "internal": "Interna (Propiedad de la Empresa)",
+        "exchange": "Exchange",
+        "customer": "Cliente",
+        "vendor": "Proveedor",
+        "partner": "Socio"
+      },
+      "blockchains": {
+        "ethereum": "Ethereum",
+        "bitcoin": "Bitcoin",
+        "polygon": "Polygon",
+        "bsc": "Binance Smart Chain",
+        "arbitrum": "Arbitrum",
+        "optimism": "Optimism"
+      },
+      "modal": {
+        "titleAdd": "Agregar Billetera Cripto",
+        "titleEdit": "Editar Billetera Cripto",
+        "fields": {
+          "address": "Direccion de Billetera *",
+          "addressPlaceholder": "0x... o bc1...",
+          "entityName": "Nombre de Entidad *",
+          "entityNamePlaceholder": "ej., Coinbase Exchange",
+          "walletType": "Tipo de Billetera *",
+          "walletTypePlaceholder": "Seleccionar tipo...",
+          "blockchain": "Blockchain",
+          "blockchainPlaceholder": "Seleccionar blockchain...",
+          "purpose": "Proposito",
+          "purposePlaceholder": "ej., Billetera principal de trading",
+          "notes": "Notas",
+          "notesPlaceholder": "Notas opcionales sobre esta billetera..."
+        },
+        "buttons": {
+          "save": "Guardar Billetera",
+          "cancel": "Cancelar"
+        }
+      }
+    },
+    "actions": {
+      "edit": "Editar",
+      "delete": "Eliminar"
+    },
+    "messages": {
+      "bankAccountSaved": "Cuenta bancaria guardada exitosamente",
+      "bankAccountDeleted": "Cuenta bancaria eliminada exitosamente",
+      "walletSaved": "Billetera cripto guardada exitosamente",
+      "walletDeleted": "Billetera cripto eliminada exitosamente",
+      "confirmDeleteBankAccount": "Estas seguro de que deseas eliminar esta cuenta bancaria?",
+      "confirmDeleteWallet": "Estas seguro de que deseas eliminar esta billetera cripto?",
+      "loadFailed": "Error al cargar datos",
+      "saveFailed": "Error al guardar",
+      "deleteFailed": "Error al eliminar"
+    }
+  },
+  "profile": {
+    "title": "Configuracion de Cuenta",
+    "subtitle": "Gestiona las preferencias de tu cuenta",
+    "personalInfo": "Informacion Personal",
+    "security": "Seguridad",
+    "preferences": "Preferencias",
+    "language": "Idioma",
+    "selectLanguage": "Seleccionar Idioma",
+    "languageOptions": {
+      "en": "English",
+      "pt": "Portugues (Brasil)",
+      "es": "Espanol"
+    }
+  },
+  "tenantManagement": {
+    "pageTitle": "Gestion de Inquilinos",
+    "title": "Gestion de Inquilinos",
+    "subtitle": "Gestiona tus inquilinos clientes",
+    "currentTenant": {
+      "sectionTitle": "Inquilino Actual",
+      "description": "Cambia entre tus inquilinos clientes",
+      "label": "Inquilino Activo:",
+      "loading": "Cargando inquilinos...",
+      "scopeNote": "Todos los datos y operaciones estaran limitados al inquilino seleccionado"
+    },
+    "createTenant": {
+      "sectionTitle": "Crear Nuevo Inquilino",
+      "description": "Agrega un nuevo cliente para gestionar con el Agente CFO IA",
+      "form": {
+        "companyName": "Nombre de Empresa",
+        "companyNamePlaceholder": "Empresa Cliente Inc.",
+        "description": "Descripcion",
+        "descriptionOptional": "(opcional)",
+        "descriptionPlaceholder": "Breve descripcion del negocio del cliente...",
+        "adminEmail": "Email del Administrador",
+        "adminEmailPlaceholder": "admin@empresacliente.com",
+        "adminEmailNote": "Si se proporciona, se enviara una invitacion a este email para unirse como administrador del inquilino",
+        "createButton": "Crear Inquilino",
+        "clearButton": "Limpiar",
+        "required": "*"
+      }
+    },
+    "tenantList": {
+      "sectionTitle": "Tus Inquilinos",
+      "description": "Todos los inquilinos clientes a los que tienes acceso",
+      "loading": "Cargando inquilinos...",
+      "empty": "No se encontraron inquilinos"
+    },
+    "messages": {
+      "processing": "Procesando...",
+      "success": "Inquilino creado exitosamente",
+      "error": "Error al crear inquilino"
+    }
+  },
+  "users": {
+    "pageTitle": "Gestion de Usuarios",
+    "title": "Gestion de Usuarios",
+    "subtitle": "Invita miembros del equipo y gestiona el acceso a tu inquilino",
+    "backToDashboard": "Volver al Panel",
+    "inviteCFO": {
+      "sectionTitle": "Invitar CFO Fraccional",
+      "form": {
+        "email": "Direccion de Email",
+        "emailPlaceholder": "cfo@ejemplo.com",
+        "name": "Nombre para Mostrar",
+        "namePlaceholder": "Juan Perez",
+        "required": "*",
+        "infoText": "El CFO Fraccional tendra acceso completo para gestionar finanzas, informes, y puede invitar a sus propios asistentes para ayudar a gestionar tu inquilino.",
+        "submitButton": "Enviar Invitacion al CFO",
+        "submitting": "Enviando invitacion..."
+      }
+    },
+    "inviteCFOAssistant": {
+      "sectionTitle": "Invitar Asistente de CFO",
+      "form": {
+        "email": "Direccion de Email",
+        "emailPlaceholder": "asistente@ejemplo.com",
+        "name": "Nombre para Mostrar",
+        "namePlaceholder": "Ana Garcia",
+        "accessLevel": "Nivel de Acceso",
+        "accessLevels": {
+          "readOnly": "Solo Lectura - Puede ver todos los datos pero no puede hacer cambios",
+          "upload": "Subida - Puede ver y subir documentos/transacciones",
+          "uploadWrite": "Subida y Escritura - Puede ver, subir y modificar datos"
+        },
+        "required": "*",
+        "infoText": "Los asistentes de CFO apoyan al CFO Fraccional con acceso basado en su nivel de privilegio.",
+        "submitButton": "Enviar Invitacion al Asistente de CFO",
+        "submitting": "Enviando invitacion..."
+      }
+    },
+    "inviteEmployee": {
+      "sectionTitle": "Invitar Miembro del Equipo (Empleado)",
+      "form": {
+        "email": "Direccion de Email",
+        "emailPlaceholder": "empleado@ejemplo.com",
+        "name": "Nombre para Mostrar",
+        "namePlaceholder": "Maria Lopez",
+        "accessLevel": "Nivel de Acceso",
+        "accessLevels": {
+          "readOnly": "Solo Lectura - Puede ver todos los datos pero no puede hacer cambios",
+          "upload": "Subida - Puede ver y subir documentos/transacciones",
+          "uploadWrite": "Subida y Escritura - Puede ver, subir y modificar datos"
+        },
+        "required": "*",
+        "infoText": "Los miembros del equipo tendran acceso basado en su nivel de privilegio asignado.",
+        "submitButton": "Enviar Invitacion al Miembro del Equipo",
+        "submitting": "Enviando invitacion..."
+      }
+    },
+    "messages": {
+      "successTemplate": "Invitacion enviada exitosamente a {email}!",
+      "errorTemplate": "Error al enviar invitacion. Por favor intenta de nuevo.",
+      "genericError": "Error al enviar invitacion. Por favor intenta de nuevo."
+    }
+  },
+  "modals": {
+    "confirmDelete": "Estas seguro de que deseas eliminar este elemento?",
+    "unsavedChanges": "Tienes cambios sin guardar. Deseas continuar?",
+    "success": "Operacion completada exitosamente",
+    "error": "Ocurrio un error. Por favor intenta de nuevo."
+  },
+  "validation": {
+    "required": "Este campo es requerido",
+    "invalidEmail": "Direccion de email invalida",
+    "invalidDate": "Fecha invalida",
+    "invalidAmount": "Monto invalido",
+    "minLength": "La longitud minima es {min} caracteres",
+    "maxLength": "La longitud maxima es {max} caracteres"
+  },
+  "dates": {
+    "today": "Hoy",
+    "yesterday": "Ayer",
+    "lastWeek": "Semana Pasada",
+    "lastMonth": "Mes Pasado",
+    "lastYear": "Ano Pasado",
+    "custom": "Rango Personalizado"
+  },
+  "currency": {
+    "format": "USD",
+    "symbol": "$"
+  },
+  "auth": {
+    "aiPoweredFinancialIntelligence": "Inteligencia Financiera con IA",
+    "login": "Iniciar Sesion",
+    "register": "Registrarse",
+    "emailAddress": "Direccion de Correo",
+    "emailPlaceholder": "tu@email.com",
+    "password": "Contrasena",
+    "enterPassword": "Ingresa tu contrasena",
+    "rememberMe": "Recordarme",
+    "forgotPassword": "Olvidaste tu contrasena?",
+    "signIn": "Iniciar Sesion",
+    "or": "O",
+    "continueWithGoogle": "Continuar con Google",
+    "dontHaveAccount": "No tienes una cuenta?",
+    "registerHere": "Registrate aqui",
+    "createYourAccount": "Crea tu Cuenta",
+    "fullName": "Nombre Completo",
+    "fullNamePlaceholder": "Juan Perez",
+    "passwordMinChars": "Minimo 6 caracteres",
+    "passwordHint": "Debe tener al menos 6 caracteres",
+    "confirmPassword": "Confirmar Contrasena",
+    "reenterPassword": "Reingresar contrasena",
+    "iAmA": "Soy un:",
+    "fractionalCfo": "CFO Fraccional",
+    "fractionalCfoDesc": "Gestionar multiples negocios de clientes",
+    "businessOwner": "Dueno de Negocio",
+    "businessOwnerDesc": "Gestionar las finanzas de mi empresa",
+    "agreeToTerms": "Acepto los",
+    "termsOfService": "Terminos de Servicio",
+    "and": "y",
+    "privacyPolicy": "Politica de Privacidad",
+    "createAccount": "Crear Cuenta",
+    "signUpWithGoogle": "Registrarse con Google",
+    "alreadyHaveAccount": "Ya tienes una cuenta?",
+    "loginHere": "Inicia sesion aqui",
+    "resetPassword": "Restablecer Contrasena",
+    "resetPasswordDesc": "Ingresa tu direccion de correo y te enviaremos un enlace para restablecer tu contrasena",
+    "sendResetLink": "Enviar Enlace de Restablecimiento",
+    "rememberPassword": "Recuerdas tu contrasena?",
+    "backToLogin": "Volver al Inicio de Sesion"
+  },
+  "currencies": {
+    "usdLong": "USD - Dolar Estadounidense",
+    "brlLong": "BRL - Real Brasileno",
+    "eurLong": "EUR - Euro",
+    "gbpLong": "GBP - Libra Esterlina",
+    "arsLong": "ARS - Peso Argentino",
+    "clpLong": "CLP - Peso Chileno",
+    "copLong": "COP - Peso Colombiano",
+    "mxnLong": "MXN - Peso Mexicano",
+    "penLong": "PEN - Sol Peruano",
+    "uyuLong": "UYU - Peso Uruguayo",
+    "bobLong": "BOB - Boliviano",
+    "vesLong": "VES - Bolivar Venezolano",
+    "pygLong": "PYG - Guarani Paraguayo"
+  },
+  "tabs": {
+    "overview": "Resumen",
+    "details": "Detalles",
+    "matches": "Coincidencias",
+    "activity": "Actividad"
+  },
+  "sidebar": {
+    "statistics": "Estadisticas",
+    "quickActions": "Acciones Rapidas",
+    "related": "Relacionado"
+  },
+  "stats": {
+    "views": "Vistas",
+    "activities": "Actividades",
+    "lastViewed": "Ultima Vista",
+    "matchStatus": "Estado de Coincidencia"
+  },
+  "navigation": {
+    "invoices": "Facturas"
+  }
+}

@@ -1,96 +1,559 @@
-# DeltaCFO Onboarding System - Development Plan
+# Frontend Refactoring: Flask/Jinja to Next.js + React
 
-**Version:** 1.0
-**Created:** December 1, 2025
-**Target Completion:** 4-5 weeks
+## Overview
 
----
+Migrate the DeltaCFOAgent frontend from Flask/Jinja templates to a modern Next.js + React stack while keeping the Flask backend as the API layer.
 
-## Current Progress
+### Current State
+- **Templates**: 27 HTML files (30,321 lines)
+- **JavaScript**: 26 files (11,154 lines)
+- **CSS**: 7 files (5,306 lines)
+- **API Routes**: 150+ Flask REST endpoints (working and stable)
 
-### Phase 0: Bug Fixes & Foundation (Days 1-2) - COMPLETE
-- [x] **Task 0.1.1**: Create bot_conversations table (already existed)
-- [x] **Task 0.1.2**: Fix get_business_entities() → get_entities_with_business_lines()
-- [x] **Task 0.1.3**: Verify onboarding completes end-to-end
-- [x] **Task 0.2.1**: Audit existing file upload code (saved to docs/file_ingestion_audit.md)
-- [x] **Task 0.2.2**: Create unified file type detector (web_ui/services/file_detector.py)
+### Target Stack
+| Aspect     | Technology                         |
+|------------|------------------------------------|
+| Framework  | Next.js 16 (App Router) + React 19 |
+| UI Library | shadcn/ui (New York style)         |
+| Styling    | Tailwind CSS v4                    |
+| Icons      | Lucide React                       |
+| Fonts      | Sora (headings) + DM Sans (body)   |
+| Forms      | react-hook-form + Zod              |
+| Auth       | NextAuth v4 (with Firebase)        |
+| Toasts     | Sonner                             |
+| i18n       | next-intl                          |
 
-### Phase 1: Universal File Ingestion (Days 3-6)
-- [ ] Task 1.1.1: Enhance CSV column detection
-- [ ] Task 1.1.2: Add column mapping UI for edge cases
-- [ ] Task 1.2.1: Enhance PDF text extraction
-- [ ] Task 1.2.2: Implement PDF type classification
-- [ ] Task 1.2.3: Implement PDF transaction extraction
-- [ ] Task 1.3.1: Implement XLS/XLSX parser
-- [ ] Task 1.3.2: Add Excel column mapping UI
-- [ ] Task 1.4.1: Implement receipt/invoice image parser
-- [ ] Task 1.5.1: Create unified ingestion endpoint
-- [ ] Task 1.5.2: Create ingestion queue for background processing
-
-### Phase 2: Classification Preview (Days 7-9)
-- [ ] Task 2.1.1: Add Step 6 to wizard flow
-- [ ] Task 2.1.2: Create onboarding-specific upload handler
-- [ ] Task 2.2.1: Create classification preview endpoint
-- [ ] Task 2.2.2: Build preview modal component
-- [ ] Task 2.2.3: Wire preview modal to upload flow
-- [ ] Task 2.3.1: Implement transaction persistence
-- [ ] Task 2.3.2: Update wizard completion flow
-
-### Phase 3: Industry Templates 2.0 (Days 10-13)
-- [ ] Task 3.1.1: Design enhanced template schema
-- [ ] Task 3.1.2: Create template application function
-- [ ] Task 3.2.1: Create Technology/SaaS template
-- [ ] Task 3.2.2: Create Crypto/Blockchain template
-- [ ] Task 3.2.3: Create Retail/E-commerce template
-- [ ] Task 3.2.4: Create Consulting/Professional Services template
-- [ ] Task 3.2.5: Create Healthcare template
-- [ ] Task 3.2.6: Create Generic template
-- [ ] Task 3.3.1: Add structure type to onboarding
-- [ ] Task 3.3.2: Store structure type in database
-- [ ] Task 3.3.3: Apply structure-specific setup
-
-### Phase 4: Entity & Business Line Flow (Days 14-17) - COMPLETE
-- [x] Task 4.1: Update OnboardingBot Service (entity/BL methods)
-- [x] Task 4.2: Update Onboarding API Routes
-- [x] Task 4.3: Update Conversation Prompts (ambiguous terms handling)
-- [x] Task 4.4: Update Frontend Bot UI (entity/BL badges)
-- [x] Task 4.5: Testing and validation
-
-### Phase 5: Completion % & Progressive Disclosure (Days 18-19) - COMPLETE
-- [x] Task 5.1: Create get_completion_milestones() method (5 milestones with weights)
-- [x] Task 5.2: Create /api/onboarding/capabilities endpoint
-- [x] Task 5.3: Update frontend progress UI with milestone indicators
-- [x] Task 5.4: Apply progressive disclosure to navbar (data-capability attributes)
-
-### Phase 6: Intercompany Setup (Days 20-21)
-- [ ] Task 6.1.1: Add intercompany question to AI chat
-- [ ] Task 6.1.2: Create intercompany relationships table
-- [ ] Task 6.2.1: Add is_intercompany to transactions
-- [ ] Task 6.2.2: Implement intercompany auto-detection
-- [ ] Task 6.2.3: Add intercompany toggle to dashboard
-
-### Phase 7: Testing & Polish (Days 22-24)
-- [ ] Task 7.1.1: Create test tenant scenarios
-- [ ] Task 7.1.2: Test file ingestion across formats
-- [ ] Task 7.2.1: Fix bugs from testing
-- [ ] Task 7.3.1: Update developer documentation
-- [ ] Task 7.3.2: Create user-facing help content
+### Architecture Decision
+**Keep Flask as API backend** - The 150+ API endpoints are stable and well-tested. The Next.js app will:
+1. Run as a separate frontend application
+2. Call the Flask API via HTTP
+3. Handle client-side state, routing, and rendering
 
 ---
 
-## SaaS-First Architecture Rules
+## Phase 1: Project Setup & Configuration - COMPLETED
 
-**NO DELTA-SPECIFIC CODE ALLOWED**
+### Task 1.1: Initialize Next.js Project
+- [x] Create `frontend/` directory at project root
+- [x] Initialize Next.js 15 with App Router
+- [x] Configure TypeScript strict mode
+- [x] Set up path aliases (@/components, @/lib, etc.)
 
-- DO NOT hardcode "Delta", "Alps", "Paraguay", or any client names
-- DO NOT create Delta-specific patterns, entities, or business lines
-- DO NOT assume crypto/mining is the only industry
-- DO use industry templates that ANY tenant can select
-- DO make all patterns, entities, BLs configurable per tenant
-- DO test with non-crypto industries (retail, consulting, etc.)
+### Task 1.2: Install Core Dependencies
+- [x] Install shadcn/ui (New York style)
+- [x] Install 14 shadcn components (button, input, card, dialog, etc.)
+- [x] Install lucide-react for icons
+- [x] Install sonner for toasts
+- [x] Install react-hook-form + @hookform/resolvers + zod
+- [x] Install next-auth for authentication (configured)
+- [x] Install next-intl for i18n (configured)
+
+### Task 1.3: Configure Design System
+- [x] Create globals.css with design tokens:
+  - Background: #FAFAF9 (warm off-white)
+  - Foreground: #18181B (dark zinc)
+  - Primary: #4F46E5 (deep indigo)
+  - Secondary: #F4F4F5 (cool gray)
+  - Accent: #FEF3C7 (warm amber)
+  - Destructive: #DC2626 (red)
+- [x] Configure fonts: Sora (headings) + DM Sans (body) + JetBrains Mono (code)
+- [x] Set up Tailwind CSS 3.4 with custom theme
+
+### Task 1.4: Configure API Integration
+- [x] Create lib/api.ts for Flask API client
+- [x] Configure environment variables for API URL
+- [x] Set up API proxy rewrites in next.config.ts
+- [x] Create typed API response interfaces (60+ types)
 
 ---
 
-## Task Details
+## Phase 2: Core Layout & Navigation - COMPLETED
 
-See `/Users/whitdhamer/Downloads/onboarding_dev_plan.md` for full subtask breakdown.
+### Task 2.1: Create Root Layout
+- [x] app/layout.tsx with:
+  - Providers wrapper (Auth, Tenant, Tooltip)
+  - Toaster (Sonner - top-right)
+  - Google Fonts via link tags
+  - Metadata configuration
+
+### Task 2.2: Create Dashboard Layout
+- [x] app/(dashboard)/layout.tsx with:
+  - Auth check (redirect to /login if not authenticated)
+  - Tenant check (redirect to /onboarding if no tenant)
+  - Top navigation bar (DashboardNav)
+  - Main content container (max-w-7xl)
+  - Loading state with spinner
+
+### Task 2.3: Create Navigation Components
+- [x] components/dashboard/dashboard-nav.tsx:
+  - Logo with company icon
+  - Tenant Switcher dropdown
+  - Navigation links (Overview, Transactions, Revenue, Invoices, etc.)
+  - Collapsible search input
+  - Notifications with badge
+  - Settings dropdown
+  - User menu (avatar, profile, logout)
+  - Mobile hamburger menu
+- [x] Active state styling: bg-indigo-50 text-indigo-700
+- [x] Sticky top, white background, z-50
+
+### Task 2.4: Create Utility Components
+- [x] components/ui/loading.tsx - LoadingSpinner, LoadingPage, Skeleton variants
+- [x] components/ui/error-boundary.tsx - ErrorBoundary, ErrorDisplay, ErrorMessage
+- [x] components/ui/empty-state.tsx - EmptyState, NoDataFound, NoSearchResults
+- [x] context/auth-context.tsx - AuthProvider, useAuth hook
+- [x] context/tenant-context.tsx - TenantProvider, useTenant hook
+- [x] components/providers.tsx - Combined providers wrapper
+
+---
+
+## Phase 3: Authentication System - COMPLETED
+
+### Task 3.1: Configure NextAuth (Deferred)
+- [ ] Create app/api/auth/[...nextauth]/route.ts (backend integration pending)
+- [ ] Configure Firebase as authentication provider
+- [ ] Set up JWT session strategy
+- [ ] Handle token refresh
+
+### Task 3.2: Create Auth Pages
+- [x] app/(auth)/layout.tsx - Centered card, gradient background
+- [x] app/(auth)/login/page.tsx - Email/password + Google OAuth
+- [x] app/(auth)/register/page.tsx - Full registration with user types
+- [x] app/(auth)/forgot-password/page.tsx - Password reset with success state
+- [ ] app/(auth)/accept-invitation/page.tsx - Email invitation flow (future)
+
+### Task 3.3: Create Auth Hooks & Context (Done in Phase 2)
+- [x] context/auth-context.tsx - AuthProvider with login/logout
+- [x] context/tenant-context.tsx - TenantProvider with switching
+- [x] components/providers.tsx - Combined providers wrapper
+
+---
+
+## Phase 4: Page Migration (Priority Order) - COMPLETED
+
+### Task 4.1: Business Overview (Homepage)
+- [x] app/(dashboard)/page.tsx (basic implementation in Phase 2)
+- [ ] Components (enhanced version pending):
+  - HeroSection with company branding
+  - KPICards with animated counters
+  - HoldingsGrid for business entities
+  - QuickActions panel
+- [x] API integration: /api/homepage/content
+
+### Task 4.2: Dashboard (Transactions)
+- [x] app/(dashboard)/dashboard/page.tsx
+- [x] Components:
+  - TransactionFilters (date, category, entity, status)
+  - TransactionStats cards (StatsCard component)
+  - TransactionsTable with sorting/pagination (DataTable component)
+  - BulkActionsToolbar
+- [x] API integration: /api/transactions
+
+### Task 4.3: Revenue Recognition
+- [x] app/(dashboard)/revenue/page.tsx
+- [x] Components:
+  - MatchingStats cards
+  - PendingMatchesTable (PendingMatchCard)
+  - ConfirmedMatchesTable (MatchedPairCard)
+  - MatchingModal with confidence scoring
+  - BulkMatchActions
+- [x] API integration: /api/revenue/*
+
+### Task 4.4: Invoices
+- [x] app/(dashboard)/invoices/page.tsx
+- [ ] app/(dashboard)/invoices/[id]/page.tsx (detail - pending)
+- [ ] app/(dashboard)/invoices/create/page.tsx (pending)
+- [x] Components:
+  - InvoiceFilters
+  - InvoicesTable
+  - StatusBadge
+- [x] API integration: /api/invoices/*
+
+### Task 4.5: File Manager
+- [x] app/(dashboard)/files/page.tsx
+- [x] Components:
+  - TransactionUploadSection (UploadZone)
+  - InvoiceUploadSection (UploadZone)
+  - ProcessingProgress
+  - FileHistoryTable (FileRow)
+- [x] API integration: /api/upload/*
+
+### Task 4.6: Workforce/Payroll
+- [x] app/(dashboard)/workforce/page.tsx
+- [x] Components:
+  - WorkforceTabs (Members / Payslips)
+  - WorkforceTable
+  - PayslipsTable
+  - EmploymentTypeBadge, PayslipStatusBadge
+- [x] API integration: /api/workforce/*, /api/payslips/*
+
+### Task 4.7: Shareholders
+- [x] app/(dashboard)/shareholders/page.tsx
+- [x] Components:
+  - ShareholdersList
+  - OwnershipChart (visual bar chart)
+  - OwnershipBar
+- [x] API integration: /api/shareholders/*
+
+### Task 4.8: Whitelisted Accounts
+- [x] app/(dashboard)/accounts/page.tsx
+- [x] Components:
+  - AccountsTabs (Bank / Crypto)
+  - BankAccountsTable
+  - CryptoWalletsTable
+  - AccountTypeBadge, BlockchainBadge
+- [x] API integration: /api/bank-accounts, /api/wallets
+
+### Task 4.9: Settings & Management
+- [x] app/(dashboard)/settings/page.tsx (tabbed form sections)
+- [ ] app/(dashboard)/tenant-knowledge/page.tsx (pending)
+- [ ] app/(dashboard)/users/page.tsx (pending)
+- [x] Components:
+  - SettingsTabs (General, Branding, Notifications, Security)
+  - General and Branding forms implemented
+
+### Task 4.10: Reports
+- [x] app/(dashboard)/reports/page.tsx
+- [ ] app/(dashboard)/reports/pl-trend/page.tsx (pending)
+- [x] Components:
+  - ReportSelector (ReportCard)
+  - Quick stats cards
+- [ ] PLTrendChart, DateRangePicker, ExportButtons (pending)
+
+---
+
+## Phase 5: Internationalization (i18n) - COMPLETED
+
+### Task 5.1: Configure next-intl
+- [x] Set up next-intl with middleware (frontend/middleware.ts)
+- [x] Configure supported locales: en, pt, es (frontend/src/i18n/config.ts)
+- [x] Create messages directory structure (frontend/src/messages/)
+- [x] Create i18n request handler (frontend/src/i18n/request.ts)
+- [x] Update next.config.ts with createNextIntlPlugin
+
+### Task 5.2: Migrate Translation Files
+- [x] Copy web_ui/static/locales/en.json to frontend/src/messages/
+- [x] Copy web_ui/static/locales/pt.json to frontend/src/messages/
+- [x] Copy web_ui/static/locales/es.json to frontend/src/messages/
+- [x] Add missing nav keys (shareholders, accounts, settings, users)
+- [x] Update root layout with NextIntlClientProvider
+
+### Task 5.3: Language Switcher
+- [x] Create components/language-switcher.tsx with flag emojis
+- [x] Add language switcher to dashboard navigation
+- [x] Persist preference to localStorage
+- [x] Handle locale routing with next-intl middleware
+- [x] Update DashboardNav to use translations for nav items
+
+---
+
+## Phase 6: Shared Components Library - COMPLETED
+
+### Task 6.1: Status & Priority Badges
+- [x] components/ui/status-badge.tsx - 15 status variants with icons
+- [x] components/ui/priority-badge.tsx - 5 priority levels
+- [x] Color-coded variants matching design system
+- [x] getStatusVariant and getPriorityLevel helpers
+
+### Task 6.2: Data Display Components (from Phase 4)
+- [x] components/dashboard/stats-card.tsx (completed in Phase 4)
+- [x] components/dashboard/data-table.tsx (completed in Phase 4)
+- [x] components/ui/empty-state.tsx (completed in Phase 2)
+- [x] components/ui/loading.tsx (completed in Phase 2)
+
+### Task 6.3: Form Components
+- [x] components/forms/currency-input.tsx - Currency input with selector
+- [x] components/forms/date-picker.tsx - DatePicker + DateRangePicker
+- [x] components/forms/file-uploader.tsx - Drag-drop with progress
+- [x] components/forms/entity-selector.tsx - Searchable dropdown
+- [x] components/forms/index.ts - Export barrel file
+
+### Task 6.4: Modal Dialogs
+- [x] components/modals/confirm-dialog.tsx - 4 variants + useConfirmDialog hook
+- [x] components/modals/form-dialog.tsx - FormField, FormGrid, FormSection
+- [x] components/modals/index.ts - Export barrel file
+- [ ] components/modals/matching-dialog.tsx (for revenue matching - future)
+
+---
+
+## Phase 7: Testing & QA
+
+### Task 7.1: Unit Tests
+- [ ] Set up Jest + React Testing Library
+- [ ] Write tests for utility functions
+- [ ] Write tests for hooks
+- [ ] Write tests for critical components
+
+### Task 7.2: Integration Tests
+- [ ] Test API integration layer
+- [ ] Test authentication flow
+- [ ] Test form submissions
+
+### Task 7.3: E2E Tests (Optional)
+- [ ] Set up Playwright
+- [ ] Test critical user journeys
+
+---
+
+## Phase 8: Deployment Configuration
+
+### Task 8.1: Docker Configuration
+- [ ] Create frontend/Dockerfile
+- [ ] Configure multi-stage build
+- [ ] Set up environment variables
+
+### Task 8.2: Cloud Run Deployment
+- [ ] Create cloudbuild-frontend.yaml
+- [ ] Configure Cloud Run service
+- [ ] Set up routing (frontend vs API)
+
+### Task 8.3: Production Checklist
+- [ ] Configure production API URL
+- [ ] Set up error monitoring (Sentry)
+- [ ] Configure performance monitoring
+- [ ] Set up CDN for static assets
+
+---
+
+## File Structure
+
+```
+frontend/
+  src/
+    app/
+      (auth)/
+        login/page.tsx
+        register/page.tsx
+        forgot-password/page.tsx
+      (dashboard)/
+        layout.tsx
+        page.tsx                    # Business Overview
+        dashboard/page.tsx          # Transactions
+        revenue/page.tsx
+        invoices/
+          page.tsx
+          [id]/page.tsx
+          create/page.tsx
+        files/page.tsx
+        workforce/page.tsx
+        shareholders/page.tsx
+        accounts/page.tsx           # Whitelisted Accounts
+        settings/page.tsx
+        tenant-knowledge/page.tsx
+        users/page.tsx
+        reports/
+          page.tsx
+          pl-trend/page.tsx
+      api/
+        auth/[...nextauth]/route.ts
+      layout.tsx
+      globals.css
+    components/
+      ui/                           # shadcn/ui components
+      dashboard/
+        dashboard-nav.tsx
+        stats-card.tsx
+        data-table.tsx
+        ...
+      forms/
+      modals/
+    lib/
+      api.ts                        # Flask API client
+      utils.ts                      # cn() helper
+      auth.ts                       # NextAuth config
+    hooks/
+      use-auth.ts
+      use-tenant.ts
+      use-api.ts
+    context/
+      auth-context.tsx
+      tenant-context.tsx
+    types/
+      api.ts                        # API response types
+      models.ts                     # Data models
+    messages/
+      en.json
+      pt.json
+      es.json
+  public/
+    fonts/
+    images/
+  next.config.js
+  tailwind.config.ts
+  components.json                   # shadcn config
+  package.json
+```
+
+---
+
+## Migration Strategy
+
+1. **Parallel Operation**: Run both Flask templates and Next.js during migration
+2. **Feature Flags**: Use feature flags to toggle between old/new UI
+3. **Incremental Migration**: Migrate one page at a time
+4. **API Compatibility**: No changes to Flask API required
+5. **Testing**: Test each page thoroughly before moving to next
+
+---
+
+## Success Criteria
+
+- [ ] All 27 pages migrated to React components
+- [ ] All API integrations working
+- [ ] Authentication working with Firebase
+- [ ] i18n working for all 3 languages
+- [ ] Responsive design on all screen sizes
+- [ ] No regressions in functionality
+- [ ] Performance equal or better than current
+- [ ] All tests passing
+
+---
+
+## Notes
+
+- **Keep Flask Backend**: All 150+ API endpoints remain unchanged
+- **No Database Changes**: Frontend-only refactoring
+- **Gradual Rollout**: Can deploy incrementally
+- **Fallback Available**: Flask templates remain as fallback
+
+---
+
+## Review Section
+
+### Phase 1: Project Setup & Configuration - COMPLETED (Dec 2024)
+
+**Commit:** `1a91937` - feat(frontend): Initialize Next.js frontend with shadcn/ui (Phase 1)
+
+**What was created:**
+
+1. **Project Structure** (`frontend/`)
+   - Next.js 15.1 with App Router and TypeScript
+   - Tailwind CSS 3.4 with custom design system
+   - ESLint + TypeScript strict mode
+   - Path aliases (@/components, @/lib, etc.)
+
+2. **Design System** (`src/app/globals.css`)
+   - Color palette: Indigo primary (#4F46E5), warm off-white background (#FAFAF9)
+   - Typography: Sora (headings) + DM Sans (body) + JetBrains Mono (code)
+   - Component classes: stats-card, badge variants, nav-link, table styles
+   - Status badges: new, pending, confirmed, paid, rejected, overdue
+   - Confidence indicators: high/medium/low with color coding
+
+3. **UI Components** (`src/components/ui/`) - 14 shadcn/ui components:
+   - Form: button, input, label, checkbox, switch, select
+   - Layout: card, separator, tabs, table
+   - Overlay: dialog, dropdown-menu, tooltip
+   - Display: badge, avatar, progress
+
+4. **API Client** (`src/lib/api.ts`)
+   - Typed fetch wrapper with error handling
+   - All Flask API endpoints organized by feature:
+     - Homepage, Transactions, Invoices, Revenue matching
+     - Workforce, Payslips, Payroll matching
+     - Bank accounts, Wallets, Shareholders
+     - Tenant config, Knowledge patterns, Auth
+   - Full TypeScript interfaces for all API responses
+
+5. **Configuration Files**
+   - `next.config.ts` - API proxy rewrites to Flask backend
+   - `tailwind.config.ts` - Design tokens and animations
+   - `components.json` - shadcn/ui New York style config
+   - `.env.local.example` - Environment variables template
+
+**Build Status:** Passing (type-check and production build successful)
+
+**Next Steps:** Phase 2 - Core Layout & Navigation
+
+---
+
+### Phase 2: Core Layout & Navigation - COMPLETED (Dec 2024)
+
+**Commit:** `7aab92f` - feat(frontend): Add dashboard layout and navigation (Phase 2)
+
+**What was created:**
+
+1. **Context Providers** (`src/context/`)
+   - `auth-context.tsx`: AuthProvider with login/logout, user state
+   - `tenant-context.tsx`: TenantProvider with tenant switching
+   - `providers.tsx`: Combined wrapper component
+
+2. **Dashboard Layout** (`src/app/(dashboard)/layout.tsx`)
+   - Auth check with redirect to /login
+   - Tenant check for onboarding flow
+   - Loading state with spinner
+   - Container max-w-7xl layout
+
+3. **Navigation Component** (`src/components/dashboard/dashboard-nav.tsx`)
+   - Sticky top navigation (z-50)
+   - Logo with Building2 icon
+   - Tenant switcher dropdown
+   - 8 navigation links with icons
+   - Collapsible search input
+   - Notifications bell with badge
+   - Settings dropdown
+   - User menu with avatar
+   - Mobile hamburger menu
+
+4. **Utility Components** (`src/components/ui/`)
+   - `loading.tsx`: LoadingSpinner, LoadingPage, Skeleton, CardSkeleton, TableSkeleton
+   - `error-boundary.tsx`: ErrorBoundary class, ErrorDisplay, ErrorMessage
+   - `empty-state.tsx`: EmptyState, NoDataFound, NoSearchResults, ErrorState
+
+5. **Dashboard Homepage** (`src/app/(dashboard)/page.tsx`)
+   - KPI cards with trend indicators
+   - AI insights section
+   - Quick action cards
+
+**Build Status:** Passing
+
+**Next Steps:** Phase 3 - Authentication System (or Phase 4 - Page Migration)
+
+---
+
+### Phase 3: Authentication System - COMPLETED (Dec 2024)
+
+**Commit:** `6fa6dc0` - feat(frontend): Add authentication pages (Phase 3)
+
+**What was created:**
+
+1. **Auth Layout** (`src/app/(auth)/layout.tsx`)
+   - Centered card layout
+   - Gradient background (background to primary/5)
+   - Responsive max-w-md container
+
+2. **Login Page** (`src/app/(auth)/login/page.tsx`)
+   - Email/password form with react-hook-form + zod validation
+   - Google OAuth button with SVG icon
+   - Show/hide password toggle
+   - Forgot password link
+   - Loading states and error toasts
+   - "Or continue with" separator
+
+3. **Register Page** (`src/app/(auth)/register/page.tsx`)
+   - Full registration form (name, email, password, confirm)
+   - Account type selector with descriptions:
+     - Fractional CFO (manage multiple clients)
+     - Business Owner (tenant admin)
+     - Employee (limited access)
+   - Conditional company name field
+   - Terms/privacy links
+   - Google OAuth option
+
+4. **Forgot Password Page** (`src/app/(auth)/forgot-password/page.tsx`)
+   - Email input with validation
+   - Success state with check icon
+   - "Try different email" option
+   - Back to login navigation
+
+**Features:**
+- Zod validation schemas
+- react-hook-form integration
+- Loading spinners on submit
+- Toast notifications (sonner)
+- Icon prefixes on inputs (lucide-react)
+- Password visibility toggle
+
+**Build Status:** Passing (7 routes)
+
+**Next Steps:** Phase 4 - Page Migration (Transactions, Revenue, Invoices)
+
