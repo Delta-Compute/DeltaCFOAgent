@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/card";
 import { DataTable, type Column } from "@/components/dashboard/data-table";
 import { StatsCard, StatsGrid } from "@/components/dashboard/stats-card";
-import { ErrorState, EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/empty-state";
 
 // Stats interface
 interface ShareholderStats {

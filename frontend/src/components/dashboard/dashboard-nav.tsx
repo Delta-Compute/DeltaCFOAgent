@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTranslations } from "next-intl";
 import {
   LayoutDashboard,
   Receipt,
@@ -35,22 +36,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { LanguageSwitcher } from "@/components/language-switcher";
 
-// Navigation items
+// Navigation items with translation keys
 const navItems = [
-  { href: "/", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard", label: "Transactions", icon: Receipt },
-  { href: "/revenue", label: "Revenue", icon: PieChart },
-  { href: "/invoices", label: "Invoices", icon: FileText },
-  { href: "/files", label: "Files", icon: Upload },
-  { href: "/workforce", label: "Workforce", icon: Users },
-  { href: "/shareholders", label: "Shareholders", icon: PieChart },
-  { href: "/accounts", label: "Accounts", icon: Wallet },
+  { href: "/", labelKey: "home", icon: LayoutDashboard },
+  { href: "/dashboard", labelKey: "dashboard", icon: Receipt },
+  { href: "/revenue", labelKey: "revenue", icon: PieChart },
+  { href: "/invoices", labelKey: "invoices", icon: FileText },
+  { href: "/files", labelKey: "files", icon: Upload },
+  { href: "/workforce", labelKey: "workforce", icon: Users },
+  { href: "/shareholders", labelKey: "shareholders", icon: PieChart },
+  { href: "/accounts", labelKey: "accounts", icon: Wallet },
 ];
 
 const settingsItems = [
-  { href: "/settings", label: "Settings", icon: Settings },
-  { href: "/users", label: "Users", icon: Users },
+  { href: "/settings", labelKey: "settings", icon: Settings },
+  { href: "/users", labelKey: "users", icon: Users },
 ];
 
 export function DashboardNav() {
@@ -59,6 +61,7 @@ export function DashboardNav() {
   const { currentTenant, availableTenants, switchTenant } = useTenant();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const t = useTranslations("nav");
 
   // Get user initials for avatar
   const userInitials = user?.name
@@ -149,7 +152,7 @@ export function DashboardNav() {
                   )}
                 >
                   <Icon className="h-4 w-4" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </Link>
               );
             })}
@@ -180,6 +183,9 @@ export function DashboardNav() {
               )}
             </div>
 
+            {/* Language Switcher */}
+            <LanguageSwitcher />
+
             {/* Notifications */}
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-4 w-4" />
@@ -202,7 +208,7 @@ export function DashboardNav() {
                     <DropdownMenuItem key={item.href} asChild>
                       <Link href={item.href} className="flex items-center gap-2">
                         <Icon className="h-4 w-4" />
-                        {item.label}
+                        {t(item.labelKey)}
                       </Link>
                     </DropdownMenuItem>
                   );
@@ -282,7 +288,7 @@ export function DashboardNav() {
                     )}
                   >
                     <Icon className="h-4 w-4" />
-                    {item.label}
+                    {t(item.labelKey)}
                   </Link>
                 );
               })}
@@ -297,7 +303,7 @@ export function DashboardNav() {
                     className="nav-link"
                   >
                     <Icon className="h-4 w-4" />
-                    {item.label}
+                    {t(item.labelKey)}
                   </Link>
                 );
               })}
