@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "sonner";
+import { Providers } from "@/components/providers";
 import "./globals.css";
-
-// Note: Google Fonts are loaded via CSS variables defined in globals.css
-// In production, you can use next/font/google for optimal loading
-// For local development without network access, system fonts are used as fallback
 
 export const metadata: Metadata = {
   title: "DeltaCFO Agent",
@@ -35,21 +32,23 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-background antialiased font-sans">
-        {children}
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            classNames: {
-              toast: "bg-card border shadow-lg",
-              title: "text-foreground font-medium",
-              description: "text-muted-foreground",
-              success: "border-green-200 bg-green-50",
-              error: "border-red-200 bg-red-50",
-              warning: "border-yellow-200 bg-yellow-50",
-            },
-          }}
-        />
+        <Providers>
+          {children}
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              classNames: {
+                toast: "bg-card border shadow-lg",
+                title: "text-foreground font-medium",
+                description: "text-muted-foreground",
+                success: "border-green-200 bg-green-50",
+                error: "border-red-200 bg-red-50",
+                warning: "border-yellow-200 bg-yellow-50",
+              },
+            }}
+          />
+        </Providers>
       </body>
     </html>
   );
