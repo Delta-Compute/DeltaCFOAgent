@@ -390,6 +390,25 @@ export const auth = {
     post<void>("/user/language", { language }),
 };
 
+// --- Users ---
+export const users = {
+  list: (params?: PaginationParams) => {
+    const query = new URLSearchParams(params as Record<string, string>);
+    return get<UsersListResponse>(`/users?${query}`);
+  },
+  get: (id: string) => get<TenantUser>(`/users/${id}`),
+  invite: (data: InviteUserData) => post<UserInvitation>("/users/invite", data),
+  updateRole: (id: string, role: string, permissions: string[]) =>
+    put<TenantUser>(`/users/${id}/role`, { role, permissions }),
+  remove: (id: string) => del<void>(`/users/${id}`),
+  resendInvitation: (id: string) =>
+    post<void>(`/users/invitations/${id}/resend`),
+  cancelInvitation: (id: string) =>
+    del<void>(`/users/invitations/${id}`),
+  getPendingInvitations: () =>
+    get<UserInvitation[]>("/users/invitations/pending"),
+};
+
 // ============================================
 // Type Definitions
 // ============================================
@@ -862,4 +881,46 @@ export interface UserTenant {
   tenant_name: string;
   role: string;
   permissions: string[];
+}
+
+// User management types
+export interface TenantUser {
+  id: string;
+  user_id: string;
+  tenant_id: string;
+  email: string;
+  name: string;
+  user_type: "fractional_cfo" | "cfo_assistant" | "tenant_admin" | "employee";
+  role: string;
+  permissions: string[];
+  status: "active" | "inactive" | "pending";
+  last_login?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UsersListResponse {
+  users: TenantUser[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface InviteUserData {
+  email: string;
+  name: string;
+  user_type: "cfo_assistant" | "tenant_admin" | "employee";
+  role: string;
+  permissions: string[];
+}
+
+export interface UserInvitation {
+  id: string;
+  email: string;
+  name: string;
+  user_type: string;
+  role: string;
+  status: "pending" | "accepted" | "expired";
+  expires_at: string;
+  created_at: string;
 }

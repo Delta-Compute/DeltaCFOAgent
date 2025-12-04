@@ -1,5 +1,5 @@
 import { ReactNode } from "react";
-import { LucideIcon, FileQuestion, Inbox, Search, AlertCircle } from "lucide-react";
+import { LucideIcon, FileQuestion, Inbox, Search, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -111,5 +111,20 @@ export function ErrorState({
           : undefined
       }
     />
+  );
+}
+
+export function LoadingState({
+  message = "Loading...",
+  className,
+}: {
+  message?: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex flex-col items-center justify-center py-12", className)}>
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
   );
 }
