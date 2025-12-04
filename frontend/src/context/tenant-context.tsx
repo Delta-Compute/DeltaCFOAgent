@@ -47,7 +47,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
       if (configResponse.ok) {
         const config = await configResponse.json();
-        setCurrentTenant({
+        const tenant: Tenant = {
           tenant_id: config.tenant_id || "delta",
           tenant_name: config.company_name || "Delta",
           company_name: config.company_name || "Delta",
@@ -56,13 +56,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           primary_currency: config.primary_currency || "USD",
           timezone: config.timezone || "UTC",
           branding: config.branding,
-        });
-      }
-
-      // For now, just use the current tenant as the only available one
-      // In a multi-tenant setup, this would fetch the user's accessible tenants
-      if (currentTenant) {
-        setAvailableTenants([currentTenant]);
+        };
+        setCurrentTenant(tenant);
+        // For now, just use the current tenant as the only available one
+        // In a multi-tenant setup, this would fetch the user's accessible tenants
+        setAvailableTenants([tenant]);
       }
     } catch (error) {
       console.error("Failed to load tenant data:", error);
