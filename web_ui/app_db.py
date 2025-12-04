@@ -2123,6 +2123,58 @@ def sanitize_text_field(value: str, field_name: str) -> str:
 
     return value
 
+
+def check_period_lock_for_transaction(tenant_id: str, transaction_date) -> tuple:
+    """
+    Check if a transaction date falls within a locked/closed accounting period.
+
+    Args:
+        tenant_id: The tenant ID
+        transaction_date: The date of the transaction (can be string or date object)
+
+    Returns:
+        tuple: (is_locked: bool, error_message: str or None)
+    """
+    try:
+        from database import db_manager
+
+        # Convert date to string if needed
+        if hasattr(transaction_date, 'isoformat'):
+            date_str = transaction_date.isoformat()
+        else:
+            date_str = str(transaction_date)[:10]  # Get just the date part
+
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT id, period_name, status
+            FROM cfo_accounting_periods
+            WHERE tenant_id = %s
+            AND %s BETWEEN start_date AND end_date
+            AND status IN ('locked', 'closed')
+            LIMIT 1
+        """, (tenant_id, date_str))
+
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            period_name = row[1]
+            status = row[2]
+            return (True, f"Cannot modify transaction: Period '{period_name}' is {status}")
+
+        return (False, None)
+
+    except Exception as e:
+        # If tables don't exist yet (migration not applied), allow the operation
+        if 'cfo_accounting_periods' in str(e) or 'does not exist' in str(e):
+            return (False, None)
+        logger.warning(f"Error checking period lock: {e}")
+        return (False, None)
+
+
 def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user') -> bool:
     """Update a single field in a transaction with history tracking"""
     try:
@@ -2175,6 +2227,14 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
             'ai_suggestions': current_row[22],
             'subcategory': current_row[23]
         }
+
+        # Check if transaction is in a locked period
+        is_locked, lock_error = check_period_lock_for_transaction(tenant_id, current_dict.get('date'))
+        if is_locked:
+            logger.warning(f"PERIOD LOCK: {lock_error} - transaction_id={transaction_id}")
+            conn.close()
+            return (False, lock_error)
+
         current_value = current_dict.get(field) if field in current_dict else None
 
         # CRITICAL: Validate value before saving to prevent corrupted data
@@ -5813,8 +5873,21 @@ def api_archive_transactions():
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
         archived_count = 0
+        locked_transactions = []
 
         for transaction_id in transaction_ids:
+            # First, get the transaction date to check period lock
+            cursor.execute(
+                f"SELECT date FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                (tenant_id, transaction_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                is_locked, lock_error = check_period_lock_for_transaction(tenant_id, row[0])
+                if is_locked:
+                    locked_transactions.append(str(transaction_id))
+                    continue
+
             cursor.execute(
                 f"UPDATE transactions SET archived = TRUE WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
                 (tenant_id, transaction_id)
@@ -5825,11 +5898,17 @@ def api_archive_transactions():
         conn.commit()
         conn.close()
 
-        return jsonify({
+        result = {
             'success': True,
             'message': f'Archived {archived_count} transactions',
             'archived_count': archived_count
-        })
+        }
+
+        if locked_transactions:
+            result['warning'] = f'{len(locked_transactions)} transaction(s) skipped due to period lock'
+            result['locked_transaction_ids'] = locked_transactions
+
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -5853,8 +5932,21 @@ def api_unarchive_transactions():
         is_postgresql = hasattr(cursor, 'mogrify')
         placeholder = '%s' if is_postgresql else '?'
         unarchived_count = 0
+        locked_transactions = []
 
         for transaction_id in transaction_ids:
+            # First, get the transaction date to check period lock
+            cursor.execute(
+                f"SELECT date FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
+                (tenant_id, transaction_id)
+            )
+            row = cursor.fetchone()
+            if row:
+                is_locked, lock_error = check_period_lock_for_transaction(tenant_id, row[0])
+                if is_locked:
+                    locked_transactions.append(str(transaction_id))
+                    continue
+
             cursor.execute(
                 f"UPDATE transactions SET archived = FALSE WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
                 (tenant_id, transaction_id)
@@ -5865,11 +5957,17 @@ def api_unarchive_transactions():
         conn.commit()
         conn.close()
 
-        return jsonify({
+        result = {
             'success': True,
             'message': f'Unarchived {unarchived_count} transactions',
             'unarchived_count': unarchived_count
-        })
+        }
+
+        if locked_transactions:
+            result['warning'] = f'{len(locked_transactions)} transaction(s) skipped due to period lock'
+            result['locked_transaction_ids'] = locked_transactions
+
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
