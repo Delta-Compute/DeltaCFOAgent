@@ -158,6 +158,10 @@ def register_auth_blueprints():
         sys.stderr.flush()
         from api.onboarding_routes import onboarding_bp
 
+        sys.stderr.write("[DEBUG] Importing close_bp from routes.close_routes...\n")
+        sys.stderr.flush()
+        from routes.close_routes import close_bp
+
         # Register blueprints
         sys.stderr.write(f"[DEBUG] Registering auth_bp with url_prefix: {auth_bp.url_prefix}\n")
         sys.stderr.flush()
@@ -175,7 +179,11 @@ def register_auth_blueprints():
         sys.stderr.flush()
         app.register_blueprint(onboarding_bp)
 
-        logger.info("Authentication, tenant, and onboarding blueprints registered successfully")
+        sys.stderr.write(f"[DEBUG] Registering close_bp with url_prefix: {close_bp.url_prefix}\n")
+        sys.stderr.flush()
+        app.register_blueprint(close_bp)
+
+        logger.info("Authentication, tenant, onboarding, and close blueprints registered successfully")
         sys.stderr.write("[OK] All blueprints registered successfully\n")
         sys.stderr.write("="*80 + "\n\n")
         sys.stderr.flush()
@@ -20582,6 +20590,16 @@ def workforce_page():
         return render_template('workforce.html', cache_buster=cache_buster)
     except Exception as e:
         return f"Error loading workforce page: {str(e)}", 500
+
+
+@app.route('/month-end-close')
+def month_end_close_page():
+    """Render the month-end close dashboard page"""
+    try:
+        cache_buster = str(random.randint(1000, 9999))
+        return render_template('month_end_close.html', cache_buster=cache_buster)
+    except Exception as e:
+        return f"Error loading month-end close page: {str(e)}", 500
 
 
 @app.route('/api/workforce', methods=['GET'])

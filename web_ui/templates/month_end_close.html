@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title data-i18n="close.title">Month-End Close - Delta CFO Agent</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style_advanced.css') }}?v={{ cache_buster }}">
+    <style>
+        /* Month-End Close styles */
+        .main-content {
+            padding: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-subtitle {
+            color: #64748b;
+            font-size: 1rem;
+        }
+
+        .period-selector {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .period-selector select {
+            padding: 0.75rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+            min-width: 200px;
+        }
+
+        /* Progress Bar */
+        .progress-section {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .progress-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .status-badge.open { background: #e2e8f0; color: #475569; }
+        .status-badge.in_progress { background: #dbeafe; color: #1d4ed8; }
+        .status-badge.pending_approval { background: #fef3c7; color: #b45309; }
+        .status-badge.locked { background: #fee2e2; color: #dc2626; }
+        .status-badge.closed { background: #dcfce7; color: #16a34a; }
+
+        .progress-bar-container {
+            background: #e2e8f0;
+            border-radius: 10px;
+            height: 20px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            border-radius: 10px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-text {
+            text-align: right;
+            margin-top: 0.5rem;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value.warning { color: #f59e0b; }
+        .stat-value.danger { color: #ef4444; }
+        .stat-value.success { color: #10b981; }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Checklist Section */
+        .checklist-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .checklist-items {
+            padding: 1rem;
+        }
+
+        .checklist-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            transition: background 0.2s ease;
+        }
+
+        .checklist-item:hover {
+            background: #f8fafc;
+        }
+
+        .checklist-checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            margin-right: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checklist-checkbox.completed {
+            background: #10b981;
+            border-color: #10b981;
+            color: white;
+        }
+
+        .checklist-checkbox.skipped {
+            background: #94a3b8;
+            border-color: #94a3b8;
+            color: white;
+        }
+
+        .checklist-checkbox.in_progress {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .checklist-content {
+            flex: 1;
+        }
+
+        .checklist-name {
+            font-weight: 500;
+            color: #1e293b;
+            margin-bottom: 0.25rem;
+        }
+
+        .checklist-description {
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .checklist-meta {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        .checklist-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        /* Category Groups */
+        .category-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .category-header {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 0.5rem 1rem;
+            background: #f8fafc;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Action Buttons */
+        .actions-section {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            padding: 1.5rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #475569;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e1;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #64748b;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            color: #1e293b;
+            margin-bottom: 1rem;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .modal-footer {
+            padding: 1.5rem;
+            border-top: 1px solid #e2e8f0;
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 500;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input, .form-select, .form-textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        /* Activity Log */
+        .activity-log {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .activity-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-action {
+            font-weight: 500;
+            color: #1e293b;
+        }
+
+        .activity-time {
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .page-header {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .actions-section {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    {% include '_navbar.html' %}
+
+    <div class="main-content">
+        <!-- Page Header -->
+        <div class="page-header">
+            <div>
+                <h1 class="page-title" data-i18n="close.pageTitle">Month-End Close</h1>
+                <p class="page-subtitle" data-i18n="close.pageSubtitle">Manage accounting period closing workflow</p>
+            </div>
+            <div class="period-selector">
+                <select id="periodSelect" onchange="loadPeriod(this.value)">
+                    <option value="" data-i18n="close.selectPeriod">Select Period...</option>
+                </select>
+                <button class="btn btn-primary" onclick="showCreatePeriodModal()" data-i18n="close.newPeriod">
+                    + New Period
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div id="periodContent" style="display: none;">
+            <!-- Progress Section -->
+            <div class="progress-section">
+                <div class="progress-header">
+                    <div class="progress-status">
+                        <span data-i18n="close.status">Status:</span>
+                        <span id="periodStatus" class="status-badge">-</span>
+                    </div>
+                    <div id="periodDates" class="text-muted"></div>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar-fill" style="width: 0%"></div>
+                </div>
+                <div id="progressText" class="progress-text">0 of 0 tasks complete</div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div id="statCompleted" class="stat-value success">0</div>
+                    <div class="stat-label" data-i18n="close.completed">Completed</div>
+                </div>
+                <div class="stat-card">
+                    <div id="statPending" class="stat-value">0</div>
+                    <div class="stat-label" data-i18n="close.pending">Pending</div>
+                </div>
+                <div class="stat-card">
+                    <div id="statBlocked" class="stat-value danger">0</div>
+                    <div class="stat-label" data-i18n="close.blocked">Blocked</div>
+                </div>
+                <div class="stat-card">
+                    <div id="statSkipped" class="stat-value warning">0</div>
+                    <div class="stat-label" data-i18n="close.skipped">Skipped</div>
+                </div>
+            </div>
+
+            <!-- Checklist Section -->
+            <div class="checklist-section">
+                <div class="section-header">
+                    <h2 class="section-title" data-i18n="close.checklist">Closing Checklist</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="runAutoChecks()" data-i18n="close.runAutoChecks">
+                        Run Auto-Checks
+                    </button>
+                </div>
+                <div id="checklistItems" class="checklist-items">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="actions-section">
+                <button id="btnLock" class="btn btn-warning" onclick="lockPeriod()" style="display: none;" data-i18n="close.lockPeriod">
+                    Lock Period
+                </button>
+                <button id="btnUnlock" class="btn btn-secondary" onclick="showUnlockModal()" style="display: none;" data-i18n="close.unlockPeriod">
+                    Unlock Period
+                </button>
+                <button id="btnSubmit" class="btn btn-primary" onclick="submitForApproval()" style="display: none;" data-i18n="close.submitForApproval">
+                    Submit for Approval
+                </button>
+                <button id="btnApprove" class="btn btn-success" onclick="approvePeriod()" style="display: none;" data-i18n="close.approve">
+                    Approve
+                </button>
+                <button id="btnReject" class="btn btn-danger" onclick="showRejectModal()" style="display: none;" data-i18n="close.reject">
+                    Reject
+                </button>
+                <button id="btnClose" class="btn btn-success" onclick="closePeriod()" style="display: none;" data-i18n="close.closePeriod">
+                    Close Period
+                </button>
+                <button class="btn btn-secondary" onclick="showActivityLog()" data-i18n="close.viewActivityLog">
+                    View Activity Log
+                </button>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="empty-state">
+            <h3 data-i18n="close.noPeriodSelected">No Period Selected</h3>
+            <p data-i18n="close.selectOrCreate">Select an existing period or create a new one to get started.</p>
+            <button class="btn btn-primary" onclick="showCreatePeriodModal()" style="margin-top: 1rem;" data-i18n="close.createFirstPeriod">
+                Create Your First Period
+            </button>
+        </div>
+    </div>
+
+    <!-- Create Period Modal -->
+    <div id="createPeriodModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.createPeriod">Create Accounting Period</h3>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.periodName">Period Name</label>
+                    <input type="text" id="periodName" class="form-input" placeholder="e.g., 2024-01">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.periodType">Period Type</label>
+                    <select id="periodType" class="form-select">
+                        <option value="monthly" data-i18n="close.monthly">Monthly</option>
+                        <option value="quarterly" data-i18n="close.quarterly">Quarterly</option>
+                        <option value="yearly" data-i18n="close.yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.startDate">Start Date</label>
+                    <input type="date" id="startDate" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.endDate">End Date</label>
+                    <input type="date" id="endDate" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.notes">Notes (Optional)</label>
+                    <textarea id="periodNotes" class="form-textarea" placeholder="Any notes about this period..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('createPeriodModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="createPeriod()" data-i18n="common.create">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unlock Modal -->
+    <div id="unlockModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.unlockPeriodTitle">Unlock Period</h3>
+            </div>
+            <div class="modal-body">
+                <p data-i18n="close.unlockWarning">Unlocking a period will allow modifications to transactions. This action will be logged.</p>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.unlockReason">Reason for Unlock</label>
+                    <textarea id="unlockReason" class="form-textarea" placeholder="Explain why you need to unlock this period..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('unlockModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-warning" onclick="unlockPeriod()" data-i18n="close.unlock">Unlock</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div id="rejectModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.rejectPeriodTitle">Reject Period Close</h3>
+            </div>
+            <div class="modal-body">
+                <p data-i18n="close.rejectInfo">The period will be sent back for corrections.</p>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.rejectReason">Reason for Rejection</label>
+                    <textarea id="rejectReason" class="form-textarea" placeholder="Explain what needs to be corrected..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('rejectModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-danger" onclick="rejectPeriod()" data-i18n="close.reject">Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skip Item Modal -->
+    <div id="skipModal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.skipItemTitle">Skip Checklist Item</h3>
+            </div>
+            <div class="modal-body">
+                <p id="skipItemName"></p>
+                <div class="form-group">
+                    <label class="form-label" data-i18n="close.skipReason">Reason for Skipping</label>
+                    <textarea id="skipReason" class="form-textarea" placeholder="Explain why this item is being skipped..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('skipModal')" data-i18n="common.cancel">Cancel</button>
+                <button class="btn btn-warning" onclick="skipItem()" data-i18n="close.skip">Skip Item</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Log Modal -->
+    <div id="activityModal" class="modal-overlay">
+        <div class="modal" style="max-width: 700px;">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="close.activityLog">Activity Log</h3>
+            </div>
+            <div class="modal-body">
+                <div id="activityLogContent" class="activity-log">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal('activityModal')" data-i18n="common.close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/month_end_close.js') }}?v={{ cache_buster }}"></script>
+</body>
+</html>
