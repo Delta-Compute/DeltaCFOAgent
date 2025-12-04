@@ -538,3 +538,208 @@ def check_period_lock():
     except Exception as e:
         logger.error(f"Error checking period lock: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# RECONCILIATION STATUS ROUTES (PHASE 2)
+# ========================================
+
+@close_bp.route('/periods/<period_id>/reconciliation-status', methods=['GET'])
+def get_reconciliation_status(period_id):
+    """Get comprehensive reconciliation status for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        status = MonthEndCloseService.get_reconciliation_status(period_id, tenant_id)
+
+        if 'error' in status:
+            return jsonify({'error': status['error']}), 404
+
+        return jsonify(status)
+
+    except Exception as e:
+        logger.error(f"Error getting reconciliation status: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/invoice-stats', methods=['GET'])
+def get_invoice_stats(period_id):
+    """Get invoice matching statistics for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return jsonify({'error': 'Period not found'}), 404
+
+        stats = MonthEndCloseService.get_invoice_matching_stats(
+            tenant_id, period['start_date'], period['end_date']
+        )
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logger.error(f"Error getting invoice stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/payslip-stats', methods=['GET'])
+def get_payslip_stats(period_id):
+    """Get payslip matching statistics for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return jsonify({'error': 'Period not found'}), 404
+
+        stats = MonthEndCloseService.get_payslip_matching_stats(
+            tenant_id, period['start_date'], period['end_date']
+        )
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logger.error(f"Error getting payslip stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/transaction-stats', methods=['GET'])
+def get_transaction_stats(period_id):
+    """Get transaction classification statistics for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return jsonify({'error': 'Period not found'}), 404
+
+        stats = MonthEndCloseService.get_transaction_classification_stats(
+            tenant_id, period['start_date'], period['end_date']
+        )
+
+        return jsonify(stats)
+
+    except Exception as e:
+        logger.error(f"Error getting transaction stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/unmatched-items', methods=['GET'])
+def get_unmatched_items(period_id):
+    """Get unmatched items (invoices, payslips, transactions) for a period."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        item_type = request.args.get('type', 'all')  # all, invoices, payslips, transactions
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 20))
+
+        items, total = MonthEndCloseService.get_unmatched_items(
+            period_id, tenant_id, item_type=item_type, page=page, per_page=per_page
+        )
+
+        return jsonify({
+            'items': items,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page if per_page > 0 else 0
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting unmatched items: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/periods/<period_id>/run-auto-checks', methods=['POST'])
+def run_auto_checks(period_id):
+    """Run all auto-checks for a period's checklist items."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        result = MonthEndCloseService.run_auto_checks(period_id, tenant_id, user_id)
+
+        if 'error' in result:
+            return jsonify({'error': result['error']}), 400
+
+        return jsonify({
+            'message': f"Auto-checks completed. {result['checks_run']} checks run.",
+            'result': result
+        })
+
+    except Exception as e:
+        logger.error(f"Error running auto-checks: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@close_bp.route('/checklist/<item_id>/run-auto-check', methods=['POST'])
+def run_single_auto_check(item_id):
+    """Run auto-check for a single checklist item."""
+    try:
+        from services.month_end_close import MonthEndCloseService
+        from database import db_manager
+
+        tenant_id = get_current_tenant_id()
+        user_id = get_current_user_id()
+        if not tenant_id:
+            return jsonify({'error': 'Tenant context required'}), 401
+
+        # Get item to find period_id and auto_check_type
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT ci.period_id, ci.auto_check_type, p.tenant_id
+                FROM close_checklist_items ci
+                JOIN cfo_accounting_periods p ON ci.period_id = p.id
+                WHERE ci.id = %s AND p.tenant_id = %s
+            """, (item_id, tenant_id))
+            row = cursor.fetchone()
+            cursor.close()
+
+            if not row:
+                return jsonify({'error': 'Checklist item not found'}), 404
+
+            period_id, auto_check_type, _ = row
+
+            if not auto_check_type:
+                return jsonify({'error': 'Item does not have auto-check configured'}), 400
+
+        result = MonthEndCloseService.run_single_auto_check(
+            item_id, str(period_id), tenant_id, auto_check_type, user_id
+        )
+
+        return jsonify({
+            'item_id': item_id,
+            'auto_check_type': auto_check_type,
+            'result': result
+        })
+
+    except Exception as e:
+        logger.error(f"Error running single auto-check: {e}")
+        return jsonify({'error': str(e)}), 500

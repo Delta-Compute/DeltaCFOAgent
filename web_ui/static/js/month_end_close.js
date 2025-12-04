@@ -92,6 +92,9 @@ async function loadPeriod(periodId) {
         // Load checklist
         loadChecklist();
 
+        // Load reconciliation status
+        loadReconciliationStatus();
+
         // Update action buttons
         updateActionButtons();
 
@@ -340,8 +343,31 @@ async function skipItem() {
 }
 
 async function runAutoChecks() {
-    showNotification('Running auto-checks... (Feature coming soon)', 'info');
-    // TODO: Implement auto-checks API
+    if (!currentPeriodId) return;
+
+    showNotification('Running auto-checks...', 'info');
+
+    try {
+        const response = await fetch(`/api/close/periods/${currentPeriodId}/run-auto-checks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+        if (data.error) {
+            showNotification(data.error, 'error');
+            return;
+        }
+
+        showNotification(data.message || 'Auto-checks completed', 'success');
+
+        // Reload checklist and reconciliation status
+        loadChecklist();
+        loadReconciliationStatus();
+    } catch (error) {
+        console.error('Error running auto-checks:', error);
+        showNotification('Failed to run auto-checks', 'error');
+    }
 }
 
 // ========================================
@@ -758,6 +784,236 @@ function showNotification(message, type = 'info') {
         notification.style.animation = 'slideOut 0.3s ease';
         setTimeout(() => notification.remove(), 300);
     }, 3000);
+}
+
+// ========================================
+// RECONCILIATION STATUS (PHASE 2)
+// ========================================
+
+let currentUnmatchedFilter = 'all';
+let currentUnmatchedPage = 1;
+
+async function loadReconciliationStatus() {
+    if (!currentPeriodId) return;
+
+    try {
+        const response = await fetch(`/api/close/periods/${currentPeriodId}/reconciliation-status`);
+        const data = await response.json();
+
+        if (data.error) {
+            console.error('Error loading reconciliation status:', data.error);
+            return;
+        }
+
+        // Update health badge
+        const healthBadge = document.getElementById('healthBadge');
+        if (data.overall_health) {
+            healthBadge.className = `health-badge ${data.overall_health.status}`;
+            healthBadge.textContent = `${data.overall_health.score}% - ${data.overall_health.message}`;
+        }
+
+        // Update invoice card
+        updateReconciliationCard('invoice', data.invoices);
+
+        // Update payslip card
+        updateReconciliationCard('payslip', data.payslips);
+
+        // Update transaction card
+        updateTransactionCard(data.transactions);
+
+    } catch (error) {
+        console.error('Error loading reconciliation status:', error);
+    }
+}
+
+function updateReconciliationCard(type, stats) {
+    const percentage = stats.match_rate || 0;
+    const statusClass = percentage >= 95 ? 'success' : percentage >= 70 ? 'warning' : 'danger';
+
+    // Update card border color
+    const card = document.getElementById(`${type}ReconCard`);
+    card.className = `recon-card ${statusClass}`;
+
+    // Update percentage
+    const percentageEl = document.getElementById(`${type}Percentage`);
+    percentageEl.textContent = `${percentage}%`;
+    percentageEl.className = `recon-percentage ${statusClass}`;
+
+    // Update progress bar
+    const progressFill = document.getElementById(`${type}ProgressFill`);
+    progressFill.style.width = `${percentage}%`;
+    progressFill.className = `recon-progress-fill ${statusClass}`;
+
+    // Update stats
+    document.getElementById(`${type}Matched`).textContent = stats.matched || 0;
+    document.getElementById(`${type}Unmatched`).textContent = stats.unmatched || 0;
+    document.getElementById(`${type}Total`).textContent = stats.total || 0;
+}
+
+function updateTransactionCard(stats) {
+    const percentage = stats.classified_rate || 0;
+    const statusClass = percentage >= 95 ? 'success' : percentage >= 70 ? 'warning' : 'danger';
+
+    // Update card border color
+    const card = document.getElementById('transactionReconCard');
+    card.className = `recon-card ${statusClass}`;
+
+    // Update percentage
+    const percentageEl = document.getElementById('transactionPercentage');
+    percentageEl.textContent = `${percentage}%`;
+    percentageEl.className = `recon-percentage ${statusClass}`;
+
+    // Update progress bar
+    const progressFill = document.getElementById('transactionProgressFill');
+    progressFill.style.width = `${percentage}%`;
+    progressFill.className = `recon-progress-fill ${statusClass}`;
+
+    // Update stats
+    document.getElementById('transactionClassified').textContent = stats.classified || 0;
+    document.getElementById('transactionUnclassified').textContent = stats.unclassified || 0;
+    document.getElementById('transactionNeedsReview').textContent = stats.needs_review || 0;
+}
+
+function showUnmatchedItems(type = 'all') {
+    currentUnmatchedFilter = type;
+    currentUnmatchedPage = 1;
+
+    // Update modal title
+    const titles = {
+        'all': 'Unmatched Items',
+        'invoices': 'Unmatched Invoices',
+        'payslips': 'Unmatched Payslips',
+        'transactions': 'Unclassified Transactions'
+    };
+    document.getElementById('unmatchedModalTitle').textContent = titles[type] || 'Unmatched Items';
+
+    // Update filter tabs
+    document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === type);
+    });
+
+    // Show modal and load items
+    document.getElementById('unmatchedModal').classList.add('active');
+    loadUnmatchedItems();
+}
+
+function filterUnmatchedItems(type) {
+    currentUnmatchedFilter = type;
+    currentUnmatchedPage = 1;
+
+    // Update filter tabs
+    document.querySelectorAll('.filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === type);
+    });
+
+    loadUnmatchedItems();
+}
+
+async function loadUnmatchedItems() {
+    const tbody = document.getElementById('unmatchedTableBody');
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="6" style="text-align: center; padding: 2rem;">
+                <div class="spinner" style="margin: 0 auto;"></div>
+            </td>
+        </tr>
+    `;
+
+    try {
+        const response = await fetch(
+            `/api/close/periods/${currentPeriodId}/unmatched-items?type=${currentUnmatchedFilter}&page=${currentUnmatchedPage}&per_page=20`
+        );
+        const data = await response.json();
+
+        if (data.error) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444;">${data.error}</td></tr>`;
+            return;
+        }
+
+        // Update count
+        document.getElementById('unmatchedCount').textContent = `${data.total} items`;
+
+        if (data.items.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" style="text-align: center; padding: 2rem; color: #64748b;">
+                        No unmatched items found. Great job!
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        // Render items
+        tbody.innerHTML = data.items.map(item => `
+            <tr>
+                <td><span class="item-type-badge ${item.type}">${item.type}</span></td>
+                <td>${escapeHtml(item.reference || '-')}</td>
+                <td>${item.date ? formatDate(item.date) : '-'}</td>
+                <td>${escapeHtml(item.description || '-')}</td>
+                <td>${formatCurrency(item.amount, item.currency)}</td>
+                <td>
+                    <a href="${getItemLink(item)}" class="recon-link" target="_blank">View</a>
+                </td>
+            </tr>
+        `).join('');
+
+        // Update pagination
+        renderUnmatchedPagination(data.page, data.pages, data.total);
+
+    } catch (error) {
+        console.error('Error loading unmatched items:', error);
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #ef4444;">Failed to load items</td></tr>`;
+    }
+}
+
+function renderUnmatchedPagination(currentPage, totalPages, totalItems) {
+    const container = document.getElementById('unmatchedPagination');
+
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    if (currentPage > 1) {
+        html += `<button class="btn btn-secondary btn-sm" onclick="goToUnmatchedPage(${currentPage - 1})">Previous</button> `;
+    }
+
+    html += `<span style="margin: 0 1rem;">Page ${currentPage} of ${totalPages}</span>`;
+
+    if (currentPage < totalPages) {
+        html += ` <button class="btn btn-secondary btn-sm" onclick="goToUnmatchedPage(${currentPage + 1})">Next</button>`;
+    }
+
+    container.innerHTML = html;
+}
+
+function goToUnmatchedPage(page) {
+    currentUnmatchedPage = page;
+    loadUnmatchedItems();
+}
+
+function getItemLink(item) {
+    switch (item.type) {
+        case 'invoice':
+            return `/invoices?id=${item.id}`;
+        case 'payslip':
+            return `/workforce?tab=payslips&id=${item.id}`;
+        case 'transaction':
+            return `/transactions?id=${item.id}`;
+        default:
+            return '#';
+    }
+}
+
+function formatCurrency(amount, currency = 'USD') {
+    if (amount === null || amount === undefined) return '-';
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency
+    }).format(amount);
 }
 
 // Add CSS animation

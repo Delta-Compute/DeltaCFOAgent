@@ -477,6 +477,200 @@
             to { transform: rotate(360deg); }
         }
 
+        /* Reconciliation Section */
+        .reconciliation-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+        }
+
+        .reconciliation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .reconciliation-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .health-badge {
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+
+        .health-badge.excellent { background: #dcfce7; color: #16a34a; }
+        .health-badge.good { background: #dbeafe; color: #1d4ed8; }
+        .health-badge.warning { background: #fef3c7; color: #b45309; }
+        .health-badge.critical { background: #fee2e2; color: #dc2626; }
+
+        .reconciliation-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .recon-card {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 1.25rem;
+            border-left: 4px solid #e2e8f0;
+        }
+
+        .recon-card.success { border-left-color: #10b981; }
+        .recon-card.warning { border-left-color: #f59e0b; }
+        .recon-card.danger { border-left-color: #ef4444; }
+
+        .recon-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 1rem;
+        }
+
+        .recon-card-title {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 1rem;
+        }
+
+        .recon-percentage {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .recon-percentage.success { color: #10b981; }
+        .recon-percentage.warning { color: #f59e0b; }
+        .recon-percentage.danger { color: #ef4444; }
+
+        .recon-stats {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .recon-stat {
+            flex: 1;
+        }
+
+        .recon-stat-value {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .recon-stat-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .recon-progress {
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 0.75rem;
+        }
+
+        .recon-progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s ease;
+        }
+
+        .recon-progress-fill.success { background: #10b981; }
+        .recon-progress-fill.warning { background: #f59e0b; }
+        .recon-progress-fill.danger { background: #ef4444; }
+
+        .recon-action {
+            text-align: right;
+        }
+
+        .recon-link {
+            color: #3b82f6;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .recon-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Unmatched Items Modal */
+        .unmatched-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .unmatched-table th,
+        .unmatched-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .unmatched-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .unmatched-table tr:hover td {
+            background: #f8fafc;
+        }
+
+        .item-type-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .item-type-badge.invoice { background: #dbeafe; color: #1d4ed8; }
+        .item-type-badge.payslip { background: #fef3c7; color: #b45309; }
+        .item-type-badge.transaction { background: #e2e8f0; color: #475569; }
+
+        .filter-tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-tab {
+            padding: 0.5rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .filter-tab.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .filter-tab:hover:not(.active) {
+            background: #f8fafc;
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             .page-header {
@@ -548,6 +742,99 @@
                 <div class="stat-card">
                     <div id="statSkipped" class="stat-value warning">0</div>
                     <div class="stat-label" data-i18n="close.skipped">Skipped</div>
+                </div>
+            </div>
+
+            <!-- Reconciliation Section -->
+            <div class="reconciliation-section">
+                <div class="reconciliation-header">
+                    <h2 class="reconciliation-title" data-i18n="close.reconciliationStatus">Reconciliation Status</h2>
+                    <span id="healthBadge" class="health-badge">Loading...</span>
+                </div>
+                <div class="reconciliation-grid">
+                    <!-- Invoice Matching Card -->
+                    <div id="invoiceReconCard" class="recon-card">
+                        <div class="recon-card-header">
+                            <span class="recon-card-title" data-i18n="close.revenueMatching">Revenue Matching</span>
+                            <span id="invoicePercentage" class="recon-percentage">--%</span>
+                        </div>
+                        <div class="recon-progress">
+                            <div id="invoiceProgressFill" class="recon-progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="recon-stats">
+                            <div class="recon-stat">
+                                <div id="invoiceMatched" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.matched">Matched</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="invoiceUnmatched" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.unmatched">Unmatched</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="invoiceTotal" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.total">Total</div>
+                            </div>
+                        </div>
+                        <div class="recon-action">
+                            <a class="recon-link" onclick="showUnmatchedItems('invoices')" data-i18n="close.viewUnmatched">View Unmatched</a>
+                        </div>
+                    </div>
+
+                    <!-- Payslip Matching Card -->
+                    <div id="payslipReconCard" class="recon-card">
+                        <div class="recon-card-header">
+                            <span class="recon-card-title" data-i18n="close.payrollMatching">Payroll Matching</span>
+                            <span id="payslipPercentage" class="recon-percentage">--%</span>
+                        </div>
+                        <div class="recon-progress">
+                            <div id="payslipProgressFill" class="recon-progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="recon-stats">
+                            <div class="recon-stat">
+                                <div id="payslipMatched" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.matched">Matched</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="payslipUnmatched" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.unmatched">Unmatched</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="payslipTotal" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.total">Total</div>
+                            </div>
+                        </div>
+                        <div class="recon-action">
+                            <a class="recon-link" onclick="showUnmatchedItems('payslips')" data-i18n="close.viewUnmatched">View Unmatched</a>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Classification Card -->
+                    <div id="transactionReconCard" class="recon-card">
+                        <div class="recon-card-header">
+                            <span class="recon-card-title" data-i18n="close.transactionClassification">Transaction Classification</span>
+                            <span id="transactionPercentage" class="recon-percentage">--%</span>
+                        </div>
+                        <div class="recon-progress">
+                            <div id="transactionProgressFill" class="recon-progress-fill" style="width: 0%"></div>
+                        </div>
+                        <div class="recon-stats">
+                            <div class="recon-stat">
+                                <div id="transactionClassified" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.classified">Classified</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="transactionUnclassified" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.unclassified">Unclassified</div>
+                            </div>
+                            <div class="recon-stat">
+                                <div id="transactionNeedsReview" class="recon-stat-value">0</div>
+                                <div class="recon-stat-label" data-i18n="close.needsReview">Needs Review</div>
+                            </div>
+                        </div>
+                        <div class="recon-action">
+                            <a class="recon-link" onclick="showUnmatchedItems('transactions')" data-i18n="close.viewUnclassified">View Unclassified</a>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -716,6 +1003,50 @@
             </div>
             <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal('activityModal')" data-i18n="common.close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unmatched Items Modal -->
+    <div id="unmatchedModal" class="modal-overlay">
+        <div class="modal" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3 id="unmatchedModalTitle" class="modal-title">Unmatched Items</h3>
+            </div>
+            <div class="modal-body">
+                <div class="filter-tabs">
+                    <button class="filter-tab active" onclick="filterUnmatchedItems('all')" data-filter="all" data-i18n="common.all">All</button>
+                    <button class="filter-tab" onclick="filterUnmatchedItems('invoices')" data-filter="invoices" data-i18n="close.invoices">Invoices</button>
+                    <button class="filter-tab" onclick="filterUnmatchedItems('payslips')" data-filter="payslips" data-i18n="close.payslips">Payslips</button>
+                    <button class="filter-tab" onclick="filterUnmatchedItems('transactions')" data-filter="transactions" data-i18n="close.transactions">Transactions</button>
+                </div>
+                <div id="unmatchedTableContainer" style="max-height: 400px; overflow-y: auto;">
+                    <table class="unmatched-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="close.type">Type</th>
+                                <th data-i18n="close.reference">Reference</th>
+                                <th data-i18n="close.date">Date</th>
+                                <th data-i18n="close.description">Description</th>
+                                <th data-i18n="close.amount">Amount</th>
+                                <th data-i18n="close.actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="unmatchedTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; padding: 2rem;">
+                                    <div class="spinner" style="margin: 0 auto;"></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="unmatchedPagination" class="pagination" style="margin-top: 1rem; text-align: center;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span id="unmatchedCount" style="flex: 1; text-align: left; color: #64748b;">0 items</span>
+                <button class="btn btn-secondary" onclick="closeModal('unmatchedModal')" data-i18n="common.close">Close</button>
             </div>
         </div>
     </div>

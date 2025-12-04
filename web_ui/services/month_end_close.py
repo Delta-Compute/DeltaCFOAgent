@@ -926,3 +926,498 @@ class MonthEndCloseService:
         except Exception as e:
             logger.error(f"Error getting activity log: {e}")
             return [], 0
+
+    # ========================================
+    # RECONCILIATION STATUS (PHASE 2)
+    # ========================================
+
+    @staticmethod
+    def get_reconciliation_status(period_id: str, tenant_id: str) -> Dict:
+        """
+        Get comprehensive reconciliation status for a period.
+        Includes invoice matching, payslip matching, and transaction classification stats.
+        """
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return {'error': 'Period not found'}
+
+        start_date = period['start_date']
+        end_date = period['end_date']
+
+        # Get all reconciliation metrics
+        invoice_stats = MonthEndCloseService.get_invoice_matching_stats(tenant_id, start_date, end_date)
+        payslip_stats = MonthEndCloseService.get_payslip_matching_stats(tenant_id, start_date, end_date)
+        transaction_stats = MonthEndCloseService.get_transaction_classification_stats(tenant_id, start_date, end_date)
+
+        return {
+            'period_id': period_id,
+            'period_name': period['period_name'],
+            'start_date': start_date,
+            'end_date': end_date,
+            'invoices': invoice_stats,
+            'payslips': payslip_stats,
+            'transactions': transaction_stats,
+            'overall_health': MonthEndCloseService._calculate_overall_health(invoice_stats, payslip_stats, transaction_stats)
+        }
+
+    @staticmethod
+    def _calculate_overall_health(invoice_stats: Dict, payslip_stats: Dict, transaction_stats: Dict) -> Dict:
+        """Calculate overall reconciliation health score."""
+        scores = []
+
+        # Invoice matching score
+        if invoice_stats.get('total', 0) > 0:
+            scores.append(invoice_stats.get('match_rate', 0))
+
+        # Payslip matching score
+        if payslip_stats.get('total', 0) > 0:
+            scores.append(payslip_stats.get('match_rate', 0))
+
+        # Transaction classification score
+        if transaction_stats.get('total', 0) > 0:
+            scores.append(transaction_stats.get('classified_rate', 0))
+            # High confidence rate bonus
+            scores.append(transaction_stats.get('high_confidence_rate', 0))
+
+        if not scores:
+            return {'score': 100.0, 'status': 'good', 'message': 'No items to reconcile'}
+
+        avg_score = sum(scores) / len(scores)
+
+        if avg_score >= 95:
+            status = 'excellent'
+            message = 'All reconciliation tasks are complete'
+        elif avg_score >= 85:
+            status = 'good'
+            message = 'Most reconciliation tasks are complete'
+        elif avg_score >= 70:
+            status = 'warning'
+            message = 'Some reconciliation tasks need attention'
+        else:
+            status = 'critical'
+            message = 'Significant reconciliation work required'
+
+        return {
+            'score': round(avg_score, 1),
+            'status': status,
+            'message': message
+        }
+
+    @staticmethod
+    def get_invoice_matching_stats(tenant_id: str, start_date: str, end_date: str) -> Dict:
+        """Get invoice-to-payment matching statistics for a date range."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Count invoices in period and their match status
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE linked_transaction_id IS NOT NULL AND linked_transaction_id != '') as matched,
+                        COUNT(*) FILTER (WHERE linked_transaction_id IS NULL OR linked_transaction_id = '') as unmatched,
+                        COALESCE(SUM(total_amount), 0) as total_amount,
+                        COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL AND linked_transaction_id != '' THEN total_amount ELSE 0 END), 0) as matched_amount,
+                        COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL OR linked_transaction_id = '' THEN total_amount ELSE 0 END), 0) as unmatched_amount
+                    FROM invoices
+                    WHERE tenant_id = %s
+                    AND date >= %s AND date <= %s
+                """, (tenant_id, start_date, end_date))
+
+                row = cursor.fetchone()
+                cursor.close()
+
+                if not row:
+                    return {'total': 0, 'matched': 0, 'unmatched': 0, 'match_rate': 0}
+
+                total, matched, unmatched, total_amount, matched_amount, unmatched_amount = row
+
+                return {
+                    'total': total or 0,
+                    'matched': matched or 0,
+                    'unmatched': unmatched or 0,
+                    'match_rate': round((matched / total) * 100, 1) if total > 0 else 100.0,
+                    'total_amount': float(total_amount or 0),
+                    'matched_amount': float(matched_amount or 0),
+                    'unmatched_amount': float(unmatched_amount or 0)
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting invoice matching stats: {e}")
+            return {'total': 0, 'matched': 0, 'unmatched': 0, 'match_rate': 0, 'error': str(e)}
+
+    @staticmethod
+    def get_payslip_matching_stats(tenant_id: str, start_date: str, end_date: str) -> Dict:
+        """Get payslip-to-payment matching statistics for a date range."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Count payslips in period and their match status
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE linked_transaction_id IS NOT NULL) as matched,
+                        COUNT(*) FILTER (WHERE linked_transaction_id IS NULL) as unmatched,
+                        COALESCE(SUM(net_amount), 0) as total_amount,
+                        COALESCE(SUM(CASE WHEN linked_transaction_id IS NOT NULL THEN net_amount ELSE 0 END), 0) as matched_amount,
+                        COALESCE(SUM(CASE WHEN linked_transaction_id IS NULL THEN net_amount ELSE 0 END), 0) as unmatched_amount
+                    FROM payslips
+                    WHERE tenant_id = %s
+                    AND payment_date >= %s AND payment_date <= %s
+                """, (tenant_id, start_date, end_date))
+
+                row = cursor.fetchone()
+                cursor.close()
+
+                if not row:
+                    return {'total': 0, 'matched': 0, 'unmatched': 0, 'match_rate': 0}
+
+                total, matched, unmatched, total_amount, matched_amount, unmatched_amount = row
+
+                return {
+                    'total': total or 0,
+                    'matched': matched or 0,
+                    'unmatched': unmatched or 0,
+                    'match_rate': round((matched / total) * 100, 1) if total > 0 else 100.0,
+                    'total_amount': float(total_amount or 0),
+                    'matched_amount': float(matched_amount or 0),
+                    'unmatched_amount': float(unmatched_amount or 0)
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting payslip matching stats: {e}")
+            return {'total': 0, 'matched': 0, 'unmatched': 0, 'match_rate': 0, 'error': str(e)}
+
+    @staticmethod
+    def get_transaction_classification_stats(tenant_id: str, start_date: str, end_date: str) -> Dict:
+        """Get transaction classification statistics for a date range."""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Count transactions and their classification status
+                cursor.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(*) FILTER (WHERE category IS NOT NULL AND category != '' AND category != 'Uncategorized') as classified,
+                        COUNT(*) FILTER (WHERE category IS NULL OR category = '' OR category = 'Uncategorized') as unclassified,
+                        COUNT(*) FILTER (WHERE confidence IS NOT NULL AND confidence >= 0.7) as high_confidence,
+                        COUNT(*) FILTER (WHERE confidence IS NOT NULL AND confidence < 0.7 AND confidence >= 0.4) as medium_confidence,
+                        COUNT(*) FILTER (WHERE confidence IS NULL OR confidence < 0.4) as low_confidence,
+                        COUNT(*) FILTER (WHERE user_reviewed = true) as user_reviewed
+                    FROM transactions
+                    WHERE tenant_id = %s
+                    AND date >= %s AND date <= %s
+                """, (tenant_id, start_date, end_date))
+
+                row = cursor.fetchone()
+                cursor.close()
+
+                if not row:
+                    return {'total': 0, 'classified': 0, 'unclassified': 0, 'classified_rate': 0}
+
+                total, classified, unclassified, high_conf, medium_conf, low_conf, user_reviewed = row
+
+                return {
+                    'total': total or 0,
+                    'classified': classified or 0,
+                    'unclassified': unclassified or 0,
+                    'classified_rate': round((classified / total) * 100, 1) if total > 0 else 100.0,
+                    'high_confidence': high_conf or 0,
+                    'medium_confidence': medium_conf or 0,
+                    'low_confidence': low_conf or 0,
+                    'high_confidence_rate': round((high_conf / total) * 100, 1) if total > 0 else 100.0,
+                    'user_reviewed': user_reviewed or 0,
+                    'needs_review': (low_conf or 0) - (user_reviewed or 0)
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting transaction classification stats: {e}")
+            return {'total': 0, 'classified': 0, 'unclassified': 0, 'classified_rate': 0, 'error': str(e)}
+
+    @staticmethod
+    def get_unmatched_items(period_id: str, tenant_id: str, item_type: str = 'all',
+                            page: int = 1, per_page: int = 20) -> Tuple[List[Dict], int]:
+        """Get unmatched items (invoices, payslips, or transactions) for a period."""
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return [], 0
+
+        start_date = period['start_date']
+        end_date = period['end_date']
+
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                items = []
+                total = 0
+                offset = (page - 1) * per_page
+
+                if item_type in ['all', 'invoices']:
+                    cursor.execute("""
+                        SELECT id, invoice_number, date, vendor_name, total_amount, currency, 'invoice' as type
+                        FROM invoices
+                        WHERE tenant_id = %s
+                        AND date >= %s AND date <= %s
+                        AND (linked_transaction_id IS NULL OR linked_transaction_id = '')
+                        ORDER BY date DESC
+                        LIMIT %s OFFSET %s
+                    """, (tenant_id, start_date, end_date, per_page, offset))
+                    for row in cursor.fetchall():
+                        items.append({
+                            'id': str(row[0]),
+                            'reference': row[1],
+                            'date': row[2].isoformat() if row[2] else None,
+                            'description': row[3],
+                            'amount': float(row[4]) if row[4] else 0,
+                            'currency': row[5],
+                            'type': row[6]
+                        })
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM invoices
+                        WHERE tenant_id = %s
+                        AND date >= %s AND date <= %s
+                        AND (linked_transaction_id IS NULL OR linked_transaction_id = '')
+                    """, (tenant_id, start_date, end_date))
+                    total += cursor.fetchone()[0]
+
+                if item_type in ['all', 'payslips']:
+                    cursor.execute("""
+                        SELECT p.id, p.payslip_number, p.payment_date, w.full_name, p.net_amount, p.currency, 'payslip' as type
+                        FROM payslips p
+                        LEFT JOIN workforce_members w ON p.workforce_member_id = w.id
+                        WHERE p.tenant_id = %s
+                        AND p.payment_date >= %s AND p.payment_date <= %s
+                        AND p.linked_transaction_id IS NULL
+                        ORDER BY p.payment_date DESC
+                        LIMIT %s OFFSET %s
+                    """, (tenant_id, start_date, end_date, per_page, offset))
+                    for row in cursor.fetchall():
+                        items.append({
+                            'id': str(row[0]),
+                            'reference': row[1],
+                            'date': row[2].isoformat() if row[2] else None,
+                            'description': row[3] or 'Unknown Employee',
+                            'amount': float(row[4]) if row[4] else 0,
+                            'currency': row[5],
+                            'type': row[6]
+                        })
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM payslips
+                        WHERE tenant_id = %s
+                        AND payment_date >= %s AND payment_date <= %s
+                        AND linked_transaction_id IS NULL
+                    """, (tenant_id, start_date, end_date))
+                    total += cursor.fetchone()[0]
+
+                if item_type in ['all', 'transactions']:
+                    cursor.execute("""
+                        SELECT transaction_id, date, description, amount, currency, 'transaction' as type
+                        FROM transactions
+                        WHERE tenant_id = %s
+                        AND date >= %s AND date <= %s
+                        AND (category IS NULL OR category = '' OR category = 'Uncategorized')
+                        ORDER BY date DESC
+                        LIMIT %s OFFSET %s
+                    """, (tenant_id, start_date, end_date, per_page, offset))
+                    for row in cursor.fetchall():
+                        items.append({
+                            'id': str(row[0]),
+                            'reference': str(row[0])[:8],
+                            'date': row[1].isoformat() if row[1] else None,
+                            'description': row[2],
+                            'amount': float(row[3]) if row[3] else 0,
+                            'currency': row[4],
+                            'type': row[5]
+                        })
+
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM transactions
+                        WHERE tenant_id = %s
+                        AND date >= %s AND date <= %s
+                        AND (category IS NULL OR category = '' OR category = 'Uncategorized')
+                    """, (tenant_id, start_date, end_date))
+                    total += cursor.fetchone()[0]
+
+                cursor.close()
+                return items, total
+
+        except Exception as e:
+            logger.error(f"Error getting unmatched items: {e}")
+            return [], 0
+
+    # ========================================
+    # AUTO-CHECK SYSTEM (PHASE 2)
+    # ========================================
+
+    @staticmethod
+    def run_auto_checks(period_id: str, tenant_id: str, user_id: Optional[str] = None) -> Dict:
+        """Run all auto-checks for a period's checklist items."""
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return {'error': 'Period not found', 'results': []}
+
+        if period['status'] in [MonthEndCloseService.STATUS_LOCKED, MonthEndCloseService.STATUS_CLOSED]:
+            return {'error': 'Cannot run auto-checks on locked/closed period', 'results': []}
+
+        items = MonthEndCloseService.get_checklist(period_id, tenant_id)
+        results = []
+
+        for item in items:
+            if item.get('auto_check_type'):
+                result = MonthEndCloseService.run_single_auto_check(
+                    item['id'], period_id, tenant_id, item['auto_check_type'], user_id
+                )
+                results.append({
+                    'item_id': item['id'],
+                    'item_name': item['name'],
+                    'auto_check_type': item['auto_check_type'],
+                    'result': result
+                })
+
+        # Log activity
+        MonthEndCloseService.log_activity(
+            period_id, tenant_id, 'auto_checks_run', 'period', period_id,
+            user_id=user_id, details={'checks_run': len(results)}
+        )
+
+        return {
+            'period_id': period_id,
+            'checks_run': len(results),
+            'results': results
+        }
+
+    @staticmethod
+    def run_single_auto_check(item_id: str, period_id: str, tenant_id: str,
+                               auto_check_type: str, user_id: Optional[str] = None) -> Dict:
+        """Run auto-check for a single checklist item."""
+        period = MonthEndCloseService.get_period(period_id, tenant_id)
+        if not period:
+            return {'success': False, 'error': 'Period not found'}
+
+        start_date = period['start_date']
+        end_date = period['end_date']
+
+        # Get threshold from template
+        threshold = 95.0  # default
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT t.auto_check_threshold
+                    FROM close_checklist_items ci
+                    JOIN close_checklist_templates t ON ci.template_id = t.id
+                    WHERE ci.id = %s
+                """, (item_id,))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    threshold = float(row[0])
+                cursor.close()
+        except Exception as e:
+            logger.warning(f"Could not get threshold for item {item_id}: {e}")
+
+        # Run the appropriate check
+        result = {}
+        if auto_check_type == 'invoices_matched':
+            stats = MonthEndCloseService.get_invoice_matching_stats(tenant_id, start_date, end_date)
+            result = {
+                'matched': stats.get('matched', 0),
+                'total': stats.get('total', 0),
+                'percentage': stats.get('match_rate', 0),
+                'threshold': threshold,
+                'passed': stats.get('match_rate', 0) >= threshold,
+                'details': stats
+            }
+
+        elif auto_check_type == 'payslips_matched':
+            stats = MonthEndCloseService.get_payslip_matching_stats(tenant_id, start_date, end_date)
+            result = {
+                'matched': stats.get('matched', 0),
+                'total': stats.get('total', 0),
+                'percentage': stats.get('match_rate', 0),
+                'threshold': threshold,
+                'passed': stats.get('match_rate', 0) >= threshold,
+                'details': stats
+            }
+
+        elif auto_check_type == 'low_confidence_reviewed':
+            stats = MonthEndCloseService.get_transaction_classification_stats(tenant_id, start_date, end_date)
+            low_conf = stats.get('low_confidence', 0)
+            reviewed = stats.get('user_reviewed', 0)
+            percentage = (reviewed / low_conf * 100) if low_conf > 0 else 100.0
+            result = {
+                'matched': reviewed,
+                'total': low_conf,
+                'percentage': round(percentage, 1),
+                'threshold': threshold,
+                'passed': percentage >= threshold,
+                'details': stats
+            }
+
+        elif auto_check_type == 'unclassified_resolved':
+            stats = MonthEndCloseService.get_transaction_classification_stats(tenant_id, start_date, end_date)
+            result = {
+                'matched': stats.get('classified', 0),
+                'total': stats.get('total', 0),
+                'percentage': stats.get('classified_rate', 0),
+                'threshold': threshold,
+                'passed': stats.get('classified_rate', 0) >= threshold,
+                'details': stats
+            }
+
+        elif auto_check_type == 'bank_reconciled':
+            # For now, use transaction classification as proxy
+            # In future, implement dedicated bank reconciliation tracking
+            stats = MonthEndCloseService.get_transaction_classification_stats(tenant_id, start_date, end_date)
+            result = {
+                'matched': stats.get('classified', 0),
+                'total': stats.get('total', 0),
+                'percentage': stats.get('classified_rate', 0),
+                'threshold': threshold,
+                'passed': stats.get('classified_rate', 0) >= threshold,
+                'details': stats,
+                'note': 'Using transaction classification as proxy for bank reconciliation'
+            }
+
+        else:
+            result = {
+                'matched': 0,
+                'total': 0,
+                'percentage': 0,
+                'threshold': threshold,
+                'passed': False,
+                'error': f'Unknown auto-check type: {auto_check_type}'
+            }
+
+        # Update the checklist item with auto-check result
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Determine new status based on result
+                new_status = None
+                if result.get('passed'):
+                    new_status = 'completed'
+
+                cursor.execute("""
+                    UPDATE close_checklist_items
+                    SET auto_check_result = %s,
+                        last_auto_check_at = CURRENT_TIMESTAMP,
+                        status = COALESCE(%s, status),
+                        completed_at = CASE WHEN %s = 'completed' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+                        completed_by = CASE WHEN %s = 'completed' THEN %s ELSE completed_by END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (json.dumps(result), new_status, new_status, new_status, user_id, item_id))
+
+                conn.commit()
+                cursor.close()
+
+        except Exception as e:
+            logger.error(f"Error updating auto-check result: {e}")
+            result['update_error'] = str(e)
+
+        return result

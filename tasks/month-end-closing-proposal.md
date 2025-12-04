@@ -610,22 +610,42 @@ CLOSE_PERMISSIONS = {
 | Dashboard JavaScript | Done | `web_ui/static/js/month_end_close.js` |
 | Navigation link | Done | `web_ui/templates/_navbar.html` |
 | i18n translations | Done | `en.json`, `es.json`, `pt.json` |
+| Transaction period lock validation | Done | `web_ui/app_db.py` (check_period_lock_for_transaction) |
+
+### Phase 2: Reconciliation Integration - COMPLETED
+
+| Component | Status | File(s) |
+|-----------|--------|---------|
+| Reconciliation metrics service | Done | `web_ui/services/month_end_close.py` (lines 930-1423) |
+| Invoice matching stats | Done | `get_invoice_matching_stats()` method |
+| Payslip matching stats | Done | `get_payslip_matching_stats()` method |
+| Transaction classification stats | Done | `get_transaction_classification_stats()` method |
+| Overall health calculation | Done | `_calculate_overall_health()` method |
+| Unmatched items query | Done | `get_unmatched_items()` method |
+| Auto-check system | Done | `run_auto_checks()`, `run_single_auto_check()` methods |
+| Reconciliation API endpoints | Done | `web_ui/routes/close_routes.py` (lines 542-745) |
+| Reconciliation UI section | Done | `web_ui/templates/month_end_close.html` |
+| Unmatched items modal | Done | `web_ui/templates/month_end_close.html` |
+| Frontend reconciliation JS | Done | `web_ui/static/js/month_end_close.js` (lines 786-1028) |
 
 ### Remaining Work
 
-**Phase 1 (Pending):**
-- Transaction date validation against locked periods
+**Phase 1-2: COMPLETE**
 
-**Phase 2: Reconciliation Integration (Not Started)**
-- Integrate revenue_matcher metrics
-- Integrate payslip_matcher metrics
-- Auto-check logic for matching status
-- Reconciliation dashboard
+**Phase 3: Adjusting Entries (Not Started)**
+- Adjusting entries CRUD
+- Entry approval workflow
+- Entry posting to transactions
 
-**Phase 3-5: (Not Started)**
-- Adjusting entries with approval workflow
-- Approval chain and notifications
-- AI-powered suggestions
+**Phase 4: Approval & Audit (Not Started)**
+- Submit for approval workflow enhancements
+- Notification system
+- Enhanced audit trail
+
+**Phase 5: Advanced Features (Not Started)**
+- AI-suggested adjusting entries
+- Anomaly detection
+- Pre-close report generation
 
 ## Next Steps
 
