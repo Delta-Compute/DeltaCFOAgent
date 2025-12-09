@@ -326,19 +326,19 @@ export default function InvoicesPage() {
       <StatsGrid>
         <StatsCard
           title="Total Invoices"
-          value={stats?.total.toLocaleString() || "0"}
+          value={(stats?.total ?? 0).toLocaleString()}
           icon={FileText}
           isLoading={isLoading}
         />
         <StatsCard
           title="Pending Payment"
-          value={stats?.sent.toLocaleString() || "0"}
+          value={(stats?.sent ?? 0).toLocaleString()}
           icon={Clock}
           isLoading={isLoading}
         />
         <StatsCard
           title="Paid"
-          value={stats?.paid.toLocaleString() || "0"}
+          value={(stats?.paid ?? 0).toLocaleString()}
           icon={CheckCircle2}
           isLoading={isLoading}
         />

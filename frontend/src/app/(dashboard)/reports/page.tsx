@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart3,
@@ -11,8 +11,13 @@ import {
   DollarSign,
   PieChart,
   ArrowUpRight,
+  Loader2,
+  FileDown,
 } from "lucide-react";
+import { toast } from "sonner";
 
+import { reports as reportsApi, exports as exportsApi, homepage } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SankeyFlowChart } from "@/components/dashboard/sankey-flow-chart";
 
 // Report types
 interface ReportType {
@@ -36,105 +42,275 @@ interface ReportType {
   description: string;
   icon: typeof BarChart3;
   href?: string;
+  downloadAction?: () => Promise<void>;
   comingSoon?: boolean;
 }
 
-const reports: ReportType[] = [
-  {
-    id: "pl-trend",
-    title: "Profit & Loss Trend",
-    description: "View income, expenses, and net profit over time with detailed breakdown by category",
-    icon: TrendingUp,
-    href: "/reports/pl-trend",
-  },
-  {
-    id: "balance-sheet",
-    title: "Balance Sheet",
-    description: "Summary of assets, liabilities, and equity at a specific point in time",
-    icon: BarChart3,
-    comingSoon: true,
-  },
-  {
-    id: "cash-flow",
-    title: "Cash Flow Statement",
-    description: "Track the movement of cash in and out of your business",
-    icon: DollarSign,
-    comingSoon: true,
-  },
-  {
-    id: "expense-breakdown",
-    title: "Expense Breakdown",
-    description: "Detailed analysis of expenses by category, vendor, and time period",
-    icon: PieChart,
-    comingSoon: true,
-  },
-  {
-    id: "revenue-analysis",
-    title: "Revenue Analysis",
-    description: "Analyze revenue streams, client contributions, and growth trends",
-    icon: TrendingUp,
-    comingSoon: true,
-  },
-  {
-    id: "tax-summary",
-    title: "Tax Summary Report",
-    description: "Overview of tax-related transactions and deductions for filing purposes",
-    icon: FileText,
-    comingSoon: true,
-  },
-];
-
-// Report Card Component
-function ReportCard({ report }: { report: ReportType }) {
-  const router = useRouter();
-  const Icon = report.icon;
-
-  return (
-    <Card
-      className={`
-        relative overflow-hidden transition-all
-        ${report.comingSoon ? "opacity-70" : "hover:border-primary/50 cursor-pointer"}
-      `}
-      onClick={() => !report.comingSoon && report.href && router.push(report.href)}
-    >
-      {report.comingSoon && (
-        <div className="absolute top-2 right-2">
-          <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
-            Coming Soon
-          </span>
-        </div>
-      )}
-      <CardHeader>
-        <div className="flex items-start gap-4">
-          <div className="p-2 bg-primary/10 rounded-lg">
-            <Icon className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <CardTitle className="text-lg flex items-center gap-2">
-              {report.title}
-              {!report.comingSoon && (
-                <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-              )}
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {report.description}
-            </CardDescription>
-          </div>
-        </div>
-      </CardHeader>
-      {!report.comingSoon && (
-        <CardContent>
-          <Button variant="outline" className="w-full">
-            View Report
-          </Button>
-        </CardContent>
-      )}
-    </Card>
-  );
-}
-
 export default function ReportsPage() {
+  const router = useRouter();
   const [dateRange, setDateRange] = useState("year");
+  const [isDownloading, setIsDownloading] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netProfit: 0,
+  });
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+
+  // Load stats from homepage KPIs
+  const loadStats = useCallback(async () => {
+    try {
+      const result = await homepage.getKpis();
+      // API returns { success: true, kpis: {...} }, wrapped by get() as { data: { kpis: {...} } }
+      const kpis = (result.data as { kpis?: { total_revenue?: number; total_expenses?: number; net_profit?: number } })?.kpis;
+      if (result.success && kpis) {
+        setStats({
+          totalRevenue: kpis.total_revenue || 0,
+          totalExpenses: kpis.total_expenses || 0,
+          netProfit: kpis.net_profit || 0,
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load stats:", err);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // Get date range params based on selection
+  const getDateParams = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+
+    switch (dateRange) {
+      case "month":
+        return {
+          start_date: new Date(year, month, 1).toISOString().split("T")[0],
+          end_date: new Date(year, month + 1, 0).toISOString().split("T")[0],
+        };
+      case "quarter":
+        const quarterStart = Math.floor(month / 3) * 3;
+        return {
+          start_date: new Date(year, quarterStart, 1).toISOString().split("T")[0],
+          end_date: new Date(year, quarterStart + 3, 0).toISOString().split("T")[0],
+        };
+      case "lastyear":
+        return {
+          start_date: `${year - 1}-01-01`,
+          end_date: `${year - 1}-12-31`,
+        };
+      case "year":
+      default:
+        return {
+          start_date: `${year}-01-01`,
+          end_date: `${year}-12-31`,
+        };
+    }
+  };
+
+  // Download handlers
+  const handleDownloadDre = async () => {
+    setIsDownloading("dre");
+    try {
+      const params = getDateParams();
+      const result = await reportsApi.downloadDrePdf(params);
+      if (result.success) {
+        toast.success("DRE report downloaded successfully");
+      } else {
+        toast.error(result.error?.message || "Failed to download DRE report");
+      }
+    } catch {
+      toast.error("Failed to download DRE report");
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const handleDownloadBalanceSheet = async () => {
+    setIsDownloading("balance-sheet");
+    try {
+      const params = getDateParams();
+      const result = await reportsApi.downloadBalanceSheetPdf(params);
+      if (result.success) {
+        toast.success("Balance Sheet downloaded successfully");
+      } else {
+        toast.error(result.error?.message || "Failed to download Balance Sheet");
+      }
+    } catch {
+      toast.error("Failed to download Balance Sheet");
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const handleDownloadCashFlow = async () => {
+    setIsDownloading("cash-flow");
+    try {
+      const params = getDateParams();
+      const result = await reportsApi.downloadCashFlowPdf(params);
+      if (result.success) {
+        toast.success("Cash Flow Statement downloaded successfully");
+      } else {
+        toast.error(result.error?.message || "Failed to download Cash Flow Statement");
+      }
+    } catch {
+      toast.error("Failed to download Cash Flow Statement");
+    } finally {
+      setIsDownloading(null);
+    }
+  };
+
+  const handleExportAll = async () => {
+    setIsExporting(true);
+    try {
+      const params = {
+        ...getDateParams(),
+        format: "csv" as const,
+      };
+      const result = await exportsApi.transactions(params);
+      if (result.success) {
+        toast.success("Transactions exported successfully");
+      } else {
+        toast.error(result.error?.message || "Failed to export transactions");
+      }
+    } catch {
+      toast.error("Failed to export transactions");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Report definitions
+  const reportsList: ReportType[] = [
+    {
+      id: "dre",
+      title: "DRE (Income Statement)",
+      description: "Demonstrativo de Resultado do Exercicio - Complete income statement with revenue, costs, and expenses",
+      icon: FileText,
+      downloadAction: handleDownloadDre,
+    },
+    {
+      id: "pl-trend",
+      title: "Profit & Loss Trend",
+      description: "View income, expenses, and net profit over time with detailed breakdown by category",
+      icon: TrendingUp,
+      href: "/reports/pl-trend",
+    },
+    {
+      id: "balance-sheet",
+      title: "Balance Sheet",
+      description: "Summary of assets, liabilities, and equity at a specific point in time",
+      icon: BarChart3,
+      downloadAction: handleDownloadBalanceSheet,
+    },
+    {
+      id: "cash-flow",
+      title: "Cash Flow Statement",
+      description: "Track the movement of cash in and out of your business",
+      icon: DollarSign,
+      downloadAction: handleDownloadCashFlow,
+    },
+    {
+      id: "expense-breakdown",
+      title: "Expense Breakdown",
+      description: "Detailed analysis of expenses by category, vendor, and time period",
+      icon: PieChart,
+      comingSoon: true,
+    },
+    {
+      id: "revenue-analysis",
+      title: "Revenue Analysis",
+      description: "Analyze revenue streams, client contributions, and growth trends",
+      icon: TrendingUp,
+      comingSoon: true,
+    },
+  ];
+
+  // Report Card Component
+  function ReportCard({ report }: { report: ReportType }) {
+    const Icon = report.icon;
+    const isDownloadingThis = isDownloading === report.id;
+
+    const handleClick = () => {
+      if (report.comingSoon) return;
+      if (report.href) {
+        router.push(report.href);
+      }
+    };
+
+    const handleDownload = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (report.downloadAction) {
+        await report.downloadAction();
+      }
+    };
+
+    return (
+      <Card
+        className={`
+          relative overflow-hidden transition-all
+          ${report.comingSoon ? "opacity-70" : "hover:border-primary/50"}
+          ${report.href && !report.comingSoon ? "cursor-pointer" : ""}
+        `}
+        onClick={handleClick}
+      >
+        {report.comingSoon && (
+          <div className="absolute top-2 right-2">
+            <span className="text-xs bg-muted px-2 py-1 rounded-full text-muted-foreground">
+              Coming Soon
+            </span>
+          </div>
+        )}
+        <CardHeader>
+          <div className="flex items-start gap-4">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Icon className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="text-lg flex items-center gap-2">
+                {report.title}
+                {!report.comingSoon && report.href && (
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                )}
+              </CardTitle>
+              <CardDescription className="mt-1">
+                {report.description}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        {!report.comingSoon && (
+          <CardContent>
+            {report.href ? (
+              <Button variant="outline" className="w-full">
+                View Report
+              </Button>
+            ) : report.downloadAction ? (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleDownload}
+                disabled={isDownloadingThis}
+              >
+                {isDownloadingThis ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <FileDown className="mr-2 h-4 w-4" />
+                )}
+                Download PDF
+              </Button>
+            ) : null}
+          </CardContent>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -156,12 +332,16 @@ export default function ReportsPage() {
               <SelectItem value="month">This Month</SelectItem>
               <SelectItem value="quarter">This Quarter</SelectItem>
               <SelectItem value="year">This Year</SelectItem>
-              <SelectItem value="custom">Custom Range</SelectItem>
+              <SelectItem value="lastyear">Last Year</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export All
+          <Button variant="outline" onClick={handleExportAll} disabled={isExporting}>
+            {isExporting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            Export Transactions
           </Button>
         </div>
       </div>
@@ -171,12 +351,18 @@ export default function ReportsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Revenue (YTD)</CardDescription>
-            <CardTitle className="text-2xl text-green-600">$1,234,567</CardTitle>
+            <CardTitle className="text-2xl text-green-600">
+              {isLoadingStats ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                formatCurrency(stats.totalRevenue)
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-green-500" />
-              +12.5% from last year
+              Year to date
             </div>
           </CardContent>
         </Card>
@@ -184,12 +370,18 @@ export default function ReportsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Expenses (YTD)</CardDescription>
-            <CardTitle className="text-2xl text-red-600">$876,543</CardTitle>
+            <CardTitle className="text-2xl text-red-600">
+              {isLoadingStats ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                formatCurrency(stats.totalExpenses)
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-red-500" />
-              +8.3% from last year
+              Year to date
             </div>
           </CardContent>
         </Card>
@@ -197,22 +389,34 @@ export default function ReportsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Net Profit (YTD)</CardDescription>
-            <CardTitle className="text-2xl text-primary">$358,024</CardTitle>
+            <CardTitle className="text-2xl text-primary">
+              {isLoadingStats ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                formatCurrency(stats.netProfit)
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-green-500" />
-              +25.2% from last year
+              Year to date
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Sankey Flow Chart */}
+      <SankeyFlowChart
+        startDate={getDateParams().start_date}
+        endDate={getDateParams().end_date}
+      />
+
       {/* Report Cards */}
       <div>
         <h2 className="text-lg font-semibold mb-4">Available Reports</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {reports.map((report) => (
+          {reportsList.map((report) => (
             <ReportCard key={report.id} report={report} />
           ))}
         </div>

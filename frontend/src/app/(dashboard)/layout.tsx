@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
-import { useTenant } from "@/context/tenant-context";
 import { DashboardNav } from "@/components/dashboard/dashboard-nav";
+import { CFOChatbot } from "@/components/dashboard/cfo-chatbot";
 import { Loader2 } from "lucide-react";
 
 export default function DashboardLayout({
@@ -14,7 +14,6 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  const { currentTenant, isLoading: tenantLoading } = useTenant();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -23,17 +22,12 @@ export default function DashboardLayout({
     }
   }, [authLoading, isAuthenticated, router]);
 
-  // Redirect to onboarding if no tenant
-  useEffect(() => {
-    if (!tenantLoading && isAuthenticated && !currentTenant) {
-      // In production, redirect to onboarding
-      // For now, we'll just show the content
-      // router.push("/onboarding");
-    }
-  }, [tenantLoading, isAuthenticated, currentTenant, router]);
+  // TODO: Add onboarding redirect when tenant system is complete
+  // For now, allow access without tenant data
 
-  // Show loading state while checking auth
-  if (authLoading || tenantLoading) {
+  // Show loading state only while checking auth (not tenant)
+  // Tenant data is optional and shouldn't block the dashboard
+  if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -54,6 +48,7 @@ export default function DashboardLayout({
     <div className="min-h-screen bg-background">
       <DashboardNav />
       <main className="container-main py-8">{children}</main>
+      <CFOChatbot />
     </div>
   );
 }

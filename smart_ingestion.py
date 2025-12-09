@@ -592,11 +592,15 @@ Respond with JSON ONLY (no other text):
                 with open(file_path, 'r') as f:
                     total_lines = sum(1 for _ in f)
 
-                # If Claude wants to skip rows that don't exist, correct it
-                if skiprows and max(skiprows) >= total_lines:
-                    print(f"  WARNING: File only has {total_lines} lines, but Claude wants to skip rows up to {max(skiprows)}")
-                    print(f"  Assuming file is already clean (no metadata rows) - setting skiprows=[]")
-                    skiprows = []
+                # If Claude wants to skip rows that don't exist or would leave no data, correct it
+                # Need at least 2 rows remaining: header + 1 data row
+                if skiprows:
+                    remaining_rows = total_lines - len(skiprows)
+                    if max(skiprows) >= total_lines or remaining_rows < 2:
+                        print(f"  WARNING: File only has {total_lines} lines, Claude wants to skip {len(skiprows)} rows")
+                        print(f"  Skipping would leave {remaining_rows} rows - not enough data")
+                        print(f"  Assuming file is already clean (no metadata rows) - setting skiprows=[]")
+                        skiprows = []
 
                 # Clean trailing commas if Claude detected them
                 needs_cleaning = has_trailing_commas
@@ -1364,3 +1368,146 @@ def smart_process_file(file_path: str, enhance: bool = True) -> Optional[pd.Data
         print(f" DEBUG: Smart ingestion error traceback: {traceback.format_exc()}")
         # Re-raise the error instead of returning None - no silent failures
         raise e
+
+
+def generate_document_name(
+    original_filename: str,
+    df: Optional[pd.DataFrame] = None,
+    structure_info: Optional[Dict[str, Any]] = None
+) -> str:
+    """
+    Generate a friendly, descriptive document name using Claude AI.
+
+    This creates organized names like:
+    - "Chase Business Checking - Oct 2024"
+    - "MEXC TAO Withdrawals - Nov 15-30"
+    - "Coinbase Pro BTC Trading History"
+
+    Args:
+        original_filename: The original uploaded filename
+        df: The processed DataFrame with transactions (optional)
+        structure_info: The structure analysis from Claude (optional)
+
+    Returns:
+        A descriptive document name, or original filename if generation fails
+    """
+    try:
+        # Get Claude client
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            print(" No API key for document naming, using original filename")
+            return original_filename
+
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+
+        # Gather context for naming
+        context_parts = []
+
+        # Original filename
+        context_parts.append(f"Original filename: {original_filename}")
+
+        # Format detected
+        if structure_info:
+            doc_format = structure_info.get('format', 'unknown')
+            context_parts.append(f"Document format: {doc_format}")
+
+            # Account identifier if present
+            account_col = structure_info.get('account_identifier_column')
+            if account_col:
+                context_parts.append(f"Account identifier column: {account_col}")
+
+            # Currency if detected
+            currency_col = structure_info.get('currency_column')
+            if currency_col:
+                context_parts.append(f"Currency/asset column: {currency_col}")
+
+            # Notes from analysis
+            notes = structure_info.get('notes', '')
+            if notes:
+                context_parts.append(f"Analysis notes: {notes[:200]}")
+
+        # Transaction data summary
+        if df is not None and len(df) > 0:
+            context_parts.append(f"Transaction count: {len(df)}")
+
+            # Date range
+            if 'Date' in df.columns:
+                try:
+                    dates = pd.to_datetime(df['Date'], errors='coerce')
+                    valid_dates = dates.dropna()
+                    if len(valid_dates) > 0:
+                        min_date = valid_dates.min()
+                        max_date = valid_dates.max()
+                        context_parts.append(f"Date range: {min_date.strftime('%Y-%m-%d')} to {max_date.strftime('%Y-%m-%d')}")
+                except:
+                    pass
+
+            # Sample descriptions (first 5)
+            if 'Description' in df.columns:
+                sample_descs = df['Description'].head(5).tolist()
+                context_parts.append(f"Sample descriptions: {sample_descs}")
+
+            # Unique currencies/assets if available
+            if 'Currency' in df.columns:
+                unique_currencies = df['Currency'].dropna().unique()[:5]
+                if len(unique_currencies) > 0:
+                    context_parts.append(f"Currencies/assets: {list(unique_currencies)}")
+
+            # Account identifiers if available
+            if 'AccountIdentifier' in df.columns:
+                unique_accounts = df['AccountIdentifier'].dropna().unique()[:3]
+                if len(unique_accounts) > 0:
+                    context_parts.append(f"Account identifiers: {list(unique_accounts)}")
+
+        context = "\n".join(context_parts)
+
+        # Ask Claude to generate a name
+        prompt = f"""Based on the following information about a financial document, generate a short, descriptive name for it.
+
+{context}
+
+REQUIREMENTS:
+1. The name should be concise (max 50 characters)
+2. Include the source/institution if identifiable (e.g., "Chase", "MEXC", "Coinbase")
+3. Include the account type or transaction type (e.g., "Checking", "Withdrawals", "Trading")
+4. Include a date reference if available (e.g., "Oct 2024", "Q3 2024", "Nov 15-30")
+5. Do NOT include file extensions
+6. Use title case
+7. Use " - " to separate components
+
+EXAMPLES:
+- "Chase Business Checking - Oct 2024"
+- "MEXC TAO Withdrawals - Nov 2024"
+- "Coinbase Pro Trading - Q3 2024"
+- "Bank Statement - Sep-Oct 2024"
+- "Crypto Deposits - Week of Nov 15"
+
+Respond with ONLY the document name, nothing else."""
+
+        response = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        generated_name = response.content[0].text.strip()
+
+        # Clean up the name
+        generated_name = generated_name.strip('"\'')
+
+        # Ensure it's not too long
+        if len(generated_name) > 60:
+            generated_name = generated_name[:57] + "..."
+
+        # Validate it's not empty or just whitespace
+        if not generated_name or generated_name.isspace():
+            print(" Generated name was empty, using original filename")
+            return original_filename
+
+        print(f" Generated document name: {generated_name}")
+        return generated_name
+
+    except Exception as e:
+        print(f" Document naming failed: {e}, using original filename")
+        return original_filename

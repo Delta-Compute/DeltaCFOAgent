@@ -20,6 +20,9 @@ import {
   LogOut,
   User,
   Building2,
+  BarChart3,
+  BookOpen,
+  CalendarCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -43,10 +46,12 @@ const navItems = [
   { href: "/", labelKey: "home", icon: LayoutDashboard },
   { href: "/dashboard", labelKey: "dashboard", icon: Receipt },
   { href: "/revenue", labelKey: "revenue", icon: PieChart },
+  { href: "/reports", labelKey: "reports", icon: BarChart3 },
   { href: "/invoices", labelKey: "invoices", icon: FileText },
   { href: "/files", labelKey: "files", icon: Upload },
   { href: "/workforce", labelKey: "workforce", icon: Users },
-  { href: "/shareholders", labelKey: "shareholders", icon: PieChart },
+  { href: "/month-end-close", labelKey: "monthEnd", icon: CalendarCheck },
+  { href: "/knowledge", labelKey: "knowledge", icon: BookOpen },
   { href: "/accounts", labelKey: "accounts", icon: Wallet },
 ];
 
@@ -64,8 +69,8 @@ export function DashboardNav() {
   const t = useTranslations("nav");
 
   // Get user initials for avatar
-  const userInitials = user?.name
-    ? user.name
+  const userInitials = user?.display_name
+    ? user.display_name
         .split(" ")
         .map((n) => n[0])
         .join("")
@@ -221,7 +226,7 @@ export function DashboardNav() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src="" alt={user?.name || "User"} />
+                    <AvatarImage src="" alt={user?.display_name || "User"} />
                     <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                       {userInitials}
                     </AvatarFallback>
@@ -232,7 +237,7 @@ export function DashboardNav() {
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">
-                      {user?.name || "User"}
+                      {user?.display_name || "User"}
                     </p>
                     <p className="text-xs leading-none text-muted-foreground">
                       {user?.email || "user@example.com"}

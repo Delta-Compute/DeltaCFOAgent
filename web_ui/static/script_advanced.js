@@ -1280,19 +1280,33 @@ function formatCurrency(amount, currency) {
 // Format crypto token amounts (without dollar signs, show token quantity)
 function formatCryptoAmount(amount, currency) {
     if (!amount || amount === 0) return '';
-    const isCrypto = ['BTC', 'ETH', 'TAO', 'SOL', 'USDC', 'USDT'].includes(currency);
-    if (isCrypto) {
-        // Use different precision based on token type
-        let precision = 4; // default precision
-        if (currency === 'BTC') precision = 8;  // BTC needs more precision
-        if (currency === 'TAO') precision = 4;  // TAO uses 4 decimal places
-        if (currency === 'USDC' || currency === 'USDT') precision = 2; // stablecoins use 2
+    if (!currency || currency === 'USD') return ''; // No conversion for USD
 
-        const tokenAmount = parseFloat(amount).toFixed(precision);
-        const result = `<span class="crypto">${tokenAmount} ${currency}</span>`;
-        return result;
+    // Known crypto currencies with specific precision
+    const cryptoPrecision = {
+        'BTC': 8,
+        'ETH': 6,
+        'TAO': 4,
+        'SOL': 4,
+        'USDC': 2,
+        'USDT': 2
+    };
+
+    // Foreign fiat currencies (usually 2 decimal places)
+    const fiatCurrencies = ['EUR', 'GBP', 'PYG', 'BRL', 'ARS', 'MXN', 'CLP', 'COP', 'PEN', 'UYU', 'JPY', 'CNY', 'KRW', 'CAD', 'AUD', 'CHF'];
+
+    let precision = 2; // default for fiat
+    if (cryptoPrecision[currency]) {
+        precision = cryptoPrecision[currency];
+    } else if (currency === 'PYG' || currency === 'JPY' || currency === 'KRW') {
+        precision = 0; // These currencies don't use decimal places
     }
-    return '';
+
+    const formattedAmount = parseFloat(amount).toFixed(precision);
+    const isCrypto = cryptoPrecision.hasOwnProperty(currency);
+    const cssClass = isCrypto ? 'crypto' : 'foreign-currency';
+
+    return `<span class="${cssClass}">${formattedAmount} ${currency}</span>`;
 }
 
 /**
@@ -1459,7 +1473,9 @@ function renderTransactionTable(transactions) {
         const batchTransactions = transactions.slice(start, end);
 
         const html = batchTransactions.map(transaction => {
-        const amount = parseFloat(transaction.usd_equivalent || transaction.amount || 0);
+        // Use amount field (USD value) for display and color determination
+        // usd_equivalent may contain original crypto quantity for crypto transactions
+        const amount = parseFloat(transaction.amount || 0);
         const amountClass = amount > 0 ? 'amount-positive' : amount < 0 ? 'amount-negative' : '';
         const formattedAmount = Math.abs(amount).toLocaleString('en-US', {
             style: 'currency',
@@ -1493,7 +1509,7 @@ function renderTransactionTable(transactions) {
                 </td>
                 <td class="${amountClass} amount-cell" data-amount="${Math.abs(amount)}" onclick="filterByMinAmount(${Math.abs(amount)})" style="cursor: pointer; position: relative;" title="Click to filter transactions >= this amount">
                     <span class="usd-amount" style="${showCryptoAmount ? 'display:none' : ''}">${formattedAmount}</span>
-                    <span class="crypto-amount" style="${showCryptoAmount ? '' : 'display:none'}">${formatCryptoAmount(transaction.crypto_amount, transaction.currency) || formattedAmount}</span>
+                    <span class="crypto-amount" style="${showCryptoAmount ? '' : 'display:none'}">${formatCryptoAmount(transaction.crypto_amount || transaction.usd_equivalent, transaction.currency) || formattedAmount}</span>
                     <span class="amount-filter-dot" style="display: none; position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; background: #28a745; border-radius: 50%;"></span>
                 </td>
                 <td class="editable-field smart-dropdown" data-field="classified_entity" data-transaction-id="${transaction.transaction_id}" style="padding-right: 15px; border-right: 1px solid #eee;">
@@ -3727,7 +3743,11 @@ function updateArchiveButtonVisibility() {
     const selectedCount = document.querySelectorAll('.transaction-select-cb:checked').length;
     const archiveBtn = document.getElementById('archiveSelected');
     if (archiveBtn) {
-        archiveBtn.style.display = selectedCount > 0 ? 'inline-block' : 'none';
+        // Enable/disable button based on selection (button is always visible)
+        archiveBtn.disabled = selectedCount === 0;
+        archiveBtn.style.color = selectedCount > 0 ? '#333' : '#999';
+        archiveBtn.style.cursor = selectedCount > 0 ? 'pointer' : 'default';
+        archiveBtn.title = selectedCount > 0 ? `Archive ${selectedCount} selected transaction(s)` : 'Select transactions to archive';
     }
 }
 

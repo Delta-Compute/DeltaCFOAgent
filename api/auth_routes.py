@@ -17,7 +17,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 from auth.firebase_config import create_firebase_user, verify_firebase_token
-from middleware.auth_middleware import require_auth, get_current_user, get_current_tenant
+from middleware.auth_middleware import require_auth, optional_auth, get_current_user, get_current_tenant
 
 # Import email service with dynamic import to avoid caching issues
 import importlib.util
@@ -303,10 +303,11 @@ def login():
 
 
 @auth_bp.route('/logout', methods=['POST'])
-@require_auth
+@optional_auth
 def logout():
     """
     Logout current user.
+    Uses optional_auth so logout works even with expired/invalid tokens.
 
     Returns:
         {
@@ -316,11 +317,12 @@ def logout():
     """
     try:
         user = get_current_user()
+        user_email = user.get('email', 'unknown') if user else 'unknown'
 
         # Clear session
         session.clear()
 
-        logger.info(f"User logged out: {user.get('email', 'unknown')}")
+        logger.info(f"User logged out: {user_email}")
 
         return jsonify({
             'success': True,

@@ -46,9 +46,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       });
 
       if (configResponse.ok) {
-        const config = await configResponse.json();
+        const response = await configResponse.json();
+        // Config data is nested under config_data in the API response
+        const config = response.config_data || response;
         const tenant: Tenant = {
-          tenant_id: config.tenant_id || "delta",
+          tenant_id: config.tenant_id || response.tenant_id || "delta",
           tenant_name: config.company_name || "Delta",
           company_name: config.company_name || "Delta",
           company_description: config.company_description,
@@ -78,6 +80,13 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setAvailableTenants([]);
       setIsLoading(false);
     }
+
+    // Safety timeout - stop loading after 5 seconds regardless
+    const timeout = setTimeout(() => {
+      setIsLoading(false);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
   }, [isAuthenticated, loadTenantData]);
 
   async function switchTenant(tenantId: string) {

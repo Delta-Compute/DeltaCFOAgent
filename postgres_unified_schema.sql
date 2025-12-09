@@ -367,6 +367,10 @@ CREATE TABLE IF NOT EXISTS wallet_addresses (
     is_active BOOLEAN DEFAULT TRUE,
     balance DECIMAL(18,8),
     last_balance_check TIMESTAMP,
+    -- Accounting classification fields (for wallet-based auto-categorization)
+    accounting_category VARCHAR(255), -- e.g., 'Capital Deployment', 'Revenue', 'Operating Expense'
+    accounting_subcategory VARCHAR(255), -- e.g., 'SN89 Alpha Staking', 'Mining Revenue'
+    justification TEXT, -- Default justification text for matched transactions
     notes TEXT,
     created_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

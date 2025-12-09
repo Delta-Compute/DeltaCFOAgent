@@ -401,6 +401,16 @@ class FileStorageService:
         """
         tenant_id = tenant_id or get_current_tenant_id()
 
+        # If no tenant context, return empty result
+        if not tenant_id:
+            return {
+                'files': [],
+                'total': 0,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': 0
+            }
+
         with db_manager.get_connection() as conn:
             cursor = conn.cursor()
 
@@ -417,40 +427,54 @@ class FileStorageService:
                 query += " AND document_type = %s"
                 params.append(document_type)
 
-            # Count total
-            count_query = query.replace(
-                "SELECT id, document_name, document_type, file_size, mime_type, uploaded_by_user_id, created_at, file_hash",
-                "SELECT COUNT(*)"
-            )
-            cursor.execute(count_query, params)
-            total = cursor.fetchone()[0]
+            # Count total - use a separate dedicated count query to avoid issues
+            count_query = """
+                SELECT COUNT(*) as cnt
+                FROM tenant_documents
+                WHERE tenant_id = %s
+            """
+            count_params = [tenant_id]
+            if document_type:
+                count_query += " AND document_type = %s"
+                count_params.append(document_type)
+
+            cursor.execute(count_query, count_params)
+            count_result = cursor.fetchone()
+            # Handle both tuple (default cursor) and dict (RealDictCursor) results
+            if count_result:
+                if isinstance(count_result, dict):
+                    total = int(count_result.get('cnt', 0))
+                else:
+                    total = int(count_result[0])
+            else:
+                total = 0
 
             # Get paginated results
             query += " ORDER BY created_at DESC LIMIT %s OFFSET %s"
             params.extend([per_page, (page - 1) * per_page])
 
             cursor.execute(query, params)
-            files = cursor.fetchall()
+            files = cursor.fetchall() or []
             cursor.close()
 
         return {
             'files': [
                 {
                     'id': str(f[0]),
-                    'name': f[1],
-                    'type': f[2],
-                    'size': f[3],
-                    'mime_type': f[4],
-                    'uploaded_by': f[5],
+                    'name': str(f[1]) if f[1] else '',
+                    'type': str(f[2]) if f[2] else '',
+                    'size': int(f[3]) if f[3] else 0,
+                    'mime_type': str(f[4]) if f[4] else None,
+                    'uploaded_by': str(f[5]) if f[5] else None,
                     'uploaded_at': f[6].isoformat() if f[6] else None,
-                    'hash': f[7]
+                    'hash': str(f[7]) if f[7] else None
                 }
                 for f in files
             ],
             'total': total,
             'page': page,
             'per_page': per_page,
-            'total_pages': (total + per_page - 1) // per_page
+            'total_pages': (total + per_page - 1) // per_page if total > 0 else 0
         }
 
 # Global instance

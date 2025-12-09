@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useState, useRef } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -106,17 +106,37 @@ export function DataTable<T extends Record<string, any>>({
     }
   }
 
-  function handleSelectRow(item: T) {
+  // Track last clicked index for shift-click range selection
+  const lastClickedIndexRef = useRef<number | null>(null);
+
+  function handleSelectRow(item: T, index: number, shiftKey: boolean = false) {
     if (!onSelectionChange) return;
 
     const key = String(item[keyField]);
     const newKeys = new Set(selectedKeys);
 
-    if (newKeys.has(key)) {
-      newKeys.delete(key);
+    // Shift-click range selection
+    if (shiftKey && lastClickedIndexRef.current !== null && lastClickedIndexRef.current !== index) {
+      const start = Math.min(lastClickedIndexRef.current, index);
+      const end = Math.max(lastClickedIndexRef.current, index);
+
+      // Select all items in range
+      for (let i = start; i <= end; i++) {
+        if (data[i]) {
+          newKeys.add(String(data[i][keyField]));
+        }
+      }
     } else {
-      newKeys.add(key);
+      // Normal click - toggle selection
+      if (newKeys.has(key)) {
+        newKeys.delete(key);
+      } else {
+        newKeys.add(key);
+      }
     }
+
+    // Update last clicked index
+    lastClickedIndexRef.current = index;
 
     onSelectionChange(newKeys);
   }
@@ -242,7 +262,7 @@ export function DataTable<T extends Record<string, any>>({
           </TableHeader>
           <TableBody>
             {data.map((item, index) => {
-              const key = String(item[keyField]);
+              const key = item[keyField] != null ? String(item[keyField]) : `row-${index}`;
               const isSelected = selectedKeys.has(key);
               // const isHovered = hoveredRow === key; // Available for hover effects
 
@@ -256,11 +276,16 @@ export function DataTable<T extends Record<string, any>>({
                   onClick={() => onRowClick?.(item)}
                 >
                   {selectable && (
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectRow(item, index, e.shiftKey);
+                      }}
+                      className="cursor-pointer"
+                    >
                       <Checkbox
                         checked={isSelected}
-                        onCheckedChange={() => handleSelectRow(item)}
-                        aria-label={`Select row ${index + 1}`}
+                        aria-label={`Select row ${index + 1}${lastClickedIndexRef.current !== null ? " (Shift+click for range)" : ""}`}
                       />
                     </TableCell>
                   )}

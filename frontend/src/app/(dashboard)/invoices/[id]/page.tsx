@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -19,10 +19,22 @@ import {
   Download,
   Loader2,
   ExternalLink,
+  Upload,
+  Plus,
+  Receipt,
+  CreditCard,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { invoices, type Invoice, type MatchResult } from "@/lib/api";
+import {
+  invoices,
+  type Invoice,
+  type MatchResult,
+  type InvoicePayment,
+  type InvoiceAttachment,
+  type AddPaymentData,
+} from "@/lib/api";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +61,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { ErrorState, LoadingState } from "@/components/ui/empty-state";
 
 // Status badge component
@@ -89,11 +111,30 @@ export default function InvoiceDetailPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showMarkPaidDialog, setShowMarkPaidDialog] = useState(false);
   const [showMatchDialog, setShowMatchDialog] = useState(false);
+  const [showAddPaymentDialog, setShowAddPaymentDialog] = useState(false);
 
   // Matching
   const [matches, setMatches] = useState<MatchResult[]>([]);
   const [isLoadingMatches, setIsLoadingMatches] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // Payments
+  const [payments, setPayments] = useState<InvoicePayment[]>([]);
+  const [isLoadingPayments, setIsLoadingPayments] = useState(false);
+  const [newPayment, setNewPayment] = useState<AddPaymentData>({
+    payment_date: new Date().toISOString().split("T")[0],
+    amount: 0,
+    payment_method: "",
+    reference_number: "",
+    notes: "",
+  });
+
+  // File uploads
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [uploadingReceiptForPayment, setUploadingReceiptForPayment] = useState<string | null>(null);
 
   // Load invoice
   const loadInvoice = useCallback(async () => {
@@ -196,6 +237,153 @@ export default function InvoiceDetailPage() {
       setIsProcessing(false);
     }
   }
+
+  // Load payments
+  const loadPayments = useCallback(async () => {
+    setIsLoadingPayments(true);
+    try {
+      const result = await invoices.getPayments(invoiceId);
+      if (result.success && result.data) {
+        setPayments(result.data);
+      }
+    } catch (err) {
+      console.error("Failed to load payments:", err);
+    } finally {
+      setIsLoadingPayments(false);
+    }
+  }, [invoiceId]);
+
+  useEffect(() => {
+    if (invoiceId) {
+      loadPayments();
+    }
+  }, [invoiceId, loadPayments]);
+
+  // Upload attachment
+  async function handleAttachmentUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingAttachment(true);
+    try {
+      const result = await invoices.uploadAttachment(invoiceId, file);
+      if (result.success) {
+        toast.success("Attachment uploaded successfully");
+        loadInvoice();
+      } else {
+        toast.error(result.error?.message || "Failed to upload attachment");
+      }
+    } catch {
+      toast.error("Failed to upload attachment");
+    } finally {
+      setIsUploadingAttachment(false);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
+    }
+  }
+
+  // Delete attachment
+  async function handleDeleteAttachment(attachmentId: string) {
+    setIsProcessing(true);
+    try {
+      const result = await invoices.deleteAttachment(invoiceId, attachmentId);
+      if (result.success) {
+        toast.success("Attachment deleted");
+        loadInvoice();
+      } else {
+        toast.error(result.error?.message || "Failed to delete attachment");
+      }
+    } catch {
+      toast.error("Failed to delete attachment");
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  // Add payment
+  async function handleAddPayment() {
+    if (!newPayment.amount || newPayment.amount <= 0) {
+      toast.error("Please enter a valid payment amount");
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const result = await invoices.addPayment(invoiceId, {
+        ...newPayment,
+        currency: invoice?.currency,
+      });
+      if (result.success) {
+        toast.success("Payment recorded successfully");
+        setShowAddPaymentDialog(false);
+        setNewPayment({
+          payment_date: new Date().toISOString().split("T")[0],
+          amount: 0,
+          payment_method: "",
+          reference_number: "",
+          notes: "",
+        });
+        loadPayments();
+        loadInvoice();
+      } else {
+        toast.error(result.error?.message || "Failed to record payment");
+      }
+    } catch {
+      toast.error("Failed to record payment");
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  // Delete payment
+  async function handleDeletePayment(paymentId: string) {
+    setIsProcessing(true);
+    try {
+      const result = await invoices.deletePayment(invoiceId, paymentId);
+      if (result.success) {
+        toast.success("Payment deleted");
+        loadPayments();
+        loadInvoice();
+      } else {
+        toast.error(result.error?.message || "Failed to delete payment");
+      }
+    } catch {
+      toast.error("Failed to delete payment");
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  // Upload payment receipt
+  async function handleReceiptUpload(paymentId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingReceipt(true);
+    setUploadingReceiptForPayment(paymentId);
+    try {
+      const result = await invoices.uploadPaymentReceipt(invoiceId, paymentId, file);
+      if (result.success) {
+        toast.success("Receipt uploaded successfully");
+        loadPayments();
+      } else {
+        toast.error(result.error?.message || "Failed to upload receipt");
+      }
+    } catch {
+      toast.error("Failed to upload receipt");
+    } finally {
+      setIsUploadingReceipt(false);
+      setUploadingReceiptForPayment(null);
+      if (receiptInputRef.current) {
+        receiptInputRef.current.value = "";
+      }
+    }
+  }
+
+  // Calculate total paid
+  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const remainingBalance = invoice ? invoice.total_amount - totalPaid : 0;
 
   if (isLoading) {
     return <LoadingState message="Loading invoice..." />;
@@ -411,16 +599,40 @@ export default function InvoiceDetailPage() {
           )}
 
           {/* Attachments */}
-          {invoice.attachments && invoice.attachments.length > 0 && (
-            <Card>
-              <CardHeader>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
                 <CardTitle>Attachments</CardTitle>
                 <CardDescription>
-                  {invoice.attachments.length} file
-                  {invoice.attachments.length !== 1 ? "s" : ""}
+                  {invoice.attachments?.length || 0} file
+                  {(invoice.attachments?.length || 0) !== 1 ? "s" : ""}
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
+              </div>
+              <div>
+                <input
+                  ref={attachmentInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
+                  onChange={handleAttachmentUpload}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={isUploadingAttachment}
+                >
+                  {isUploadingAttachment ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  Upload
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {invoice.attachments && invoice.attachments.length > 0 ? (
                 <div className="space-y-2">
                   {invoice.attachments.map((attachment) => (
                     <div
@@ -436,22 +648,196 @@ export default function InvoiceDetailPage() {
                           </p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm" asChild>
-                        <a
-                          href={attachment.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" asChild>
+                          <a
+                            href={attachment.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleDeleteAttachment(attachment.id)}
+                          disabled={isProcessing}
                         >
-                          <Download className="mr-2 h-4 w-4" />
-                          Download
-                        </a>
-                      </Button>
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No attachments yet</p>
+                  <p className="text-xs">Upload invoices, contracts, or receipts</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Payments */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <CreditCard className="h-5 w-5" />
+                  Payment History
+                </CardTitle>
+                <CardDescription>
+                  {payments.length} payment{payments.length !== 1 ? "s" : ""} recorded
+                </CardDescription>
+              </div>
+              {invoice.status !== "paid" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setNewPayment({
+                      payment_date: new Date().toISOString().split("T")[0],
+                      amount: remainingBalance > 0 ? remainingBalance : invoice.total_amount,
+                      payment_method: "",
+                      reference_number: "",
+                      notes: "",
+                    });
+                    setShowAddPaymentDialog(true);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Payment
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {/* Payment Summary */}
+              {payments.length > 0 && (
+                <div className="mb-4 p-3 bg-muted/50 rounded-lg">
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-foreground">Total</p>
+                      <p className="font-semibold">
+                        {formatCurrency(invoice.total_amount, invoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Paid</p>
+                      <p className="font-semibold text-green-600">
+                        {formatCurrency(totalPaid, invoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">Balance</p>
+                      <p className={cn(
+                        "font-semibold",
+                        remainingBalance > 0 ? "text-orange-600" : "text-green-600"
+                      )}>
+                        {formatCurrency(remainingBalance, invoice.currency)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isLoadingPayments ? (
+                <div className="flex items-center justify-center py-6">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : payments.length > 0 ? (
+                <div className="space-y-3">
+                  {payments.map((payment) => (
+                    <div
+                      key={payment.id}
+                      className="flex items-start justify-between p-3 border rounded-lg"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 bg-green-100 dark:bg-green-900/20 rounded-full">
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">
+                            {formatCurrency(payment.amount, payment.currency)}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatDate(payment.payment_date)}
+                            {payment.payment_method && ` - ${payment.payment_method}`}
+                          </p>
+                          {payment.reference_number && (
+                            <p className="text-xs text-muted-foreground font-mono">
+                              Ref: {payment.reference_number}
+                            </p>
+                          )}
+                          {payment.notes && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {payment.notes}
+                            </p>
+                          )}
+                          {payment.receipt && (
+                            <a
+                              href={payment.receipt.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-primary mt-1 hover:underline"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              {payment.receipt.filename}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {!payment.receipt && (
+                          <>
+                            <input
+                              ref={receiptInputRef}
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.png,.jpg,.jpeg"
+                              onChange={(e) => handleReceiptUpload(payment.id, e)}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setUploadingReceiptForPayment(payment.id);
+                                receiptInputRef.current?.click();
+                              }}
+                              disabled={isUploadingReceipt}
+                            >
+                              {isUploadingReceipt && uploadingReceiptForPayment === payment.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Receipt className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => handleDeletePayment(payment.id)}
+                          disabled={isProcessing}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No payments recorded</p>
+                  <p className="text-xs">Add a payment when received</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Sidebar */}
@@ -694,6 +1080,111 @@ export default function InvoiceDetailPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowMatchDialog(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Payment Dialog */}
+      <Dialog open={showAddPaymentDialog} onOpenChange={setShowAddPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Record Payment</DialogTitle>
+            <DialogDescription>
+              Record a payment for invoice {invoice.invoice_number}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="payment_date">Payment Date</Label>
+                <Input
+                  id="payment_date"
+                  type="date"
+                  value={newPayment.payment_date}
+                  onChange={(e) =>
+                    setNewPayment({ ...newPayment, payment_date: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="amount">Amount ({invoice.currency})</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={newPayment.amount || ""}
+                  onChange={(e) =>
+                    setNewPayment({
+                      ...newPayment,
+                      amount: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="payment_method">Payment Method</Label>
+              <Select
+                value={newPayment.payment_method || ""}
+                onValueChange={(value) =>
+                  setNewPayment({ ...newPayment, payment_method: value })
+                }
+              >
+                <SelectTrigger id="payment_method">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="credit_card">Credit Card</SelectItem>
+                  <SelectItem value="check">Check</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="crypto">Cryptocurrency</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="reference_number">Reference Number (optional)</Label>
+              <Input
+                id="reference_number"
+                value={newPayment.reference_number || ""}
+                onChange={(e) =>
+                  setNewPayment({ ...newPayment, reference_number: e.target.value })
+                }
+                placeholder="Transaction ID, check number, etc."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (optional)</Label>
+              <Textarea
+                id="notes"
+                value={newPayment.notes || ""}
+                onChange={(e) =>
+                  setNewPayment({ ...newPayment, notes: e.target.value })
+                }
+                placeholder="Any additional notes about this payment"
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowAddPaymentDialog(false)}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAddPayment} disabled={isProcessing}>
+              {isProcessing ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-4 w-4" />
+              )}
+              Record Payment
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -21,6 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/context/auth-context";
 
 // Validation schema
 const loginSchema = z.object({
@@ -32,6 +33,7 @@ type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -47,23 +49,26 @@ export default function LoginPage() {
   async function onSubmit(data: LoginFormData) {
     setIsLoading(true);
     try {
-      const response = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Login failed");
-      }
+      // Use the auth context which handles Firebase authentication
+      // and syncs with the Flask backend
+      await login(data.email, data.password);
 
       toast.success("Welcome back!");
       router.push("/");
       router.refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Login failed");
+      // Handle Firebase auth errors
+      const errorMessage = error instanceof Error ? error.message : "Login failed";
+      // Make Firebase errors more user-friendly
+      if (errorMessage.includes("auth/invalid-credential")) {
+        toast.error("Invalid email or password");
+      } else if (errorMessage.includes("auth/user-not-found")) {
+        toast.error("No account found with this email");
+      } else if (errorMessage.includes("auth/wrong-password")) {
+        toast.error("Incorrect password");
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setIsLoading(false);
     }
