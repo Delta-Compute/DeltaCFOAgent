@@ -259,24 +259,28 @@
 }
 
 /* Bot message lists */
-.message-content .bot-list {
+.message-content .bot-list,
+.message-content .chat-list {
     margin: 8px 0 12px 0;
     padding-left: 8px;
     list-style: none;
 }
 
-.message-content .bot-list li {
+.message-content .bot-list li,
+.message-content .chat-list li {
     position: relative;
     padding-left: 20px;
     margin-bottom: 8px;
     line-height: 1.5;
 }
 
-.message-content .bot-list li:last-child {
+.message-content .bot-list li:last-child,
+.message-content .chat-list li:last-child {
     margin-bottom: 0;
 }
 
-.message-content .bot-list li::before {
+.message-content .bot-list li::before,
+.message-content .chat-list li::before {
     content: "";
     position: absolute;
     left: 0;
@@ -285,6 +289,44 @@
     height: 6px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     border-radius: 50%;
+}
+
+.message-content .chat-list li.numbered::before {
+    content: none;
+}
+
+/* Section headers in bot messages */
+.message-content .section-header {
+    display: block;
+    color: #4b5563;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 12px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.message-content .section-header:first-child {
+    margin-top: 0;
+}
+
+/* Financial data highlighting */
+.message-content .currency {
+    color: #059669;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', monospace;
+}
+
+.message-content .percentage {
+    color: #7c3aed;
+    font-weight: 500;
+}
+
+/* Negative amounts (expenses) */
+.message-content .currency.negative {
+    color: #dc2626;
 }
 
 .message-time {
