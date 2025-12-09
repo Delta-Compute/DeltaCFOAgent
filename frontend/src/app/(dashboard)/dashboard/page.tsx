@@ -338,7 +338,15 @@ export default function TransactionsDashboardPage() {
         const txns = data.transactions || [];
         const total = data.pagination?.total || txns.length;
 
-        setTransactionData(txns);
+        // Transform API response to match frontend Transaction interface
+        // API returns nested entity object and accounting_category, but frontend expects flat fields
+        const mappedTxns = txns.map((tx: Transaction) => ({
+          ...tx,
+          entity_name: tx.entity_name || (tx as any).entity?.name || (tx as any).classified_entity,
+          category: tx.category || (tx as any).accounting_category,
+        }));
+
+        setTransactionData(mappedTxns);
         setTotalItems(total);
         // Stats are loaded separately via loadStats (not dependent on pagination)
       } else {
@@ -352,11 +360,15 @@ export default function TransactionsDashboardPage() {
     }
   }, [page, pageSize, sortKey, sortDirection, buildFilterParams]);
 
-  // Load transactions and stats when filters change
+  // Load transactions and stats when filters change - wait for auth first
   useEffect(() => {
+    // Skip if still loading auth or not authenticated yet
+    if (authLoading || !isAuthenticated) {
+      return;
+    }
     loadTransactions();
     loadStats();
-  }, [loadTransactions, loadStats]);
+  }, [loadTransactions, loadStats, authLoading, isAuthenticated]);
 
   // Load filter options from stats API - wait for authentication to complete
   useEffect(() => {

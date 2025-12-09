@@ -136,6 +136,35 @@ class DatabaseManager:
             try:
                 conn = self.connection_pool.getconn()
                 if conn:
+                    # Check if connection is still alive using the connection's closed attribute
+                    # and a simple status check without starting a transaction
+                    if conn.closed:
+                        logger.warning("Got closed connection from pool, getting fresh one")
+                        conn = self.connection_pool.getconn()
+                        if not conn:
+                            raise Exception("Failed to get fresh connection from pool")
+                    else:
+                        # Try a quick status check - if connection is dead, this will fail
+                        try:
+                            # Use status property which doesn't require a query
+                            status = conn.status
+                            if status != psycopg2.extensions.STATUS_READY:
+                                # Connection may be in a bad state, try to rollback and reset
+                                try:
+                                    conn.rollback()
+                                except:
+                                    pass
+                        except Exception as status_error:
+                            # Connection is dead, close it and get a fresh one
+                            logger.warning(f"Stale connection detected, getting fresh one: {status_error}")
+                            try:
+                                conn.close()
+                            except:
+                                pass
+                            conn = self.connection_pool.getconn()
+                            if not conn:
+                                raise Exception("Failed to get fresh connection from pool")
+
                     conn.autocommit = False  # Use transactions
                     # Track this connection as from pool
                     self._pooled_connections.add(id(conn))
