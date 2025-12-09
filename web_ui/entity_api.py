@@ -124,28 +124,28 @@ def list_entities():
         entities = []
         for row in results:
             entity = {
-                'id': str(row[0]),
-                'tenant_id': row[1],
-                'code': row[2],
-                'name': row[3],
-                'legal_name': row[4],
-                'tax_id': row[5],
-                'tax_jurisdiction': row[6],
-                'entity_type': row[7],
-                'base_currency': row[8],
-                'fiscal_year_end': row[9],
-                'address': row[10],
-                'country_code': row[11],
-                'is_active': row[12],
-                'incorporation_date': row[13].isoformat() if row[13] else None,
-                'created_at': row[14].isoformat() if row[14] else None,
-                'updated_at': row[15].isoformat() if row[15] else None,
-                'created_by': row[16]
+                'id': str(row['id']),
+                'tenant_id': row['tenant_id'],
+                'code': row['code'],
+                'name': row['name'],
+                'legal_name': row['legal_name'],
+                'tax_id': row['tax_id'],
+                'tax_jurisdiction': row['tax_jurisdiction'],
+                'entity_type': row['entity_type'],
+                'base_currency': row['base_currency'],
+                'fiscal_year_end': row['fiscal_year_end'],
+                'address': row['address'],
+                'country_code': row['country_code'],
+                'is_active': row['is_active'],
+                'incorporation_date': row['incorporation_date'].isoformat() if row['incorporation_date'] else None,
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                'created_by': row['created_by']
             }
 
             if include_stats:
-                entity['business_lines_count'] = row[17]
-                entity['transactions_count'] = row[18]
+                entity['business_lines_count'] = row['business_lines_count']
+                entity['transactions_count'] = row['transactions_count']
 
             entities.append(entity)
 
@@ -249,23 +249,23 @@ def create_entity():
 
         # Format entity response
         entity = {
-            'id': str(result[0]),
-            'tenant_id': result[1],
-            'code': result[2],
-            'name': result[3],
-            'legal_name': result[4],
-            'tax_id': result[5],
-            'tax_jurisdiction': result[6],
-            'entity_type': result[7],
-            'base_currency': result[8],
-            'fiscal_year_end': result[9],
-            'address': result[10],
-            'country_code': result[11],
-            'is_active': result[12],
-            'incorporation_date': result[13].isoformat() if result[13] else None,
-            'created_at': result[14].isoformat() if result[14] else None,
-            'updated_at': result[15].isoformat() if result[15] else None,
-            'created_by': result[16]
+            'id': str(result['id']),
+            'tenant_id': result['tenant_id'],
+            'code': result['code'],
+            'name': result['name'],
+            'legal_name': result['legal_name'],
+            'tax_id': result['tax_id'],
+            'tax_jurisdiction': result['tax_jurisdiction'],
+            'entity_type': result['entity_type'],
+            'base_currency': result['base_currency'],
+            'fiscal_year_end': result['fiscal_year_end'],
+            'address': result['address'],
+            'country_code': result['country_code'],
+            'is_active': result['is_active'],
+            'incorporation_date': result['incorporation_date'].isoformat() if result['incorporation_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by']
         }
 
         response = {
@@ -292,14 +292,14 @@ def create_entity():
 
             if bl_result:
                 response['default_business_line'] = {
-                    'id': str(bl_result[0]),
-                    'entity_id': str(bl_result[1]),
-                    'code': bl_result[2],
-                    'name': bl_result[3],
-                    'is_default': bl_result[4],
-                    'is_active': bl_result[5],
-                    'created_at': bl_result[6].isoformat() if bl_result[6] else None,
-                    'updated_at': bl_result[7].isoformat() if bl_result[7] else None
+                    'id': str(bl_result['id']),
+                    'entity_id': str(bl_result['entity_id']),
+                    'code': bl_result['code'],
+                    'name': bl_result['name'],
+                    'is_default': bl_result['is_default'],
+                    'is_active': bl_result['is_active'],
+                    'created_at': bl_result['created_at'].isoformat() if bl_result['created_at'] else None,
+                    'updated_at': bl_result['updated_at'].isoformat() if bl_result['updated_at'] else None
                 }
 
         logger.info(f"Created entity: {entity['code']} ({entity['name']}) for tenant: {tenant_id}")
@@ -349,23 +349,23 @@ def get_entity(entity_id):
             return jsonify({'success': False, 'error': 'Entity not found'}), 404
 
         entity = {
-            'id': str(result[0]),
-            'tenant_id': result[1],
-            'code': result[2],
-            'name': result[3],
-            'legal_name': result[4],
-            'tax_id': result[5],
-            'tax_jurisdiction': result[6],
-            'entity_type': result[7],
-            'base_currency': result[8],
-            'fiscal_year_end': result[9],
-            'address': result[10],
-            'country_code': result[11],
-            'is_active': result[12],
-            'incorporation_date': result[13].isoformat() if result[13] else None,
-            'created_at': result[14].isoformat() if result[14] else None,
-            'updated_at': result[15].isoformat() if result[15] else None,
-            'created_by': result[16]
+            'id': str(result['id']),
+            'tenant_id': result['tenant_id'],
+            'code': result['code'],
+            'name': result['name'],
+            'legal_name': result['legal_name'],
+            'tax_id': result['tax_id'],
+            'tax_jurisdiction': result['tax_jurisdiction'],
+            'entity_type': result['entity_type'],
+            'base_currency': result['base_currency'],
+            'fiscal_year_end': result['fiscal_year_end'],
+            'address': result['address'],
+            'country_code': result['country_code'],
+            'is_active': result['is_active'],
+            'incorporation_date': result['incorporation_date'].isoformat() if result['incorporation_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by']
         }
 
         # Get business lines for this entity
@@ -383,19 +383,19 @@ def get_entity(entity_id):
         business_lines = []
         for row in bl_results:
             business_lines.append({
-                'id': str(row[0]),
-                'entity_id': str(row[1]),
-                'code': row[2],
-                'name': row[3],
-                'description': row[4],
-                'is_default': row[5],
-                'color_hex': row[6],
-                'is_active': row[7],
-                'start_date': row[8].isoformat() if row[8] else None,
-                'end_date': row[9].isoformat() if row[9] else None,
-                'created_at': row[10].isoformat() if row[10] else None,
-                'updated_at': row[11].isoformat() if row[11] else None,
-                'created_by': row[12]
+                'id': str(row['id']),
+                'entity_id': str(row['entity_id']),
+                'code': row['code'],
+                'name': row['name'],
+                'description': row['description'],
+                'is_default': row['is_default'],
+                'color_hex': row['color_hex'],
+                'is_active': row['is_active'],
+                'start_date': row['start_date'].isoformat() if row['start_date'] else None,
+                'end_date': row['end_date'].isoformat() if row['end_date'] else None,
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                'created_by': row['created_by']
             })
 
         return jsonify({
@@ -474,23 +474,23 @@ def update_entity(entity_id):
             return jsonify({'success': False, 'error': 'Entity not found'}), 404
 
         entity = {
-            'id': str(result[0]),
-            'tenant_id': result[1],
-            'code': result[2],
-            'name': result[3],
-            'legal_name': result[4],
-            'tax_id': result[5],
-            'tax_jurisdiction': result[6],
-            'entity_type': result[7],
-            'base_currency': result[8],
-            'fiscal_year_end': result[9],
-            'address': result[10],
-            'country_code': result[11],
-            'is_active': result[12],
-            'incorporation_date': result[13].isoformat() if result[13] else None,
-            'created_at': result[14].isoformat() if result[14] else None,
-            'updated_at': result[15].isoformat() if result[15] else None,
-            'created_by': result[16]
+            'id': str(result['id']),
+            'tenant_id': result['tenant_id'],
+            'code': result['code'],
+            'name': result['name'],
+            'legal_name': result['legal_name'],
+            'tax_id': result['tax_id'],
+            'tax_jurisdiction': result['tax_jurisdiction'],
+            'entity_type': result['entity_type'],
+            'base_currency': result['base_currency'],
+            'fiscal_year_end': result['fiscal_year_end'],
+            'address': result['address'],
+            'country_code': result['country_code'],
+            'is_active': result['is_active'],
+            'incorporation_date': result['incorporation_date'].isoformat() if result['incorporation_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by']
         }
 
         logger.info(f"Updated entity: {entity['code']} for tenant: {tenant_id}")
@@ -595,11 +595,11 @@ def get_entity_stats(entity_id):
             return jsonify({'success': False, 'error': 'Entity not found'}), 404
 
         stats = {
-            'business_lines_count': result[0] or 0,
-            'transactions_count': result[1] or 0,
-            'revenue': float(result[2]) if result[2] else 0.0,
-            'expenses': float(result[3]) if result[3] else 0.0,
-            'net': float(result[4]) if result[4] else 0.0
+            'business_lines_count': result['business_lines_count'] or 0,
+            'transactions_count': result['transactions_count'] or 0,
+            'revenue': float(result['revenue']) if result['revenue'] else 0.0,
+            'expenses': float(result['expenses']) if result['expenses'] else 0.0,
+            'net': float(result['net']) if result['net'] else 0.0
         }
 
         return jsonify({
@@ -695,25 +695,25 @@ def list_business_lines():
         business_lines = []
         for row in results:
             bl = {
-                'id': str(row[0]),
-                'entity_id': str(row[1]),
-                'entity_code': row[2],
-                'entity_name': row[3],
-                'code': row[4],
-                'name': row[5],
-                'description': row[6],
-                'is_default': row[7],
-                'color_hex': row[8],
-                'is_active': row[9],
-                'start_date': row[10].isoformat() if row[10] else None,
-                'end_date': row[11].isoformat() if row[11] else None,
-                'created_at': row[12].isoformat() if row[12] else None,
-                'updated_at': row[13].isoformat() if row[13] else None,
-                'created_by': row[14]
+                'id': str(row['id']),
+                'entity_id': str(row['entity_id']),
+                'entity_code': row['entity_code'],
+                'entity_name': row['entity_name'],
+                'code': row['code'],
+                'name': row['name'],
+                'description': row['description'],
+                'is_default': row['is_default'],
+                'color_hex': row['color_hex'],
+                'is_active': row['is_active'],
+                'start_date': row['start_date'].isoformat() if row['start_date'] else None,
+                'end_date': row['end_date'].isoformat() if row['end_date'] else None,
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
+                'updated_at': row['updated_at'].isoformat() if row['updated_at'] else None,
+                'created_by': row['created_by']
             }
 
             if include_stats:
-                bl['transactions_count'] = row[15]
+                bl['transactions_count'] = row['transactions_count']
 
             business_lines.append(bl)
 
@@ -812,19 +812,19 @@ def create_business_line():
             return jsonify({'success': False, 'error': 'Failed to create business line'}), 500
 
         business_line = {
-            'id': str(result[0]),
-            'entity_id': str(result[1]),
-            'code': result[2],
-            'name': result[3],
-            'description': result[4],
-            'is_default': result[5],
-            'color_hex': result[6],
-            'is_active': result[7],
-            'start_date': result[8].isoformat() if result[8] else None,
-            'end_date': result[9].isoformat() if result[9] else None,
-            'created_at': result[10].isoformat() if result[10] else None,
-            'updated_at': result[11].isoformat() if result[11] else None,
-            'created_by': result[12]
+            'id': str(result['id']),
+            'entity_id': str(result['entity_id']),
+            'code': result['code'],
+            'name': result['name'],
+            'description': result['description'],
+            'is_default': result['is_default'],
+            'color_hex': result['color_hex'],
+            'is_active': result['is_active'],
+            'start_date': result['start_date'].isoformat() if result['start_date'] else None,
+            'end_date': result['end_date'].isoformat() if result['end_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by']
         }
 
         logger.info(f"Created business line: {business_line['code']} for entity: {entity_id}")
@@ -871,22 +871,22 @@ def get_business_line(business_line_id):
             return jsonify({'success': False, 'error': 'Business line not found'}), 404
 
         business_line = {
-            'id': str(result[0]),
-            'entity_id': str(result[1]),
-            'entity_code': result[2],
-            'entity_name': result[3],
-            'code': result[4],
-            'name': result[5],
-            'description': result[6],
-            'is_default': result[7],
-            'color_hex': result[8],
-            'is_active': result[9],
-            'start_date': result[10].isoformat() if result[10] else None,
-            'end_date': result[11].isoformat() if result[11] else None,
-            'created_at': result[12].isoformat() if result[12] else None,
-            'updated_at': result[13].isoformat() if result[13] else None,
-            'created_by': result[14],
-            'transactions_count': result[15]
+            'id': str(result['id']),
+            'entity_id': str(result['entity_id']),
+            'entity_code': result['entity_code'],
+            'entity_name': result['entity_name'],
+            'code': result['code'],
+            'name': result['name'],
+            'description': result['description'],
+            'is_default': result['is_default'],
+            'color_hex': result['color_hex'],
+            'is_active': result['is_active'],
+            'start_date': result['start_date'].isoformat() if result['start_date'] else None,
+            'end_date': result['end_date'].isoformat() if result['end_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by'],
+            'transactions_count': result['transactions_count']
         }
 
         return jsonify({
@@ -947,19 +947,19 @@ def update_business_line(business_line_id):
             return jsonify({'success': False, 'error': 'Business line not found'}), 404
 
         business_line = {
-            'id': str(result[0]),
-            'entity_id': str(result[1]),
-            'code': result[2],
-            'name': result[3],
-            'description': result[4],
-            'is_default': result[5],
-            'color_hex': result[6],
-            'is_active': result[7],
-            'start_date': result[8].isoformat() if result[8] else None,
-            'end_date': result[9].isoformat() if result[9] else None,
-            'created_at': result[10].isoformat() if result[10] else None,
-            'updated_at': result[11].isoformat() if result[11] else None,
-            'created_by': result[12]
+            'id': str(result['id']),
+            'entity_id': str(result['entity_id']),
+            'code': result['code'],
+            'name': result['name'],
+            'description': result['description'],
+            'is_default': result['is_default'],
+            'color_hex': result['color_hex'],
+            'is_active': result['is_active'],
+            'start_date': result['start_date'].isoformat() if result['start_date'] else None,
+            'end_date': result['end_date'].isoformat() if result['end_date'] else None,
+            'created_at': result['created_at'].isoformat() if result['created_at'] else None,
+            'updated_at': result['updated_at'].isoformat() if result['updated_at'] else None,
+            'created_by': result['created_by']
         }
 
         logger.info(f"Updated business line: {business_line['code']}")
@@ -996,7 +996,7 @@ def delete_business_line(business_line_id):
 
         count_result = db_manager.execute_query(check_query, (business_line_id, tenant_id), fetch_one=True)
 
-        if count_result and count_result[0] <= 1:
+        if count_result and count_result['count'] <= 1:
             return jsonify({
                 'success': False,
                 'error': 'Cannot delete the only business line for an entity'
@@ -1051,7 +1051,7 @@ def set_default_business_line(business_line_id):
         if not entity_result:
             return jsonify({'success': False, 'error': 'Business line not found'}), 404
 
-        entity_id = entity_result[0]
+        entity_id = entity_result['entity_id']
 
         # Unset all defaults for this entity
         db_manager.execute_query(

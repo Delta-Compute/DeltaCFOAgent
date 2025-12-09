@@ -79,8 +79,8 @@ class DatabaseManager:
 
                 # Create connection pool
                 self.connection_pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=2,  # Minimum connections
-                    maxconn=20,  # Maximum connections for Cloud SQL
+                    minconn=5,  # Minimum connections
+                    maxconn=200,  # Maximum connections - increased significantly
                     **config
                 )
                 logger.info("PostgreSQL connection pool initialized successfully")
@@ -94,75 +94,41 @@ class DatabaseManager:
 
     @contextmanager
     def get_connection(self) -> Generator[Any, None, None]:
-        """Get database connection with proper error handling and retries"""
+        """Get database connection with proper error handling"""
         connection = None
-        max_retries = 3
-        connection_acquired = False
+        try:
+            if self.db_type == 'postgresql':
+                connection = self._get_postgresql_connection()
+            else:
+                connection = self._get_sqlite_connection()
 
-        for attempt in range(max_retries):
-            try:
-                if self.db_type == 'postgresql':
-                    connection = self._get_postgresql_connection()
-                else:
-                    connection = self._get_sqlite_connection()
+            yield connection
 
-                connection_acquired = True
-                yield connection
-                break
+        except Exception as e:
+            # Rollback any pending transaction on error
+            if connection and self.db_type == 'postgresql':
+                try:
+                    connection.rollback()
+                    logger.warning("Rolled back transaction due to exception")
+                except:
+                    pass
+            raise
 
-            except Exception as e:
-                # Rollback any pending transaction before returning to pool
-                if connection and connection_acquired and self.db_type == 'postgresql':
-                    try:
-                        connection.rollback()
-                        logger.warning("Rolled back transaction due to exception")
-                    except:
-                        pass
-
-                # Only clean up if we failed to acquire or use the connection
-                if connection and not connection_acquired:
-                    try:
-                        if self.db_type == 'postgresql':
-                            # Only return to pool if connection came from pool
-                            conn_id = id(connection)
-                            if conn_id in self._pooled_connections and self.connection_pool:
-                                self._pooled_connections.discard(conn_id)
-                                self.connection_pool.putconn(connection)
-                            else:
-                                connection.close()
+        finally:
+            # Return connection to pool
+            if connection:
+                try:
+                    if self.db_type == 'postgresql':
+                        conn_id = id(connection)
+                        if conn_id in self._pooled_connections and self.connection_pool:
+                            self._pooled_connections.discard(conn_id)
+                            self.connection_pool.putconn(connection)
                         else:
                             connection.close()
-                    except:
-                        pass
-                    connection = None
-
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2
-                    logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
-                    logger.warning(f"Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
-                    connection_acquired = False
-                    continue
-                else:
-                    logger.error(f"All database connection attempts failed: {e}")
-                    raise
-            finally:
-                # Only return connection to pool if it was successfully acquired
-                if connection and connection_acquired:
-                    try:
-                        if self.db_type == 'postgresql':
-                            # Only return to pool if connection came from pool
-                            conn_id = id(connection)
-                            if conn_id in self._pooled_connections and self.connection_pool:
-                                self._pooled_connections.discard(conn_id)
-                                self.connection_pool.putconn(connection)
-                            else:
-                                # Direct connection, just close it
-                                connection.close()
-                        else:
-                            connection.close()
-                    except Exception as e:
-                        logger.error(f"Error returning connection to pool: {e}")
+                    else:
+                        connection.close()
+                except Exception as cleanup_error:
+                    logger.error(f"Error returning connection to pool: {cleanup_error}")
 
     def _get_postgresql_connection(self):
         """Create PostgreSQL connection using pool if available"""

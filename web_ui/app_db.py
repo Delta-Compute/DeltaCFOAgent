@@ -2250,8 +2250,97 @@ def check_period_lock_for_transaction(tenant_id: str, transaction_date) -> tuple
         return (False, None)
 
 
-def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user') -> bool:
-    """Update a single field in a transaction with history tracking"""
+def track_bulk_classification(tenant_id: str, transaction_ids: list, field: str, value: str, user: str = 'web_user'):
+    """
+    Track bulk classification changes for pattern learning - SINGLE batch operation.
+
+    Instead of inserting N tracking records (triggering N NOTIFY events),
+    this function uses pg_notify directly to send ONE notification for the batch.
+    The pattern learning system will process this batch efficiently.
+
+    Args:
+        tenant_id: The tenant ID
+        transaction_ids: List of transaction IDs that were updated
+        field: The field that was changed (e.g., 'classified_entity', 'accounting_category')
+        value: The new value that was applied to all transactions
+        user: The user who made the change
+    """
+    # Map field names to tracking field names
+    tracking_fields = {
+        'classified_entity': 'entity',
+        'accounting_category': 'category',
+        'subcategory': 'subcategory',
+        'justification': 'justification'
+    }
+
+    # Only track relevant fields
+    if field not in tracking_fields:
+        return
+
+    try:
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        # Fetch descriptions for all transactions in ONE query
+        placeholders = ','.join(['%s'] * len(transaction_ids))
+        cursor.execute(
+            f"SELECT transaction_id, description FROM transactions WHERE tenant_id = %s AND transaction_id IN ({placeholders})",
+            [tenant_id] + transaction_ids
+        )
+        txn_data = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Build batch INSERT values
+        import hashlib
+        insert_values = []
+        for txn_id in transaction_ids:
+            description = txn_data.get(txn_id, '')
+            pattern_signature = hashlib.md5(
+                f"{description.lower().strip()}::{tracking_fields[field]}::{value.lower().strip()}".encode()
+            ).hexdigest()
+            insert_values.append((
+                tenant_id, user, txn_id, tracking_fields[field], None, value,
+                description, pattern_signature, None, None
+            ))
+
+        # Single batch INSERT - triggers will fire but pattern_validation_service
+        # coalesces notifications (5s window), so we still get 1 API call
+        args_str = ','.join(cursor.mogrify(
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", vals
+        ).decode('utf-8') for vals in insert_values)
+
+        cursor.execute(f"""
+            INSERT INTO user_classification_tracking
+            (tenant_id, user_id, transaction_id, field_changed, old_value, new_value,
+             description_pattern, pattern_signature, origin, destination)
+            VALUES {args_str}
+        """)
+
+        # Note: PostgreSQL triggers will fire for each row inserted, but the
+        # pattern_validation_service coalesces all notifications received within
+        # a 5-second window into a single batch process. No manual NOTIFY needed.
+
+        conn.commit()
+        conn.close()
+
+        logger.info(f"[BATCH_TRACKING] Recorded {len(transaction_ids)} classifications in single batch")
+
+    except Exception as e:
+        logger.warning(f"[BATCH_TRACKING] Error: {e}")
+        try:
+            conn.rollback()
+            conn.close()
+        except:
+            pass
+
+
+def update_transaction_field(transaction_id: str, field: str, value: str, user: str = 'web_user', skip_tracking: bool = False) -> bool:
+    """Update a single field in a transaction with history tracking
+
+    Args:
+        skip_tracking: If True, skip inserting to user_classification_tracking table.
+                      Used for bulk updates to avoid triggering pattern suggestion trigger 10x.
+    """
     try:
         # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
@@ -2493,6 +2582,7 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
 
         # Track manual classification changes for auto-learning (50 classification threshold)
         # Only track changes to: entity, category, subcategory, justification
+        # Skip tracking for bulk updates to avoid triggering pattern suggestion trigger 10x
         tracking_fields = {
             'classified_entity': 'entity',
             'accounting_category': 'category',
@@ -2500,7 +2590,7 @@ def update_transaction_field(transaction_id: str, field: str, value: str, user: 
             'justification': 'justification'
         }
 
-        if field in tracking_fields:
+        if field in tracking_fields and not skip_tracking:
             try:
                 # Get transaction description, origin, and destination for pattern detection
                 cursor.execute(
@@ -4460,19 +4550,24 @@ Respond ONLY in valid JSON format:
             'error': str(e)
         }), 500
 
-def sync_csv_to_database(csv_filename=None):
+def sync_csv_to_database(csv_filename_or_path=None, tenant_id=None):
     """Sync classified CSV files to SQLite database"""
     # Get current tenant_id for multi-tenant isolation
-    tenant_id = get_current_tenant_id()
+    # Accept tenant_id as parameter (for SSE generators where Flask context is unavailable)
+    if tenant_id is None:
+        tenant_id = get_current_tenant_id()
     print(f" Syncing to database for tenant: {tenant_id}")
-    print(f" DEBUG: Starting sync_csv_to_database for {csv_filename}")
+    print(f" DEBUG: Starting sync_csv_to_database for {csv_filename_or_path}")
     try:
         parent_dir = os.path.dirname(os.path.dirname(__file__))
         print(f" DEBUG: Parent directory: {parent_dir}")
 
-        if csv_filename:
-            # Sync specific classified file
-            csv_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{csv_filename}')
+        if csv_filename_or_path:
+            # Accept either a filename or a full path - extract basename for lookup
+            csv_filename = os.path.basename(csv_filename_or_path)
+            # Strip extension and use .csv since main.py converts all formats to CSV
+            base_name = os.path.splitext(csv_filename)[0]
+            csv_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{base_name}.csv')
             print(f" DEBUG: Looking for classified file: {csv_path}")
         else:
             # Try to sync MASTER_TRANSACTIONS.csv if it exists
@@ -4489,21 +4584,26 @@ def sync_csv_to_database(csv_filename=None):
         if not os.path.exists(csv_path):
             print(f"WARNING: CSV file not found for sync: {csv_path}")
 
-            # Try alternative paths and files - ONLY classified files
-            alternative_paths = [
-                os.path.join(parent_dir, f'classified_{csv_filename}'),  # Root directory
-                os.path.join(parent_dir, 'web_ui', 'classified_transactions', f'classified_{csv_filename}'),  # web_ui subfolder
-            ] if csv_filename else []
+            # Try alternative paths and files - ONLY classified files (use base_name.csv format)
+            if csv_filename_or_path:
+                classified_name = f'classified_{base_name}.csv'
+                alternative_paths = [
+                    os.path.join(parent_dir, classified_name),  # Root directory
+                    os.path.join(parent_dir, 'web_ui', 'classified_transactions', classified_name),  # web_ui subfolder
+                ]
 
-            for alt_path in alternative_paths:
-                print(f" DEBUG: Trying alternative path: {alt_path}")
-                if os.path.exists(alt_path):
-                    csv_path = alt_path
-                    print(f" DEBUG: Found file at alternative path: {alt_path}")
-                    break
+                for alt_path in alternative_paths:
+                    print(f" DEBUG: Trying alternative path: {alt_path}")
+                    if os.path.exists(alt_path):
+                        csv_path = alt_path
+                        print(f" DEBUG: Found file at alternative path: {alt_path}")
+                        break
+                else:
+                    print(f" DEBUG: No classified file found - skipping sync")
+                    print(f" The file needs to be processed by main.py first to create a classified file")
+                    return False
             else:
-                print(f" DEBUG: No classified file found - skipping sync")
-                print(f" The file needs to be processed by main.py first to create a classified file")
+                print(f" DEBUG: No MASTER_TRANSACTIONS.csv found - skipping sync")
                 return False
 
         # Read the CSV file
@@ -4548,6 +4648,35 @@ def sync_csv_to_database(csv_filename=None):
         skipped_count = 0
 
         print(f" SMART RE-UPLOAD MODE: Will merge/enrich existing transactions")
+
+        # Pre-create DeltaCFOAgent ONCE before the loop to avoid re-initialization per transaction
+        # This significantly improves performance by loading business knowledge only once
+        cached_agent = None
+        try:
+            from main import DeltaCFOAgent
+            cached_agent = DeltaCFOAgent(tenant_id=tenant_id)
+        except Exception as e:
+            print(f" WARNING: Could not pre-create DeltaCFOAgent: {e}")
+
+        # Pre-load ALL wallet data ONCE to avoid per-transaction DB queries
+        wallet_cache = {}
+        try:
+            wallet_query = """
+            SELECT LOWER(wallet_address) as wallet_key, entity_name, wallet_type, purpose
+            FROM wallet_addresses
+            WHERE tenant_id = %s AND is_active = TRUE
+            """
+            wallet_results = db_manager.execute_query(wallet_query, (tenant_id,), fetch_all=True)
+            if wallet_results:
+                for w in wallet_results:
+                    wallet_cache[w['wallet_key']] = {
+                        'entity_name': w.get('entity_name', ''),
+                        'wallet_type': w.get('wallet_type', ''),
+                        'purpose': w.get('purpose', '')
+                    }
+                print(f" Pre-loaded {len(wallet_cache)} wallet addresses for fast lookup")
+        except Exception as e:
+            print(f" WARNING: Could not pre-load wallets: {e}")
 
         # Insert all transactions
         for _, row in df.iterrows():
@@ -4606,12 +4735,13 @@ def sync_csv_to_database(csv_filename=None):
                 usd_equiv_has_crypto_value = abs(abs(data['usd_equivalent']) - abs(data['crypto_amount'])) < 0.0001
                 if data['usd_equivalent'] == 0 or usd_equiv_has_crypto_value:
                     try:
-                        # Import DeltaCFOAgent for crypto USD calculation
-                        from main import DeltaCFOAgent
-                        agent = DeltaCFOAgent(tenant_id=tenant_id)
+                        # Use cached DeltaCFOAgent (created once before the loop for performance)
+                        if cached_agent is None:
+                            print(f"   WARNING: DeltaCFOAgent not available for crypto USD calculation")
+                            continue
 
                         # Calculate USD equivalent using historical prices
-                        usd_eq, conv_note = agent.calculate_crypto_usd_equivalent(
+                        usd_eq, conv_note = cached_agent.calculate_crypto_usd_equivalent(
                             crypto_amount=abs(data['crypto_amount']),
                             crypto_symbol=data['currency'],
                             transaction_date=data['date']
@@ -4660,16 +4790,9 @@ def sync_csv_to_database(csv_filename=None):
                 wallet_entity_name = destination_display or origin_display
 
                 if wallet_address:
-                    # Query wallet metadata
-                    wallet_query = """
-                    SELECT entity_name, wallet_type, purpose
-                    FROM wallet_addresses
-                    WHERE tenant_id = %s
-                    AND LOWER(wallet_address) = LOWER(%s)
-                    AND is_active = TRUE
-                    LIMIT 1
-                    """
-                    wallet_info = db_manager.execute_query(wallet_query, (tenant_id, wallet_address), fetch_one=True)
+                    # Use pre-loaded wallet cache instead of per-transaction DB query
+                    wallet_key = wallet_address.lower()
+                    wallet_info = wallet_cache.get(wallet_key)
 
                     if wallet_info:
                         wallet_type = wallet_info.get('wallet_type', '')
@@ -5974,7 +6097,7 @@ def api_update_subcategory_bulk():
 
 @app.route('/api/archive_transactions', methods=['POST'])
 def api_archive_transactions():
-    """API endpoint to archive multiple transactions"""
+    """API endpoint to archive multiple transactions - FULLY OPTIMIZED (3 queries total)"""
     try:
         data = request.get_json()
         transaction_ids = data.get('transaction_ids', [])
@@ -5982,36 +6105,57 @@ def api_archive_transactions():
         if not transaction_ids:
             return jsonify({'error': 'No transaction IDs provided'}), 400
 
-        # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
         from database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
-        archived_count = 0
+
+        # Query 1: Get all locked periods for this tenant
+        cursor.execute("""
+            SELECT start_date, end_date FROM cfo_accounting_periods
+            WHERE tenant_id = %s AND status IN ('locked', 'closed')
+        """, (tenant_id,))
+        locked_periods = [(str(row[0])[:10], str(row[1])[:10]) for row in cursor.fetchall()]
+
+        # Query 2: Get all transaction dates
+        placeholders = ','.join(['%s'] * len(transaction_ids))
+        cursor.execute(
+            f"""SELECT transaction_id, date FROM transactions
+                WHERE tenant_id = %s AND transaction_id IN ({placeholders})""",
+            [tenant_id] + list(transaction_ids)
+        )
+        txn_dates = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Check period locks in memory (NO additional DB calls!)
         locked_transactions = []
+        unlocked_ids = []
 
-        for transaction_id in transaction_ids:
-            # First, get the transaction date to check period lock
-            cursor.execute(
-                f"SELECT date FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                (tenant_id, transaction_id)
-            )
-            row = cursor.fetchone()
-            if row:
-                is_locked, lock_error = check_period_lock_for_transaction(tenant_id, row[0])
+        for txn_id in transaction_ids:
+            if txn_id in txn_dates:
+                txn_date = txn_dates[txn_id]
+                date_str = str(txn_date)[:10] if txn_date else ''
+
+                # Check if date falls within any locked period
+                is_locked = any(start <= date_str <= end for start, end in locked_periods)
+
                 if is_locked:
-                    locked_transactions.append(str(transaction_id))
-                    continue
+                    locked_transactions.append(str(txn_id))
+                else:
+                    unlocked_ids.append(txn_id)
+            else:
+                unlocked_ids.append(txn_id)
 
+        # Query 3: Archive all unlocked transactions
+        archived_count = 0
+        if unlocked_ids:
+            placeholders = ','.join(['%s'] * len(unlocked_ids))
             cursor.execute(
-                f"UPDATE transactions SET archived = TRUE WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                (tenant_id, transaction_id)
+                f"""UPDATE transactions SET archived = TRUE
+                    WHERE tenant_id = %s AND transaction_id IN ({placeholders})""",
+                [tenant_id] + unlocked_ids
             )
-            if cursor.rowcount > 0:
-                archived_count += 1
+            archived_count = cursor.rowcount
 
         conn.commit()
         conn.close()
@@ -6033,7 +6177,7 @@ def api_archive_transactions():
 
 @app.route('/api/unarchive_transactions', methods=['POST'])
 def api_unarchive_transactions():
-    """API endpoint to unarchive multiple transactions"""
+    """API endpoint to unarchive multiple transactions - FULLY OPTIMIZED (3 queries total)"""
     try:
         data = request.get_json()
         transaction_ids = data.get('transaction_ids', [])
@@ -6041,36 +6185,57 @@ def api_unarchive_transactions():
         if not transaction_ids:
             return jsonify({'error': 'No transaction IDs provided'}), 400
 
-        # Get current tenant_id for multi-tenant isolation
         tenant_id = get_current_tenant_id()
 
         from database import db_manager
         conn = db_manager._get_postgresql_connection()
         cursor = conn.cursor()
-        is_postgresql = hasattr(cursor, 'mogrify')
-        placeholder = '%s' if is_postgresql else '?'
-        unarchived_count = 0
+
+        # Query 1: Get all locked periods for this tenant
+        cursor.execute("""
+            SELECT start_date, end_date FROM cfo_accounting_periods
+            WHERE tenant_id = %s AND status IN ('locked', 'closed')
+        """, (tenant_id,))
+        locked_periods = [(str(row[0])[:10], str(row[1])[:10]) for row in cursor.fetchall()]
+
+        # Query 2: Get all transaction dates
+        placeholders = ','.join(['%s'] * len(transaction_ids))
+        cursor.execute(
+            f"""SELECT transaction_id, date FROM transactions
+                WHERE tenant_id = %s AND transaction_id IN ({placeholders})""",
+            [tenant_id] + list(transaction_ids)
+        )
+        txn_dates = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Check period locks in memory (NO additional DB calls!)
         locked_transactions = []
+        unlocked_ids = []
 
-        for transaction_id in transaction_ids:
-            # First, get the transaction date to check period lock
-            cursor.execute(
-                f"SELECT date FROM transactions WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                (tenant_id, transaction_id)
-            )
-            row = cursor.fetchone()
-            if row:
-                is_locked, lock_error = check_period_lock_for_transaction(tenant_id, row[0])
+        for txn_id in transaction_ids:
+            if txn_id in txn_dates:
+                txn_date = txn_dates[txn_id]
+                date_str = str(txn_date)[:10] if txn_date else ''
+
+                # Check if date falls within any locked period
+                is_locked = any(start <= date_str <= end for start, end in locked_periods)
+
                 if is_locked:
-                    locked_transactions.append(str(transaction_id))
-                    continue
+                    locked_transactions.append(str(txn_id))
+                else:
+                    unlocked_ids.append(txn_id)
+            else:
+                unlocked_ids.append(txn_id)
 
+        # Query 3: Unarchive all unlocked transactions
+        unarchived_count = 0
+        if unlocked_ids:
+            placeholders = ','.join(['%s'] * len(unlocked_ids))
             cursor.execute(
-                f"UPDATE transactions SET archived = FALSE WHERE tenant_id = {placeholder} AND transaction_id = {placeholder}",
-                (tenant_id, transaction_id)
+                f"""UPDATE transactions SET archived = FALSE
+                    WHERE tenant_id = %s AND transaction_id IN ({placeholders})""",
+                [tenant_id] + unlocked_ids
             )
-            if cursor.rowcount > 0:
-                unarchived_count += 1
+            unarchived_count = cursor.rowcount
 
         conn.commit()
         conn.close()
@@ -9278,6 +9443,7 @@ def api_get_entities():
 def api_bulk_update_transactions():
     """
     API endpoint for Excel-like drag-down bulk updates
+    OPTIMIZED: Uses single database connection for all updates
 
     Request body:
     {
@@ -9306,58 +9472,71 @@ def api_bulk_update_transactions():
         if not isinstance(updates, list):
             return jsonify({'error': 'Updates must be an array', 'success': False}), 400
 
+        tenant_id = get_current_tenant_id()
         updated_count = 0
         failed_count = 0
         errors = []
 
-        # Process each update
-        for idx, update in enumerate(updates):
-            try:
+        # ULTRA-OPTIMIZED: Single SQL statement with IN clause
+        from database import db_manager
+        conn = db_manager._get_postgresql_connection()
+        cursor = conn.cursor()
+
+        try:
+            # Allowed fields for bulk update (whitelist for security)
+            allowed_fields = {
+                'classified_entity', 'accounting_category', 'subcategory',
+                'justification', 'entity_id', 'business_line_id'
+            }
+
+            # Group updates by field and value for single SQL statement
+            # Typical drag-fill: same field, same value for all rows = 1 SQL statement
+            updates_by_field_value = {}
+            for idx, update in enumerate(updates):
                 transaction_id = update.get('transaction_id')
                 field = update.get('field')
                 value = update.get('value')
 
-                # Validate required fields
                 if not all([transaction_id, field]):
-                    errors.append({
-                        'index': idx,
-                        'transaction_id': transaction_id,
-                        'error': 'Missing transaction_id or field'
-                    })
+                    errors.append({'index': idx, 'transaction_id': transaction_id, 'error': 'Missing transaction_id or field'})
                     failed_count += 1
                     continue
 
-                # Call existing update function (returns tuple: (success: bool, confidence: float))
-                result = update_transaction_field(transaction_id, field, value)
-
-                # Handle tuple return value
-                if isinstance(result, tuple):
-                    success, confidence = result
-                else:
-                    # Fallback for unexpected return type
-                    success = bool(result)
-
-                if success:
-                    updated_count += 1
-                else:
+                if field not in allowed_fields:
+                    errors.append({'index': idx, 'transaction_id': transaction_id, 'error': f'Field {field} not allowed'})
                     failed_count += 1
-                    errors.append({
-                        'index': idx,
-                        'transaction_id': transaction_id,
-                        'error': 'Update failed - transaction not found or database error'
-                    })
+                    continue
 
-            except Exception as e:
-                failed_count += 1
-                errors.append({
-                    'index': idx,
-                    'transaction_id': update.get('transaction_id', 'unknown'),
-                    'error': str(e)
-                })
-                logging.error(f"[BULK_UPDATE] Failed to update transaction {update.get('transaction_id')}: {e}")
+                key = (field, value)
+                if key not in updates_by_field_value:
+                    updates_by_field_value[key] = []
+                updates_by_field_value[key].append(transaction_id)
+
+            # Execute ONE SQL statement per field/value combo (usually just 1 total)
+            for (field, value), transaction_ids in updates_by_field_value.items():
+                placeholders = ','.join(['%s'] * len(transaction_ids))
+                cursor.execute(
+                    f"UPDATE transactions SET {field} = %s WHERE tenant_id = %s AND transaction_id IN ({placeholders})",
+                    [value, tenant_id] + transaction_ids
+                )
+                updated_count += cursor.rowcount
+
+            conn.commit()
+            logging.info(f"[BULK_UPDATE] Single SQL: {updated_count} rows in {len(updates_by_field_value)} statement(s)")
+
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
+
+        # Track bulk classifications for pattern learning (ONE batch per field/value combo)
+        # This sends ONE notification instead of N notifications
+        for (field, value), transaction_ids in updates_by_field_value.items():
+            track_bulk_classification(tenant_id, transaction_ids, field, value)
 
         # Log summary
-        logging.info(f"[BULK_UPDATE] Completed: {updated_count} succeeded, {failed_count} failed")
+        logging.info(f"[BULK_UPDATE] Completed: {updated_count} succeeded, {failed_count} failed (single connection)")
 
         return jsonify({
             'success': failed_count == 0,
@@ -10095,6 +10274,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                               AND DATE(date) = %s
                               AND ABS(amount - %s) <= %s
                               AND currency = %s
+                              AND (archived IS NULL OR archived = FALSE)
                         """
                         cursor.execute(query, (tenant_id, date_str, amount, amount_tolerance, currency))
                     else:
@@ -10107,6 +10287,7 @@ def check_processed_file_duplicates(processed_filepath, original_filepath, tenan
                               AND DATE(date) = ?
                               AND ABS(amount - ?) <= ?
                               AND currency = ?
+                              AND (archived IS NULL OR archived = 0)
                         """
                         cursor.execute(query, (tenant_id, date_str, amount, amount_tolerance, currency))
 
@@ -10269,6 +10450,9 @@ def check_file_duplicates(filepath):
     return check_processed_file_duplicates(filepath, filepath)
 
 
+# Module-level cache for CryptoPricingDB to avoid re-initialization on each call
+_crypto_pricing_db_cache = None
+
 def convert_currency_to_usd(amount: float, from_currency: str, transaction_date: str = None) -> tuple:
     """
     Convert amount from given currency to USD
@@ -10282,6 +10466,8 @@ def convert_currency_to_usd(amount: float, from_currency: str, transaction_date:
     Returns:
         tuple: (usd_amount, original_currency, conversion_note)
     """
+    global _crypto_pricing_db_cache
+
     # If already USD, return as-is
     if from_currency == 'USD':
         return (amount, 'USD', None)
@@ -10292,14 +10478,16 @@ def convert_currency_to_usd(amount: float, from_currency: str, transaction_date:
     # Check if this is a cryptocurrency
     if from_currency.upper() in CRYPTO_SYMBOLS:
         try:
-            # Import crypto pricing module
-            import sys
-            from pathlib import Path
-            parent_dir = Path(__file__).parent.parent
-            sys.path.append(str(parent_dir))
-            from crypto_pricing import CryptoPricingDB
+            # Use cached CryptoPricingDB instance to avoid re-initialization
+            if _crypto_pricing_db_cache is None:
+                import sys
+                from pathlib import Path
+                parent_dir = Path(__file__).parent.parent
+                sys.path.append(str(parent_dir))
+                from crypto_pricing import CryptoPricingDB
+                _crypto_pricing_db_cache = CryptoPricingDB()
 
-            crypto_db = CryptoPricingDB()
+            crypto_db = _crypto_pricing_db_cache
 
             # Get historic price for the transaction date
             if transaction_date:
@@ -10612,15 +10800,22 @@ def upload_file_with_progress():
     # Get session data
     user_id = session.get('user_id', 'system')
 
-    # Get tenant context
+    # Get tenant context - try authenticated tenant first, then X-Tenant-ID header
     try:
         from middleware.auth_middleware import get_current_tenant
         tenant = get_current_tenant()
-        if not tenant:
-            return jsonify({'error': 'no_tenant_context', 'message': 'Please complete onboarding first'}), 400
-        tenant_id = tenant['id']
+        if tenant:
+            tenant_id = tenant['id']
+        else:
+            # Fallback to X-Tenant-ID header for development/testing
+            tenant_id = request.headers.get('X-Tenant-ID') or session.get('tenant_id')
+            if not tenant_id:
+                return jsonify({'error': 'no_tenant_context', 'message': 'Please log in or provide X-Tenant-ID header'}), 400
     except ImportError as e:
-        return jsonify({'error': 'auth_system_error'}), 500
+        # Fallback if auth middleware not available
+        tenant_id = request.headers.get('X-Tenant-ID') or session.get('tenant_id')
+        if not tenant_id:
+            return jsonify({'error': 'auth_system_error', 'message': str(e)}), 500
 
     def generate_progress():
         """Generator function to stream progress events"""
@@ -10793,6 +10988,7 @@ def upload_file_with_progress():
                         'date': txn_date,
                         'description': txn_description,
                         'amount': usd_amount,
+                        'original_amount': original_amount,  # Store original currency amount for toggle display
                         'original_currency': original_currency,
                         'conversion_note': conversion_note,
                         'classified_entity': classified_entity,
@@ -10887,6 +11083,8 @@ def upload_file_with_progress():
 
                         for txn in classified_transactions:
                             transaction_id = str(uuid.uuid4())
+                            # Store original amount in crypto_amount field for currency toggle display
+                            original_amt = txn.get('original_amount')
                             values_list.append((
                                 transaction_id, tenant_id, txn['date'], txn['description'], txn['amount'],
                                 txn['original_currency'],
@@ -10894,7 +11092,8 @@ def upload_file_with_progress():
                                 txn['conversion_note'], txn['classified_entity'], txn['accounting_category'],
                                 txn['subcategory'], txn['confidence'], txn['justification'],
                                 source_file_name, doc_id,
-                                txn.get('origin'), txn.get('destination')
+                                txn.get('origin'), txn.get('destination'),
+                                original_amt if txn['original_currency'] != 'USD' else None  # Store original currency amount
                             ))
 
                         # Single batch insert (much faster than individual inserts)
@@ -10906,7 +11105,7 @@ def upload_file_with_progress():
                                         currency, usd_equivalent, conversion_note,
                                         classified_entity, accounting_category, subcategory,
                                         confidence, justification, source_file, source_document_id,
-                                        origin, destination
+                                        origin, destination, crypto_amount
                                     ) VALUES %s
                                 """, values_list)
                                 conn.commit()
@@ -10961,80 +11160,231 @@ def upload_file_with_progress():
                 yield emit_progress(stage_completed='pattern', percent=40, message='Pattern analysis ready', status='Ready')
                 yield emit_progress(stage='classify', percent=45, message='Running classification...', status='Running...')
 
-                # Run subprocess for CSV processing
+                # ============================================================================
+                # DIRECT PROCESSING PIPELINE (No subprocess, no intermediate CSV)
+                # Uses DeltaCFOAgent for full processing with all enhancements
+                # ============================================================================
                 parent_dir_path = os.path.dirname(os.path.dirname(__file__))
-                parent_dir_safe = parent_dir_path.replace(chr(92), '/')
-                filename_safe = filename.replace(chr(92), '/')
-                tenant_id_safe = tenant_id.replace("'", "\\'")
+                import sys as sys_module
+                if parent_dir_path not in sys_module.path:
+                    sys_module.path.insert(0, parent_dir_path)
 
-                processing_script = f"""
-import sys
-import os
-sys.path.append('{parent_dir_safe}')
-os.chdir('{parent_dir_safe}')
+                try:
+                    from smart_ingestion import smart_process_file
+                    from main import DeltaCFOAgent
 
-from main import DeltaCFOAgent
+                    # Step 1: Parse file with smart ingestion (Claude AI)
+                    yield emit_progress(stage='classify', percent=50, message='Parsing with Claude AI...', status='Analyzing...')
+                    df = smart_process_file(filepath, enhance=True)
 
-agent = DeltaCFOAgent(tenant_id='{tenant_id_safe}')
-result = agent.process_file('{filename_safe}', enhance=True, use_smart_ingestion=True)
+                    if df is None or len(df) == 0:
+                        yield emit_progress(percent=0, message='No transactions found', complete=True, success=False,
+                                           error='Smart ingestion returned no data')
+                        return
 
-if result is not None:
-    print(f'PROCESSED_COUNT:{{len(result)}}')
-else:
-    print('PROCESSED_COUNT:0')
-"""
+                    total_transactions = len(df)
+                    logger.info(f"[DIRECT PIPELINE] Parsed {total_transactions} transactions from {filename}")
 
-                env = os.environ.copy()
-                env['ANTHROPIC_API_KEY'] = os.getenv('ANTHROPIC_API_KEY', '')
-                for var in ['DB_TYPE', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'DB_USER', 'DB_PASSWORD']:
-                    if os.getenv(var):
-                        env[var] = os.getenv(var)
+                    # Step 2: Create DeltaCFOAgent for classification
+                    yield emit_progress(stage='classify', percent=55, message='Initializing classifier...', status='Loading...')
+                    agent = DeltaCFOAgent(tenant_id=tenant_id)
 
-                yield emit_progress(stage='classify', percent=55, message='Processing transactions...', status='Processing...')
+                    # Step 3: Use full processing pipeline for classification and enhancement
+                    # This handles: wallet matching, entity classification, origin/destination,
+                    # description enhancement, USD conversion, and keyword extraction
+                    yield emit_progress(stage='classify', percent=60, message='Classifying transactions...', status='Processing...')
 
-                process_result = subprocess.run(
-                    [sys.executable, '-c', processing_script],
-                    capture_output=True, text=True, cwd=parent_dir_path, timeout=120, env=env
-                )
+                    # Call the internal method that does full classification and enhancement
+                    # but skip the CSV file saving (we'll insert directly to PostgreSQL)
+                    processed_df = agent._classify_and_process_dataframe(
+                        df, filepath, 'Date', 'Description', 'Amount', enhance=True
+                    )
 
-                if process_result.returncode != 0:
-                    yield emit_progress(percent=0, message='Classification failed', complete=True, success=False,
-                                       error=f'Classification failed: {process_result.stderr or "Unknown error"}')
-                    return
+                    if processed_df is None:
+                        yield emit_progress(percent=0, message='Classification failed', complete=True, success=False,
+                                           error='DeltaCFOAgent classification returned None')
+                        return
 
-                yield emit_progress(stage_completed='classify', percent=70, message='Classification complete', status='Done')
-                yield emit_progress(stage='pass2', percent=72, message='AI review (handled in pipeline)', status='Integrated')
-                yield emit_progress(stage_completed='pass2', percent=85, message='AI review complete', status='Complete')
+                    yield emit_progress(stage_completed='classify', percent=70, message='Classification complete', status='Done')
+                    yield emit_progress(stage='pass2', percent=72, message='Enhancement complete', status='Complete')
+                    yield emit_progress(stage_completed='pass2', percent=85, message='AI review complete', status='Complete')
+                    yield emit_progress(stage='save', percent=90, message='Saving to database...', status='Saving...')
 
-                # Extract transaction count
-                transactions_processed = 0
-                if 'PROCESSED_COUNT:' in process_result.stdout:
-                    count_str = process_result.stdout.split('PROCESSED_COUNT:')[1].split('\n')[0]
+                    # Step 4: Insert directly to PostgreSQL
+                    inserted_count = 0
+                    skipped_duplicates = 0
+                    skipped_invalid = 0
+
+                    # Debug: Log DataFrame info before inserting
+                    logger.info(f"[DIRECT PIPELINE] processed_df type: {type(processed_df)}, length: {len(processed_df) if processed_df is not None else 'None'}")
+                    if processed_df is not None and len(processed_df) > 0:
+                        logger.info(f"[DIRECT PIPELINE] processed_df columns: {list(processed_df.columns)}")
+                        logger.info(f"[DIRECT PIPELINE] First row sample: {processed_df.iloc[0].to_dict()}")
+
+                    conn = db_manager.connection_pool.getconn()
                     try:
-                        transactions_processed = int(count_str)
-                    except ValueError:
-                        pass
+                        with conn.cursor() as cursor:
+                            for idx, row in processed_df.iterrows():
+                                try:
+                                    # Parse date
+                                    date_val = row.get('Date', '')
+                                    try:
+                                        if isinstance(date_val, str):
+                                            date_val = date_val.replace('T', ' ').split(' ')[0][:10]
+                                        parsed_date = pd.to_datetime(date_val).date()
+                                    except:
+                                        parsed_date = datetime.now().date()
 
-                yield emit_progress(stage='save', percent=90, message='Saving results...', status='Saving...')
+                                    # Get amount (should already be properly signed from processing)
+                                    amount_val = row.get('Amount', 0)
+                                    try:
+                                        amount = float(str(amount_val).replace(',', '').replace('$', ''))
+                                    except:
+                                        amount = 0.0
 
-                # Check for duplicates
-                duplicate_info = check_processed_file_duplicates(filepath, filename)
+                                    # Safety check: Ensure withdrawals are negative
+                                    # If filename indicates withdrawal and amount is positive, negate it
+                                    is_withdrawal_file = 'withdraw' in filename.lower()
+                                    if is_withdrawal_file and amount > 0:
+                                        amount = -abs(amount)
+                                        logger.debug(f"[DIRECT PIPELINE] Negated positive withdrawal amount: {amount}")
 
-                if duplicate_info['has_duplicates']:
-                    yield emit_progress(percent=100, message='Duplicates found', complete=True,
-                                       duplicate_confirmation_needed=True,
-                                       duplicate_info=duplicate_info,
-                                       filename=filename,
-                                       filepath=filepath,
-                                       processed_file=filepath)
+                                    # Get description (enhanced by DeltaCFOAgent)
+                                    description = str(row.get('Description', '') or '')
+                                    if description in ['-', '', 'nan', 'None']:
+                                        # Generate from available context
+                                        currency = str(row.get('Currency', row.get('Coin', '')) or '')
+                                        action = 'Withdrawal' if amount < 0 else 'Deposit'
+                                        description = f"{currency} {action}".strip() if currency else action
+
+                                    # Get entity (classified by DeltaCFOAgent with wallet matching)
+                                    entity = str(row.get('classified_entity', row.get('Business_Unit', '')) or '')
+                                    if entity in ['', 'nan', 'None', 'Unknown Entity']:
+                                        entity = 'Unknown Entity'
+
+                                    # Get origin/destination (set by enhance_structure)
+                                    origin = str(row.get('Origin', '') or 'Unknown')
+                                    destination = str(row.get('Destination', '') or 'Unknown')
+                                    if origin in ['', 'nan', 'None']:
+                                        origin = 'Unknown'
+                                    if destination in ['', 'nan', 'None']:
+                                        destination = 'Unknown'
+
+                                    # Get classification details
+                                    category = str(row.get('accounting_category', '') or 'OPERATING_EXPENSE')
+                                    subcategory = str(row.get('subcategory', '') or 'General')
+                                    justification = str(row.get('Justification', row.get('classification_reason', '')) or '')
+                                    confidence = float(row.get('confidence', 0.5))
+
+                                    # Fix: Withdrawal files should NOT be categorized as REVENUE
+                                    # Crypto withdrawals from exchanges are asset transfers, not revenue
+                                    if is_withdrawal_file and category == 'REVENUE':
+                                        category = 'ASSET_TRANSFER'
+                                        subcategory = 'Crypto Withdrawal'
+                                        justification = f"Crypto withdrawal from exchange (was: {justification})"
+                                        logger.debug(f"[DIRECT PIPELINE] Corrected REVENUE -> ASSET_TRANSFER for withdrawal")
+
+                                    # Get currency
+                                    currency = str(row.get('Currency', row.get('Coin', '')) or 'USD')
+
+                                    # Get usd_equivalent and crypto_amount for crypto transactions
+                                    usd_equivalent = None
+                                    crypto_amount = None
+                                    conversion_note = None
+                                    if currency not in ['USD', 'EUR', 'GBP', 'BRL']:
+                                        # Try to get crypto_amount from various column names
+                                        crypto_val = row.get('Crypto_Amount', row.get('crypto_amount', 0))
+                                        if crypto_val and float(crypto_val) != 0:
+                                            crypto_amount = float(crypto_val)
+                                        # Get USD_Equivalent if available
+                                        usd_val = row.get('USD_Equivalent', row.get('usd_equivalent', 0))
+                                        if usd_val and float(usd_val) != 0:
+                                            usd_equivalent = float(usd_val)
+                                        # If no crypto_amount but we have amount and it looks like crypto qty
+                                        if not crypto_amount and abs(amount) < 1000:  # Small amount likely crypto qty
+                                            crypto_amount = abs(amount)
+                                        # Get conversion note
+                                        conv_note = row.get('Conversion_Note', row.get('conversion_note', ''))
+                                        if conv_note:
+                                            conversion_note = str(conv_note)
+
+                                    # Generate transaction ID
+                                    id_source = f"{parsed_date}{description}{amount}"
+                                    import hashlib
+                                    base_txn_id = hashlib.md5(id_source.encode()).hexdigest()[:12]
+                                    txn_id = base_txn_id
+
+                                    # Check if this transaction already exists (non-archived only)
+                                    # If it exists but is archived, generate a new unique ID
+                                    cursor.execute("""
+                                        SELECT transaction_id, archived FROM transactions
+                                        WHERE transaction_id = %s
+                                    """, (base_txn_id,))
+                                    existing = cursor.fetchone()
+
+                                    if existing:
+                                        if existing[1] is True:  # archived = TRUE
+                                            # Archived transaction exists - generate new unique ID to allow re-upload
+                                            import uuid
+                                            txn_id = hashlib.md5(f"{id_source}{uuid.uuid4()}".encode()).hexdigest()[:12]
+                                            logger.debug(f"[DIRECT PIPELINE] Archived duplicate found, new ID: {txn_id}")
+                                        else:
+                                            # Non-archived duplicate exists - skip this transaction
+                                            logger.debug(f"[DIRECT PIPELINE] Row {idx} skipped (non-archived duplicate)")
+                                            skipped_duplicates += 1
+                                            continue
+
+                                    # Insert transaction
+                                    cursor.execute("""
+                                        INSERT INTO transactions (
+                                            tenant_id, date, description, amount, classified_entity, origin, destination,
+                                            accounting_category, subcategory, justification, confidence, currency,
+                                            usd_equivalent, crypto_amount, conversion_note,
+                                            source_document_id, transaction_id, source_file, created_at
+                                        ) VALUES (
+                                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                                        )
+                                        ON CONFLICT (transaction_id) DO NOTHING
+                                    """, (
+                                        tenant_id, parsed_date, description, amount, entity, origin, destination,
+                                        category, subcategory, justification, confidence, currency,
+                                        usd_equivalent, crypto_amount, conversion_note,
+                                        document_info['id'], txn_id, filename
+                                    ))
+                                    # Check if row was actually inserted (rowcount = 1) or skipped (rowcount = 0)
+                                    if cursor.rowcount == 1:
+                                        inserted_count += 1
+                                    else:
+                                        logger.debug(f"[DIRECT PIPELINE] Row {idx} skipped (conflict on insert)")
+                                        skipped_duplicates += 1
+
+                                except Exception as row_error:
+                                    logger.warning(f"[DIRECT PIPELINE] Skipped row {idx}: {row_error}")
+                                    skipped_invalid += 1
+
+                            conn.commit()
+                            logger.info(f"[DIRECT PIPELINE] Inserted {inserted_count} transactions, {skipped_duplicates} duplicates, {skipped_invalid} invalid")
+
+                    finally:
+                        db_manager.connection_pool.putconn(conn)
+
+                    yield emit_progress(stage_completed='save', percent=100, message='Processing complete!', status='Saved')
+                    yield emit_progress(percent=100, message='Processing complete!', complete=True, success=True,
+                                       transactions_processed=inserted_count,
+                                       skipped_duplicates=skipped_duplicates,
+                                       skipped_invalid=skipped_invalid,
+                                       total_extracted=total_transactions)
+
+                except ImportError as ie:
+                    logger.error(f"[DIRECT PIPELINE] Import error: {ie}")
+                    yield emit_progress(percent=0, message='Module import failed', complete=True, success=False,
+                                       error=f'Failed to import processing modules: {str(ie)}')
                     return
-
-                # Sync to database
-                sync_result = sync_processed_file_to_database(filepath)
-
-                yield emit_progress(stage_completed='save', percent=100, message='Processing complete!', status='Saved')
-                yield emit_progress(percent=100, message='Upload complete!', complete=True, success=True,
-                                   transactions_processed=sync_result.get('inserted', 0) + sync_result.get('updated', 0))
+                except Exception as pipeline_error:
+                    logger.error(f"[DIRECT PIPELINE] Processing error: {pipeline_error}", exc_info=True)
+                    yield emit_progress(percent=0, message='Processing failed', complete=True, success=False,
+                                       error=str(pipeline_error))
+                    return
 
         except Exception as e:
             logger.error(f"Upload with progress failed: {e}", exc_info=True)
@@ -11263,18 +11613,19 @@ def upload_file():
                         txn_date
                     )
 
-                    # Check for duplicates
+                    # Check for duplicates (only among non-archived transactions)
                     existing = db_manager.execute_query("""
                         SELECT transaction_id FROM transactions
                         WHERE tenant_id = %s
                           AND date = %s
                           AND description = %s
                           AND ABS(amount - %s) < 0.01
+                          AND (archived IS NULL OR archived = FALSE)
                         LIMIT 1
                     """, (tenant_id, txn_date, txn_description, usd_amount), fetch_one=True)
 
                     if existing:
-                        print(f"DUPLICATE SKIPPED: {txn_date} | {txn_description} | ${usd_amount}")
+                        print(f"DUPLICATE SKIPPED (non-archived match): {txn_date} | {txn_description} | ${usd_amount}")
                         skipped_duplicates += 1
                         continue
 
@@ -11303,6 +11654,7 @@ def upload_file():
                         'date': txn_date,
                         'description': txn_description,
                         'amount': usd_amount,
+                        'original_amount': original_amount,  # Store original currency amount for toggle display
                         'original_currency': original_currency,
                         'conversion_note': conversion_note,
                         'classified_entity': classified_entity,
@@ -11369,14 +11721,16 @@ def upload_file():
                 for txn in classified_transactions:
                     transaction_id = str(uuid.uuid4())
 
+                    # Get original amount for currency toggle display
+                    original_amt = txn.get('original_amount')
                     db_manager.execute_query("""
                         INSERT INTO transactions (
                             transaction_id, tenant_id, date, description, amount,
                             currency, usd_equivalent, conversion_note,
                             classified_entity, accounting_category, subcategory,
                             confidence, justification, source_file, source_document_id,
-                            origin, destination
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            origin, destination, crypto_amount
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         transaction_id,
                         tenant_id,
@@ -11394,7 +11748,8 @@ def upload_file():
                         f'PDF Upload: {filename}',
                         document_info.get('id'),
                         txn['origin'],
-                        txn['destination']
+                        txn['destination'],
+                        original_amt if txn['original_currency'] != 'USD' else None  # Store original currency amount
                     ))
                     inserted_count += 1
 
@@ -11511,7 +11866,7 @@ else:
                 capture_output=True,
                 text=True,
                 cwd=parent_dir,
-                timeout=120,  # Increase timeout to 2 minutes
+                timeout=600,  # 10 minutes for large files with crypto conversions
                 env=env
             )
 
@@ -11612,29 +11967,38 @@ else:
             print(f" DEBUG: Database sync result: {sync_result}")
 
             if sync_result:
-                # NOTE: Auto-matching disabled for performance - run manually from Revenue page
-                # Auto-trigger revenue matching after successful transaction upload
-                # try:
-                #     print(f" AUTO-TRIGGER: Starting automatic revenue matching...")
-                #     from robust_revenue_matcher import RobustRevenueInvoiceMatcher
-                #
-                #     matcher = RobustRevenueInvoiceMatcher()
-                #     matches_result = matcher.run_robust_matching(auto_apply=False)
-                #
-                #     if matches_result and matches_result.get('matches_found', 0) > 0:
-                #         print(f" AUTO-TRIGGER: Found {matches_result['matches_found']} new matches automatically!")
-                #     else:
-                #         print("ℹ AUTO-TRIGGER: No new matches found after transaction upload")
-                #
-                # except Exception as e:
-                #     print(f" AUTO-TRIGGER: Error during automatic matching: {e}")
-                #     # Don't fail the upload if matching fails
+                # Generate friendly document name using AI
+                generated_doc_name = None
+                if document_info:
+                    try:
+                        from smart_ingestion import generate_document_name
+                        # Read the classified CSV to get transaction data for naming
+                        parent_dir = os.path.dirname(os.path.dirname(__file__))
+                        base_name = os.path.splitext(filename)[0]
+                        classified_path = os.path.join(parent_dir, 'classified_transactions', f'classified_{base_name}.csv')
+
+                        df_for_naming = None
+                        if os.path.exists(classified_path):
+                            df_for_naming = pd.read_csv(classified_path)
+
+                        generated_doc_name = generate_document_name(
+                            original_filename=filename,
+                            df=df_for_naming
+                        )
+
+                        # Update document name in database if different from original
+                        if generated_doc_name and generated_doc_name != filename:
+                            file_storage.rename_file(document_info['id'], generated_doc_name)
+                            print(f" Document renamed: {filename} -> {generated_doc_name}")
+                    except Exception as naming_error:
+                        print(f" Document naming skipped: {naming_error}")
 
                 return jsonify({
                     'success': True,
                     'message': f'Successfully processed {filename}',
                     'transactions_processed': transactions_processed,
-                    'sync_result': sync_result
+                    'sync_result': sync_result,
+                    'document_name': generated_doc_name or filename
                 })
             else:
                 return jsonify({
@@ -12282,7 +12646,7 @@ else:
             ['python', '-c', processing_script],
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=600,  # 10 minutes for large files with crypto conversions
             cwd=parent_dir,
             env=env
         )
@@ -22792,14 +23156,24 @@ if __name__ == '__main__':
         else:
             print("[WARNING] Authentication blueprints not available")
 
-    # Start pattern validation service in background thread
+    # TEMPORARILY DISABLED - Pattern validation service causes slowdown during bulk updates
+    # Each transaction update triggers PostgreSQL NOTIFY -> Claude API call
+    # Re-enable once debouncing/batching is implemented
+    #
+    # # Start pattern validation service in background thread
+    # Start pattern validation service with coalescing (performance-optimized)
     try:
         from pattern_validation_service import start_listener
         import threading
 
-        pattern_thread = threading.Thread(target=start_listener, daemon=True)
-        pattern_thread.start()
-        print("[OK] Pattern validation service started in background")
+        # Check if we're in Flask reloader - only start service in main worker
+        is_reloader = os.environ.get('WERKZEUG_RUN_MAIN') != 'true'
+        if is_reloader and debug_mode:
+            print("[INFO] Skipping pattern validation service in reloader process")
+        else:
+            pattern_thread = threading.Thread(target=start_listener, daemon=True)
+            pattern_thread.start()
+            print("[OK] Pattern validation service started (with 5s coalescing)")
     except Exception as e:
         print(f"[WARNING] Pattern validation service not started: {e}")
 

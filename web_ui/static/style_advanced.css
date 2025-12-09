@@ -588,6 +588,18 @@ th[data-sort="amount"] {
     font-weight: 600;
 }
 
+/* Crypto and Foreign Currency Styling */
+.crypto {
+    color: #f59e0b;
+    font-weight: 600;
+    font-family: 'Monaco', 'Consolas', monospace;
+}
+
+.foreign-currency {
+    color: #8b5cf6;
+    font-weight: 600;
+}
+
 /* Improved Table Spacing and Column Widths */
 .table-container {
     position: relative;
@@ -629,7 +641,8 @@ th:nth-child(5), td:nth-child(5) { /* Description */
 }
 
 th:nth-child(6), td:nth-child(6) { /* Amount */
-    width: 100px;
+    width: 140px;
+    min-width: 140px;
     text-align: right;
 }
 
