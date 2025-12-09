@@ -66,24 +66,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen for Firebase auth state changes
   useEffect(() => {
     let authResolved = false;
-    console.log("[Auth] Setting up onAuthStateChanged listener...");
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
       authResolved = true;
-      console.log("[Auth] onAuthStateChanged fired, user:", firebaseUser?.email || "null");
       try {
         if (firebaseUser) {
-          console.log("[Auth] User found, syncing with backend...");
           await syncWithBackend(firebaseUser);
         } else {
-          console.log("[Auth] No user, clearing state");
           setUser(null);
           setTenants([]);
           setCurrentTenant(null);
           setIsLoading(false);
         }
       } catch (error) {
-        console.error("[Auth] Auth state change error:", error);
+        console.error("Auth state change error:", error);
         setUser(null);
         setIsLoading(false);
       }
@@ -92,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Safety timeout - if Firebase doesn't respond in 5 seconds, stop loading
     const timeout = setTimeout(() => {
       if (!authResolved) {
-        console.warn("[Auth] Firebase auth timed out - proceeding without auth");
+        console.warn("Firebase auth timed out - proceeding without auth");
         setIsLoading(false);
       }
     }, 5000);
@@ -104,11 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function syncWithBackend(firebaseUser: FirebaseUser) {
-    console.log("[Auth] syncWithBackend starting for:", firebaseUser.email);
     try {
-      console.log("[Auth] Getting ID token...");
       const idToken = await firebaseUser.getIdToken();
-      console.log("[Auth] Got ID token, calling /api/auth/login...");
 
       const response = await fetch("/api/auth/login", {
         method: "POST",
@@ -117,29 +110,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
       });
 
-      console.log("[Auth] Backend response status:", response.status);
-
       if (response.ok) {
         const data = await response.json();
-        console.log("[Auth] Backend response data:", { success: data.success, hasUser: !!data.user });
         if (data.success) {
           setUser(data.user);
           setTenants(data.tenants || []);
           setCurrentTenant(data.current_tenant || null);
-          console.log("[Auth] User set successfully:", data.user?.email);
         } else {
-          console.warn("[Auth] User not found in backend:", data.message);
+          console.warn("User not found in backend:", data.message);
           setUser(null);
         }
       } else {
-        console.error("[Auth] Backend sync failed:", response.status);
+        console.error("Backend sync failed:", response.status);
         setUser(null);
       }
     } catch (error) {
-      console.error("[Auth] Backend sync error:", error);
+      console.error("Backend sync error:", error);
       setUser(null);
     } finally {
-      console.log("[Auth] syncWithBackend complete, setting isLoading=false");
       setIsLoading(false);
     }
   }
