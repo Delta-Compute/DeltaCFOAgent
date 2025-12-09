@@ -21203,9 +21203,14 @@ def api_import_tenant_config():
 
 @app.route('/api/chatbot', methods=['POST'])
 def api_chatbot():
-    """API endpoint for AI CFO Assistant chatbot"""
+    """API endpoint for AI CFO Assistant chatbot with tool calling support.
+
+    The chatbot can now execute tools to query actual transaction data,
+    providing real financial summaries instead of generic responses.
+    """
     try:
         from chatbot_context import get_chatbot_context
+        from ai_tools import TRANSACTION_TOOLS, get_tool_executor
         from database import db_manager
 
         # Get request data
@@ -21243,24 +21248,76 @@ def api_chatbot():
             }
         ]
 
-        # Call Claude API
+        # Initialize tool executor for this tenant
+        tool_executor = get_tool_executor(db_manager, tenant_id)
+
+        # Call Claude API with tools
         logger.info(f"Chatbot request for tenant {tenant_id}: {message[:50]}...")
 
         response = claude_client.messages.create(
             model="claude-sonnet-4-5-20250929",
-            max_tokens=1024,
+            max_tokens=2048,
             system=system_prompt,
-            messages=messages
+            messages=messages,
+            tools=TRANSACTION_TOOLS
         )
 
-        # Extract response text
-        assistant_message = response.content[0].text
+        # Handle tool use loop (max 5 iterations to prevent infinite loops)
+        max_iterations = 5
+        iteration = 0
 
-        logger.info(f"Chatbot response length: {len(assistant_message)} chars")
+        while response.stop_reason == "tool_use" and iteration < max_iterations:
+            iteration += 1
+            logger.info(f"Tool use iteration {iteration}")
+
+            # Find tool use blocks in response
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    tool_name = block.name
+                    tool_input = block.input
+                    tool_use_id = block.id
+
+                    logger.info(f"Executing tool: {tool_name}")
+
+                    # Execute the tool
+                    try:
+                        result = tool_executor.execute(tool_name, tool_input)
+                    except Exception as e:
+                        logger.error(f"Tool execution error: {e}")
+                        result = f"Error executing {tool_name}: {str(e)}"
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": result
+                    })
+
+            # Add assistant response and tool results to messages
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": tool_results})
+
+            # Continue conversation with tool results
+            response = claude_client.messages.create(
+                model="claude-sonnet-4-5-20250929",
+                max_tokens=2048,
+                system=system_prompt,
+                messages=messages,
+                tools=TRANSACTION_TOOLS
+            )
+
+        # Extract final response text
+        assistant_message = ""
+        for block in response.content:
+            if hasattr(block, 'text'):
+                assistant_message += block.text
+
+        logger.info(f"Chatbot response length: {len(assistant_message)} chars, iterations: {iteration}")
 
         return jsonify({
             'response': assistant_message,
-            'tenant_id': tenant_id
+            'tenant_id': tenant_id,
+            'tool_calls': iteration  # Include number of tool calls for debugging
         })
 
     except Exception as e:

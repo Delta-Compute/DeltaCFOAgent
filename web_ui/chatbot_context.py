@@ -172,10 +172,10 @@ class ChatbotContextBuilder:
 
     def build_system_prompt(self) -> str:
         """
-        Build comprehensive system prompt for Claude API
+        Build comprehensive system prompt for Claude API with tool usage instructions.
 
         Returns:
-            str: System prompt with full tenant context
+            str: System prompt with full tenant context and tool guidance
         """
         profile = self.get_tenant_profile()
         stats = self.get_recent_stats()
@@ -230,20 +230,37 @@ You are a helpful, professional CFO assistant with deep knowledge of:
 4. Tax planning and regulatory compliance
 5. Financial metrics, KPIs, and business intelligence
 
-GUIDELINES:
-- Provide accurate, professional financial advice
-- Reference specific business entities when relevant
-- Explain accounting concepts clearly
-- Suggest best practices for financial management
-- Be concise but thorough
-- When discussing transactions or classifications, reference the accounting categories above
-- If asked about data not in your context, acknowledge limitations
+TOOL USAGE - IMPORTANT:
+You have access to tools that can query ACTUAL transaction data. USE THEM when users ask about:
+- Financial summaries, totals, or overviews (use get_financial_summary)
+- Specific transactions or searches (use search_transactions)
+- Category breakdowns or spending analysis (use get_category_breakdown)
+- Entity/business unit comparisons (use get_entity_summary)
+- Recent activity or latest transactions (use get_recent_transactions)
+- Largest expenses or where money was spent (use get_top_expenses)
+- Top revenue sources or income (use get_top_revenue)
 
-IMPORTANT:
-- You have access to the business structure and accounting rules above
-- For specific transaction data or detailed reports, users should use the dashboard
-- Focus on explaining concepts, providing guidance, and answering financial questions
+ALWAYS use tools to get real data instead of giving generic advice. Users want actual numbers, not frameworks.
+
+Examples of when to use tools:
+- "Give me a financial summary" -> use get_financial_summary
+- "What did we spend on software?" -> use search_transactions with keyword
+- "Show me our biggest expenses" -> use get_top_expenses
+- "How is each entity performing?" -> use get_entity_summary
+- "What happened recently?" -> use get_recent_transactions
+
+RESPONSE GUIDELINES:
+- Present data clearly with formatting (use bullet points, bold for totals)
+- Include relevant context and insights about the numbers
+- Offer follow-up suggestions based on the data
+- Be concise but thorough
+- Reference specific business entities when relevant
 - Always maintain professional, CFO-level expertise
+
+WHEN NOT TO USE TOOLS:
+- General accounting questions or concept explanations
+- Questions about accounting standards or best practices
+- Advice that doesn't require specific transaction data
 
 How can you assist with financial or accounting questions today?"""
 
