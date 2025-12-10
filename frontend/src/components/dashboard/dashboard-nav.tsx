@@ -80,10 +80,10 @@ export function DashboardNav() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container-main">
-        <div className="flex h-16 items-center justify-between">
+      <div className="w-full px-4">
+        <div className="flex h-14 items-center justify-between gap-4">
           {/* Left side - Logo & Tenant */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 flex-shrink-0">
             {/* Mobile menu button */}
             <Button
               variant="ghost"
@@ -139,8 +139,8 @@ export function DashboardNav() {
             )}
           </div>
 
-          {/* Center - Navigation (desktop) */}
-          <nav className="hidden lg:flex items-center gap-1">
+          {/* Center - Navigation (desktop) - icon only */}
+          <nav className="hidden lg:flex items-center gap-1 flex-1 min-w-0 justify-center">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive =
@@ -151,20 +151,20 @@ export function DashboardNav() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  title={t(item.labelKey)}
                   className={cn(
-                    "nav-link",
-                    isActive && "nav-link-active"
+                    "flex items-center justify-center p-2 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-muted",
+                    isActive && "bg-indigo-50 text-indigo-700"
                   )}
                 >
                   <Icon className="h-4 w-4" />
-                  {t(item.labelKey)}
                 </Link>
               );
             })}
           </nav>
 
           {/* Right side - Search, Settings, User */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 flex-shrink-0">
             {/* Search (collapsible) */}
             <div className="relative hidden sm:block">
               {searchOpen ? (

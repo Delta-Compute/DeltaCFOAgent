@@ -435,8 +435,20 @@ export const payroll = {
 };
 
 // --- Bank Accounts ---
+interface BankAccountsListResponse {
+  accounts: BankAccount[];
+  count: number;
+  success: boolean;
+}
+
 export const bankAccounts = {
-  list: () => get<BankAccount[]>("/bank-accounts"),
+  list: async (): Promise<ApiResponse<BankAccount[]>> => {
+    const result = await get<BankAccountsListResponse>("/bank-accounts");
+    if (result.success && result.data) {
+      return { success: true, data: result.data.accounts || [] };
+    }
+    return { success: false, error: result.error };
+  },
   create: (data: CreateBankAccountData) =>
     post<BankAccount>("/bank-accounts", data),
   update: (id: string, data: Partial<BankAccount>) =>
@@ -445,8 +457,20 @@ export const bankAccounts = {
 };
 
 // --- Crypto Wallets ---
+interface WalletsListResponse {
+  wallets: Wallet[];
+  count: number;
+  success: boolean;
+}
+
 export const wallets = {
-  list: () => get<Wallet[]>("/wallets"),
+  list: async (): Promise<ApiResponse<Wallet[]>> => {
+    const result = await get<WalletsListResponse>("/wallets");
+    if (result.success && result.data) {
+      return { success: true, data: result.data.wallets || [] };
+    }
+    return { success: false, error: result.error };
+  },
   create: (data: CreateWalletData) => post<Wallet>("/wallets", data),
   update: (id: string, data: Partial<Wallet>) =>
     put<Wallet>(`/wallets/${id}`, data),
@@ -484,12 +508,12 @@ export const tenant = {
 
 // --- Knowledge ---
 export const knowledge = {
-  list: () => get<ClassificationPattern[]>("/tenant-knowledge"),
+  list: () => get<ClassificationPattern[]>("/classification-patterns"),
   create: (data: CreatePatternData) =>
-    post<ClassificationPattern>("/tenant-knowledge", data),
+    post<ClassificationPattern>("/classification-patterns", data),
   update: (id: string, data: Partial<ClassificationPattern>) =>
-    put<ClassificationPattern>(`/tenant-knowledge/${id}`, data),
-  delete: (id: string) => del<void>(`/tenant-knowledge/${id}`),
+    put<ClassificationPattern>(`/classification-patterns/${id}`, data),
+  delete: (id: string) => del<void>(`/classification-patterns/${id}`),
   generate: () => post<GeneratedPatterns>("/knowledge-generator/run"),
 };
 
@@ -701,7 +725,10 @@ export interface Transaction {
   subcategory?: string;
   entity_id?: string;
   entity_name?: string;
+  classified_entity?: string;
+  accounting_category?: string;
   confidence_score?: number;
+  confidence?: number | string;
   matched_invoice_id?: string;
   invoice_id?: string;
   notes?: string;
@@ -1582,6 +1609,47 @@ export interface FilesListParams {
   type?: string;
 }
 
+export interface OrganizedFileData {
+  id: string | null;
+  name: string;
+  size: number;
+  type: string;
+  uploaded_at: string | null;
+  date_range: {
+    start: string;
+    end: string;
+    start_month: number;
+    end_month: number;
+    year: number;
+  } | null;
+  is_legacy?: boolean;
+  transaction_count?: number;
+  first_transaction_date?: string;
+  last_transaction_date?: string;
+}
+
+export interface FileSourceGroup {
+  source: string;
+  file_count: number;
+  legacy_count: number;
+  files: OrganizedFileData[];
+  gaps: { month: string; label: string }[];
+  coverage: {
+    covered_months: number;
+    total_months: number;
+    percentage: number;
+  };
+}
+
+export interface OrganizedFilesResponse {
+  sources: FileSourceGroup[];
+  total_unique_files: number;
+  total_tracked_files: number;
+  total_legacy_files: number;
+  total_sources: number;
+  duplicate_count: number;
+}
+
 export const files = {
   list: (params?: FilesListParams) => {
     const queryParams: Record<string, string> = {};
@@ -1591,6 +1659,7 @@ export const files = {
     const query = new URLSearchParams(queryParams);
     return get<FilesListResponse>(`/files?${query}`);
   },
+  organized: () => get<OrganizedFilesResponse>("/files/organized"),
 };
 
 // ============================================

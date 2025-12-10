@@ -18,10 +18,14 @@ import {
   CreditCard,
   Wallet,
   ArrowLeftRight,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { upload, files as filesApi, type UploadedFileData } from "@/lib/api";
+import { upload, files as filesApi, type UploadedFileData, type FileSourceGroup, type OrganizedFilesResponse } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -389,9 +393,135 @@ function FileRow({ file, onDelete }: { file: UploadedFile; onDelete: () => void 
   );
 }
 
+// Source Card Component - shows files grouped by source with gap detection
+function SourceCard({ source }: { source: FileSourceGroup }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasGaps = source.gaps && source.gaps.length > 0;
+  const coverage = source.coverage;
+  const hasLegacyFiles = source.legacy_count > 0;
+  const trackedCount = source.file_count - source.legacy_count;
+
+  // Get icon based on source name
+  const getSourceIcon = () => {
+    const name = source.source.toLowerCase();
+    if (name.includes('chase')) return <Building2 className="h-5 w-5 text-blue-600" />;
+    if (name.includes('c6')) return <Building2 className="h-5 w-5 text-purple-600" />;
+    if (name.includes('mexc')) return <ArrowLeftRight className="h-5 w-5 text-orange-600" />;
+    if (name.includes('binance')) return <Wallet className="h-5 w-5 text-yellow-600" />;
+    if (name.includes('coinbase')) return <Wallet className="h-5 w-5 text-blue-600" />;
+    if (name.includes('ledger')) return <Wallet className="h-5 w-5 text-green-600" />;
+    if (name.includes('payroll')) return <Receipt className="h-5 w-5 text-indigo-600" />;
+    if (name.includes('invoice')) return <Receipt className="h-5 w-5 text-teal-600" />;
+    return <FileSpreadsheet className="h-5 w-5 text-gray-600" />;
+  };
+
+  return (
+    <Card className={hasGaps ? "border-yellow-300" : ""}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {getSourceIcon()}
+            <div>
+              <CardTitle className="text-base">{source.source}</CardTitle>
+              <CardDescription className="text-xs">
+                {source.file_count} file{source.file_count !== 1 ? 's' : ''}
+                {hasLegacyFiles && (
+                  <span className="text-amber-600"> ({source.legacy_count} legacy)</span>
+                )}
+              </CardDescription>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {hasGaps && (
+              <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {source.gaps.length} gap{source.gaps.length !== 1 ? 's' : ''}
+              </Badge>
+            )}
+            {coverage && coverage.total_months > 0 && (
+              <Badge variant="outline" className={coverage.percentage >= 80 ? "bg-green-50 text-green-700" : coverage.percentage >= 50 ? "bg-yellow-50 text-yellow-700" : "bg-red-50 text-red-700"}>
+                {coverage.percentage}% coverage
+              </Badge>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        {/* Gap warnings */}
+        {hasGaps && (
+          <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-yellow-800">Missing Statements</p>
+                <p className="text-xs text-yellow-700 mt-1">
+                  {source.gaps.slice(0, 3).map(g => g.label).join(', ')}
+                  {source.gaps.length > 3 && ` +${source.gaps.length - 3} more`}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Files list */}
+        <div className="space-y-2">
+          {source.files.slice(0, expanded ? undefined : 3).map((file, idx) => (
+            <div key={file.id || `legacy-${idx}`} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileSpreadsheet className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                <span className="text-sm font-mono truncate">{file.name}</span>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {file.date_range && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {file.date_range.start.slice(0, 7)} to {file.date_range.end.slice(0, 7)}
+                  </span>
+                )}
+                {file.transaction_count ? (
+                  <span className="text-xs text-muted-foreground">
+                    {file.transaction_count.toLocaleString()} txns
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {formatFileSize(file.size)}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Expand/collapse button */}
+        {source.files.length > 3 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-2 text-xs"
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? (
+              <>
+                <ChevronDown className="h-3 w-3 mr-1" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronRight className="h-3 w-3 mr-1" />
+                Show {source.files.length - 3} more files
+              </>
+            )}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function FilesPage() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading } = useAuth();
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [organizedData, setOrganizedData] = useState<OrganizedFilesResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [currentStage, setCurrentStage] = useState<ProcessingStage | undefined>();
@@ -413,13 +543,19 @@ export default function FilesPage() {
     }
   };
 
-  // Fetch files from backend on mount
+  // Fetch organized files from backend
   const loadFiles = useCallback(async () => {
     setIsLoading(true);
     try {
+      // Load organized view
+      const organizedResult = await filesApi.organized();
+      if (organizedResult.success && organizedResult.data) {
+        setOrganizedData(organizedResult.data as OrganizedFilesResponse);
+      }
+
+      // Also load raw files for upload management
       const result = await filesApi.list();
       if (result.success && result.data) {
-        // Map backend file data to frontend UploadedFile format
         const filesData = (result.data as { files?: UploadedFileData[] })?.files || [];
         const mappedFiles: UploadedFile[] = filesData.map((f: UploadedFileData) => ({
           id: f.id,
@@ -439,14 +575,12 @@ export default function FilesPage() {
     }
   }, []);
 
-  // Load files when authenticated
+  // Load files when auth loading is complete
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
+    if (!authLoading) {
       loadFiles();
-    } else if (!authLoading && !isAuthenticated) {
-      setIsLoading(false);
     }
-  }, [authLoading, isAuthenticated, loadFiles]);
+  }, [authLoading, loadFiles]);
 
   // Handle file upload
   const handleUpload = useCallback(
@@ -551,12 +685,15 @@ export default function FilesPage() {
     toast.success("File removed");
   }
 
-  // Calculate stats
+  // Calculate stats from organized data
+  const totalGaps = organizedData?.sources.reduce((sum, s) => sum + (s.gaps?.length || 0), 0) || 0;
   const stats = {
-    total: uploadedFiles.length,
-    completed: uploadedFiles.filter((f) => f.status === "completed").length,
-    processing: uploadedFiles.filter((f) => f.status === "processing").length,
-    failed: uploadedFiles.filter((f) => f.status === "failed").length,
+    total: organizedData?.total_unique_files || 0,
+    tracked: organizedData?.total_tracked_files || 0,
+    legacy: organizedData?.total_legacy_files || 0,
+    sources: organizedData?.total_sources || 0,
+    duplicates: organizedData?.duplicate_count || 0,
+    gaps: totalGaps,
   };
 
   return (
@@ -580,22 +717,24 @@ export default function FilesPage() {
         <StatsCard
           title="Total Files"
           value={stats.total.toString()}
+          description={stats.legacy > 0 ? `${stats.tracked} tracked, ${stats.legacy} legacy` : undefined}
           icon={FileText}
         />
         <StatsCard
-          title="Completed"
-          value={stats.completed.toString()}
-          icon={CheckCircle2}
+          title="Data Sources"
+          value={stats.sources.toString()}
+          icon={Building2}
         />
         <StatsCard
-          title="Processing"
-          value={stats.processing.toString()}
+          title="Legacy Files"
+          value={stats.legacy.toString()}
+          description="Uploaded before tracking"
           icon={Clock}
         />
         <StatsCard
-          title="Failed"
-          value={stats.failed.toString()}
-          icon={XCircle}
+          title="Missing Statements"
+          value={stats.gaps.toString()}
+          icon={AlertTriangle}
         />
       </StatsGrid>
 
@@ -629,38 +768,39 @@ export default function FilesPage() {
         />
       </div>
 
-      {/* Uploaded Files */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Uploads</CardTitle>
-          <CardDescription>
-            Files you have uploaded recently
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading || authLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : uploadedFiles.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Upload className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No files uploaded yet</p>
-              <p className="text-sm">Upload transaction files or invoices to get started</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {uploadedFiles.map((file) => (
-                <FileRow
-                  key={file.id}
-                  file={file}
-                  onDelete={() => handleDeleteFile(file.id)}
-                />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Organized Files by Source */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">Statement Coverage by Source</h2>
+            <p className="text-sm text-muted-foreground">
+              Files organized by account with gap detection
+            </p>
+          </div>
+        </div>
+
+        {isLoading || authLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : !organizedData || organizedData.sources.length === 0 ? (
+          <Card>
+            <CardContent className="py-12">
+              <div className="text-center text-muted-foreground">
+                <Upload className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>No files uploaded yet</p>
+                <p className="text-sm">Upload transaction files or invoices to get started</p>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {organizedData.sources.map((source) => (
+              <SourceCard key={source.source} source={source} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

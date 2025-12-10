@@ -361,8 +361,15 @@ export default function TransactionsDashboardPage() {
       if (result.success && result.data) {
         // Flask returns { transactions: [], pagination: { total, page, per_page, pages } }
         const data = result.data as { transactions: Transaction[]; pagination?: { total: number } };
-        const txns = data.transactions || [];
-        const total = data.pagination?.total || txns.length;
+        const rawTxns = data.transactions || [];
+        const total = data.pagination?.total || rawTxns.length;
+
+        // Map backend field names to frontend expected names
+        const txns = rawTxns.map((tx) => ({
+          ...tx,
+          entity_name: tx.entity_name || tx.classified_entity,
+          category: tx.category || tx.accounting_category,
+        }));
 
         setTransactionData(txns);
         setTotalItems(total);

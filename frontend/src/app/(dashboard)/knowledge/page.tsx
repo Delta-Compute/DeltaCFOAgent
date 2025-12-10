@@ -114,7 +114,29 @@ export default function TenantKnowledgePage() {
     try {
       const result = await knowledge.list();
       if (result.success && result.data) {
-        setPatterns(result.data);
+        // API returns { patterns: [...] }, extract and map to frontend format
+        const apiData = result.data as unknown as { patterns: Array<{
+          pattern_id: number;
+          description_pattern: string;
+          accounting_category: string;
+          accounting_subcategory?: string;
+          confidence_score: string;
+          status: string;
+          entity?: string;
+          created_at: string;
+          updated_at: string;
+        }> };
+        const mappedPatterns: ClassificationPattern[] = (apiData.patterns || []).map((p) => ({
+          id: String(p.pattern_id),
+          pattern: p.description_pattern,
+          category: p.accounting_category || "",
+          subcategory: p.accounting_subcategory,
+          confidence: parseFloat(p.confidence_score) || 0,
+          is_active: p.status === "active",
+          created_at: p.created_at,
+          updated_at: p.updated_at,
+        }));
+        setPatterns(mappedPatterns);
       } else {
         throw new Error(result.error?.message || "Failed to load patterns");
       }

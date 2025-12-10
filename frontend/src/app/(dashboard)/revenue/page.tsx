@@ -431,26 +431,26 @@ export default function RevenueRecognitionPage() {
       <StatsGrid>
         <StatsCard
           title="Total Invoices"
-          value={stats?.total_invoices.toLocaleString() || "0"}
+          value={stats?.total_invoices?.toLocaleString() || "0"}
           icon={Receipt}
           isLoading={isLoading}
         />
         <StatsCard
           title="Matched"
-          value={stats?.matched_invoices.toLocaleString() || "0"}
+          value={stats?.matched_invoices?.toLocaleString() || "0"}
           icon={CheckCircle2}
-          trend={stats ? { value: stats.match_rate, label: "match rate" } : undefined}
+          trend={stats?.match_rate ? { value: stats.match_rate, label: "match rate" } : undefined}
           isLoading={isLoading}
         />
         <StatsCard
           title="Pending Review"
-          value={stats?.pending_matches.toLocaleString() || "0"}
+          value={stats?.pending_matches?.toLocaleString() || "0"}
           icon={Clock}
           isLoading={isLoading}
         />
         <StatsCard
           title="Unmatched"
-          value={stats?.unmatched_invoices.toLocaleString() || "0"}
+          value={stats?.unmatched_invoices?.toLocaleString() || "0"}
           icon={AlertCircle}
           isLoading={isLoading}
         />
