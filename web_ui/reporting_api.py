@@ -2072,6 +2072,7 @@ def register_reporting_routes(app):
                 return []
 
         # Revenue query for the period
+        # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
         revenue_query = """
             SELECT
                 COALESCE(accounting_category, classified_entity, 'Uncategorized') as category,
@@ -2079,8 +2080,20 @@ def register_reporting_routes(app):
                 COUNT(*) as count
             FROM transactions
             WHERE amount > 0
-            AND TO_DATE(date, 'MM/DD/YYYY'::text) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
-            AND TO_DATE(date, 'MM/DD/YYYY'::text) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
+            AND (
+                CASE
+                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                    ELSE NULL
+                END
+            ) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
+            AND (
+                CASE
+                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                    ELSE NULL
+                END
+            ) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
             GROUP BY COALESCE(accounting_category, classified_entity, 'Uncategorized')
             ORDER BY amount DESC
         """ if db_manager.db_type == 'postgresql' else """
@@ -2099,6 +2112,7 @@ def register_reporting_routes(app):
         revenue_data = safe_query(revenue_query, (start_date, end_date))
 
         # Expenses query for the period
+        # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
         expenses_query = """
             SELECT
                 COALESCE(accounting_category, classified_entity, 'General & Administrative') as category,
@@ -2106,8 +2120,20 @@ def register_reporting_routes(app):
                 COUNT(*) as count
             FROM transactions
             WHERE amount < 0
-            AND TO_DATE(date, 'MM/DD/YYYY'::text) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
-            AND TO_DATE(date, 'MM/DD/YYYY'::text) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
+            AND (
+                CASE
+                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                    ELSE NULL
+                END
+            ) >= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
+            AND (
+                CASE
+                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                    ELSE NULL
+                END
+            ) <= TO_DATE(%s::text, 'YYYY-MM-DD'::text)
             GROUP BY COALESCE(accounting_category, classified_entity, 'General & Administrative')
             ORDER BY amount DESC
         """ if db_manager.db_type == 'postgresql' else """
@@ -3294,10 +3320,17 @@ def register_reporting_routes(app):
                 entity_name = entity['entity']
 
                 # Monthly trends for this entity
+                # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
                 if db_manager.db_type == 'postgresql':
                     trend_query = f"""
                         SELECT
-                            DATE_TRUNC('month', TO_DATE(date, 'MM/DD/YYYY')) as month,
+                            DATE_TRUNC('month',
+                                CASE
+                                    WHEN date ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                    WHEN date ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                    ELSE NULL
+                                END
+                            ) as month,
                             SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as revenue,
                             SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END) as expenses,
                             SUM(amount) as profit,
@@ -3306,7 +3339,13 @@ def register_reporting_routes(app):
                         WHERE COALESCE(classified_entity, accounting_category, 'Uncategorized') = %s
                         AND archived = FALSE
                         {date_filter}
-                        GROUP BY DATE_TRUNC('month', TO_DATE(date, 'MM/DD/YYYY'))
+                        GROUP BY DATE_TRUNC('month',
+                            CASE
+                                WHEN date ~ '^[0-9]{{4}}-[0-9]{{2}}-[0-9]{{2}}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                WHEN date ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                ELSE NULL
+                            END
+                        )
                         ORDER BY month
                     """
                 else:
@@ -3429,9 +3468,22 @@ def register_reporting_routes(app):
                     end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
                     if db_manager.db_type == 'postgresql':
+                        # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
                         date_filter = """
-                            AND TO_DATE(date, 'MM/DD/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')
-                            AND TO_DATE(date, 'MM/DD/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')
+                            AND (
+                                CASE
+                                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                    ELSE NULL
+                                END
+                            ) >= TO_DATE(%s, 'YYYY-MM-DD')
+                            AND (
+                                CASE
+                                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                    ELSE NULL
+                                END
+                            ) <= TO_DATE(%s, 'YYYY-MM-DD')
                         """
                         params.extend([start_date_str, end_date_str])
                     else:
@@ -3686,9 +3738,22 @@ def register_reporting_routes(app):
                     end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
 
                     if db_manager.db_type == 'postgresql':
+                        # Handle mixed date formats: YYYY-MM-DD and MM/DD/YYYY
                         date_filter = """
-                            AND TO_DATE(date, 'MM/DD/YYYY') >= TO_DATE(%s, 'YYYY-MM-DD')
-                            AND TO_DATE(date, 'MM/DD/YYYY') <= TO_DATE(%s, 'YYYY-MM-DD')
+                            AND (
+                                CASE
+                                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                    ELSE NULL
+                                END
+                            ) >= TO_DATE(%s, 'YYYY-MM-DD')
+                            AND (
+                                CASE
+                                    WHEN date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN TO_DATE(date, 'YYYY-MM-DD')
+                                    WHEN date ~ '^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}' THEN TO_DATE(date, 'MM/DD/YYYY')
+                                    ELSE NULL
+                                END
+                            ) <= TO_DATE(%s, 'YYYY-MM-DD')
                         """
                         params.extend([start_date_str, end_date_str])
                 except ValueError:

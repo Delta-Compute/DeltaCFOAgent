@@ -52,7 +52,7 @@ def get_tenant_configuration(tenant_id: str, config_type: str, use_cache: bool =
 
     Args:
         tenant_id: Tenant identifier
-        config_type: Type of configuration to load ('entities', 'business_context',
+        config_type: Type of configuration to load ('general', 'entities', 'business_context',
                      'accounting_categories', 'pattern_matching_rules')
         use_cache: Whether to use cached configuration (default: True)
 
@@ -76,6 +76,60 @@ def get_tenant_configuration(tenant_id: str, config_type: str, use_cache: bool =
     try:
         from database import db_manager
 
+        # Special handling for 'general' config type - query tenant_configuration table
+        if config_type == 'general':
+            query = """
+                SELECT tenant_id, company_name, company_description, industry,
+                       default_currency, timezone, primary_color, secondary_color, logo_url
+                FROM tenant_configuration
+                WHERE tenant_id = %s
+            """
+            result = db_manager.execute_query(query, (tenant_id,), fetch_one=True)
+
+            if result:
+                # Build config_data in the format expected by frontend
+                if isinstance(result, tuple):
+                    config_data = {
+                        'tenant_id': result[0],
+                        'company_name': result[1],
+                        'company_description': result[2],
+                        'industry': result[3],
+                        'primary_currency': result[4],
+                        'timezone': result[5],
+                        'branding': {
+                            'primary_color': result[6],
+                            'secondary_color': result[7],
+                            'logo_url': result[8]
+                        }
+                    }
+                else:
+                    config_data = {
+                        'tenant_id': result.get('tenant_id'),
+                        'company_name': result.get('company_name'),
+                        'company_description': result.get('company_description'),
+                        'industry': result.get('industry'),
+                        'primary_currency': result.get('default_currency'),
+                        'timezone': result.get('timezone'),
+                        'branding': {
+                            'primary_color': result.get('primary_color'),
+                            'secondary_color': result.get('secondary_color'),
+                            'logo_url': result.get('logo_url')
+                        }
+                    }
+
+                # Cache the result
+                _config_cache[cache_key] = {
+                    'config_data': config_data,
+                    'cached_at': datetime.now()
+                }
+
+                logger.info(f"Loaded general config for {tenant_id} from database")
+                return config_data
+            else:
+                logger.warning(f"No general configuration found for {tenant_id}")
+                return None
+
+        # Standard config types - query tenant_configurations table
         query = """
             SELECT config_data
             FROM tenant_configurations

@@ -162,15 +162,20 @@ class CFOChatbot {
         const contentDiv = document.createElement('div');
         contentDiv.className = 'message-content';
 
-        // Format content with paragraph breaks
-        const paragraphs = content.split('\n\n');
-        paragraphs.forEach((para, index) => {
-            if (para.trim()) {
-                const p = document.createElement('p');
-                p.textContent = para.trim();
-                contentDiv.appendChild(p);
-            }
-        });
+        // Format content with markdown-like parsing for bot messages
+        if (sender === 'bot') {
+            contentDiv.innerHTML = this.formatBotMessage(content);
+        } else {
+            // Simple paragraph formatting for user messages
+            const paragraphs = content.split('\n\n');
+            paragraphs.forEach((para) => {
+                if (para.trim()) {
+                    const p = document.createElement('p');
+                    p.textContent = para.trim();
+                    contentDiv.appendChild(p);
+                }
+            });
+        }
 
         const timeDiv = document.createElement('div');
         timeDiv.className = 'message-time';
@@ -179,15 +184,61 @@ class CFOChatbot {
         messageDiv.appendChild(contentDiv);
         messageDiv.appendChild(timeDiv);
 
-        // Remove loading indicator if visible
-        if (this.loadingIndicator.style.display !== 'none') {
-            this.messagesContainer.appendChild(messageDiv);
-        } else {
-            this.messagesContainer.appendChild(messageDiv);
-        }
+        this.messagesContainer.appendChild(messageDiv);
 
         // Scroll to bottom
         this.scrollToBottom();
+    }
+
+    formatBotMessage(content) {
+        // Escape HTML to prevent XSS
+        let formatted = content
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        // Process markdown-like formatting
+
+        // Bold text: **text** or __text__
+        formatted = formatted.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        formatted = formatted.replace(/__(.+?)__/g, '<strong>$1</strong>');
+
+        // Headers: lines ending with :
+        formatted = formatted.replace(/^([A-Z][A-Z\s&-]+:)$/gm, '<strong class="section-header">$1</strong>');
+
+        // Bullet points: lines starting with - or *
+        formatted = formatted.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+
+        // Numbered lists: lines starting with number.
+        formatted = formatted.replace(/^\d+\.\s+(.+)$/gm, '<li class="numbered">$1</li>');
+
+        // Wrap consecutive list items in ul
+        formatted = formatted.replace(/(<li[^>]*>.*<\/li>\n?)+/g, (match) => {
+            return '<ul class="chat-list">' + match + '</ul>';
+        });
+
+        // Line breaks within paragraphs
+        formatted = formatted.replace(/\n(?!<)/g, '<br>');
+
+        // Paragraphs (double line breaks)
+        formatted = formatted.replace(/<br><br>/g, '</p><p>');
+
+        // Wrap in paragraph if not already
+        if (!formatted.startsWith('<')) {
+            formatted = '<p>' + formatted + '</p>';
+        }
+
+        // Clean up empty paragraphs
+        formatted = formatted.replace(/<p><\/p>/g, '');
+        formatted = formatted.replace(/<p>\s*<br>\s*<\/p>/g, '');
+
+        // Highlight currency amounts
+        formatted = formatted.replace(/\$[\d,]+\.?\d*/g, '<span class="currency">$&</span>');
+
+        // Highlight percentages
+        formatted = formatted.replace(/(\d+\.?\d*%)/g, '<span class="percentage">$1</span>');
+
+        return formatted;
     }
 
     setLoading(loading) {

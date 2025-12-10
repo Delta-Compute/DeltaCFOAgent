@@ -1,0 +1,1597 @@
+{
+  "app": {
+    "title": "Delta CFO Agent",
+    "tagline": "Delta's proprietary self improving AI CFO Agent"
+  },
+  "nav": {
+    "home": "Home",
+    "dashboard": "Transaction Manager",
+    "revenue": "Revenue Recognition",
+    "reports": "Reports",
+    "invoices": "Invoices",
+    "workforce": "Workforce",
+    "files": "File Manager",
+    "monthEnd": "Month-End Close",
+    "knowledge": "Knowledge",
+    "shareholders": "Shareholders",
+    "accounts": "Accounts",
+    "settings": "Settings",
+    "users": "Users",
+    "switchTenant": "Switch Tenant",
+    "language": "Language",
+    "accountSettings": "Account Settings",
+    "manageUsers": "Manage Users",
+    "createTenant": "+ Create New Tenant",
+    "signOut": "Sign Out",
+    "loading": "Loading..."
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "close": "Close",
+    "confirm": "Confirm",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "import": "Import",
+    "upload": "Upload",
+    "download": "Download",
+    "refresh": "Refresh",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Information",
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "reset": "Reset",
+    "clear": "Clear",
+    "select": "Select",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "actions": "Actions",
+    "view": "View",
+    "details": "Details",
+    "status": "Status",
+    "date": "Date",
+    "amount": "Amount",
+    "description": "Description",
+    "category": "Category",
+    "total": "Total",
+    "subtotal": "Subtotal",
+    "home": "Home",
+    "remove": "Remove",
+    "never": "Never"
+  },
+  "dashboard": {
+    "pageTitle": "Advanced Transaction Dashboard",
+    "title": "Transaction Manager",
+    "subtitle": "Manage and classify your transactions",
+    "upload": "Upload Transactions",
+    "dataRange": "Data Range:",
+    "stats": {
+      "total": "Total Transactions",
+      "revenue": "Total Revenue",
+      "expenses": "Total Expenses",
+      "needsReview": "Needs Review"
+    },
+    "revenueSync": {
+      "title": "Revenue Recognition Update:",
+      "viewDetails": "View Details",
+      "dismiss": "Dismiss",
+      "transactionsMatched": "{count} transaction{s} matched to invoices and reclassified as Revenue."
+    },
+    "filters": {
+      "title": "Advanced Filters",
+      "showArchived": "Show Archived",
+      "hideArchived": "Hide Archived",
+      "searchPlaceholder": "Search transactions...",
+      "businessEntity": "Business Entity:",
+      "allEntities": "All Entities",
+      "transactionType": "Transaction Type:",
+      "allTypes": "All Types",
+      "revenueOnly": "Revenue Only",
+      "expensesOnly": "Expenses Only",
+      "sourceFile": "Source File:",
+      "allSources": "All Sources",
+      "reviewStatus": "Review Status:",
+      "allTransactions": "All Transactions",
+      "needsReviewOnly": "Needs Review Only",
+      "minAmount": "Min Amount ($):",
+      "minAmountPlaceholder": "0.00",
+      "maxAmount": "Max Amount ($):",
+      "maxAmountPlaceholder": "No limit",
+      "startDate": "Start Date:",
+      "endDate": "End Date:",
+      "keywordSearch": "Keyword Search:",
+      "keywordPlaceholder": "Search transaction descriptions...",
+      "quickFiltersTitle": "Quick Filters:",
+      "todosOnly": "To Do's Only",
+      "excludeTransfers": "Exclude Internal Transfers",
+      "year2025": "2025 Full Year",
+      "year2024": "2024 Full Year",
+      "ytd2025": "2025 YTD",
+      "applyFilters": "Apply Filters",
+      "clearAll": "Clear All"
+    },
+    "table": {
+      "title": "Advanced Transaction Management",
+      "info": "Loading...",
+      "selectAll": "Select All",
+      "headers": {
+        "checkbox": "",
+        "date": "Action",
+        "origin": "Origin",
+        "destination": "Destination",
+        "description": "Description",
+        "amount": "Amount",
+        "crypto": "Crypto",
+        "entity": "Entity",
+        "primaryCategory": "Primary Category",
+        "subcategory": "Subcategory",
+        "justification": "Justification",
+        "confidence": "Confidence",
+        "source": "Source",
+        "actions": "Actions"
+      },
+      "loading": "Loading transactions...",
+      "noTransactions": "No transactions found"
+    },
+    "buttons": {
+      "refresh": "Refresh",
+      "runInvoiceMatching": "Run Invoice Matching",
+      "enrichBlockchain": "Enrich Blockchain Transactions",
+      "findDuplicates": "Find Duplicates",
+      "exportCSV": "Export CSV",
+      "exportAll": "Export to CSV",
+      "archiveSelected": "Archive Selected",
+      "showArchived": "Show Archived",
+      "hideArchived": "Hide Archived",
+      "undo": "Undo",
+      "redo": "Redo",
+      "aiSuggestions": "AI Suggestions",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
+    "pagination": {
+      "previous": "← Previous",
+      "next": "Next →",
+      "pageInfo": "Page {current} of {total}",
+      "perPage": "Per page:",
+      "showing": "Showing {start} to {end} of {total} transactions"
+    },
+    "modals": {
+      "aiSuggestions": {
+        "title": "AI Smart Recommendations",
+        "transactionInfo": "Transaction:",
+        "amount": "Amount:",
+        "currentConfidence": "Current Confidence:",
+        "aiAssessment": "AI Assessment:",
+        "reasoning": "Reasoning:",
+        "newConfidence": "New Confidence:",
+        "context": "Context:",
+        "loading": "Loading AI suggestions...",
+        "error": "Error loading suggestions",
+        "noImprovements": "No improvements needed! The AI is confident with the current classification."
+      },
+      "duplicates": {
+        "title": "Duplicate Transactions Detected",
+        "summary": "Duplicate Summary",
+        "comparisonTitle": "Classification Comparison",
+        "headers": {
+          "action": "Action",
+          "amount": "Amount",
+          "description": "Description",
+          "categoryChange": "Old → New Category",
+          "confidence": "Confidence"
+        },
+        "overwriteButton": "Overwrite with Latest Business Knowledge",
+        "discardButton": "Discard Upload & Keep Existing",
+        "whatHappens": "What happens with each option?",
+        "overwriteInfo": "Deletes old transactions and replaces them with newly processed data using your latest business knowledge and improved Origin/Destination mapping.",
+        "discardInfo": "Cancels the upload and keeps your existing transactions unchanged."
+      },
+      "invoiceMatching": {
+        "title": "Invoice Matching Results",
+        "loading": "Running invoice matching algorithm...",
+        "loadingDescription": "Analyzing transactions and invoices to find potential matches...",
+        "summary": "Matching Summary",
+        "totalMatches": "Total Matches Found:",
+        "reviewNote": "Review each match below and accept or reject based on your assessment.",
+        "headers": {
+          "invoice": "Invoice",
+          "transaction": "Transaction",
+          "matchScore": "Match Score",
+          "explanation": "Explanation",
+          "actions": "Actions"
+        },
+        "empty": "No new matches found",
+        "emptyDescription": "All invoices are either already matched or have no corresponding transactions.",
+        "error": "Error running invoice matching:",
+        "accept": "Accept",
+        "reject": "Reject"
+      },
+      "findDuplicates": {
+        "title": "Duplicate Transaction Detection",
+        "loading": "Scanning for duplicate transactions...",
+        "loadingDescription": "Analyzing transactions by date, description, and amount...",
+        "summary": "Duplicates Found",
+        "totalGroups": "Total Duplicate Groups:",
+        "totalTransactions": "Total Duplicate Transactions:",
+        "reviewNote": "Review each group below. You can use checkboxes to select specific transactions or use the bulk actions below.",
+        "archiveAllButFirst": "Archive All But First (All Groups)",
+        "archiveSelected": "Archive Selected",
+        "selectAll": "Select All",
+        "deselectAll": "Deselect All",
+        "empty": "No duplicates found!",
+        "emptyDescription": "All transactions appear to be unique.",
+        "error": "Error finding duplicates:"
+      }
+    },
+    "messages": {
+      "transactionSaved": "Transaction saved successfully",
+      "transactionArchived": "Transaction archived successfully",
+      "transactionsArchived": "{count} transactions archived successfully",
+      "exportSuccess": "Export completed successfully",
+      "exportFailed": "Export failed",
+      "matchingStarted": "Invoice matching started...",
+      "blockchainEnrichmentStarted": "Blockchain enrichment started...",
+      "duplicateScanStarted": "Duplicate scan started...",
+      "undoSuccess": "Undo successful",
+      "redoSuccess": "Redo successful",
+      "noUndoHistory": "Nothing to undo",
+      "noRedoHistory": "Nothing to redo",
+      "confirmArchive": "Are you sure you want to archive the selected transactions?",
+      "confirmDelete": "Are you sure you want to delete this transaction?"
+    }
+  },
+  "invoices": {
+    "pageTitle": "Invoice Processing",
+    "title": "Invoices",
+    "subtitle": "Manage invoices and billing",
+    "createInvoice": "Create New Invoice",
+    "stats": {
+      "totalInvoices": "Total Invoices",
+      "totalAmount": "Total Amount",
+      "uniqueVendors": "Unique Vendors",
+      "uniqueCustomers": "Unique Customers",
+      "averageAmount": "Average Amount"
+    },
+    "selection": {
+      "selected": "invoice(s) selected",
+      "editSelected": "Edit Selected",
+      "deleteSelected": "Delete Selected",
+      "clearSelection": "Clear Selection"
+    },
+    "filters": {
+      "title": "Filters & Search",
+      "keywordSearch": "Keyword Search",
+      "searchPlaceholder": "Search across all fields (invoice #, vendor, customer, notes...)",
+      "searchVendor": "Search Vendor",
+      "vendorPlaceholder": "Enter vendor name...",
+      "searchCustomer": "Search Customer",
+      "customerPlaceholder": "Enter customer name...",
+      "businessUnit": "Business Unit",
+      "allBusinessUnits": "All Business Units",
+      "category": "Category",
+      "allCategories": "All Categories",
+      "invoiceNumber": "Invoice Number",
+      "invoiceNumberPlaceholder": "Search invoice #...",
+      "dateFrom": "Date From",
+      "dateTo": "Date To",
+      "amountMin": "Amount Min",
+      "amountMax": "Amount Max",
+      "amountPlaceholder": "0.00",
+      "currency": "Currency",
+      "allCurrencies": "All Currencies",
+      "applyFilters": "Apply Filters",
+      "clearAll": "Clear All"
+    },
+    "businessUnits": {
+      "deltaLLC": "Delta LLC",
+      "deltaPropShop": "Delta Prop Shop LLC",
+      "deltaMining": "Delta Mining Paraguay S.A.",
+      "deltaBrazil": "Delta Brazil",
+      "personal": "Personal"
+    },
+    "categories": {
+      "technology": "Technology Expenses",
+      "utilities": "Utilities",
+      "insurance": "Insurance",
+      "professionalServices": "Professional Services",
+      "officeExpenses": "Office Expenses",
+      "other": "Other"
+    },
+    "table": {
+      "invoiceNumber": "Invoice #",
+      "date": "Date",
+      "dueDate": "Due Date",
+      "vendorFrom": "Vendor (From)",
+      "customerTo": "Customer (To)",
+      "amount": "Amount",
+      "status": "Status",
+      "currency": "Currency",
+      "businessUnit": "Business Unit",
+      "category": "Category",
+      "actions": "Actions",
+      "loading": "Loading invoices...",
+      "noInvoices": "No invoices found"
+    },
+    "actions": {
+      "view": "View",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "status": {
+      "pending": "Pending",
+      "partial": "Partial",
+      "paid": "Paid",
+      "overdue": "Overdue",
+      "cancelled": "Cancelled",
+      "draft": "Draft",
+      "sent": "Sent"
+    },
+    "modals": {
+      "details": {
+        "title": "Invoice Details",
+        "tabs": {
+          "overview": "Overview",
+          "payments": "Payments",
+          "attachments": "Attachments",
+          "transactionMatches": "Transaction Matches"
+        }
+      },
+      "edit": {
+        "title": "Edit Invoice",
+        "sections": {
+          "basicInfo": "Basic Information",
+          "vendorFrom": "Vendor (From)",
+          "customerTo": "Customer (To)",
+          "financialDetails": "Financial Details"
+        },
+        "fields": {
+          "invoiceNumber": "Invoice Number",
+          "invoiceNumberRequired": "Invoice Number *",
+          "invoiceDate": "Invoice Date *",
+          "dueDate": "Due Date",
+          "vendorName": "Vendor Name *",
+          "vendorAddress": "Vendor Address",
+          "vendorTaxId": "Vendor Tax ID",
+          "customerName": "Customer Name",
+          "customerAddress": "Customer Address",
+          "customerTaxId": "Customer Tax ID",
+          "totalAmount": "Total Amount *",
+          "currency": "Currency",
+          "businessUnit": "Business Unit",
+          "category": "Category"
+        },
+        "buttons": {
+          "cancel": "Cancel",
+          "saveChanges": "Save Changes"
+        }
+      }
+    },
+    "messages": {
+      "processingInvoice": "Processing invoice...",
+      "linkedTransaction": "Linked Transaction",
+      "confirmDelete": "Are you sure you want to delete this invoice?",
+      "deleteSuccess": "Invoice deleted successfully",
+      "deleteFailed": "Failed to delete invoice",
+      "saveSuccess": "Invoice saved successfully",
+      "saveFailed": "Failed to save invoice",
+      "loadFailed": "Failed to load invoices"
+    },
+    "invoiceDetails": "Invoice Details",
+    "loadingInvoiceInfo": "Loading invoice information...",
+    "invoiceNumber": "Invoice Number",
+    "vendor": "Vendor",
+    "invoiceDate": "Invoice Date",
+    "dueDate": "Due Date",
+    "invoiceSummary": "Invoice Summary",
+    "lineItems": "Line Items",
+    "completeInvoiceDetails": "Complete Invoice Details",
+    "paymentInformation": "Payment Information",
+    "linkedTransaction": "Linked Transaction",
+    "noTransactionLinked": "No transaction linked",
+    "potentialMatches": "Potential Matches",
+    "pendingMatchesCount": "{count} pending matches",
+    "unmatched": "Unmatched",
+    "findMatchingTransactions": "Find Matching Transactions",
+    "sendPaymentReminder": "Send Payment Reminder",
+    "duplicateInvoice": "Duplicate Invoice",
+    "deleteInvoice": "Delete Invoice",
+    "markAsPaid": "Mark as Paid",
+    "createNewInvoice": "Create New Invoice",
+    "backToInvoices": "Back to Invoices",
+    "currencyType": "Currency Type",
+    "fiatCurrency": "FIAT Currency",
+    "cryptocurrency": "Cryptocurrency",
+    "vendorFrom": "Vendor (From)",
+    "selectVendor": "Select vendor...",
+    "addCustomVendor": "+ Add Custom Vendor...",
+    "enterCustomVendorName": "Enter custom vendor name",
+    "vendorAddress": "Vendor Address",
+    "vendorBusinessAddressPlaceholder": "Vendor's business address",
+    "fiatCurrencyLabel": "FIAT Currency",
+    "cryptocurrencyLabel": "Cryptocurrency",
+    "selectCurrency": "Select Currency",
+    "otherCustom": "Other (Custom)",
+    "network": "Network",
+    "selectNetwork": "Select Network",
+    "customCryptocurrency": "Custom Cryptocurrency",
+    "customCryptoPlaceholder": "e.g., ETH, SOL, MATIC",
+    "customNetwork": "Custom Network",
+    "customNetworkPlaceholder": "e.g., Polygon, Solana, Arbitrum",
+    "customerName": "Customer Name",
+    "customerNamePlaceholder": "e.g., Alps Blockchain",
+    "customerAddress": "Customer Address",
+    "customerAddressPlaceholder": "Customer's billing address",
+    "descriptionPlaceholder": "e.g., Professional Services - October 2025",
+    "quantity": "Quantity",
+    "unitPrice": "Unit Price",
+    "itemNamePlaceholder": "Item name",
+    "itemDetailsPlaceholder": "Item details/description (optional)",
+    "addLineItem": "+ Add Line Item",
+    "taxPercentage": "Tax Percentage (%)",
+    "subtotal": "Subtotal:",
+    "tax": "Tax:",
+    "total": "Total:",
+    "paymentTerms": "Payment Instructions / Terms",
+    "paymentTermsPlaceholder": "Enter payment instructions (e.g., bank account details, wire transfer info, crypto wallet address, payment terms, or any additional notes for the customer)",
+    "generateInvoicePdf": "Generate Invoice PDF",
+    "generatingInvoice": "Generating invoice PDF and saving to database..."
+  },
+  "revenue": {
+    "pageTitle": "Revenue Recognition Dashboard",
+    "pageSubtitle": "Automated invoice-transaction matching with AI intelligence",
+    "header": {
+      "title": "Revenue Recognition Dashboard",
+      "subtitle": "Automated invoice-transaction matching with AI intelligence"
+    },
+    "stats": {
+      "totalInvoices": {
+        "label": "Total Invoices",
+        "sublabel": "In the system"
+      },
+      "matchedInvoices": {
+        "label": "Matched Invoices",
+        "sublabel": "Successfully linked"
+      },
+      "unmatchedInvoices": {
+        "label": "Unmatched Invoices",
+        "sublabel": "Need attention"
+      },
+      "matchRate": {
+        "label": "Match Rate",
+        "sublabel": "Automation success"
+      },
+      "pendingReview": {
+        "label": "Pending Review",
+        "sublabel": "Awaiting approval"
+      },
+      "recentActivity": {
+        "label": "Recent Activity",
+        "sublabel": "Last 30 days"
+      },
+      "unlinkedTransactions": {
+        "label": "Unlinked Transactions",
+        "sublabel": "Total transactions without invoice"
+      },
+      "unlinkedRevenue": {
+        "label": "Unlinked Revenue Transactions",
+        "sublabel": "Positive amounts needing match"
+      }
+    },
+    "controls": {
+      "matching": {
+        "title": "Invoice Matching",
+        "description": "Automatically find and link invoices to transactions with AI-powered matching.",
+        "helpRunMatch": "Run Match: Analyze ALL unlinked invoices and find potential transaction matches. This creates pending matches for review.",
+        "helpAutoMatch": "Auto-Match HIGH: Automatically confirm all high-confidence pending matches (80%+). Use this when you trust the AI's recommendations."
+      },
+      "buttons": {
+        "runMatch": "Run Match",
+        "autoMatchHigh": "Auto-Match HIGH",
+        "moreOptions": "More Options",
+        "refreshData": "Refresh Data",
+        "viewAllMatches": "View All Matches",
+        "approveSelected": "Approve Selected",
+        "rejectSelected": "Reject Selected",
+        "clearSelection": "Clear Selection",
+        "refreshUnlinked": "Refresh Unlinked",
+        "quickMatchAll": "Quick Match All",
+        "viewAllConfirmed": "View All Confirmed",
+        "quickMatch": "Quick Match",
+        "viewDetails": "View Details",
+        "confirmMatch": "Confirm Match",
+        "rejectMatch": "Reject Match",
+        "viewInvoice": "View Invoice",
+        "viewTransaction": "View Transaction",
+        "viewInDashboard": "View in Dashboard",
+        "viewFullDetails": "View Full Details",
+        "close": "Close"
+      },
+      "progress": {
+        "initializing": "Initializing matching process...",
+        "status": "Status:",
+        "time": "Time:",
+        "optimizations": "Optimizations:",
+        "starting": "Starting...",
+        "calculating": "Calculating...",
+        "loading": "Loading..."
+      },
+      "selected": {
+        "matchesSelected": "matches selected",
+        "noSelection": "0 matches selected"
+      }
+    },
+    "filters": {
+      "all": "All",
+      "highConfidence": "High Confidence",
+      "mediumConfidence": "Medium Confidence",
+      "allUnlinked": "All Unlinked",
+      "recent30Days": "Recent (30 days)",
+      "highValue": "High Value ($1000+)"
+    },
+    "sections": {
+      "pendingMatches": {
+        "title": "Pending Matches for Review",
+        "empty": "No pending matches!",
+        "emptyDescription": "All invoices are either matched or no matches were found. Try running the matching process to find new matches."
+      },
+      "unlinkedInvoices": {
+        "title": "Unlinked Invoices Ready for Matching",
+        "empty": "Great! All invoices are matched!",
+        "emptyDescription": "No unlinked invoices found. All invoices have been successfully matched to transactions.",
+        "refreshButton": "Refresh to Check for New Invoices",
+        "quickMatchHelp": "Use Quick Match to automatically find potential transaction matches."
+      },
+      "recentMatches": {
+        "title": "Recent Confirmed Matches"
+      }
+    },
+    "invoiceCard": {
+      "vendor": "Vendor:",
+      "items": "Items:",
+      "status": "Status:",
+      "description": "Description:"
+    },
+    "matchCard": {
+      "invoiceDetails": "Invoice Details",
+      "transactionDetails": "Transaction Details",
+      "similarMatches": "Similar Matches",
+      "vendorHistory": "Vendor History",
+      "matchCriteria": "Match Criteria Breakdown",
+      "amountMatch": "Amount Match",
+      "dateMatch": "Date Match",
+      "entityMatch": "Entity Match",
+      "overallScore": "Overall Score"
+    },
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "perPage": "Per page:",
+      "showing": "Showing {start} to {end} of {total} invoices"
+    },
+    "modals": {
+      "transactionDetails": {
+        "title": "Transaction Details",
+        "transactionId": "Transaction ID:",
+        "amount": "Amount:",
+        "date": "Date:",
+        "entity": "Entity:",
+        "category": "Category:",
+        "description": "Description:"
+      },
+      "invoiceDetails": {
+        "title": "Invoice Details",
+        "invoiceId": "Invoice ID:",
+        "invoiceNumber": "Invoice Number:",
+        "customer": "Customer:",
+        "issueDate": "Issue Date:",
+        "dueDate": "Due Date:",
+        "totalAmount": "Total Amount:",
+        "status": "Status:",
+        "lineItems": "Line Items"
+      }
+    },
+    "messages": {
+      "matchingStarted": "Matching process started...",
+      "matchConfirmed": "Match confirmed successfully",
+      "matchRejected": "Match rejected successfully",
+      "matchFailed": "Failed to confirm match",
+      "rejectFailed": "Failed to reject match",
+      "noSelection": "Please select at least one match",
+      "bulkApproveSuccess": "Successfully approved {count} matches",
+      "bulkRejectSuccess": "Successfully rejected {count} matches",
+      "dataRefreshed": "Data refreshed successfully",
+      "quickMatchStarted": "Quick match process started...",
+      "autoMatchComplete": "Auto-match process completed"
+    },
+    "confidence": {
+      "high": "HIGH",
+      "medium": "MEDIUM",
+      "low": "LOW"
+    }
+  },
+  "workforce": {
+    "pageTitle": "Workforce Management",
+    "title": "Workforce Management",
+    "subtitle": "Manage employees, contractors, and payslips",
+    "tabs": {
+      "members": "Workforce Members",
+      "payslips": "Payslips"
+    },
+    "stats": {
+      "activeMembers": "Active Members",
+      "totalPayslips": "Total Payslips",
+      "matchedPayslips": "Matched Payslips",
+      "matchRate": "Match Rate"
+    },
+    "members": {
+      "search": {
+        "placeholder": "Search by name, title, email..."
+      },
+      "buttons": {
+        "addMember": "+ Add Member",
+        "refresh": "Refresh"
+      },
+      "table": {
+        "name": "Name",
+        "type": "Type",
+        "jobTitle": "Job Title",
+        "dateOfHire": "Date of Hire",
+        "payRate": "Pay Rate",
+        "status": "Status",
+        "actions": "Actions",
+        "loading": "Loading workforce members...",
+        "noMembers": "No workforce members found"
+      }
+    },
+    "payslips": {
+      "search": {
+        "placeholder": "Search by employee, payslip number..."
+      },
+      "buttons": {
+        "createPayslip": "+ Create Payslip",
+        "refresh": "Refresh"
+      },
+      "table": {
+        "payslipNumber": "Payslip #",
+        "employee": "Employee",
+        "period": "Period",
+        "paymentDate": "Payment Date",
+        "grossAmount": "Gross Amount",
+        "netAmount": "Net Amount",
+        "status": "Status",
+        "actions": "Actions",
+        "loading": "Loading payslips...",
+        "noPayslips": "No payslips found"
+      }
+    },
+    "type": {
+      "employee": "Employee",
+      "contractor": "Contractor"
+    },
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "draft": "Draft",
+      "approved": "Approved",
+      "paid": "Paid"
+    },
+    "modals": {
+      "member": {
+        "titleAdd": "Add Workforce Member",
+        "titleEdit": "Edit Workforce Member",
+        "fields": {
+          "fullName": "Full Name *",
+          "employmentType": "Employment Type *",
+          "employmentTypePlaceholder": "Select type",
+          "status": "Status",
+          "documentType": "Document Type",
+          "documentTypePlaceholder": "Select type",
+          "documentTypeSSN": "SSN",
+          "documentTypeEIN": "EIN",
+          "documentTypeTaxID": "Tax ID",
+          "documentTypePassport": "Passport",
+          "documentNumber": "Document Number",
+          "dateOfHire": "Date of Hire *",
+          "payRate": "Pay Rate *",
+          "currency": "Currency",
+          "payFrequency": "Pay Frequency *",
+          "payFrequencyPlaceholder": "Select frequency",
+          "payFrequencyHourly": "Hourly",
+          "payFrequencyDaily": "Daily",
+          "payFrequencyWeekly": "Weekly",
+          "payFrequencyBiweekly": "Biweekly",
+          "payFrequencyMonthly": "Monthly",
+          "payFrequencyAnnual": "Annual",
+          "jobTitle": "Job Title",
+          "department": "Department",
+          "email": "Email",
+          "phone": "Phone",
+          "notes": "Notes"
+        },
+        "buttons": {
+          "cancel": "Cancel",
+          "saveMember": "Save Member"
+        }
+      },
+      "payslip": {
+        "titleCreate": "Create Payslip",
+        "titleEdit": "Edit Payslip",
+        "fields": {
+          "employee": "Employee *",
+          "employeePlaceholder": "Select employee",
+          "payslipNumber": "Payslip Number *",
+          "periodStart": "Period Start *",
+          "periodEnd": "Period End *",
+          "paymentDate": "Payment Date *",
+          "grossAmount": "Gross Amount *",
+          "deductions": "Deductions",
+          "netAmount": "Net Amount *",
+          "paymentMethod": "Payment Method",
+          "paymentMethodPlaceholder": "Select method",
+          "paymentMethodBankTransfer": "Bank Transfer",
+          "paymentMethodCheck": "Check",
+          "paymentMethodCash": "Cash",
+          "paymentMethodCrypto": "Cryptocurrency",
+          "paymentMethodWire": "Wire Transfer",
+          "status": "Status",
+          "notes": "Notes"
+        },
+        "buttons": {
+          "cancel": "Cancel",
+          "savePayslip": "Save Payslip"
+        }
+      }
+    },
+    "actions": {
+      "view": "View",
+      "edit": "Edit",
+      "delete": "Delete",
+      "findMatches": "Find Matches"
+    },
+    "messages": {
+      "memberSaved": "Workforce member saved successfully",
+      "memberDeleted": "Workforce member deleted successfully",
+      "payslipSaved": "Payslip saved successfully",
+      "payslipDeleted": "Payslip deleted successfully",
+      "confirmDeleteMember": "Are you sure you want to delete this workforce member?",
+      "confirmDeletePayslip": "Are you sure you want to delete this payslip?",
+      "loadFailed": "Failed to load data",
+      "saveFailed": "Failed to save",
+      "deleteFailed": "Failed to delete"
+    }
+  },
+  "reports": {
+    "title": "Reports",
+    "subtitle": "Financial reports and analytics",
+    "generate": "Generate Report",
+    "pageTitle": "Financial Reports",
+    "stats": {
+      "totalRevenue": "Total Revenue",
+      "totalExpenses": "Total Expenses",
+      "netProfit": "Net Profit",
+      "cashPosition": "Cash Position"
+    },
+    "messages": {
+      "loadFailed": "Failed to load dashboard data. Please refresh the page.",
+      "refreshFailed": "Failed to refresh dashboard data.",
+      "dreLoadFailed": "Failed to load DRE preview. Please try again.",
+      "dreDownloadFailed": "Failed to download DRE PDF. Please try again.",
+      "balanceSheetLoadFailed": "Failed to load Balance Sheet preview. Please try again.",
+      "balanceSheetDownloadFailed": "Failed to download Balance Sheet PDF. Please try again.",
+      "cashFlowLoadFailed": "Failed to load Cash Flow preview. Please try again.",
+      "cashFlowDownloadFailed": "Failed to download Cash Flow PDF. Please try again.",
+      "dmplLoadFailed": "Failed to load DMPL preview. Please try again.",
+      "dmplDownloadFailed": "Failed to download DMPL PDF. Please try again.",
+      "noShareholderData": "No shareholder data available. Click 'Manage Shareholders' to add shareholders."
+    },
+    "tagline": "Real-time Financial Analytics Dashboard",
+    "filters": {
+      "title": "Report Filters",
+      "periodLabel": "Time Period:",
+      "periodAllTime": "All Time",
+      "periodMonthly": "Monthly",
+      "periodQuarterly": "Quarterly",
+      "periodYearly": "Yearly",
+      "periodCustom": "Custom Range",
+      "entityLabel": "Business Entity:",
+      "entityAll": "All Entities",
+      "typeLabel": "Transaction Type:",
+      "typeTooltip": "External Only: Real business revenue/expenses (recommended for financial reports). All Transactions: Includes internal transfers between accounts (may show imbalanced totals).",
+      "typeAll": "All Transactions",
+      "typeExternal": "External Only (Recommended)",
+      "typeInternal": "Internal Only",
+      "startDate": "Start Date:",
+      "endDate": "End Date:",
+      "quickFiltersTitle": "Quick Filters:",
+      "ytd": "2025 YTD",
+      "year2024": "2024 Full Year",
+      "q4": "Q4 2024",
+      "lastMonth": "Last Month",
+      "refreshDashboard": "Refresh Dashboard",
+      "resetFilters": "Clear Filters",
+      "allTransactionsWarning": "\"All Transactions\" includes internal transfers which may show imbalanced totals. Use \"External Only\" for accurate financial reporting."
+    },
+    "section": {
+      "financialReports": "Financial Reports",
+      "generatePDFInfo": "Generate professional financial statements in PDF format",
+      "chartsTitle": "Financial Analytics Charts",
+      "chartsSubtitle": "Real-time Financial Data Visualization",
+      "sankeyTitle": "Financial Flow Analysis",
+      "sankeyInfo": "Interactive Sankey diagram showing money flow between categories"
+    },
+    "dre": {
+      "title": "Income Statement",
+      "description": "Income Statement",
+      "generateButton": "Generate Income Statement",
+      "modalTitle": "Demonstração do Resultado do Exercício (DRE)",
+      "summaryTitle": "Period Summary",
+      "totalRevenue": "Total Revenue",
+      "grossProfit": "Gross Profit",
+      "netIncome": "Net Income",
+      "detailsTitle": "Financial Details",
+      "tableItem": "Item",
+      "tableValue": "Value",
+      "tablePercent": "% of Revenue",
+      "periodLabel": "Period:",
+      "companyLabel": "Company:",
+      "generatedLabel": "Generated on:",
+      "closeButton": "Close",
+      "downloadButton": "Download PDF"
+    },
+    "balanceSheet": {
+      "title": "Balance Sheet",
+      "description": "Balance Sheet",
+      "generateButton": "Generate Balance Sheet"
+    },
+    "cashFlow": {
+      "title": "Cash Flow Statement",
+      "description": "Cash Flow Statement",
+      "generateButton": "Generate Cash Flow Statement"
+    },
+    "dmpl": {
+      "title": "Statement of Changes in Equity",
+      "description": "Statement of Changes in Equity",
+      "generateButton": "Generate Statement of Changes in Equity"
+    },
+    "charts": {
+      "revenueVsExpenses": "Revenue vs Expenses",
+      "monthlyPL": "Monthly P&L Trend",
+      "entityPerformance": "Entity Performance",
+      "cashFlowTrend": "Cash Flow Trend",
+      "sankeyFlowAnalysis": "This diagram shows how revenue flows through different expense categories to net profit"
+    },
+    "loading": {
+      "data": "Loading financial data...",
+      "pleaseWait": "Loading..."
+    },
+    "error": {
+      "title": "Error"
+    },
+    "types": {
+      "balanceSheet": "Balance Sheet",
+      "incomeStatement": "Income Statement",
+      "cashFlow": "Cash Flow",
+      "taxReport": "Tax Report"
+    }
+  },
+  "files": {
+    "pageTitle": "File Management",
+    "title": "File Manager",
+    "subtitle": "Upload and manage documents",
+    "transactions": {
+      "title": "Upload Transaction Files (CSV/Excel/PDF)",
+      "dragDrop": "Drag & Drop CSV, Excel or PDF Files Here",
+      "orClick": "Or click to select files",
+      "chooseFiles": "Choose Files",
+      "progress": {
+        "processing": "Processing...",
+        "uploading": "Uploading file...",
+        "processingTransactions": "Processing transactions...",
+        "complete": "Complete!"
+      },
+      "supportedFormats": "Supported formats: CSV, Excel (XLS/XLSX), PDF"
+    },
+    "invoices": {
+      "title": "Upload Invoices",
+      "dragDrop": "Drag & drop invoice files here or click to browse",
+      "supportedFormats": "Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX), ZIP, 7Z (Max 50MB total)",
+      "multipleHint": "Upload multiple files, a ZIP archive, or a single invoice",
+      "progress": {
+        "title": "Processing Files...",
+        "progress": "Progress:",
+        "complete": "Processing Complete",
+        "successful": "Successful",
+        "failed": "Failed"
+      }
+    },
+    "receipts": {
+      "title": "Upload Payment Receipts",
+      "dragDrop": "Drag & drop payment receipts here or click to browse",
+      "supportedFormats": "Supported formats: PDF, PNG, JPG, JPEG, TIFF, CSV, Excel (XLS/XLSX)",
+      "aiHint": "Upload multiple files - AI will automatically match receipts to invoices",
+      "customerFilter": {
+        "label": "Filter by Customer (Optional)",
+        "allCustomers": "All Customers (No Filter)",
+        "loading": "Loading customers...",
+        "hint": "Select a customer to improve matching accuracy. Only invoices from this customer will be considered."
+      },
+      "chooseFiles": "Choose Receipt Files",
+      "progress": {
+        "title": "Processing Payment Receipts...",
+        "processing": "Processing Receipt...",
+        "extracting": "Extracting payment data with AI...",
+        "progress": "Progress:",
+        "complete": "Processing Complete",
+        "successful": "Successful",
+        "failed": "Failed"
+      }
+    },
+    "accountGroups": {
+      "title": "Uploaded Files by Account",
+      "accountsWithFiles": "account(s) with uploaded files",
+      "empty": {
+        "title": "No files uploaded yet",
+        "description": "Upload CSV or PDF files above to get started with transaction tracking."
+      },
+      "stats": {
+        "totalTxns": "Total Txns",
+        "active": "Active",
+        "coverage": "Coverage"
+      },
+      "badges": {
+        "gapsDetected": "Gaps Detected"
+      },
+      "categories": {
+        "checking": "Checking",
+        "creditCard": "Credit Card",
+        "cryptoExchange": "Crypto Exchange",
+        "cryptoWallet": "Crypto Wallet",
+        "other": "Other"
+      }
+    },
+    "table": {
+      "headers": {
+        "fileName": "File Name",
+        "statementPeriod": "Statement Period",
+        "transactions": "Transactions",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "status": {
+        "active": "Active",
+        "partiallyArchived": "Partially Archived",
+        "allArchived": "All Archived"
+      },
+      "transactions": {
+        "total": "total",
+        "active": "active",
+        "archived": "archived"
+      },
+      "gaps": {
+        "detected": "Gap Detected:",
+        "missing": "Missing {days} days",
+        "months": "≈{months} month",
+        "monthsPlural": "≈{months} months",
+        "between": "between {from} and {to}"
+      }
+    },
+    "buttons": {
+      "view": "View",
+      "chooseFiles": "Choose Files",
+      "uploadFile": "Upload File"
+    },
+    "messages": {
+      "uploadSuccess": "Successfully processed {filename}",
+      "uploadSuccessWithCount": "Successfully processed {filename} ({count} transactions)",
+      "uploadFailed": "Upload failed: {error}",
+      "onlyAllowedFormats": "Only CSV, Excel (XLS/XLSX) and PDF files are allowed",
+      "notAuthenticated": "Not authenticated. Please log in.",
+      "duplicateDetection": "Duplicate detection not fully implemented in hierarchical view yet.",
+      "invoicesUploaded": "Successfully uploaded {count} invoice(s)",
+      "completedWithErrors": "Completed with {count} error(s)"
+    }
+  },
+  "knowledge": {
+    "title": "Tenant Knowledge",
+    "subtitle": "Manage classification patterns, business entities, and AI learning settings",
+    "tabs": {
+      "patterns": "Classification Patterns",
+      "entities": "Business Entities",
+      "categories": "Categories",
+      "subcategories": "Subcategories",
+      "bankAccounts": "Bank Accounts",
+      "cryptoWallets": "Crypto Wallets",
+      "notifications": "Notifications",
+      "settings": "Settings"
+    },
+    "stats": {
+      "totalPatterns": "Total Patterns",
+      "activePatterns": "Active Patterns",
+      "highConfidence": "High Confidence",
+      "totalEntities": "Total Entities",
+      "classifiedTransactions": "Classified Transactions",
+      "unreadNotifications": "Unread Notifications",
+      "totalNotifications": "Total Notifications"
+    },
+    "searchPlaceholder": {
+      "patterns": "Search patterns by description, entity, or category...",
+      "entities": "Search entities...",
+      "categories": "Search categories...",
+      "subcategories": "Search subcategories..."
+    },
+    "buttons": {
+      "addPattern": "Add Pattern",
+      "testPatterns": "Test Patterns",
+      "addEntity": "Add Entity",
+      "addBankAccount": "Add Bank Account",
+      "addWallet": "Add Crypto Wallet",
+      "allNotifications": "All Notifications",
+      "unreadOnly": "Unread Only",
+      "markAllRead": "Mark All as Read",
+      "saveSettings": "Save Settings"
+    },
+    "loading": {
+      "patterns": "Loading classification patterns...",
+      "entities": "Loading business entities...",
+      "categories": "Loading categories...",
+      "subcategories": "Loading subcategories...",
+      "bankAccounts": "Loading bank accounts...",
+      "wallets": "Loading crypto wallets...",
+      "notifications": "Loading notifications..."
+    },
+    "modals": {
+      "addPattern": "Add Classification Pattern",
+      "editPattern": "Edit Classification Pattern",
+      "addEntity": "Add Business Entity",
+      "editEntity": "Edit Business Entity",
+      "addBankAccount": "Add Bank Account",
+      "editBankAccount": "Edit Bank Account",
+      "addWallet": "Add Crypto Wallet",
+      "editWallet": "Edit Crypto Wallet",
+      "patternSuggestions": "Auto-Learned Pattern Suggestions"
+    },
+    "patternForm": {
+      "descriptionPattern": "Description Pattern",
+      "descriptionPlaceholder": "e.g., COINBASE or PIX TRANSF or GAS FEE",
+      "descriptionHint": "Enter the keyword or phrase to match. Wildcards are added automatically. Example: \"PAYPAL\" will match any description containing PAYPAL",
+      "patternType": "Pattern Type",
+      "patternTypeSelect": "Select type...",
+      "patternTypeRevenue": "Revenue",
+      "patternTypeExpense": "Expense",
+      "patternTypeTransfer": "Transfer",
+      "patternTypeTechnology": "Technology",
+      "patternTypeCardMapping": "Card Mapping",
+      "entityName": "Entity Name",
+      "entityPlaceholder": "e.g., Coinbase, Delta LLC (optional)",
+      "entityHint": "Optional - Leave blank for patterns that don't map to a specific entity",
+      "accountingCategory": "Accounting Category",
+      "categorySelect": "Select category...",
+      "categoryNote": "Categories are loaded from your actual transaction data in the Transaction Manager",
+      "subcategory": "Subcategory",
+      "subcategoryPlaceholder": "e.g., Exchange Fees, Office Supplies",
+      "subcategoryNote": "Subcategories are auto-suggested from your transaction data",
+      "justification": "Justification",
+      "justificationPlaceholder": "e.g., Monthly SaaS subscription, Recurring payment for cloud hosting",
+      "justificationHint": "Standard justification text to apply when this pattern matches a transaction",
+      "confidenceScore": "Confidence Score",
+      "confidenceHint": "0.0 - 1.0 (higher = more confident). Recommended: 0.8+ for exact matches, 0.5-0.7 for partial matches",
+      "priority": "Priority",
+      "priorityHint": "Lower number = higher priority. Range: 0-99 (critical), 100-499 (high), 500-999 (normal)",
+      "active": "Active",
+      "activeHint": "Inactive patterns will not be used for classification",
+      "notes": "Notes",
+      "notesPlaceholder": "Optional notes about this pattern...",
+      "savePattern": "Save Pattern"
+    },
+    "entityForm": {
+      "entityName": "Entity Name",
+      "entityPlaceholder": "e.g., Delta LLC, Coinbase",
+      "renameHint": "Renaming this entity will update all associated transactions and patterns.",
+      "entityType": "Entity Type",
+      "entityTypeSelect": "Select type...",
+      "entityTypeInternal": "Internal (Company Entity)",
+      "entityTypeCustomer": "Customer",
+      "entityTypeVendor": "Vendor",
+      "entityTypePartner": "Partner",
+      "entityTypeExchange": "Exchange",
+      "entityTypeBank": "Bank",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional description...",
+      "mergeTitle": "Merge Entity",
+      "mergeWarning": "This will merge the current entity into another entity and update all associated transactions. This action cannot be undone!",
+      "mergeTarget": "Merge into Entity",
+      "mergeTargetSelect": "-- Select target entity --",
+      "mergeTargetHint": "Select the entity to merge into. All transactions will be reassigned to this entity.",
+      "mergeButton": "Merge Entity",
+      "saveEntity": "Save Entity"
+    },
+    "bankAccountForm": {
+      "accountName": "Account Name",
+      "accountNamePlaceholder": "e.g., Operating Account",
+      "institution": "Institution Name",
+      "institutionPlaceholder": "e.g., Chase Bank",
+      "accountNumber": "Account Number",
+      "accountNumberPlaceholder": "****1234 (last 4 digits or masked)",
+      "routingNumber": "Routing Number",
+      "routingNumberPlaceholder": "e.g., 021000021",
+      "accountType": "Account Type",
+      "accountTypeSelect": "Select type...",
+      "accountTypeChecking": "Checking",
+      "accountTypeSavings": "Savings",
+      "accountTypeCredit": "Credit Card",
+      "accountTypeInvestment": "Investment",
+      "accountTypeLoan": "Loan",
+      "currency": "Currency",
+      "currentBalance": "Current Balance",
+      "balancePlaceholder": "0.00",
+      "isPrimary": "Mark as Primary Account",
+      "notes": "Notes",
+      "notesPlaceholder": "Optional notes about this account...",
+      "saveAccount": "Save Bank Account"
+    },
+    "walletForm": {
+      "address": "Wallet Address",
+      "addressPlaceholder": "0x... or bc1...",
+      "entityName": "Entity Name",
+      "entityPlaceholder": "e.g., Coinbase Exchange",
+      "walletType": "Wallet Type",
+      "walletTypeSelect": "Select type...",
+      "walletTypeInternal": "Internal (Company Owned)",
+      "walletTypeExchange": "Exchange",
+      "walletTypeCustomer": "Customer",
+      "walletTypeVendor": "Vendor",
+      "walletTypePartner": "Partner",
+      "blockchain": "Blockchain",
+      "blockchainSelect": "Select blockchain...",
+      "blockchainEthereum": "Ethereum",
+      "blockchainBitcoin": "Bitcoin",
+      "blockchainPolygon": "Polygon",
+      "blockchainBSC": "Binance Smart Chain",
+      "blockchainArbitrum": "Arbitrum",
+      "blockchainOptimism": "Optimism",
+      "purpose": "Purpose",
+      "purposePlaceholder": "e.g., Primary trading wallet",
+      "notes": "Notes",
+      "notesPlaceholder": "Optional notes about this wallet...",
+      "saveWallet": "Save Wallet"
+    },
+    "settings": {
+      "title": "Classification Settings",
+      "minConfidence": "Minimum Confidence Threshold",
+      "minConfidenceHint": "Transactions with confidence below this threshold will be flagged for review",
+      "autoLearning": "Auto-Learning from User Corrections",
+      "autoLearningEnabled": "Enabled - Create patterns from manual corrections",
+      "autoLearningDisabled": "Disabled - Manual pattern creation only",
+      "autoLearningHint": "When enabled, the system will automatically create patterns based on your manual transaction corrections",
+      "minOccurrences": "Pattern Auto-Generation Minimum Occurrences",
+      "minOccurrencesHint": "Minimum number of identical classifications required before auto-generating a pattern"
+    },
+    "suggestions": {
+      "howItWorks": "How it works:",
+      "description": "After you manually classify the same transaction pattern 50 times, the system automatically suggests creating a classification pattern. Review and approve suggestions below to add them to your active patterns."
+    }
+  },
+  "homepage": {
+    "pageTitle": "Business Overview",
+    "hero": {
+      "loading": "Loading...",
+      "loadingCompanyInfo": "Loading company information...",
+      "regenerateButton": "Regenerate with AI",
+      "loadingIndicator": "Loading content...",
+      "generatedTimestamp": "Generated"
+    },
+    "metrics": {
+      "loading": "Loading..."
+    },
+    "aiInsights": {
+      "loading": "Loading AI insights...",
+      "title": "AI-Generated Insights"
+    },
+    "portfolio": {
+      "sectionTitle": "Our Portfolio",
+      "loading": "Loading portfolio...",
+      "empty": "No portfolio items available"
+    },
+    "structure": {
+      "sectionTitle": "Organizational Structure",
+      "loading": "Loading organization...",
+      "empty": "No organizational structure available"
+    },
+    "onboardingBot": {
+      "toggle": {
+        "tooltip": "Open Business Onboarding"
+      },
+      "header": {
+        "title": "Business Onboarding",
+        "subtitle": "Tell us about your company"
+      },
+      "progress": {
+        "label": "Setup Progress",
+        "percentage": "{percent}%"
+      },
+      "input": {
+        "placeholder": "Type your message...",
+        "sendButton": "Send"
+      },
+      "messages": {
+        "welcome": "Welcome! Let's get started setting up your business.",
+        "error": "An error occurred. Please try again."
+      }
+    }
+  },
+  "whitelistedAccounts": {
+    "pageTitle": "White Listed Accounts",
+    "title": "White Listed Accounts",
+    "subtitle": "Manage your connected bank accounts and cryptocurrency wallets",
+    "tabs": {
+      "bankAccounts": "Bank Accounts",
+      "cryptoWallets": "Crypto Wallets"
+    },
+    "bankAccounts": {
+      "addButton": "Add Bank Account",
+      "loading": "Loading bank accounts...",
+      "empty": {
+        "title": "No bank accounts yet",
+        "description": "Add your first bank account to get started with transaction tracking."
+      },
+      "card": {
+        "accountName": "Account Name:",
+        "institution": "Institution:",
+        "accountNumber": "Account Number:",
+        "routingNumber": "Routing Number:",
+        "accountType": "Account Type:",
+        "currency": "Currency:",
+        "currentBalance": "Current Balance:",
+        "notes": "Notes:",
+        "primaryBadge": "Primary"
+      },
+      "accountTypes": {
+        "checking": "Checking",
+        "savings": "Savings",
+        "credit": "Credit Card",
+        "investment": "Investment",
+        "loan": "Loan"
+      },
+      "currencies": {
+        "usd": "USD - US Dollar",
+        "eur": "EUR - Euro",
+        "gbp": "GBP - British Pound",
+        "brl": "BRL - Brazilian Real",
+        "ars": "ARS - Argentine Peso",
+        "clp": "CLP - Chilean Peso",
+        "cop": "COP - Colombian Peso",
+        "mxn": "MXN - Mexican Peso",
+        "pen": "PEN - Peruvian Sol",
+        "uyu": "UYU - Uruguayan Peso",
+        "bob": "BOB - Bolivian Boliviano",
+        "ves": "VES - Venezuelan Bolivar",
+        "pyg": "PYG - Paraguayan Guarani"
+      },
+      "modal": {
+        "titleAdd": "Add Bank Account",
+        "titleEdit": "Edit Bank Account",
+        "fields": {
+          "accountName": "Account Name *",
+          "accountNamePlaceholder": "e.g., Operating Account",
+          "institution": "Institution Name *",
+          "institutionPlaceholder": "e.g., Chase Bank",
+          "accountNumber": "Account Number",
+          "accountNumberPlaceholder": "****1234 (last 4 digits or masked)",
+          "routingNumber": "Routing Number",
+          "routingNumberPlaceholder": "e.g., 021000021",
+          "accountType": "Account Type *",
+          "accountTypePlaceholder": "Select type...",
+          "currency": "Currency",
+          "currentBalance": "Current Balance",
+          "currentBalancePlaceholder": "0.00",
+          "isPrimary": "Mark as Primary Account",
+          "notes": "Notes",
+          "notesPlaceholder": "Optional notes about this account..."
+        },
+        "buttons": {
+          "save": "Save Bank Account",
+          "cancel": "Cancel"
+        }
+      }
+    },
+    "cryptoWallets": {
+      "addButton": "Add Crypto Wallet",
+      "loading": "Loading crypto wallets...",
+      "empty": {
+        "title": "No crypto wallets yet",
+        "description": "Add your first crypto wallet to track blockchain transactions."
+      },
+      "card": {
+        "address": "Wallet Address:",
+        "entityName": "Entity Name:",
+        "walletType": "Wallet Type:",
+        "blockchain": "Blockchain:",
+        "purpose": "Purpose:",
+        "notes": "Notes:"
+      },
+      "walletTypes": {
+        "internal": "Internal (Company Owned)",
+        "exchange": "Exchange",
+        "customer": "Customer",
+        "vendor": "Vendor",
+        "partner": "Partner"
+      },
+      "blockchains": {
+        "ethereum": "Ethereum",
+        "bitcoin": "Bitcoin",
+        "polygon": "Polygon",
+        "bsc": "Binance Smart Chain",
+        "arbitrum": "Arbitrum",
+        "optimism": "Optimism"
+      },
+      "modal": {
+        "titleAdd": "Add Crypto Wallet",
+        "titleEdit": "Edit Crypto Wallet",
+        "fields": {
+          "address": "Wallet Address *",
+          "addressPlaceholder": "0x... or bc1...",
+          "entityName": "Entity Name *",
+          "entityNamePlaceholder": "e.g., Coinbase Exchange",
+          "walletType": "Wallet Type *",
+          "walletTypePlaceholder": "Select type...",
+          "blockchain": "Blockchain",
+          "blockchainPlaceholder": "Select blockchain...",
+          "purpose": "Purpose",
+          "purposePlaceholder": "e.g., Primary trading wallet",
+          "notes": "Notes",
+          "notesPlaceholder": "Optional notes about this wallet..."
+        },
+        "buttons": {
+          "save": "Save Wallet",
+          "cancel": "Cancel"
+        }
+      }
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "messages": {
+      "bankAccountSaved": "Bank account saved successfully",
+      "bankAccountDeleted": "Bank account deleted successfully",
+      "walletSaved": "Crypto wallet saved successfully",
+      "walletDeleted": "Crypto wallet deleted successfully",
+      "confirmDeleteBankAccount": "Are you sure you want to delete this bank account?",
+      "confirmDeleteWallet": "Are you sure you want to delete this crypto wallet?",
+      "loadFailed": "Failed to load data",
+      "saveFailed": "Failed to save",
+      "deleteFailed": "Failed to delete"
+    }
+  },
+  "profile": {
+    "title": "Account Settings",
+    "subtitle": "Manage your account preferences",
+    "personalInfo": "Personal Information",
+    "security": "Security",
+    "preferences": "Preferences",
+    "language": "Language",
+    "selectLanguage": "Select Language",
+    "languageOptions": {
+      "en": "English",
+      "pt": "Portugues (Brasil)",
+      "es": "Espanol"
+    }
+  },
+  "tenantManagement": {
+    "pageTitle": "Tenant Management",
+    "title": "Tenant Management",
+    "subtitle": "Manage your client tenants",
+    "currentTenant": {
+      "sectionTitle": "Current Tenant",
+      "description": "Switch between your client tenants",
+      "label": "Active Tenant:",
+      "loading": "Loading tenants...",
+      "scopeNote": "All data and operations will be scoped to the selected tenant"
+    },
+    "createTenant": {
+      "sectionTitle": "Create New Tenant",
+      "description": "Add a new client to manage with the AI CFO Agent",
+      "form": {
+        "companyName": "Company Name",
+        "companyNamePlaceholder": "Client Company Inc.",
+        "description": "Description",
+        "descriptionOptional": "(optional)",
+        "descriptionPlaceholder": "Brief description of the client's business...",
+        "adminEmail": "Admin Email",
+        "adminEmailPlaceholder": "admin@clientcompany.com",
+        "adminEmailNote": "If provided, an invitation will be sent to this email to join as tenant admin",
+        "createButton": "Create Tenant",
+        "clearButton": "Clear",
+        "required": "*"
+      }
+    },
+    "tenantList": {
+      "sectionTitle": "Your Tenants",
+      "description": "All client tenants you have access to",
+      "loading": "Loading tenants...",
+      "empty": "No tenants found"
+    },
+    "messages": {
+      "processing": "Processing...",
+      "success": "Tenant created successfully",
+      "error": "Failed to create tenant"
+    }
+  },
+  "users": {
+    "pageTitle": "User Management",
+    "title": "User Management",
+    "subtitle": "Invite team members and manage access to your tenant",
+    "backToDashboard": "Back to Dashboard",
+    "inviteCFO": {
+      "sectionTitle": "Invite Fractional CFO",
+      "form": {
+        "email": "Email Address",
+        "emailPlaceholder": "cfo@example.com",
+        "name": "Display Name",
+        "namePlaceholder": "John Doe",
+        "required": "*",
+        "infoText": "Fractional CFO will have full access to manage financials, reports, and can invite their own assistants to help manage your tenant.",
+        "submitButton": "Send Invitation to CFO",
+        "submitting": "Sending invitation..."
+      }
+    },
+    "inviteCFOAssistant": {
+      "sectionTitle": "Invite CFO Assistant",
+      "form": {
+        "email": "Email Address",
+        "emailPlaceholder": "assistant@example.com",
+        "name": "Display Name",
+        "namePlaceholder": "Alex Johnson",
+        "accessLevel": "Access Level",
+        "accessLevels": {
+          "readOnly": "Read Only - Can view all data but cannot make changes",
+          "upload": "Upload - Can view and upload documents/transactions",
+          "uploadWrite": "Upload and Write - Can view, upload, and modify data"
+        },
+        "required": "*",
+        "infoText": "CFO assistants support the Fractional CFO with access based on their privilege level.",
+        "submitButton": "Send Invitation to CFO Assistant",
+        "submitting": "Sending invitation..."
+      }
+    },
+    "inviteEmployee": {
+      "sectionTitle": "Invite Team Member (Employee)",
+      "form": {
+        "email": "Email Address",
+        "emailPlaceholder": "employee@example.com",
+        "name": "Display Name",
+        "namePlaceholder": "Jane Smith",
+        "accessLevel": "Access Level",
+        "accessLevels": {
+          "readOnly": "Read Only - Can view all data but cannot make changes",
+          "upload": "Upload - Can view and upload documents/transactions",
+          "uploadWrite": "Upload and Write - Can view, upload, and modify data"
+        },
+        "required": "*",
+        "infoText": "Team members will have access based on their assigned privilege level.",
+        "submitButton": "Send Invitation to Team Member",
+        "submitting": "Sending invitation..."
+      }
+    },
+    "messages": {
+      "successTemplate": "Invitation sent successfully to {email}!",
+      "errorTemplate": "Failed to send invitation. Please try again.",
+      "genericError": "Failed to send invitation. Please try again."
+    }
+  },
+  "modals": {
+    "confirmDelete": "Are you sure you want to delete this item?",
+    "unsavedChanges": "You have unsaved changes. Do you want to continue?",
+    "success": "Operation completed successfully",
+    "error": "An error occurred. Please try again."
+  },
+  "validation": {
+    "required": "This field is required",
+    "invalidEmail": "Invalid email address",
+    "invalidDate": "Invalid date",
+    "invalidAmount": "Invalid amount",
+    "minLength": "Minimum length is {min} characters",
+    "maxLength": "Maximum length is {max} characters"
+  },
+  "dates": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "lastWeek": "Last Week",
+    "lastMonth": "Last Month",
+    "lastYear": "Last Year",
+    "custom": "Custom Range"
+  },
+  "currency": {
+    "format": "USD",
+    "symbol": "$"
+  },
+  "auth": {
+    "aiPoweredFinancialIntelligence": "AI-Powered Financial Intelligence",
+    "login": "Login",
+    "register": "Register",
+    "emailAddress": "Email Address",
+    "emailPlaceholder": "your@email.com",
+    "password": "Password",
+    "enterPassword": "Enter your password",
+    "rememberMe": "Remember me",
+    "forgotPassword": "Forgot password?",
+    "signIn": "Sign In",
+    "or": "OR",
+    "continueWithGoogle": "Continue with Google",
+    "dontHaveAccount": "Don't have an account?",
+    "registerHere": "Register here",
+    "createYourAccount": "Create Your Account",
+    "fullName": "Full Name",
+    "fullNamePlaceholder": "John Doe",
+    "passwordMinChars": "At least 6 characters",
+    "passwordHint": "Must be at least 6 characters long",
+    "confirmPassword": "Confirm Password",
+    "reenterPassword": "Re-enter password",
+    "iAmA": "I am a:",
+    "fractionalCfo": "Fractional CFO",
+    "fractionalCfoDesc": "Manage multiple client businesses",
+    "businessOwner": "Business Owner",
+    "businessOwnerDesc": "Manage my company's finances",
+    "agreeToTerms": "I agree to the",
+    "termsOfService": "Terms of Service",
+    "and": "and",
+    "privacyPolicy": "Privacy Policy",
+    "createAccount": "Create Account",
+    "signUpWithGoogle": "Sign up with Google",
+    "alreadyHaveAccount": "Already have an account?",
+    "loginHere": "Login here",
+    "resetPassword": "Reset Password",
+    "resetPasswordDesc": "Enter your email address and we'll send you a link to reset your password",
+    "sendResetLink": "Send Reset Link",
+    "rememberPassword": "Remember your password?",
+    "backToLogin": "Back to Login"
+  },
+  "currencies": {
+    "usdLong": "USD - US Dollar",
+    "brlLong": "BRL - Brazilian Real",
+    "eurLong": "EUR - Euro",
+    "gbpLong": "GBP - British Pound",
+    "arsLong": "ARS - Argentine Peso",
+    "clpLong": "CLP - Chilean Peso",
+    "copLong": "COP - Colombian Peso",
+    "mxnLong": "MXN - Mexican Peso",
+    "penLong": "PEN - Peruvian Sol",
+    "uyuLong": "UYU - Uruguayan Peso",
+    "bobLong": "BOB - Bolivian Boliviano",
+    "vesLong": "VES - Venezuelan Bolivar",
+    "pygLong": "PYG - Paraguayan Guarani"
+  },
+  "tabs": {
+    "overview": "Overview",
+    "details": "Details",
+    "matches": "Matches",
+    "activity": "Activity"
+  },
+  "sidebar": {
+    "statistics": "Statistics",
+    "quickActions": "Quick Actions",
+    "related": "Related"
+  },
+  "stats": {
+    "views": "Views",
+    "activities": "Activities",
+    "lastViewed": "Last Viewed",
+    "matchStatus": "Match Status"
+  },
+  "navigation": {
+    "invoices": "Invoices"
+  }
+}

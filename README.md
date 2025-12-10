@@ -1,124 +1,262 @@
-# DELTA CFO AGENT - AI-POWERED FINANCIAL PLATFORM
+# Numerai - AI-Powered CFO Agent
 
-Enterprise-grade AI-powered financial transaction processing and management system for Delta businesses with advanced web interface, PostgreSQL backend, Claude AI integration, and smart document ingestion.
+An intelligent financial transaction processing and management system powered by Claude AI. Built as a multi-tenant SaaS platform for automated transaction classification, invoice processing, revenue recognition, and comprehensive financial dashboards.
 
-## 🚀 QUICK START
+## Features
 
-### 1. Install Dependencies
+### Core Capabilities
+
+- **AI-Powered Transaction Classification** - Automatic categorization using Claude AI with confidence scoring and pattern learning
+- **Smart Document Ingestion** - Intelligent parsing of bank statements, CSV files, and financial documents
+- **Invoice Processing** - PDF/OCR processing with automated data extraction using Claude Vision
+- **Revenue Recognition** - Match invoices to transactions with AI-assisted reconciliation
+- **Multi-Tenant Architecture** - Secure tenant isolation with role-based access control
+- **Cryptocurrency Support** - Multi-blockchain transaction tracking with automatic price conversion
+
+### Dashboard Features
+
+- Real-time transaction management with advanced filtering
+- Sankey flow charts for cash flow visualization
+- Month-end close workflow management
+- Business entity management
+- Workforce and payroll tracking
+- Knowledge base for tenant-specific classification patterns
+
+## Tech Stack
+
+### Backend
+- **Python 3.11+** with Flask
+- **PostgreSQL** (Cloud SQL compatible)
+- **Claude AI** (Anthropic) for intelligent processing
+- **Firebase** for authentication
+- **Google Cloud Storage** for file storage
+
+### Frontend
+- **Next.js 15** with App Router and Turbopack
+- **TypeScript**
+- **Tailwind CSS** with shadcn/ui components
+- **next-intl** for internationalization
+- **Recharts** for data visualization
+
+## Project Structure
+
+```
+numerai/
+├── frontend/                 # Next.js frontend application
+│   ├── src/
+│   │   ├── app/             # App Router pages
+│   │   │   ├── (auth)/      # Authentication pages
+│   │   │   └── (dashboard)/ # Protected dashboard pages
+│   │   ├── components/      # React components
+│   │   │   ├── dashboard/   # Dashboard-specific components
+│   │   │   └── ui/          # shadcn/ui components
+│   │   ├── context/         # React context providers
+│   │   ├── lib/             # Utility functions and API client
+│   │   └── messages/        # i18n translation files
+│   └── public/              # Static assets
+│
+├── web_ui/                  # Flask backend application
+│   ├── app_db.py           # Main Flask application
+│   ├── database.py         # Database connection manager
+│   ├── templates/          # Jinja2 templates (legacy UI)
+│   ├── static/             # Static assets for legacy UI
+│   └── services/           # Business logic services
+│
+├── api/                     # API route modules
+│   ├── auth_routes.py      # Authentication endpoints
+│   ├── user_routes.py      # User management
+│   └── tenant_routes.py    # Tenant management
+│
+├── middleware/              # Authentication middleware
+├── services/               # Shared services
+├── migrations/             # Database migrations
+└── main.py                 # Core transaction processing
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 14+
+- Anthropic API key (for Claude AI)
+- Firebase project (for authentication)
+
+### Environment Setup
+
+1. Clone the repository:
 ```bash
-# Install all required packages (includes invoice processing module)
+git clone https://github.com/Delta-Compute/numerai.git
+cd numerai
+```
+
+2. Set up Python environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Note:** The `requirements.txt` file includes all dependencies for:
-- Core transaction processing and web dashboard
-- Invoice processing module (PDF/image/OCR/email automation)
-- AI integration (Claude API)
-- Data processing and analytics
-
-### 2. Start the Advanced Web Dashboard
+3. Set up environment variables:
 ```bash
-cd web_ui && python3 app_db.py
-# Open http://localhost:5001
+cp .env.example .env
 ```
 
-### 3. Upload and Process New Files
-- Navigate to **📁 Files** tab in the web interface
-- Drag & drop CSV files or click "Choose Files"
-- **Smart Ingestion** automatically detects Chase formats and CSV structures
-- Files are processed with AI classification and stored in SQLite database
-- Results appear instantly in the dashboard with AI suggestions
+Required environment variables:
+```env
+# Database
+DB_TYPE=postgresql
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=numerai
+DB_USER=postgres
+DB_PASSWORD=your_password
 
-## 🎯 CURRENT SYSTEM STATE
+# AI
+ANTHROPIC_API_KEY=sk-ant-...
 
-### Production-Ready Features ✅
-- **🌐 Advanced Web Dashboard** - Modern responsive interface with 800+ transactions
-- **🤖 Claude AI Integration** - Real-time AI suggestions for descriptions, categories, entities
-- **📊 PostgreSQL Database Backend** - Enterprise-grade database with fast querying, filtering, pagination, advanced search
-- **🧠 Smart Document Ingestion** - Auto-detects Chase checking, credit card, and standard CSV formats
-- **🔄 Reinforcement Learning** - Learns from user choices and improves suggestions over time
-- **✏️ Professional Inline Editing** - Click-to-edit with dropdowns, modals, and bulk operations
-- **🔍 Advanced Filtering & Search** - Entity, date, amount, keyword, source file filters
-- **📁 File Management System** - Upload, download, processing status tracking
+# Firebase (optional, for authentication)
+FIREBASE_PROJECT_ID=your-project-id
+```
 
-### AI-Powered Processing Pipeline
-1. **🔍 Smart Document Analysis** - Claude analyzes document structure (~$0.02/file)
-2. **🤖 AI Classification** - Uses Claude API + business rules for entity categorization
-3. **📍 Origin/Destination** - Automatic transaction flow tracking between accounts
-4. **🆔 Smart Identifiers** - Extracts TxIDs, account numbers, reference codes, wire details
-5. **💰 Crypto Conversion** - Real-time USD conversion for BTC/TAO/ETH via CoinGecko API
-6. **🏦 Account Detection** - Identifies Coinbase, Chase, international bank accounts
-7. **📚 Learning System** - Stores user preferences and suggests based on patterns
+4. Initialize the database:
+```bash
+psql -h localhost -U postgres -d numerai -f postgres_unified_schema.sql
+```
 
-### Recent Major Improvements
-- **✅ Fixed Claude API Integration** - All AI suggestions now use fresh Claude analysis (0.6s response times)
-- **✅ Enhanced Similar Descriptions Modal** - Professional UI with checkboxes and bulk updates
-- **✅ Smart Ingestion System** - Handles misaligned Chase CSV headers automatically
-- **✅ Reinforcement Learning** - Tracks user interactions and improves suggestions
-- **✅ Advanced UI/UX** - Modern styling, loading states, error handling
+5. Set up the frontend:
+```bash
+cd frontend
+npm install
+```
 
-## 🏢 BUSINESS ENTITIES
+### Running the Application
 
-| Entity | Purpose | Account Types |
-|--------|---------|---------------|
-| **Delta LLC** | US Holding Company | Chase ...3687, Business accounts |
-| **Delta Prop Shop LLC** | Trading Operations | Coinbase, MEXC, TAO trading |
-| **Infinity Validator** | Bitcoin Mining | BTC mining rewards, Subnet 89 |
-| **Delta Mining Paraguay S.A.** | Paraguay Operations | Wire transfers, ANDE payments |
-| **Delta Brazil** | Brazil Operations | Employee payments, Porto Seguro |
-| **Personal** | Owner Personal | Personal cards, individual expenses |
+**Backend (Flask API):**
+```bash
+cd web_ui
+python app_db.py
+# Runs on http://localhost:5001
+```
 
-## ⚠️ KNOWN ISSUES & LIMITATIONS
+**Frontend (Next.js):**
+```bash
+cd frontend
+npm run dev
+# Runs on http://localhost:3000
+```
 
-### Active Issues
-- **Database Connection Pooling** - PostgreSQL connection management optimized for concurrent access
-- **500 Errors on Similar Descriptions** - Occasional server errors during bulk similar transaction analysis
-- **Visual Selection System** - Advanced wire fee attribution UI not yet implemented
+### Running in Production
 
-### Limitations
-- **PDF Support** - Smart ingestion designed but not implemented (estimated ~$5/PDF)
-- **Multi-page Documents** - Currently processes single-file uploads only
-- **Real-time Sync** - Database updates require manual refresh in some cases
-- **Mobile Optimization** - Interface optimized for desktop use
+**Backend:**
+```bash
+gunicorn -w 4 -b 0.0.0.0:5001 web_ui.app_db:app
+```
 
-### Performance Notes
-- **Claude API Costs** - ~$0.02 per CSV analysis, ~$0.001 per AI suggestion
-- **Database Size** - Currently handles 800+ transactions efficiently
-- **Response Times** - Claude API: 0.6s, Database queries: <0.1s
+**Frontend:**
+```bash
+cd frontend
+npm run build
+npm start
+```
 
-## 🔧 TECHNICAL ARCHITECTURE
+## API Documentation
 
-### Backend Components
-- **`app_db.py`** - Flask web server with PostgreSQL database integration
-- **`smart_ingestion.py`** - Claude-powered document structure analysis
-- **`main.py`** - Core DeltaCFOAgent processing pipeline
-- **`crypto_pricing.py`** - Real-time cryptocurrency price conversion
+### Core Endpoints
 
-### Frontend Components
-- **`dashboard_advanced.html`** - Responsive web interface template
-- **`script_advanced.js`** - Interactive UI logic, modals, AJAX calls
-- **`style_advanced.css`** - Modern styling with professional design
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/transactions` | GET | List transactions |
+| `/api/transactions` | POST | Create transaction |
+| `/api/invoices` | GET | List invoices |
+| `/api/files` | GET | List uploaded files |
+| `/api/files/upload` | POST | Upload file for processing |
+| `/api/stats` | GET | Dashboard statistics |
 
-### Database Schema
-- **`transactions`** - Main transaction records with metadata
-- **`learned_patterns`** - User interaction learning for AI improvement
-- **`user_interactions`** - Reinforcement learning data storage
+### Authentication
 
-## 🚀 FUTURE ROADMAP
+All API requests require either:
+- `X-Tenant-ID` header for tenant context
+- Firebase ID token in `Authorization: Bearer <token>` header
 
-### Phase 1: Enhanced Intelligence (Q4 2024)
-1. **PDF Bank Statement Processing** - Full Claude extraction (~$5/document)
-2. **Advanced Wire Fee Attribution** - Visual context analysis for complex transactions
-3. **Multi-entity Reconciliation** - Cross-company transaction matching
+## Development
 
-### Phase 2: Enterprise Features (Q1 2025)
-1. **Automated Invoice Parsing** - Email attachment processing
-2. **Multi-user Access Control** - Role-based permissions
-3. **SAFE Note Investor Tracking** - Cap table integration
-4. **Series A Preparation Tools** - Due diligence document generation
+### Running Tests
 
-### Phase 3: Scale & Analytics (Q2 2025)
-1. **Real-time Dashboard Updates** - WebSocket integration
-2. **Advanced Reporting Engine** - Custom financial reports
-3. **API Integration** - Plaid, QuickBooks, bank API connections
-4. **Machine Learning Pipeline** - Enhanced pattern recognition
+```bash
+# Backend tests
+python -m pytest tests/
+
+# Frontend tests
+cd frontend && npm test
+```
+
+### Code Style
+
+- Python: Follow PEP 8 guidelines
+- TypeScript: ESLint with Prettier
+
+### Database Migrations
+
+Apply migrations in order:
+```bash
+cd migrations
+psql -h localhost -U postgres -d numerai -f <migration_name>.sql
+```
+
+## Deployment
+
+### Google Cloud Run
+
+The project includes configuration for Google Cloud Run deployment:
+
+```bash
+# Build and deploy
+gcloud builds submit --config cloudbuild.yaml
+```
+
+### Docker
+
+```bash
+docker build -t numerai .
+docker run -p 5001:5001 numerai
+```
+
+## Architecture
+
+### Multi-Tenant Design
+
+- Complete tenant isolation with `tenant_id` on all data tables
+- No fallback tenant logic - explicit tenant context required
+- Role-based access control (Fractional CFO, Tenant Admin, Employee)
+
+### AI Integration
+
+- Claude AI for transaction classification with confidence scoring
+- Pattern learning from user corrections
+- Claude Vision for PDF/document processing
+
+### Security
+
+- Firebase Authentication
+- PostgreSQL row-level security
+- API key management via Secret Manager
+- CORS configuration for frontend
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+Proprietary - All rights reserved by Delta Compute.
+
+## Support
+
+For support, please contact the Delta team or open an issue on GitHub.

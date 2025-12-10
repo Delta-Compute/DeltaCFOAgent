@@ -224,6 +224,10 @@ def set_current_tenant(tenant: Dict[str, Any]):
         tenant: Tenant dict to set as current tenant
     """
     g.current_tenant = tenant
+    # Also set g.tenant_id for compatibility with tenant_context.get_current_tenant_id()
+    if tenant and 'id' in tenant:
+        g.tenant_id = tenant['id']
+        logger.info(f"Tenant context set to: {tenant['id']}")
 
 
 def require_auth(f):
@@ -498,6 +502,46 @@ def require_tenant_access(f):
                 'success': False,
                 'error': 'access_denied',
                 'message': 'You do not have access to this tenant'
+            }), 403
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def require_super_admin(f):
+    """
+    Decorator to require super_admin user type for a route.
+
+    Super admins have access to cross-tenant analytics and product metrics.
+    This should be used for all Super Admin Dashboard endpoints.
+
+    Usage:
+        @app.route('/api/super-admin/users')
+        @require_auth
+        @require_super_admin
+        def super_admin_users():
+            return 'Super admin access granted'
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+
+        if not user:
+            logger.warning("No authenticated user for super admin route")
+            return jsonify({
+                'success': False,
+                'error': 'authorization_required',
+                'message': 'Authorization required'
+            }), 403
+
+        user_type = user.get('user_type')
+        if user_type != 'super_admin':
+            logger.warning(f"User type '{user_type}' attempted to access super admin route")
+            return jsonify({
+                'success': False,
+                'error': 'super_admin_required',
+                'message': 'This endpoint requires super admin access'
             }), 403
 
         return f(*args, **kwargs)

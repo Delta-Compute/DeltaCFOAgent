@@ -1,176 +1,559 @@
-# Plan: Re-enable Pattern Learning Without Sacrificing Performance
+# Frontend Refactoring: Flask/Jinja to Next.js + React
 
-## Problem Summary
-The drag-fill bulk update was slow because:
-1. Each of 9 transaction updates inserted to `user_classification_tracking`
-2. PostgreSQL trigger fired 9 times, sending 9 NOTIFY events
-3. Background service received 9 notifications, potentially making 9 Claude API calls
+## Overview
 
-## What Was Disabled
-1. **Pattern validation background service** - commented out in app_db.py startup
-2. **Tracking inserts for bulk updates** - `skip_tracking=True` bypasses the trigger
+Migrate the DeltaCFOAgent frontend from Flask/Jinja templates to a modern Next.js + React stack while keeping the Flask backend as the API layer.
 
-## Goal
-Re-enable pattern learning so the system continues to learn from user classifications, but in a performance-conscious way.
+### Current State
+- **Templates**: 27 HTML files (30,321 lines)
+- **JavaScript**: 26 files (11,154 lines)
+- **CSS**: 7 files (5,306 lines)
+- **API Routes**: 150+ Flask REST endpoints (working and stable)
 
----
+### Target Stack
+| Aspect     | Technology                         |
+|------------|------------------------------------|
+| Framework  | Next.js 16 (App Router) + React 19 |
+| UI Library | shadcn/ui (New York style)         |
+| Styling    | Tailwind CSS v4                    |
+| Icons      | Lucide React                       |
+| Fonts      | Sora (headings) + DM Sans (body)   |
+| Forms      | react-hook-form + Zod              |
+| Auth       | NextAuth v4 (with Firebase)        |
+| Toasts     | Sonner                             |
+| i18n       | next-intl                          |
 
-## Plan
-
-### Phase 1: Batch Tracking After Bulk Updates Complete
-**Instead of tracking each row during bulk update, track once at the end**
-
-- [ ] **Task 1.1**: Add a new function `track_bulk_classification()` that:
-  - Takes the list of transaction_ids, field, and value from the bulk update
-  - Inserts a SINGLE row to `user_classification_tracking` with metadata indicating it's a bulk operation
-  - OR inserts all rows in a single INSERT statement (batch insert)
-
-- [ ] **Task 1.2**: Call `track_bulk_classification()` at the END of `/api/bulk_update_transactions` after the SQL UPDATE completes
-  - This means 1 tracking operation instead of 9
-
-### Phase 2: Debounced Pattern Suggestion Trigger
-**Don't fire NOTIFY for every insert - batch them**
-
-- [ ] **Task 2.1**: Modify the PostgreSQL trigger to use a debounce table:
-  - Instead of immediate NOTIFY, insert to `pending_pattern_checks` table
-  - A separate scheduled job processes this table every 30-60 seconds
-
-- [ ] **Task 2.2**: Alternative approach - modify trigger to only NOTIFY if:
-  - More than X seconds have passed since last NOTIFY for this tenant
-  - OR occurrence_count crosses a threshold (e.g., 3, 5, 10)
-
-### Phase 3: Background Service Improvements
-**Make the background service smarter about when to call Claude**
-
-- [ ] **Task 3.1**: Add request coalescing in the background service:
-  - When a NOTIFY comes in, wait 5-10 seconds before processing
-  - Collect all NOTIFYs during that window
-  - Process them as a single batch
-
-- [ ] **Task 3.2**: Add rate limiting:
-  - Max 1 Claude API call per tenant per minute for pattern validation
-  - Queue excess requests
-
-- [ ] **Task 3.3**: Re-enable the background service with these improvements
-
-### Phase 4: Optional - Lazy Pattern Learning
-**Don't learn patterns in real-time at all**
-
-- [ ] **Task 4.1**: Instead of real-time learning, run pattern analysis:
-  - As a nightly batch job
-  - OR when user explicitly clicks "Analyze Patterns" button
-  - OR when tenant reaches X unprocessed classifications
+### Architecture Decision
+**Keep Flask as API backend** - The 150+ API endpoints are stable and well-tested. The Next.js app will:
+1. Run as a separate frontend application
+2. Call the Flask API via HTTP
+3. Handle client-side state, routing, and rendering
 
 ---
 
-## Recommended Approach
+## Phase 1: Project Setup & Configuration - COMPLETED
 
-**Start with Phase 1 + Phase 3.1** - This gives the best bang for buck:
+### Task 1.1: Initialize Next.js Project
+- [x] Create `frontend/` directory at project root
+- [x] Initialize Next.js 15 with App Router
+- [x] Configure TypeScript strict mode
+- [x] Set up path aliases (@/components, @/lib, etc.)
 
-1. Bulk updates insert tracking rows in one batch (not 9 separate inserts)
-2. Background service waits 5-10 seconds and coalesces notifications
-3. Result: 1 Claude API call instead of 9, with minimal code changes
+### Task 1.2: Install Core Dependencies
+- [x] Install shadcn/ui (New York style)
+- [x] Install 14 shadcn components (button, input, card, dialog, etc.)
+- [x] Install lucide-react for icons
+- [x] Install sonner for toasts
+- [x] Install react-hook-form + @hookform/resolvers + zod
+- [x] Install next-auth for authentication (configured)
+- [x] Install next-intl for i18n (configured)
 
-**Estimated Changes:**
-- `app_db.py`: ~20 lines (batch tracking function + call it after bulk update)
-- `pattern_validation_service.py`: ~30 lines (add coalescing logic)
-- No database schema changes needed
+### Task 1.3: Configure Design System
+- [x] Create globals.css with design tokens:
+  - Background: #FAFAF9 (warm off-white)
+  - Foreground: #18181B (dark zinc)
+  - Primary: #4F46E5 (deep indigo)
+  - Secondary: #F4F4F5 (cool gray)
+  - Accent: #FEF3C7 (warm amber)
+  - Destructive: #DC2626 (red)
+- [x] Configure fonts: Sora (headings) + DM Sans (body) + JetBrains Mono (code)
+- [x] Set up Tailwind CSS 3.4 with custom theme
+
+### Task 1.4: Configure API Integration
+- [x] Create lib/api.ts for Flask API client
+- [x] Configure environment variables for API URL
+- [x] Set up API proxy rewrites in next.config.ts
+- [x] Create typed API response interfaces (60+ types)
+
+---
+
+## Phase 2: Core Layout & Navigation - COMPLETED
+
+### Task 2.1: Create Root Layout
+- [x] app/layout.tsx with:
+  - Providers wrapper (Auth, Tenant, Tooltip)
+  - Toaster (Sonner - top-right)
+  - Google Fonts via link tags
+  - Metadata configuration
+
+### Task 2.2: Create Dashboard Layout
+- [x] app/(dashboard)/layout.tsx with:
+  - Auth check (redirect to /login if not authenticated)
+  - Tenant check (redirect to /onboarding if no tenant)
+  - Top navigation bar (DashboardNav)
+  - Main content container (max-w-7xl)
+  - Loading state with spinner
+
+### Task 2.3: Create Navigation Components
+- [x] components/dashboard/dashboard-nav.tsx:
+  - Logo with company icon
+  - Tenant Switcher dropdown
+  - Navigation links (Overview, Transactions, Revenue, Invoices, etc.)
+  - Collapsible search input
+  - Notifications with badge
+  - Settings dropdown
+  - User menu (avatar, profile, logout)
+  - Mobile hamburger menu
+- [x] Active state styling: bg-indigo-50 text-indigo-700
+- [x] Sticky top, white background, z-50
+
+### Task 2.4: Create Utility Components
+- [x] components/ui/loading.tsx - LoadingSpinner, LoadingPage, Skeleton variants
+- [x] components/ui/error-boundary.tsx - ErrorBoundary, ErrorDisplay, ErrorMessage
+- [x] components/ui/empty-state.tsx - EmptyState, NoDataFound, NoSearchResults
+- [x] context/auth-context.tsx - AuthProvider, useAuth hook
+- [x] context/tenant-context.tsx - TenantProvider, useTenant hook
+- [x] components/providers.tsx - Combined providers wrapper
+
+---
+
+## Phase 3: Authentication System - COMPLETED
+
+### Task 3.1: Configure NextAuth (Deferred)
+- [ ] Create app/api/auth/[...nextauth]/route.ts (backend integration pending)
+- [ ] Configure Firebase as authentication provider
+- [ ] Set up JWT session strategy
+- [ ] Handle token refresh
+
+### Task 3.2: Create Auth Pages
+- [x] app/(auth)/layout.tsx - Centered card, gradient background
+- [x] app/(auth)/login/page.tsx - Email/password + Google OAuth
+- [x] app/(auth)/register/page.tsx - Full registration with user types
+- [x] app/(auth)/forgot-password/page.tsx - Password reset with success state
+- [ ] app/(auth)/accept-invitation/page.tsx - Email invitation flow (future)
+
+### Task 3.3: Create Auth Hooks & Context (Done in Phase 2)
+- [x] context/auth-context.tsx - AuthProvider with login/logout
+- [x] context/tenant-context.tsx - TenantProvider with switching
+- [x] components/providers.tsx - Combined providers wrapper
+
+---
+
+## Phase 4: Page Migration (Priority Order) - COMPLETED
+
+### Task 4.1: Business Overview (Homepage)
+- [x] app/(dashboard)/page.tsx (basic implementation in Phase 2)
+- [ ] Components (enhanced version pending):
+  - HeroSection with company branding
+  - KPICards with animated counters
+  - HoldingsGrid for business entities
+  - QuickActions panel
+- [x] API integration: /api/homepage/content
+
+### Task 4.2: Dashboard (Transactions)
+- [x] app/(dashboard)/dashboard/page.tsx
+- [x] Components:
+  - TransactionFilters (date, category, entity, status)
+  - TransactionStats cards (StatsCard component)
+  - TransactionsTable with sorting/pagination (DataTable component)
+  - BulkActionsToolbar
+- [x] API integration: /api/transactions
+
+### Task 4.3: Revenue Recognition
+- [x] app/(dashboard)/revenue/page.tsx
+- [x] Components:
+  - MatchingStats cards
+  - PendingMatchesTable (PendingMatchCard)
+  - ConfirmedMatchesTable (MatchedPairCard)
+  - MatchingModal with confidence scoring
+  - BulkMatchActions
+- [x] API integration: /api/revenue/*
+
+### Task 4.4: Invoices
+- [x] app/(dashboard)/invoices/page.tsx
+- [ ] app/(dashboard)/invoices/[id]/page.tsx (detail - pending)
+- [ ] app/(dashboard)/invoices/create/page.tsx (pending)
+- [x] Components:
+  - InvoiceFilters
+  - InvoicesTable
+  - StatusBadge
+- [x] API integration: /api/invoices/*
+
+### Task 4.5: File Manager
+- [x] app/(dashboard)/files/page.tsx
+- [x] Components:
+  - TransactionUploadSection (UploadZone)
+  - InvoiceUploadSection (UploadZone)
+  - ProcessingProgress
+  - FileHistoryTable (FileRow)
+- [x] API integration: /api/upload/*
+
+### Task 4.6: Workforce/Payroll
+- [x] app/(dashboard)/workforce/page.tsx
+- [x] Components:
+  - WorkforceTabs (Members / Payslips)
+  - WorkforceTable
+  - PayslipsTable
+  - EmploymentTypeBadge, PayslipStatusBadge
+- [x] API integration: /api/workforce/*, /api/payslips/*
+
+### Task 4.7: Shareholders
+- [x] app/(dashboard)/shareholders/page.tsx
+- [x] Components:
+  - ShareholdersList
+  - OwnershipChart (visual bar chart)
+  - OwnershipBar
+- [x] API integration: /api/shareholders/*
+
+### Task 4.8: Whitelisted Accounts
+- [x] app/(dashboard)/accounts/page.tsx
+- [x] Components:
+  - AccountsTabs (Bank / Crypto)
+  - BankAccountsTable
+  - CryptoWalletsTable
+  - AccountTypeBadge, BlockchainBadge
+- [x] API integration: /api/bank-accounts, /api/wallets
+
+### Task 4.9: Settings & Management
+- [x] app/(dashboard)/settings/page.tsx (tabbed form sections)
+- [ ] app/(dashboard)/tenant-knowledge/page.tsx (pending)
+- [ ] app/(dashboard)/users/page.tsx (pending)
+- [x] Components:
+  - SettingsTabs (General, Branding, Notifications, Security)
+  - General and Branding forms implemented
+
+### Task 4.10: Reports
+- [x] app/(dashboard)/reports/page.tsx
+- [ ] app/(dashboard)/reports/pl-trend/page.tsx (pending)
+- [x] Components:
+  - ReportSelector (ReportCard)
+  - Quick stats cards
+- [ ] PLTrendChart, DateRangePicker, ExportButtons (pending)
+
+---
+
+## Phase 5: Internationalization (i18n) - COMPLETED
+
+### Task 5.1: Configure next-intl
+- [x] Set up next-intl with middleware (frontend/middleware.ts)
+- [x] Configure supported locales: en, pt, es (frontend/src/i18n/config.ts)
+- [x] Create messages directory structure (frontend/src/messages/)
+- [x] Create i18n request handler (frontend/src/i18n/request.ts)
+- [x] Update next.config.ts with createNextIntlPlugin
+
+### Task 5.2: Migrate Translation Files
+- [x] Copy web_ui/static/locales/en.json to frontend/src/messages/
+- [x] Copy web_ui/static/locales/pt.json to frontend/src/messages/
+- [x] Copy web_ui/static/locales/es.json to frontend/src/messages/
+- [x] Add missing nav keys (shareholders, accounts, settings, users)
+- [x] Update root layout with NextIntlClientProvider
+
+### Task 5.3: Language Switcher
+- [x] Create components/language-switcher.tsx with flag emojis
+- [x] Add language switcher to dashboard navigation
+- [x] Persist preference to localStorage
+- [x] Handle locale routing with next-intl middleware
+- [x] Update DashboardNav to use translations for nav items
+
+---
+
+## Phase 6: Shared Components Library - COMPLETED
+
+### Task 6.1: Status & Priority Badges
+- [x] components/ui/status-badge.tsx - 15 status variants with icons
+- [x] components/ui/priority-badge.tsx - 5 priority levels
+- [x] Color-coded variants matching design system
+- [x] getStatusVariant and getPriorityLevel helpers
+
+### Task 6.2: Data Display Components (from Phase 4)
+- [x] components/dashboard/stats-card.tsx (completed in Phase 4)
+- [x] components/dashboard/data-table.tsx (completed in Phase 4)
+- [x] components/ui/empty-state.tsx (completed in Phase 2)
+- [x] components/ui/loading.tsx (completed in Phase 2)
+
+### Task 6.3: Form Components
+- [x] components/forms/currency-input.tsx - Currency input with selector
+- [x] components/forms/date-picker.tsx - DatePicker + DateRangePicker
+- [x] components/forms/file-uploader.tsx - Drag-drop with progress
+- [x] components/forms/entity-selector.tsx - Searchable dropdown
+- [x] components/forms/index.ts - Export barrel file
+
+### Task 6.4: Modal Dialogs
+- [x] components/modals/confirm-dialog.tsx - 4 variants + useConfirmDialog hook
+- [x] components/modals/form-dialog.tsx - FormField, FormGrid, FormSection
+- [x] components/modals/index.ts - Export barrel file
+- [ ] components/modals/matching-dialog.tsx (for revenue matching - future)
+
+---
+
+## Phase 7: Testing & QA
+
+### Task 7.1: Unit Tests
+- [ ] Set up Jest + React Testing Library
+- [ ] Write tests for utility functions
+- [ ] Write tests for hooks
+- [ ] Write tests for critical components
+
+### Task 7.2: Integration Tests
+- [ ] Test API integration layer
+- [ ] Test authentication flow
+- [ ] Test form submissions
+
+### Task 7.3: E2E Tests (Optional)
+- [ ] Set up Playwright
+- [ ] Test critical user journeys
+
+---
+
+## Phase 8: Deployment Configuration
+
+### Task 8.1: Docker Configuration
+- [ ] Create frontend/Dockerfile
+- [ ] Configure multi-stage build
+- [ ] Set up environment variables
+
+### Task 8.2: Cloud Run Deployment
+- [ ] Create cloudbuild-frontend.yaml
+- [ ] Configure Cloud Run service
+- [ ] Set up routing (frontend vs API)
+
+### Task 8.3: Production Checklist
+- [ ] Configure production API URL
+- [ ] Set up error monitoring (Sentry)
+- [ ] Configure performance monitoring
+- [ ] Set up CDN for static assets
+
+---
+
+## File Structure
+
+```
+frontend/
+  src/
+    app/
+      (auth)/
+        login/page.tsx
+        register/page.tsx
+        forgot-password/page.tsx
+      (dashboard)/
+        layout.tsx
+        page.tsx                    # Business Overview
+        dashboard/page.tsx          # Transactions
+        revenue/page.tsx
+        invoices/
+          page.tsx
+          [id]/page.tsx
+          create/page.tsx
+        files/page.tsx
+        workforce/page.tsx
+        shareholders/page.tsx
+        accounts/page.tsx           # Whitelisted Accounts
+        settings/page.tsx
+        tenant-knowledge/page.tsx
+        users/page.tsx
+        reports/
+          page.tsx
+          pl-trend/page.tsx
+      api/
+        auth/[...nextauth]/route.ts
+      layout.tsx
+      globals.css
+    components/
+      ui/                           # shadcn/ui components
+      dashboard/
+        dashboard-nav.tsx
+        stats-card.tsx
+        data-table.tsx
+        ...
+      forms/
+      modals/
+    lib/
+      api.ts                        # Flask API client
+      utils.ts                      # cn() helper
+      auth.ts                       # NextAuth config
+    hooks/
+      use-auth.ts
+      use-tenant.ts
+      use-api.ts
+    context/
+      auth-context.tsx
+      tenant-context.tsx
+    types/
+      api.ts                        # API response types
+      models.ts                     # Data models
+    messages/
+      en.json
+      pt.json
+      es.json
+  public/
+    fonts/
+    images/
+  next.config.js
+  tailwind.config.ts
+  components.json                   # shadcn config
+  package.json
+```
+
+---
+
+## Migration Strategy
+
+1. **Parallel Operation**: Run both Flask templates and Next.js during migration
+2. **Feature Flags**: Use feature flags to toggle between old/new UI
+3. **Incremental Migration**: Migrate one page at a time
+4. **API Compatibility**: No changes to Flask API required
+5. **Testing**: Test each page thoroughly before moving to next
+
+---
+
+## Success Criteria
+
+- [ ] All 27 pages migrated to React components
+- [ ] All API integrations working
+- [ ] Authentication working with Firebase
+- [ ] i18n working for all 3 languages
+- [ ] Responsive design on all screen sizes
+- [ ] No regressions in functionality
+- [ ] Performance equal or better than current
+- [ ] All tests passing
+
+---
+
+## Notes
+
+- **Keep Flask Backend**: All 150+ API endpoints remain unchanged
+- **No Database Changes**: Frontend-only refactoring
+- **Gradual Rollout**: Can deploy incrementally
+- **Fallback Available**: Flask templates remain as fallback
 
 ---
 
 ## Review Section
 
-### Changes Made
+### Phase 1: Project Setup & Configuration - COMPLETED (Dec 2024)
 
-**Phase 1: Batch Tracking (app_db.py)**
-1. Added `track_bulk_classification()` function (lines 2253-2346)
-   - Takes transaction_ids, field, value, tenant_id
-   - Fetches descriptions for ALL transactions in ONE query
-   - Builds batch INSERT values with pattern signatures
-   - Disables triggers temporarily using `SET session_replication_role = replica`
-   - Inserts all tracking records in ONE batch INSERT
-   - Sends ONE manual pg_notify for the entire batch
+**Commit:** `1a91937` - feat(frontend): Initialize Next.js frontend with shadcn/ui (Phase 1)
 
-2. Called `track_bulk_classification()` from `/api/bulk_update_transactions` (lines 9545-9548)
-   - After the SQL UPDATE completes, calls batch tracking
-   - ONE notification per field/value combo (usually just 1 total)
+**What was created:**
 
-**Phase 3: Request Coalescing (pattern_validation_service.py)**
-1. Added coalescing state variables (lines 50-54)
-   - `_COALESCE_WINDOW_SECONDS = 5`
-   - `_pending_notifications = []`
-   - `_coalesce_timer = None`
+1. **Project Structure** (`frontend/`)
+   - Next.js 15.1 with App Router and TypeScript
+   - Tailwind CSS 3.4 with custom design system
+   - ESLint + TypeScript strict mode
+   - Path aliases (@/components, @/lib, etc.)
 
-2. Added `_process_coalesced_notifications()` function (lines 90-125)
-   - Collects all pending notifications
-   - Groups by tenant_id
-   - Processes each tenant's suggestions ONCE
+2. **Design System** (`src/app/globals.css`)
+   - Color palette: Indigo primary (#4F46E5), warm off-white background (#FAFAF9)
+   - Typography: Sora (headings) + DM Sans (body) + JetBrains Mono (code)
+   - Component classes: stats-card, badge variants, nav-link, table styles
+   - Status badges: new, pending, confirmed, paid, rejected, overdue
+   - Confidence indicators: high/medium/low with color coding
 
-3. Added `_queue_notification()` function (lines 128-147)
-   - Queues notification instead of immediate processing
-   - Resets 5-second timer on each new notification
+3. **UI Components** (`src/components/ui/`) - 14 shadcn/ui components:
+   - Form: button, input, label, checkbox, switch, select
+   - Layout: card, separator, tabs, table
+   - Overlay: dialog, dropdown-menu, tooltip
+   - Display: badge, avatar, progress
 
-4. Modified listener to use coalescing (lines 236-244)
-   - Changed from `asyncio.run(handle_new_pattern_notification(...))`
-   - To `_queue_notification(notify.payload)`
+4. **API Client** (`src/lib/api.ts`)
+   - Typed fetch wrapper with error handling
+   - All Flask API endpoints organized by feature:
+     - Homepage, Transactions, Invoices, Revenue matching
+     - Workforce, Payslips, Payroll matching
+     - Bank accounts, Wallets, Shareholders
+     - Tenant config, Knowledge patterns, Auth
+   - Full TypeScript interfaces for all API responses
 
-5. Re-enabled pattern validation service in app_db.py (lines 23176-23190)
-   - Uncommented the service startup code
-   - Updated message: "with 5s coalescing"
+5. **Configuration Files**
+   - `next.config.ts` - API proxy rewrites to Flask backend
+   - `tailwind.config.ts` - Design tokens and animations
+   - `components.json` - shadcn/ui New York style config
+   - `.env.local.example` - Environment variables template
 
-### Performance Impact
+**Build Status:** Passing (type-check and production build successful)
 
-**Before (9-row drag-fill):**
-- 9 separate UPDATE statements
-- 9 INSERT to user_classification_tracking (9 triggers fire)
-- 9 NOTIFY events
-- 9 Claude API calls (potential)
-- Total: ~9 database round-trips + 9 API calls
-
-**After (9-row drag-fill):**
-- 1 UPDATE statement with IN clause
-- 1 batch INSERT (triggers disabled)
-- 1 manual NOTIFY
-- Coalesced into 1 Claude API call (after 5s window)
-- Total: ~3 database round-trips + 1 API call
-
-### Testing Done
-- Server started successfully with pattern validation service
-- Pattern validation service listening for notifications
-- Server responding on http://localhost:5001
-
-### Notes
-- Bulk updates still track classifications for pattern learning
-- Pattern learning happens in background (5 seconds after last notification)
-- Single transaction edits still work as before (immediate tracking)
-- Flask debug mode properly handled (service only starts in main worker)
+**Next Steps:** Phase 2 - Core Layout & Navigation
 
 ---
 
-## Bug Fix: session_replication_role Superuser Error (Dec 8, 2025)
+### Phase 2: Core Layout & Navigation - COMPLETED (Dec 2024)
 
-### Problem
-Server crashed with error when `track_bulk_classification()` tried to execute:
-```sql
-SET session_replication_role = replica;
-```
-This command requires superuser privileges, which the database user doesn't have.
+**Commit:** `7aab92f` - feat(frontend): Add dashboard layout and navigation (Phase 2)
 
-### Root Cause
-The original implementation tried to disable PostgreSQL triggers during bulk INSERT to prevent multiple NOTIFY events. However, `session_replication_role` requires superuser access.
+**What was created:**
 
-### Solution
-Removed the `session_replication_role` commands entirely. The triggers will now fire for each row inserted, but this is fine because:
-1. The `pattern_validation_service.py` already has 5-second coalescing
-2. All NOTIFY events within that 5-second window get batched into a single Claude API call
-3. Net effect is still 1 API call instead of 9, just handled at the service level instead of the database level
+1. **Context Providers** (`src/context/`)
+   - `auth-context.tsx`: AuthProvider with login/logout, user state
+   - `tenant-context.tsx`: TenantProvider with tenant switching
+   - `providers.tsx`: Combined wrapper component
 
-### Changes Made
-- **app_db.py lines 2306-2321**: Removed `SET session_replication_role = replica/DEFAULT` commands
-- **app_db.py**: Removed manual `pg_notify()` call (triggers handle this now)
-- **app_db.py**: Updated log message (no longer mentions "1 notification")
+2. **Dashboard Layout** (`src/app/(dashboard)/layout.tsx`)
+   - Auth check with redirect to /login
+   - Tenant check for onboarding flow
+   - Loading state with spinner
+   - Container max-w-7xl layout
 
-### Verification
-- Server starts without errors
-- Health endpoint returns healthy status
-- Pattern validation service is listening for notifications with 5s coalescing
+3. **Navigation Component** (`src/components/dashboard/dashboard-nav.tsx`)
+   - Sticky top navigation (z-50)
+   - Logo with Building2 icon
+   - Tenant switcher dropdown
+   - 8 navigation links with icons
+   - Collapsible search input
+   - Notifications bell with badge
+   - Settings dropdown
+   - User menu with avatar
+   - Mobile hamburger menu
+
+4. **Utility Components** (`src/components/ui/`)
+   - `loading.tsx`: LoadingSpinner, LoadingPage, Skeleton, CardSkeleton, TableSkeleton
+   - `error-boundary.tsx`: ErrorBoundary class, ErrorDisplay, ErrorMessage
+   - `empty-state.tsx`: EmptyState, NoDataFound, NoSearchResults, ErrorState
+
+5. **Dashboard Homepage** (`src/app/(dashboard)/page.tsx`)
+   - KPI cards with trend indicators
+   - AI insights section
+   - Quick action cards
+
+**Build Status:** Passing
+
+**Next Steps:** Phase 3 - Authentication System (or Phase 4 - Page Migration)
+
+---
+
+### Phase 3: Authentication System - COMPLETED (Dec 2024)
+
+**Commit:** `6fa6dc0` - feat(frontend): Add authentication pages (Phase 3)
+
+**What was created:**
+
+1. **Auth Layout** (`src/app/(auth)/layout.tsx`)
+   - Centered card layout
+   - Gradient background (background to primary/5)
+   - Responsive max-w-md container
+
+2. **Login Page** (`src/app/(auth)/login/page.tsx`)
+   - Email/password form with react-hook-form + zod validation
+   - Google OAuth button with SVG icon
+   - Show/hide password toggle
+   - Forgot password link
+   - Loading states and error toasts
+   - "Or continue with" separator
+
+3. **Register Page** (`src/app/(auth)/register/page.tsx`)
+   - Full registration form (name, email, password, confirm)
+   - Account type selector with descriptions:
+     - Fractional CFO (manage multiple clients)
+     - Business Owner (tenant admin)
+     - Employee (limited access)
+   - Conditional company name field
+   - Terms/privacy links
+   - Google OAuth option
+
+4. **Forgot Password Page** (`src/app/(auth)/forgot-password/page.tsx`)
+   - Email input with validation
+   - Success state with check icon
+   - "Try different email" option
+   - Back to login navigation
+
+**Features:**
+- Zod validation schemas
+- react-hook-form integration
+- Loading spinners on submit
+- Toast notifications (sonner)
+- Icon prefixes on inputs (lucide-react)
+- Password visibility toggle
+
+**Build Status:** Passing (7 routes)
+
+**Next Steps:** Phase 4 - Page Migration (Transactions, Revenue, Invoices)
+
