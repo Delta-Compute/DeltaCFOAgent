@@ -23,6 +23,30 @@ export interface ApiResponse<T> {
 // Base API URL - in production this is proxied through Next.js
 const API_BASE = "/api";
 
+// Tenant ID storage - can be set by auth context after login
+let currentTenantId: string | null = null;
+
+/**
+ * Set the current tenant ID for API requests
+ * This should be called by auth-context after successful login
+ */
+export function setApiTenantId(tenantId: string | null) {
+  currentTenantId = tenantId;
+}
+
+/**
+ * Get the current tenant ID
+ * Falls back to localStorage if not set in memory
+ */
+export function getApiTenantId(): string | null {
+  if (currentTenantId) return currentTenantId;
+  // Fallback to localStorage for persistence across page refreshes
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("tenantId");
+  }
+  return null;
+}
+
 /**
  * Get the current Firebase ID token for authenticated requests
  */
@@ -57,6 +81,12 @@ async function fetchApi<T>(
   const token = await getAuthToken();
   if (token) {
     (defaultHeaders as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Add tenant ID header if available
+  const tenantId = getApiTenantId();
+  if (tenantId) {
+    (defaultHeaders as Record<string, string>)["X-Tenant-ID"] = tenantId;
   }
 
   try {
@@ -193,6 +223,12 @@ export async function upload<T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  // Add tenant ID header if available
+  const tenantId = getApiTenantId();
+  if (tenantId) {
+    headers["X-Tenant-ID"] = tenantId;
+  }
+
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -273,6 +309,10 @@ export const transactions = {
     post<{ archived_count: number }>("/archive_transactions", { transaction_ids: ids }),
   unarchive: (ids: string[]) =>
     post<{ unarchived_count: number }>("/unarchive_transactions", { transaction_ids: ids }),
+  getStats: (params?: DashboardStatsParams) => {
+    const query = params ? new URLSearchParams(params as Record<string, string>) : "";
+    return get<DashboardStats>(`/stats?${query}`);
+  },
 };
 
 // --- Invoices ---
@@ -341,6 +381,13 @@ export const revenue = {
   unmatch: (invoiceId: string) =>
     post<void>("/revenue/unmatch", { invoice_id: invoiceId }),
   getStats: () => get<MatchingStats>("/revenue/stats"),
+  getSyncNotification: () =>
+    get<{
+      has_notification: boolean;
+      count?: number;
+      timestamp?: string;
+      changes?: Array<{ description: string; old_category: string; new_category: string }>;
+    }>("/revenue/sync-notification"),
 };
 
 // --- Workforce ---
@@ -686,6 +733,25 @@ export interface TransactionListResponse {
 export interface BulkEnrichResponse {
   enriched: number;
   failed: number;
+}
+
+// Dashboard Stats types
+export interface DashboardStatsParams {
+  start_date?: string;
+  end_date?: string;
+  category?: string;
+  entity?: string;
+}
+
+export interface DashboardStats {
+  total_transactions: number;
+  total_revenue: number;
+  total_expenses: number;
+  needs_review: number;
+  date_range: {
+    min: string;
+    max: string;
+  };
 }
 
 // Internal Transfer types
@@ -1236,6 +1302,12 @@ async function downloadFile(
   const headers: Record<string, string> = {};
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Add tenant ID header if available
+  const tenantId = getApiTenantId();
+  if (tenantId) {
+    headers["X-Tenant-ID"] = tenantId;
   }
 
   try {

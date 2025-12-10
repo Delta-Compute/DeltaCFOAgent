@@ -149,3 +149,40 @@ export function getConfidenceColor(score: number): string {
       return "text-red-600";
   }
 }
+
+/**
+ * Extract vendor/payee pattern from a transaction description
+ * Used for smart-fill to find similar transactions
+ *
+ * Examples:
+ * - "PIX TRANSF TIAGO D12/08" -> "PIX TRANSF TIAGO"
+ * - "PAG BOLETO PORTO SEGURO SAU..." -> "PAG BOLETO PORTO SEGURO"
+ * - "TED 123456789 EMPRESA XYZ" -> "TED EMPRESA XYZ"
+ */
+export function extractVendorPattern(description: string): string {
+  if (!description) return "";
+
+  return description
+    // Remove date patterns: D12/08, 12/08, 12-08, 2024-01-01, etc.
+    .replace(/\b[DI]?\d{1,2}[\/\-]\d{2,4}\b/g, "")
+    .replace(/\b\d{4}[\/\-]\d{2}[\/\-]\d{2}\b/g, "")
+    // Remove time patterns: 12:30, 12:30:45
+    .replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, "")
+    // Remove long numbers (reference IDs, account numbers, amounts)
+    .replace(/\b\d{6,}\b/g, "")
+    // Remove currency amounts: R$1.234,56 or $1,234.56
+    .replace(/[R$]+[\d.,]+/g, "")
+    // Remove trailing numbers
+    .replace(/\s+\d+$/g, "")
+    // Remove common noise words
+    .replace(/\b(REF|REFERENCIA|COD|CODIGO|NR|NUM|NUMERO)\b/gi, "")
+    // Normalize whitespace
+    .replace(/\s+/g, " ")
+    .trim()
+    // Take first 4 significant words (enough to identify vendor)
+    .split(/\s+/)
+    .filter(word => word.length > 1) // Remove single chars
+    .slice(0, 4)
+    .join(" ")
+    .toUpperCase(); // Case-insensitive matching
+}

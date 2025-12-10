@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Sankey, Tooltip, Layer, Rectangle } from "recharts";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { Loader2, ExternalLink, Info } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,109 +37,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+// Dynamically import Plotly to avoid SSR issues
+const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+
 interface SankeyFlowChartProps {
   startDate?: string;
   endDate?: string;
   className?: string;
 }
 
-// Color palette for nodes
+// Color palette for nodes - professional colors with visual distinction
 const COLORS = {
-  revenue: "#22c55e", // green-500
-  expense: "#ef4444", // red-500
-  category: "#3b82f6", // blue-500
-  subcategory: "#8b5cf6", // violet-500
+  revenue: "#059669", // emerald-600 (green for income)
+  expense: "#dc2626", // red-600 (red for expenses)
+  hub: "#6366f1", // indigo-500 (purple for central hub)
+  category: "#64748b", // slate-500 (fallback)
+  subcategory: "#94a3b8", // slate-400 (fallback)
 };
-
-// Props interface for custom Sankey node (Recharts injects x, y, width, height, index, payload at runtime)
-interface SankeyNodeProps {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  index?: number;
-  payload?: { name: string; type?: string; value?: number };
-  onClick?: (node: { name: string; type?: string; value?: number }) => void;
-}
-
-// Custom node component for Sankey
-function SankeyNode({
-  x = 0,
-  y = 0,
-  width = 10,
-  height = 10,
-  index = 0,
-  payload = { name: "" },
-  onClick,
-}: SankeyNodeProps) {
-  const nodeType = payload.type || "category";
-  const color = COLORS[nodeType as keyof typeof COLORS] || COLORS.category;
-
-  return (
-    <Layer key={`sankey-node-${index}`}>
-      <Rectangle
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        fill={color}
-        fillOpacity={0.9}
-        onClick={() => onClick?.(payload)}
-        style={{ cursor: onClick ? "pointer" : "default" }}
-      />
-      <text
-        x={x < 200 ? x + width + 6 : x - 6}
-        y={y + height / 2}
-        textAnchor={x < 200 ? "start" : "end"}
-        dominantBaseline="middle"
-        fill="#333"
-        fontSize={12}
-        fontWeight={500}
-      >
-        {payload.name}
-      </text>
-    </Layer>
-  );
-}
-
-// Props interface for custom Sankey link (Recharts injects props at runtime)
-interface SankeyLinkProps {
-  sourceX?: number;
-  targetX?: number;
-  sourceY?: number;
-  targetY?: number;
-  sourceControlX?: number;
-  targetControlX?: number;
-  linkWidth?: number;
-  index?: number;
-}
-
-// Custom link component
-function SankeyLink({
-  sourceX = 0,
-  targetX = 0,
-  sourceY = 0,
-  targetY = 0,
-  sourceControlX = 0,
-  targetControlX = 0,
-  linkWidth = 1,
-  index = 0,
-}: SankeyLinkProps) {
-  return (
-    <Layer key={`sankey-link-${index}`}>
-      <path
-        d={`
-          M${sourceX},${sourceY}
-          C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}
-        `}
-        fill="none"
-        stroke="#cbd5e1"
-        strokeWidth={linkWidth}
-        strokeOpacity={0.5}
-      />
-    </Layer>
-  );
-}
 
 export function SankeyFlowChart({
   startDate,
@@ -192,33 +106,24 @@ export function SankeyFlowChart({
   }, [loadSankeyData]);
 
   // Handle node click for drill-down
-  const handleNodeClick = async (node: { name: string; type?: string }) => {
-    if (!node.type || node.type === "revenue" || node.type === "expense") {
-      return; // Don't drill down on main revenue/expense nodes
+  const handleNodeClick = async (nodeName: string, nodeType?: string) => {
+    // Only skip drill-down for the hub node - allow drilling into revenue and expense categories
+    if (!nodeType || nodeType === "hub") {
+      return; // Don't drill down on the Cash Flow Hub node
     }
 
-    setSelectedNode(node);
+    setSelectedNode({ name: nodeName, type: nodeType });
     setIsLoadingBreakdown(true);
     setBreakdown(null);
 
     try {
-      // Determine if this category is revenue or expense by checking link sources
-      let nodeType: "revenue" | "expense" = "expense";
-      if (sankeyData?.sankey) {
-        const nodeIndex = sankeyData.sankey.nodes.findIndex(n => n.name === node.name);
-        if (nodeIndex >= 0) {
-          // Check if any link points TO this node FROM a revenue node
-          const isRevenueCategory = sankeyData.sankey.links.some(link => {
-            const sourceNode = sankeyData.sankey.nodes[link.source];
-            return link.target === nodeIndex && sourceNode?.type === "revenue";
-          });
-          nodeType = isRevenueCategory ? "revenue" : "expense";
-        }
-      }
+      // Use the node type directly from the sankey data
+      // Revenue nodes have positive amounts, expense nodes have negative amounts
+      const apiNodeType: "revenue" | "expense" = nodeType === "revenue" ? "revenue" : "expense";
 
       const result = await reportsApi.getSankeyBreakdown({
-        node_name: node.name,
-        node_type: nodeType,
+        node_name: nodeName,
+        node_type: apiNodeType,
         start_date: startDate,
         end_date: endDate,
       });
@@ -238,14 +143,56 @@ export function SankeyFlowChart({
   // Navigate to dashboard with filter for the selected category/keyword
   const openTransactionDrillDown = (keyword: string, category: string) => {
     const params = new URLSearchParams();
-
-    // Set search to include the keyword for filtering
     params.set("search", keyword);
-    // Set category filter
     params.set("category", category);
-
     window.open(`/dashboard?${params.toString()}`, "_blank");
   };
+
+  // Transform data for Plotly Sankey
+  const plotlyData = useMemo(() => {
+    if (!sankeyData?.sankey?.nodes?.length) return null;
+
+    const nodes = sankeyData.sankey.nodes;
+    const links = sankeyData.sankey.links;
+
+    // Create color array based on node type
+    const nodeColors = nodes.map(node => {
+      return COLORS[node.type as keyof typeof COLORS] || COLORS.category;
+    });
+
+    // Create link colors (lighter versions of source node colors)
+    const linkColors = links.map(link => {
+      const sourceNode = nodes[link.source];
+      const baseColor = COLORS[sourceNode?.type as keyof typeof COLORS] || COLORS.category;
+      // Add transparency for links
+      return baseColor + "40"; // 25% opacity
+    });
+
+    return {
+      type: "sankey" as const,
+      orientation: "h" as const,
+      arrangement: "snap" as const, // This enables dragging nodes
+      node: {
+        pad: 20,
+        thickness: 15,
+        line: {
+          color: "rgba(0,0,0,0.1)",
+          width: 0.5,
+        },
+        label: nodes.map(n => n.name),
+        color: nodeColors,
+        customdata: nodes.map(n => ({ name: n.name, type: n.type, value: n.value })),
+        hovertemplate: "<b>%{label}</b><br>%{value:$,.0f}<extra></extra>",
+      },
+      link: {
+        source: links.map(l => l.source),
+        target: links.map(l => l.target),
+        value: links.map(l => l.value),
+        color: linkColors,
+        hovertemplate: "%{source.label} -> %{target.label}<br>%{value:$,.0f}<extra></extra>",
+      },
+    };
+  }, [sankeyData]);
 
   if (isLoading) {
     return (
@@ -270,7 +217,7 @@ export function SankeyFlowChart({
     );
   }
 
-  if (!sankeyData || !sankeyData.sankey?.nodes?.length) {
+  if (!sankeyData || !sankeyData.sankey?.nodes?.length || !plotlyData) {
     return (
       <Card className={className}>
         <CardContent className="flex items-center justify-center h-[400px]">
@@ -280,32 +227,18 @@ export function SankeyFlowChart({
     );
   }
 
-  // Transform API data for Recharts Sankey
-  const chartData = {
-    nodes: sankeyData.sankey.nodes.map((node) => ({
-      name: node.name,
-      type: node.type,
-      value: node.value,
-    })),
-    links: sankeyData.sankey.links.map((link) => ({
-      source: link.source,
-      target: link.target,
-      value: link.value,
-    })),
-  };
-
   return (
     <>
       <Card className={className}>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <CardTitle className="flex items-center gap-2">
                 Cash Flow Visualization
                 <Info className="h-4 w-4 text-muted-foreground" />
               </CardTitle>
               <CardDescription>
-                Revenue to expense flow - click on categories to drill down
+                Click directly on any colored bar to drill down into transactions
               </CardDescription>
             </div>
             <div className="flex gap-4 text-sm">
@@ -327,53 +260,37 @@ export function SankeyFlowChart({
           </div>
         </CardHeader>
         <CardContent>
-          <div className="w-full flex justify-center overflow-x-auto">
-            <Sankey
-              width={900}
-              height={450}
-              data={chartData}
-              node={<SankeyNode onClick={handleNodeClick} />}
-              link={<SankeyLink />}
-              nodePadding={30}
-              nodeWidth={12}
-              margin={{ top: 20, right: 180, bottom: 20, left: 40 }}
-            >
-              <Tooltip
-                content={({ payload }) => {
-                  if (!payload || !payload.length) return null;
-                  const data = payload[0].payload;
-                  if (data.source !== undefined && data.target !== undefined) {
-                    // Link tooltip
-                    const sourceNode = chartData.nodes[data.source];
-                    const targetNode = chartData.nodes[data.target];
-                    return (
-                      <div className="bg-white border rounded-lg shadow-lg p-3">
-                        <p className="font-medium">
-                          {sourceNode?.name} → {targetNode?.name}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatCurrency(data.value)}
-                        </p>
-                      </div>
-                    );
+          <div className="w-full overflow-x-auto">
+            <Plot
+              data={[plotlyData]}
+              layout={{
+                font: { size: 11, family: "Inter, sans-serif" },
+                margin: { l: 10, r: 10, t: 10, b: 10 },
+                paper_bgcolor: "transparent",
+                plot_bgcolor: "transparent",
+                hovermode: "closest",
+              }}
+              config={{
+                displayModeBar: false,
+                responsive: true,
+              }}
+              style={{ width: "100%", height: 450, cursor: "pointer" }}
+              onClick={(event) => {
+                // Handle node clicks for drill-down
+                // Users can click directly on nodes - no need to catch the hover tooltip
+                if (event.points && event.points.length > 0) {
+                  const point = event.points[0];
+                  // Check if it's a node click (not a link)
+                  if (point.pointNumber !== undefined && sankeyData?.sankey?.nodes) {
+                    const nodeIndex = point.pointNumber;
+                    const node = sankeyData.sankey.nodes[nodeIndex];
+                    if (node) {
+                      handleNodeClick(node.name, node.type);
+                    }
                   }
-                  // Node tooltip
-                  return (
-                    <div className="bg-white border rounded-lg shadow-lg p-3">
-                      <p className="font-medium">{data.name}</p>
-                      {data.value && (
-                        <p className="text-sm text-muted-foreground">
-                          {formatCurrency(data.value)}
-                        </p>
-                      )}
-                      <p className="text-xs text-primary mt-1">
-                        Click to view breakdown
-                      </p>
-                    </div>
-                  );
-                }}
-              />
-            </Sankey>
+                }
+              }}
+            />
           </div>
         </CardContent>
       </Card>
@@ -427,9 +344,9 @@ export function SankeyFlowChart({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {breakdown.breakdown.map((item: SankeyBreakdownItem) => (
+                      {breakdown.breakdown.map((item: SankeyBreakdownItem, index: number) => (
                         <TableRow
-                          key={item.keyword}
+                          key={`${item.keyword}-${index}`}
                           className="cursor-pointer hover:bg-muted/50"
                           onClick={() =>
                             openTransactionDrillDown(
@@ -476,8 +393,8 @@ export function SankeyFlowChart({
                       <TableBody>
                         {breakdown.top_transactions
                           .slice(0, 5)
-                          .map((txn: Transaction) => (
-                            <TableRow key={txn.id}>
+                          .map((txn: Transaction, index: number) => (
+                            <TableRow key={txn.id || `txn-${index}`}>
                               <TableCell>
                                 {new Date(txn.date).toLocaleDateString()}
                               </TableCell>

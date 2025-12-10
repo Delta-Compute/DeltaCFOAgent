@@ -43,9 +43,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { transactions, type Transaction, get, post } from "@/lib/api";
+import { transactions, revenue, type Transaction, get, post } from "@/lib/api";
 import { useAuth } from "@/context/auth-context";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatCurrency, formatDate, cn, extractVendorPattern } from "@/lib/utils";
 import { validateField } from "@/lib/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,9 +77,8 @@ import { BulkEditModal } from "@/components/dashboard/bulk-edit-modal";
 import { SimilarTransactionsModal } from "@/components/dashboard/similar-transactions-modal";
 import { TransactionDetailDrawer } from "@/components/dashboard/transaction-detail-drawer";
 import { InternalTransfersModal } from "@/components/dashboard/internal-transfers-modal";
-import { DragFillCell } from "@/components/dashboard/drag-fill-cell";
+import { SmartFillCell } from "@/components/dashboard/smart-fill-cell";
 import { SmartCombobox } from "@/components/dashboard/smart-combobox";
-import { useDragFill } from "@/hooks/use-drag-fill";
 import { useUndoRedo } from "@/hooks/use-undo-redo";
 
 // Stats interface
@@ -94,13 +93,13 @@ interface DashboardStats {
 interface SyncNotification {
   count: number;
   timestamp: string;
-  changes?: Record<string, number>;
+  changes?: Array<{ description: string; old_category: string; new_category: string }>;
 }
 
 export default function TransactionsDashboardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, currentTenant } = useAuth();
 
   // State
   const [transactionData, setTransactionData] = useState<Transaction[]>([]);
@@ -148,6 +147,8 @@ export default function TransactionsDashboardPage() {
   // Dynamic filter options from API
   const [entityOptions, setEntityOptions] = useState<Array<{ name: string; count: number }>>([]);
   const [sourceOptions, setSourceOptions] = useState<Array<{ name: string; count: number }>>([]);
+  const [categoryOptionsFromApi, setCategoryOptionsFromApi] = useState<Array<{ name: string; count: number }>>([]);
+  const [subcategoryOptionsFromApi, setSubcategoryOptionsFromApi] = useState<Array<{ name: string; count: number }>>([]);
 
   // Sync notification
   const [syncNotification, setSyncNotification] = useState<SyncNotification | null>(null);
@@ -163,18 +164,6 @@ export default function TransactionsDashboardPage() {
 
   // Selection
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-
-  // Drag-fill for category/subcategory
-  const {
-    dragState,
-    startDrag,
-    updateDragTarget,
-    isSourceRow,
-    isTargetRow,
-  } = useDragFill({
-    data: transactionData,
-    onUpdate: () => loadTransactions(),
-  });
 
   // Undo/Redo system
   const {
@@ -298,6 +287,10 @@ export default function TransactionsDashboardPage() {
         total_revenue?: number;
         total_expenses?: number;
         needs_review?: number;
+        entities?: [string, number][];
+        source_files?: [string, number][];
+        categories?: [string, number][];
+        subcategories?: [string, number][];
         error?: string;
       }>(`/stats${queryString ? `?${queryString}` : ""}`);
 
@@ -309,6 +302,39 @@ export default function TransactionsDashboardPage() {
           totalExpenses: data.total_expenses || 0,
           needsReview: data.needs_review || 0,
         });
+        // Also extract filter options from stats response
+        if (data.entities) {
+          setEntityOptions(
+            data.entities.map((e: [string, number]) => ({
+              name: e[0],
+              count: e[1],
+            }))
+          );
+        }
+        if (data.source_files) {
+          setSourceOptions(
+            data.source_files.map((s: [string, number]) => ({
+              name: s[0],
+              count: s[1],
+            }))
+          );
+        }
+        if (data.categories) {
+          setCategoryOptionsFromApi(
+            data.categories.map((c: [string, number]) => ({
+              name: c[0],
+              count: c[1],
+            }))
+          );
+        }
+        if (data.subcategories) {
+          setSubcategoryOptionsFromApi(
+            data.subcategories.map((s: [string, number]) => ({
+              name: s[0],
+              count: s[1],
+            }))
+          );
+        }
       }
     } catch (err) {
       console.error("Failed to load stats:", err);
@@ -352,54 +378,15 @@ export default function TransactionsDashboardPage() {
     }
   }, [page, pageSize, sortKey, sortDirection, buildFilterParams]);
 
-  // Load transactions and stats when filters change
+  // Load transactions and stats when filters change (only after auth is ready)
   useEffect(() => {
-    loadTransactions();
-    loadStats();
-  }, [loadTransactions, loadStats]);
-
-  // Load filter options from stats API - wait for authentication to complete
-  useEffect(() => {
-    // Skip if still loading auth or not authenticated yet
-    if (authLoading || !isAuthenticated) {
+    // Wait for auth to complete and have a tenant before loading data
+    if (authLoading || !currentTenant) {
       return;
     }
-
-    async function loadFilterOptions() {
-      try {
-        // Use the authenticated API client to ensure tenant context is set
-        const result = await get<{
-          entities?: [string, number][];
-          source_files?: [string, number][];
-        }>("/stats");
-
-        if (result.success && result.data) {
-          const data = result.data;
-          if (data.entities) {
-            // Stats returns [entity_name, count] tuples
-            setEntityOptions(
-              data.entities.map((e: [string, number]) => ({
-                name: e[0],
-                count: e[1],
-              }))
-            );
-          }
-          if (data.source_files) {
-            // Stats returns [source_file, count] tuples
-            setSourceOptions(
-              data.source_files.map((s: [string, number]) => ({
-                name: s[0],
-                count: s[1],
-              }))
-            );
-          }
-        }
-      } catch (err) {
-        console.error("Error loading filter options:", err);
-      }
-    }
-    loadFilterOptions();
-  }, [authLoading, isAuthenticated]);
+    loadTransactions();
+    loadStats();
+  }, [loadTransactions, loadStats, authLoading, currentTenant]);
 
   // Sync filter state to URL (debounced to avoid excessive updates)
   useEffect(() => {
@@ -436,21 +423,29 @@ export default function TransactionsDashboardPage() {
     window.history.replaceState({}, "", newUrl);
   }, [page, pageSize, search, category, dateRange, entity, transactionType, source, minAmount, maxAmount, startDate, endDate, needsReviewOnly, showArchived, showOriginalCurrency, quickFilter, sortKey, sortDirection, isInitialized]);
 
-  // Check for sync notification on load
+  // Check for sync notification on load (only after auth is ready)
   useEffect(() => {
     async function checkSyncNotification() {
+      // Wait for auth to complete before checking notifications
+      if (authLoading || !currentTenant) {
+        return;
+      }
       try {
-        const response = await fetch("/api/revenue/sync-notification");
-        const data = await response.json();
-        if (data.success && data.has_notification) {
-          setSyncNotification(data.notification);
+        const response = await revenue.getSyncNotification();
+        if (response.success && response.data?.has_notification && response.data.count && response.data.timestamp) {
+          setSyncNotification({
+            count: response.data.count,
+            timestamp: response.data.timestamp,
+            changes: response.data.changes,
+          });
         }
       } catch (err) {
-        console.error("Error checking sync notification:", err);
+        // Silently ignore - sync notification is optional
+        console.debug("Sync notification check skipped:", err);
       }
     }
     checkSyncNotification();
-  }, []);
+  }, [authLoading, currentTenant]);
 
   // Auto-dismiss sync notification after 30 seconds
   useEffect(() => {
@@ -818,6 +813,59 @@ export default function TransactionsDashboardPage() {
     }
   }
 
+  // Smart fill - applies value to all transactions with matching description pattern
+  async function handleSmartFill(
+    description: string,
+    field: string,
+    value: string
+  ) {
+    const sourcePattern = extractVendorPattern(description);
+    if (!sourcePattern) {
+      toast.error("Could not extract pattern from description");
+      return;
+    }
+
+    // Find all transactions with matching patterns that don't already have this value
+    const matchingTransactions = transactionData.filter((t) => {
+      const pattern = extractVendorPattern(t.description);
+      const currentValue = (t as unknown as Record<string, string>)[field];
+      return pattern === sourcePattern && currentValue !== value;
+    });
+
+    if (matchingTransactions.length === 0) {
+      toast.info("No similar transactions found to update");
+      return;
+    }
+
+    // Build updates array for bulk update
+    const updates = matchingTransactions.map((t) => ({
+      transaction_id: t.id,
+      field: field,
+      value: value,
+    }));
+
+    // Optimistically update local state
+    setTransactionData((prev) =>
+      prev.map((t) => {
+        const update = updates.find((u) => u.transaction_id === t.id);
+        return update ? { ...t, [update.field]: update.value } : t;
+      })
+    );
+
+    try {
+      const result = await transactions.bulkUpdate(updates);
+      if (result.success) {
+        toast.success(`Updated ${matchingTransactions.length} similar transactions`);
+      } else {
+        toast.error("Failed to update similar transactions");
+        loadTransactions();
+      }
+    } catch {
+      toast.error("Failed to update similar transactions");
+      loadTransactions();
+    }
+  }
+
   // Handle find duplicates - opens the modal
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   function handleFindDuplicates() {
@@ -863,22 +911,14 @@ export default function TransactionsDashboardPage() {
     };
   }, [transactionData]);
 
-  // Derive unique category and subcategory options from transaction data
+  // Use category and subcategory options from API (loaded from all transactions, not just current page)
   const categoryOptions = useMemo(() => {
-    const categories = new Set<string>();
-    transactionData.forEach((t) => {
-      if (t.category) categories.add(t.category);
-    });
-    return Array.from(categories).sort();
-  }, [transactionData]);
+    return categoryOptionsFromApi.map(c => c.name).sort();
+  }, [categoryOptionsFromApi]);
 
   const subcategoryOptions = useMemo(() => {
-    const subcategories = new Set<string>();
-    transactionData.forEach((t) => {
-      if (t.subcategory) subcategories.add(t.subcategory);
-    });
-    return Array.from(subcategories).sort();
-  }, [transactionData]);
+    return subcategoryOptionsFromApi.map(s => s.name).sort();
+  }, [subcategoryOptionsFromApi]);
 
   // Count active advanced filters
   const activeFilterCount = useMemo(() => {
@@ -963,18 +1003,14 @@ export default function TransactionsDashboardPage() {
       render: (item) => {
         const isEditingEntity =
           editingCell?.id === item.id && editingCell?.field === "entity_name";
-        const isEntitySource = isSourceRow(item.id) && dragState.sourceField === "entity_name";
-        const isEntityTarget = isTargetRow(item.id) && dragState.sourceField === "entity_name";
 
         return (
-          <DragFillCell
+          <SmartFillCell
             rowId={item.id}
             field="entity_name"
             value={item.entity_name || ""}
-            isSource={isEntitySource}
-            isTarget={isEntityTarget}
-            onDragStart={startDrag}
-            onDragEnter={updateDragTarget}
+            description={item.description}
+            onSmartFill={handleSmartFill}
           >
             {isEditingEntity ? (
               <SmartCombobox
@@ -998,30 +1034,37 @@ export default function TransactionsDashboardPage() {
               />
             ) : (
               <div className="group flex items-center gap-1">
-                <span
-                  className={cn(
-                    "text-sm cursor-pointer hover:text-foreground transition-colors truncate max-w-[120px]",
-                    item.entity_name ? "text-foreground" : "text-muted-foreground italic",
-                    cellEntityFilter === item.entity_name && item.entity_name && "text-primary font-medium ring-2 ring-primary ring-offset-1 rounded px-1"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (item.entity_name) {
+                {/* Filter icon - appears on hover, left side */}
+                {item.entity_name && (
+                  <button
+                    className={cn(
+                      "p-0.5 rounded transition-opacity",
+                      cellEntityFilter === item.entity_name
+                        ? "opacity-100 text-primary"
+                        : "opacity-0 group-hover:opacity-100 hover:bg-muted text-muted-foreground"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (cellEntityFilter === item.entity_name) {
                         setCellEntityFilter(null);
                         toast.info("Entity filter cleared");
                       } else {
-                        setCellEntityFilter(item.entity_name);
+                        setCellEntityFilter(item.entity_name || null);
                         toast.info(`Filtering by entity: ${item.entity_name}`);
                       }
-                    }
-                  }}
-                  title={item.entity_name ? `Click to filter: ${item.entity_name}` : "Click edit to set entity"}
-                >
-                  {item.entity_name || "Set entity..."}
-                </span>
-                <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded"
+                    }}
+                    title={`Filter by ${item.entity_name}`}
+                  >
+                    <Filter className="h-3 w-3" />
+                  </button>
+                )}
+                {/* Text - click to edit */}
+                <span
+                  className={cn(
+                    "text-sm cursor-pointer hover:text-foreground transition-colors truncate max-w-[120px]",
+                    item.entity_name ? "text-foreground" : "text-muted-foreground/50 italic",
+                    cellEntityFilter === item.entity_name && item.entity_name && "text-primary font-medium"
+                  )}
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingCell({
@@ -1030,13 +1073,13 @@ export default function TransactionsDashboardPage() {
                       value: item.entity_name || "",
                     });
                   }}
-                  title="Edit entity"
+                  title="Click to edit"
                 >
-                  <Edit className="h-3 w-3 text-muted-foreground" />
-                </button>
+                  {item.entity_name || "Set entity..."}
+                </span>
               </div>
             )}
-          </DragFillCell>
+          </SmartFillCell>
         );
       },
     },
@@ -1047,18 +1090,14 @@ export default function TransactionsDashboardPage() {
       render: (item) => {
         const isEditingCategory =
           editingCell?.id === item.id && editingCell?.field === "category";
-        const isCategorySource = isSourceRow(item.id) && dragState.sourceField === "category";
-        const isCategoryTarget = isTargetRow(item.id) && dragState.sourceField === "category";
 
         return (
-          <DragFillCell
+          <SmartFillCell
             rowId={item.id}
             field="category"
             value={item.category || ""}
-            isSource={isCategorySource}
-            isTarget={isCategoryTarget}
-            onDragStart={startDrag}
-            onDragEnter={updateDragTarget}
+            description={item.description}
+            onSmartFill={handleSmartFill}
           >
             {isEditingCategory ? (
               <SmartCombobox
@@ -1082,6 +1121,31 @@ export default function TransactionsDashboardPage() {
               />
             ) : (
               <div className="group flex items-center gap-1">
+                {/* Filter icon - appears on hover, left side */}
+                {item.category && (
+                  <button
+                    className={cn(
+                      "p-0.5 rounded transition-opacity",
+                      cellCategoryFilter === item.category
+                        ? "opacity-100 text-primary"
+                        : "opacity-0 group-hover:opacity-100 hover:bg-muted text-muted-foreground"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (cellCategoryFilter === item.category) {
+                        setCellCategoryFilter(null);
+                        toast.info("Category filter cleared");
+                      } else {
+                        setCellCategoryFilter(item.category || null);
+                        toast.info(`Filtering by category: ${item.category}`);
+                      }
+                    }}
+                    title={`Filter by ${item.category}`}
+                  >
+                    <Filter className="h-3 w-3" />
+                  </button>
+                )}
+                {/* Badge - click to edit */}
                 <div
                   className={cn(
                     "cursor-pointer hover:opacity-80",
@@ -1089,18 +1153,13 @@ export default function TransactionsDashboardPage() {
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
-                    // Toggle category filter on click
-                    if (item.category) {
-                      if (cellCategoryFilter === item.category) {
-                        setCellCategoryFilter(null);
-                        toast.info("Category filter cleared");
-                      } else {
-                        setCellCategoryFilter(item.category);
-                        toast.info(`Filtering by category: ${item.category}`);
-                      }
-                    }
+                    setEditingCell({
+                      id: item.id,
+                      field: "category",
+                      value: item.category || "",
+                    });
                   }}
-                  title="Click to filter by category"
+                  title="Click to edit"
                 >
                   {item.category ? (
                     <Badge variant="secondary" className="w-fit">
@@ -1112,23 +1171,9 @@ export default function TransactionsDashboardPage() {
                     </Badge>
                   )}
                 </div>
-                <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setEditingCell({
-                      id: item.id,
-                      field: "category",
-                      value: item.category || "",
-                    });
-                  }}
-                  title="Edit category"
-                >
-                  <Edit className="h-3 w-3 text-muted-foreground" />
-                </button>
               </div>
             )}
-          </DragFillCell>
+          </SmartFillCell>
         );
       },
     },
@@ -1138,18 +1183,14 @@ export default function TransactionsDashboardPage() {
       render: (item) => {
         const isEditingSubcategory =
           editingCell?.id === item.id && editingCell?.field === "subcategory";
-        const isSubcategorySource = isSourceRow(item.id) && dragState.sourceField === "subcategory";
-        const isSubcategoryTarget = isTargetRow(item.id) && dragState.sourceField === "subcategory";
 
         return (
-          <DragFillCell
+          <SmartFillCell
             rowId={item.id}
             field="subcategory"
             value={item.subcategory || ""}
-            isSource={isSubcategorySource}
-            isTarget={isSubcategoryTarget}
-            onDragStart={startDrag}
-            onDragEnter={updateDragTarget}
+            description={item.description}
+            onSmartFill={handleSmartFill}
           >
             {isEditingSubcategory ? (
               <SmartCombobox
@@ -1173,30 +1214,37 @@ export default function TransactionsDashboardPage() {
               />
             ) : (
               <div className="group flex items-center gap-1">
-                <span
-                  className={cn(
-                    "text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors",
-                    cellSubcategoryFilter === item.subcategory && item.subcategory && "text-primary font-medium ring-2 ring-primary ring-offset-1 rounded px-1"
-                  )}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Toggle subcategory filter on click
-                    if (item.subcategory) {
+                {/* Filter icon - appears on hover, left side */}
+                {item.subcategory && (
+                  <button
+                    className={cn(
+                      "p-0.5 rounded transition-opacity",
+                      cellSubcategoryFilter === item.subcategory
+                        ? "opacity-100 text-primary"
+                        : "opacity-0 group-hover:opacity-100 hover:bg-muted text-muted-foreground"
+                    )}
+                    onClick={(e) => {
+                      e.stopPropagation();
                       if (cellSubcategoryFilter === item.subcategory) {
                         setCellSubcategoryFilter(null);
                         toast.info("Subcategory filter cleared");
                       } else {
-                        setCellSubcategoryFilter(item.subcategory);
+                        setCellSubcategoryFilter(item.subcategory || null);
                         toast.info(`Filtering by subcategory: ${item.subcategory}`);
                       }
-                    }
-                  }}
-                  title="Click to filter by subcategory"
-                >
-                  {item.subcategory || "-"}
-                </span>
-                <button
-                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-muted rounded"
+                    }}
+                    title={`Filter by ${item.subcategory}`}
+                  >
+                    <Filter className="h-3 w-3" />
+                  </button>
+                )}
+                {/* Text - click to edit */}
+                <span
+                  className={cn(
+                    "text-sm cursor-pointer hover:text-foreground transition-colors",
+                    item.subcategory ? "text-muted-foreground" : "text-muted-foreground/50 italic",
+                    cellSubcategoryFilter === item.subcategory && item.subcategory && "text-primary font-medium"
+                  )}
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingCell({
@@ -1205,13 +1253,13 @@ export default function TransactionsDashboardPage() {
                       value: item.subcategory || "",
                     });
                   }}
-                  title="Edit subcategory"
+                  title="Click to edit"
                 >
-                  <Edit className="h-3 w-3 text-muted-foreground" />
-                </button>
+                  {item.subcategory || "Set subcategory..."}
+                </span>
               </div>
             )}
-          </DragFillCell>
+          </SmartFillCell>
         );
       },
     },

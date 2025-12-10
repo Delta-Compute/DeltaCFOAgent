@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { reports as reportsApi, exports as exportsApi, homepage } from "@/lib/api";
+import { reports as reportsApi, exports as exportsApi, transactions } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,32 +58,8 @@ export default function ReportsPage() {
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-  // Load stats from homepage KPIs
-  const loadStats = useCallback(async () => {
-    try {
-      const result = await homepage.getKpis();
-      // API returns { success: true, kpis: {...} }, wrapped by get() as { data: { kpis: {...} } }
-      const kpis = (result.data as { kpis?: { total_revenue?: number; total_expenses?: number; net_profit?: number } })?.kpis;
-      if (result.success && kpis) {
-        setStats({
-          totalRevenue: kpis.total_revenue || 0,
-          totalExpenses: kpis.total_expenses || 0,
-          netProfit: kpis.net_profit || 0,
-        });
-      }
-    } catch (err) {
-      console.error("Failed to load stats:", err);
-    } finally {
-      setIsLoadingStats(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadStats();
-  }, [loadStats]);
-
   // Get date range params based on selection
-  const getDateParams = () => {
+  const getDateParams = useCallback(() => {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth();
@@ -112,7 +88,50 @@ export default function ReportsPage() {
           end_date: `${year}-12-31`,
         };
     }
+  }, [dateRange]);
+
+  // Get label for the selected date range
+  const getDateRangeLabel = () => {
+    switch (dateRange) {
+      case "month":
+        return "This Month";
+      case "quarter":
+        return "This Quarter";
+      case "lastyear":
+        return "Last Year";
+      case "year":
+      default:
+        return "Year to Date";
+    }
   };
+
+  // Load stats with date filters
+  const loadStats = useCallback(async () => {
+    setIsLoadingStats(true);
+    try {
+      const params = getDateParams();
+      const result = await transactions.getStats({
+        start_date: params.start_date,
+        end_date: params.end_date,
+      });
+      if (result.success && result.data) {
+        const data = result.data;
+        setStats({
+          totalRevenue: data.total_revenue || 0,
+          totalExpenses: data.total_expenses || 0,
+          netProfit: (data.total_revenue || 0) - (data.total_expenses || 0),
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load stats:", err);
+    } finally {
+      setIsLoadingStats(false);
+    }
+  }, [getDateParams]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   // Download handlers
   const handleDownloadDre = async () => {
@@ -350,7 +369,7 @@ export default function ReportsPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Revenue (YTD)</CardDescription>
+            <CardDescription>Total Revenue</CardDescription>
             <CardTitle className="text-2xl text-green-600">
               {isLoadingStats ? (
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -362,14 +381,14 @@ export default function ReportsPage() {
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-green-500" />
-              Year to date
+              {getDateRangeLabel()}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Expenses (YTD)</CardDescription>
+            <CardDescription>Total Expenses</CardDescription>
             <CardTitle className="text-2xl text-red-600">
               {isLoadingStats ? (
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -381,14 +400,14 @@ export default function ReportsPage() {
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-red-500" />
-              Year to date
+              {getDateRangeLabel()}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Net Profit (YTD)</CardDescription>
+            <CardDescription>Net Profit</CardDescription>
             <CardTitle className="text-2xl text-primary">
               {isLoadingStats ? (
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -400,7 +419,7 @@ export default function ReportsPage() {
           <CardContent>
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <TrendingUp className="h-3 w-3 text-green-500" />
-              Year to date
+              {getDateRangeLabel()}
             </div>
           </CardContent>
         </Card>
