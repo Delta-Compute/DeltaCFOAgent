@@ -311,23 +311,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.sm,
   },
-  apiKeyText: {
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.textSecondary,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  apiKeyInput: {
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: BORDER_RADIUS.sm,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    fontSize: FONT_SIZE.sm,
-    color: COLORS.text,
-    minWidth: 150,
-  },
-  iconButton: {
-    padding: SPACING.xs,
-  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
