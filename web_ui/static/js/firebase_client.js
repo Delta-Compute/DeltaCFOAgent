@@ -36,6 +36,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
+// Force account selection prompt - always show the Google account picker
+googleProvider.setCustomParameters({
+    prompt: 'select_account'
+});
+
 /**
  * Sign in with email and password
  * @param {string} email - User's email
