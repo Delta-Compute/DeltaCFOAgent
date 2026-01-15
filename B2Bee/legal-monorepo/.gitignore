@@ -1,0 +1,17 @@
+# Dependencies
+node_modules
+
+# Turbo
+.turbo
+
+# Misc
+.DS_Store
+
+# Env
+.env
+.env.local
+.env*.local
+
+# IDE
+.idea
+.vscode

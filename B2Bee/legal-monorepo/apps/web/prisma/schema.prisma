@@ -1,0 +1,527 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Core User & Tenant Models
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  firebaseUid   String    @unique @map("firebase_uid")
+  email         String    @unique
+  name          String?
+  avatarUrl     String?   @map("avatar_url")
+  phone         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  lastAccessAt  DateTime? @map("last_access_at")
+
+  tenantUsers       TenantUser[]
+  oabRegistrations  OABRegistration[]
+  createdTasks      Task[]            @relation("TaskCreator")
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  calendarEvents    CalendarEvent[]
+  createdDocuments  Document[]
+  createdLegalDocs  LegalDocument[]
+  financialEntries  FinancialEntry[]
+  invoices          Invoice[]
+  alerts            Alert[]
+  clientServices    ClientService[]
+
+  @@map("users")
+}
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logoUrl     String?  @map("logo_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenantUsers       TenantUser[]
+  firms             Firm[]
+  cases             Case[]
+  contacts          Contact[]
+  publications      Publication[]
+  tasks             Task[]
+  calendarEvents    CalendarEvent[]
+  documents         Document[]
+  legalDocuments    LegalDocument[]
+  financialEntries  FinancialEntry[]
+  invoices          Invoice[]
+  alerts            Alert[]
+  clientServices    ClientService[]
+  subscriptions     Subscription[]
+
+  @@map("tenants")
+}
+
+model TenantUser {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  tenantId  String   @map("tenant_id")
+  role      String   @default("member")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("tenant_users")
+}
+
+// ============================================
+// Law Firm & OAB Registration
+// ============================================
+
+model Firm {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  cnpj            String?  // Brazilian company ID
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?  @map("zip_code")
+  phone           String?
+  email           String?
+  website         String?
+  sizeSegment     String?  @map("size_segment") // processo_count segment
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  oabRegistrations OABRegistration[]
+
+  @@map("firms")
+}
+
+model OABRegistration {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  firmId          String?  @map("firm_id")
+  oabNumber       String   @map("oab_number")
+  oabState        String   @map("oab_state") // UF seccional
+  isActive        Boolean  @default(true) @map("is_active")
+  verifiedAt      DateTime? @map("verified_at")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firm            Firm?    @relation(fields: [firmId], references: [id], onDelete: SetNull)
+
+  @@unique([oabNumber, oabState])
+  @@map("oab_registrations")
+}
+
+// ============================================
+// Cases & Court Integration
+// ============================================
+
+model Case {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  cnjNumber       String   @map("cnj_number") // NNNNNNN-NN.NNNN.N.NN.NNNN
+  title           String?
+  description     String?
+  court           String?  // Tribunal
+  judge           String?
+  courtUnit       String?  @map("court_unit") // Vara
+  areaOfLaw       String?  @map("area_of_law") // civil, trabalhista, etc.
+  status          String   @default("active") // active, archived, closed
+  value           Decimal? @db.Decimal(15, 2) // Valor da causa
+  distributionDate DateTime? @map("distribution_date")
+  lastMovementAt  DateTime? @map("last_movement_at")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  movements       CaseMovement[]
+  parties         CaseParty[]
+  publications    Publication[]
+  tasks           Task[]
+  calendarEvents  CalendarEvent[]
+  documents       Document[]
+  financialEntries FinancialEntry[]
+  invoices        Invoice[]
+
+  @@unique([tenantId, cnjNumber])
+  @@index([tenantId, status])
+  @@map("cases")
+}
+
+model CaseMovement {
+  id              String   @id @default(cuid())
+  caseId          String   @map("case_id")
+  date            DateTime
+  description     String
+  source          String   @default("manual") // court_api, manual
+  aiPriority      Int?     @map("ai_priority") // 1-5 priority score
+  aiSummary       String?  @map("ai_summary")
+  rawData         Json?    @map("raw_data")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, date])
+  @@map("case_movements")
+}
+
+model CaseParty {
+  id              String   @id @default(cuid())
+  caseId          String   @map("case_id")
+  contactId       String?  @map("contact_id")
+  name            String
+  role            String   // autor, reu, advogado, testemunha, etc.
+  document        String?  // CPF/CNPJ
+  isClient        Boolean  @default(false) @map("is_client")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  contact         Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@map("case_parties")
+}
+
+// ============================================
+// Publications (Diario Oficial)
+// ============================================
+
+model Publication {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  date            DateTime
+  source          String   // diario_oficial, tribunal
+  journal         String?  // Diario da Justica, DJE, etc.
+  content         String
+  excerpt         String?
+  type            String?  // intimacao, citacao, sentenca, etc.
+  status          String   @default("new") // new, viewed, handled
+  deadline        DateTime?
+  aiWorkflow      String?  @map("ai_workflow")
+  aiSummary       String?  @map("ai_summary")
+  handledAt       DateTime? @map("handled_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  tasks           Task[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, date])
+  @@map("publications")
+}
+
+// ============================================
+// Contacts (CRM)
+// ============================================
+
+model Contact {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  name            String
+  email           String?
+  phone           String?
+  document        String?  // CPF/CNPJ
+  type            String   @default("client") // client, opposing_party, witness, other
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?  @map("zip_code")
+  notes           String?
+  tags            String[] @default([])
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseParties     CaseParty[]
+  clientServices  ClientService[]
+  invoices        Invoice[]
+
+  @@index([tenantId, type])
+  @@map("contacts")
+}
+
+// ============================================
+// Client Services (Atendimentos)
+// ============================================
+
+model ClientService {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  contactId       String   @map("contact_id")
+  userId          String   @map("user_id")
+  title           String
+  description     String?
+  type            String   @default("consultation") // consultation, meeting, call, email
+  date            DateTime
+  duration        Int?     // minutes
+  status          String   @default("scheduled") // scheduled, completed, cancelled
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact         Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, date])
+  @@map("client_services")
+}
+
+// ============================================
+// Tasks
+// ============================================
+
+model Task {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  publicationId   String?  @map("publication_id")
+  createdById     String   @map("created_by_id")
+  assignedToId    String?  @map("assigned_to_id")
+  title           String
+  description     String?
+  dueDate         DateTime? @map("due_date")
+  priority        String   @default("medium") // low, medium, high, urgent
+  status          String   @default("pending") // pending, in_progress, completed, cancelled
+  completedAt     DateTime? @map("completed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?        @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  publication     Publication? @relation(fields: [publicationId], references: [id], onDelete: SetNull)
+  createdBy       User         @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedTo      User?        @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@map("tasks")
+}
+
+// ============================================
+// Calendar Events
+// ============================================
+
+model CalendarEvent {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  userId          String   @map("user_id")
+  title           String
+  description     String?
+  type            String   @default("event") // hearing, deadline, meeting, reminder, event
+  startDate       DateTime @map("start_date")
+  endDate         DateTime? @map("end_date")
+  allDay          Boolean  @default(false) @map("all_day")
+  location        String?
+  color           String?
+  reminder        Int?     // minutes before
+  reminderSent    Boolean  @default(false) @map("reminder_sent")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, startDate])
+  @@map("calendar_events")
+}
+
+// ============================================
+// Documents
+// ============================================
+
+model Document {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  userId          String   @map("user_id")
+  name            String
+  description     String?
+  fileUrl         String   @map("file_url")
+  fileType        String?  @map("file_type")
+  fileSize        Int?     @map("file_size")
+  folder          String?
+  tags            String[] @default([])
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, folder])
+  @@map("documents")
+}
+
+// ============================================
+// AI-Generated Legal Documents (Pecas)
+// ============================================
+
+model LegalDocument {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  userId          String   @map("user_id")
+  title           String
+  templateType    String   @map("template_type") // peticao_inicial, contestacao, recurso, etc.
+  category        String   // civil, trabalhista, previdenciaria, criminal, transito
+  content         String
+  aiGenerated     Boolean  @default(true) @map("ai_generated")
+  promptUsed      String?  @map("prompt_used")
+  jurisprudenceRefs Json?  @map("jurisprudence_refs")
+  status          String   @default("draft") // draft, final
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, category])
+  @@map("legal_documents")
+}
+
+// ============================================
+// Financial
+// ============================================
+
+model FinancialEntry {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  userId          String   @map("user_id")
+  type            String   // income, expense
+  category        String   // honorarios, custas, despesas, etc.
+  costCenter      String?  @map("cost_center")
+  description     String
+  amount          Decimal  @db.Decimal(15, 2)
+  date            DateTime
+  dueDate         DateTime? @map("due_date")
+  paidAt          DateTime? @map("paid_at")
+  status          String   @default("pending") // pending, paid, cancelled
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type])
+  @@index([tenantId, date])
+  @@map("financial_entries")
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  caseId          String?  @map("case_id")
+  contactId       String   @map("contact_id")
+  userId          String   @map("user_id")
+  invoiceNumber   String   @map("invoice_number")
+  description     String?
+  amount          Decimal  @db.Decimal(15, 2)
+  dueDate         DateTime @map("due_date")
+  issuedAt        DateTime @default(now()) @map("issued_at")
+  paidAt          DateTime? @map("paid_at")
+  status          String   @default("pending") // pending, sent, paid, overdue, cancelled
+  lineItems       Json?    @map("line_items")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case            Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  contact         Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, status])
+  @@map("invoices")
+}
+
+// ============================================
+// Alerts
+// ============================================
+
+model Alert {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  userId          String   @map("user_id")
+  type            String   // deadline, publication, task, case_movement
+  title           String
+  message         String
+  referenceType   String?  @map("reference_type") // case, task, publication
+  referenceId     String?  @map("reference_id")
+  isRead          Boolean  @default(false) @map("is_read")
+  readAt          DateTime? @map("read_at")
+  emailSent       Boolean  @default(false) @map("email_sent")
+  pushSent        Boolean  @default(false) @map("push_sent")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, isRead])
+  @@map("alerts")
+}
+
+// ============================================
+// Pricing & Subscriptions
+// ============================================
+
+model PricingPlan {
+  id              String   @id @default(cuid())
+  name            String   @unique // LIGHT, UP, SMART, COMPANY, VIP
+  displayName     String   @map("display_name")
+  description     String?
+  price           Decimal  @db.Decimal(10, 2)
+  currency        String   @default("BRL")
+  interval        String   @default("month") // month, year
+  features        Json     // Array of feature flags
+  limits          Json     // Usage limits (cases, users, ai_credits)
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  subscriptions   Subscription[]
+
+  @@map("pricing_plans")
+}
+
+model Subscription {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  planId          String   @map("plan_id")
+  stripeSubscriptionId String? @unique @map("stripe_subscription_id")
+  status          String   @default("trialing") // trialing, active, cancelled, past_due
+  trialEndsAt     DateTime? @map("trial_ends_at")
+  currentPeriodStart DateTime @map("current_period_start")
+  currentPeriodEnd DateTime @map("current_period_end")
+  cancelledAt     DateTime? @map("cancelled_at")
+  aiCreditsUsed   Int      @default(0) @map("ai_credits_used")
+  aiCreditsLimit  Int      @default(0) @map("ai_credits_limit")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan            PricingPlan  @relation(fields: [planId], references: [id])
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
