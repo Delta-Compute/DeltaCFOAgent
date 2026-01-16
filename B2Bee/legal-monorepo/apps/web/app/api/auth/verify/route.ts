@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getFirebaseAdmin } from '@/lib/firebase-admin'
+
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
 import prisma from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {

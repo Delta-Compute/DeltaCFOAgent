@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 // Helper to get user from authorization header
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -103,9 +106,9 @@ export async function POST(
     }
 
     // Validate required fields
-    if (!body.title) {
+    if (!body.description) {
       return NextResponse.json(
-        { error: 'Title is required' },
+        { error: 'Description is required' },
         { status: 400 }
       )
     }
@@ -113,8 +116,7 @@ export async function POST(
     const movement = await prisma.caseMovement.create({
       data: {
         caseId: id,
-        title: body.title,
-        description: body.description || null,
+        description: body.description,
         date: body.date ? new Date(body.date) : new Date(),
         source: body.source || 'manual',
       },

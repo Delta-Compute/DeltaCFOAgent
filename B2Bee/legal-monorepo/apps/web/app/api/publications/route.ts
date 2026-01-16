@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
@@ -57,7 +60,6 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       where.OR = [
-        { caseNumber: { contains: search } },
         { content: { contains: search, mode: 'insensitive' } },
       ]
     }
@@ -74,7 +76,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: { publicationDate: 'desc' },
+        orderBy: { date: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
@@ -83,9 +85,9 @@ export async function GET(request: NextRequest) {
 
     const transformed = publications.map((p) => ({
       id: p.id,
-      caseNumber: p.caseNumber,
+      caseNumber: p.case?.cnjNumber || null,
       source: p.source,
-      publicationDate: p.publicationDate,
+      publicationDate: p.date,
       content: p.content,
       status: p.status,
       deadline: p.deadline,
@@ -166,9 +168,8 @@ export async function POST(request: NextRequest) {
       data: {
         tenantId,
         caseId,
-        caseNumber: body.caseNumber || null,
         source: body.source || 'manual',
-        publicationDate: body.publicationDate
+        date: body.publicationDate
           ? new Date(body.publicationDate)
           : new Date(),
         content: body.content,

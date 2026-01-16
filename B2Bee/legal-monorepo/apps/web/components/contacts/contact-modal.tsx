@@ -11,6 +11,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ptBR } from '@/lib/i18n'
 import { formatDateBR } from '@/lib/utils'
+import { ContactFormData } from '@/lib/types'
 import {
   User,
   Mail,
@@ -23,37 +24,12 @@ import {
   X,
 } from 'lucide-react'
 
-interface Contact {
-  id?: string
-  name: string
-  type: string
-  document?: string
-  email?: string
-  phone?: string
-  address?: string
-  notes?: string
-  cases?: Array<{
-    id: string
-    cnjNumber: string
-    title: string
-    status: string
-    role: string
-  }>
-  services?: Array<{
-    id: string
-    title: string
-    type: string
-    date: Date
-    duration: number
-  }>
-}
-
 interface ContactModalProps {
   isOpen: boolean
   onClose: () => void
-  contact?: Contact | null
+  contact?: ContactFormData | null
   mode: 'view' | 'edit' | 'create'
-  onSave?: (contact: Contact) => void
+  onSave?: (contact: ContactFormData) => void
 }
 
 const contactTypes = [
@@ -73,7 +49,7 @@ export function ContactModal({
 }: ContactModalProps) {
   const t = ptBR
   const [activeTab, setActiveTab] = React.useState('info')
-  const [formData, setFormData] = React.useState<Contact>({
+  const [formData, setFormData] = React.useState<ContactFormData>({
     name: '',
     type: 'client',
     document: '',
@@ -161,7 +137,7 @@ export function ContactModal({
       : contact?.name || 'Contato'
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg">
+    <Modal open={isOpen} onClose={onClose} className="max-w-2xl">
       <ModalHeader>
         <ModalTitle>{title}</ModalTitle>
       </ModalHeader>

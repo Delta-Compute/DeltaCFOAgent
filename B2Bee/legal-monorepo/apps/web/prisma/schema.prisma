@@ -153,6 +153,7 @@ model Case {
   documents       Document[]
   financialEntries FinancialEntry[]
   invoices        Invoice[]
+  legalDocuments  LegalDocument[]
 
   @@unique([tenantId, cnjNumber])
   @@index([tenantId, status])

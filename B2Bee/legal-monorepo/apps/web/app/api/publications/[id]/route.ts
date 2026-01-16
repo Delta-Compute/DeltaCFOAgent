@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
@@ -123,7 +126,6 @@ export async function PUT(
         status: body.status ?? existing.status,
         caseId: body.caseId ?? existing.caseId,
         deadline: body.deadline ? new Date(body.deadline) : existing.deadline,
-        notes: body.notes ?? existing.notes,
       },
     })
 

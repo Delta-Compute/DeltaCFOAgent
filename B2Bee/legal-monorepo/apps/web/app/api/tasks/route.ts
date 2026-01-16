@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
@@ -184,6 +187,10 @@ export async function POST(request: NextRequest) {
       where: { firebaseUid: user.uid },
     })
 
+    if (!dbUser) {
+      return NextResponse.json({ error: 'User not found in database' }, { status: 404 })
+    }
+
     const body = await request.json()
 
     if (!body.title) {
@@ -203,7 +210,7 @@ export async function POST(request: NextRequest) {
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         caseId: body.caseId || null,
         assignedToId: body.assignedToId || null,
-        createdById: dbUser?.id || null,
+        createdById: dbUser.id,
       },
       include: {
         case: {

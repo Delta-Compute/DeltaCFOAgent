@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { courtService } from '@/lib/services/court-integration'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {

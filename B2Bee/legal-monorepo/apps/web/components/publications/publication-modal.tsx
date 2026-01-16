@@ -88,7 +88,7 @@ export function PublicationModal({
     : false
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="lg">
+    <Modal open={isOpen} onClose={onClose} className="max-w-2xl">
       <ModalHeader>
         <div className="flex items-center justify-between">
           <ModalTitle>Publicacao</ModalTitle>

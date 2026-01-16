@@ -10,6 +10,7 @@ import { Avatar } from '@/components/ui/avatar'
 import { EmptyState } from '@/components/ui/empty-state'
 import { ContactModal } from '@/components/contacts'
 import { ptBR } from '@/lib/i18n'
+import { Contact, ContactFormData } from '@/lib/types'
 import { Plus, Search, MoreVertical, Mail, Phone, Eye, Edit, Trash2 } from 'lucide-react'
 import {
   Dropdown,
@@ -17,25 +18,6 @@ import {
   DropdownContent,
   DropdownItem,
 } from '@/components/ui/dropdown'
-
-interface Contact {
-  id: string
-  name: string
-  email: string
-  phone: string
-  type: string
-  document?: string
-  address?: string
-  notes?: string
-  casesCount: number
-  cases?: Array<{
-    id: string
-    cnjNumber: string
-    title: string
-    status: string
-    role: string
-  }>
-}
 
 // Mock data
 const mockContacts: Contact[] = [
@@ -87,7 +69,7 @@ export default function ContactsPage() {
     setModalOpen(true)
   }
 
-  const handleSaveContact = (contact: Contact) => {
+  const handleSaveContact = (contact: ContactFormData) => {
     console.log('Saving contact:', contact)
     // In production, call API here
   }

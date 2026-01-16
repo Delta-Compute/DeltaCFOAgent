@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { adminAuth } from '@/lib/firebase-admin'
 
+// Force dynamic rendering to avoid build-time Firebase initialization
+export const dynamic = 'force-dynamic'
+
 // Helper to get user from authorization header
 async function getAuthUser(request: NextRequest) {
   const authHeader = request.headers.get('Authorization')
@@ -102,7 +105,6 @@ export async function GET(
       movements: caseData.movements.map((m) => ({
         id: m.id,
         date: m.date,
-        title: m.title,
         description: m.description,
       })),
       tasks: caseData.tasks.map((t) => ({
@@ -116,8 +118,8 @@ export async function GET(
         id: d.id,
         name: d.name,
         date: d.createdAt,
-        type: d.type,
-        url: d.url,
+        type: d.fileType,
+        url: d.fileUrl,
       })),
       financials: caseData.financialEntries.map((f) => ({
         id: f.id,
