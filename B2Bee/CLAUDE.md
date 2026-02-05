@@ -61,6 +61,62 @@ npx prisma migrate deploy                        # Production
 
 See individual app CLAUDE.md files for detailed database safety rules.
 
+## Cloud Run Secrets Management
+
+### NEVER set secrets manually in Cloud Console
+
+**Nova Vida API keys were wiped on Feb 4, 2026** because secrets were set manually in Cloud Console instead of in cloudbuild.yaml.
+
+### Why This Happens
+
+Cloud Build's `gcloud run deploy` uses `--set-secrets` which is a **REPLACEMENT** operation, not a merge. Every deploy completely replaces the Cloud Run service configuration, wiping any manually-added secrets.
+
+### Safe Secrets Operations
+
+**ALWAYS add secrets to cloudbuild.yaml:**
+```yaml
+- '--set-secrets'
+- 'SECRET_NAME=secret-manager-name:latest,ANOTHER_SECRET=another-name:latest'
+```
+
+**Before adding a new integration that needs secrets:**
+1. Create secret in Secret Manager: `gcloud secrets create SECRET_NAME --project=PROJECT_ID`
+2. Add version: `echo -n 'value' | gcloud secrets versions add SECRET_NAME --data-file=-`
+3. Add to cloudbuild.yaml's `--set-secrets` line
+4. Commit cloudbuild.yaml changes
+
+**Run audit before deploy (AICFO example):**
+```bash
+./scripts/audit-secrets.sh  # Checks all secrets exist in Secret Manager
+```
+
+### Products Using Cloud Run
+
+| Product | cloudbuild.yaml Location | Secrets Location |
+|---------|-------------------------|------------------|
+| AICFO | aicfo-monorepo/cloudbuild.yaml | Google Secret Manager |
+
+### NEVER modify another product's secrets
+
+**AICFO suffered a 67-minute outage on Feb 5, 2026** because the `db_password_sa` secret was changed to an incorrect value during a batch of secret updates. All database operations failed.
+
+**Protected secrets per product (DO NOT TOUCH from other sessions):**
+
+| Secret | Owner | DO NOT modify from |
+|--------|-------|-------------------|
+| `db_password_sa` | AICFO | Any non-AICFO session |
+| `anthropic_api_key` | AICFO | Any non-AICFO session |
+| `firebase-service-account` | Shared | Any session without explicit approval |
+| `sendgrid-api-key` | AICFO | Any non-AICFO session |
+
+**Before modifying ANY secret:**
+1. Verify which products use it: `gcloud run services describe SERVICE --region=REGION --format=yaml | grep -A2 secretKeyRef`
+2. If shared, coordinate with the owning product's session
+3. NEVER change a secret's value unless you are certain the new value is correct
+4. After changing, verify the service can still connect: check Cloud Run logs for errors
+
+**Incident reference:** `aicfo-monorepo/docs/incidents/2026-02-05-db-password-secret-outage.md`
+
 ## Session Start Checklist
 
 Each session should start with:
