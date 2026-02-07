@@ -61,6 +61,30 @@ npx prisma migrate deploy                        # Production
 
 See individual app CLAUDE.md files for detailed database safety rules.
 
+## 🚨 CRITICAL: NEVER Change Database Passwords
+
+**AICFO suffered repeated outages on Feb 7, 2026** when a Claude session changed the database password while debugging a local connection issue. Cloud Run uses Secret Manager, which became out of sync.
+
+### FORBIDDEN Commands - NEVER RUN:
+```bash
+gcloud sql users set-password ...  # Breaks production!
+ALTER USER ... PASSWORD ...        # Same effect via SQL
+```
+
+### If Database Connection Fails:
+1. Ensure `gcloud auth application-default login` is current
+2. Check Cloud SQL Proxy is running
+3. **ASK THE USER** - do not attempt to fix auth issues autonomously
+
+### Use IAM Authentication for Local Development (AICFO):
+```bash
+# Start Cloud SQL Proxy
+cloud-sql-proxy aicfo-473816:southamerica-east1:delta-cfo-db --port 5433 &
+
+# Connect using IAM token (no password needed)
+PGPASSWORD=$(gcloud auth print-access-token) psql -h 127.0.0.1 -p 5433 -U "whit@delta-mining.com" -d delta_cfo
+```
+
 ## Cloud Run Secrets Management
 
 ### NEVER set secrets manually in Cloud Console
