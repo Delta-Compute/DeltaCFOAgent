@@ -25,6 +25,48 @@ Changes to these affect multiple products - coordinate before committing:
 | Firebase config | All products |
 | Stripe webhooks | All products with billing |
 
+## Architecture Documentation
+
+### Update architecture.html When Building New Features
+
+When adding new tools, services, or API integrations, update the architecture diagram:
+
+**File:** `/Users/whitdhamer/B2Bee/architecture.html`
+
+**When to update:**
+- Adding new WhatsApp or Desktop tools
+- Creating new backend services
+- Adding external API integrations
+- New database tables or services
+
+**How to update:**
+
+1. **Add nodes** to the `nodes` DataSet (around line 431):
+```javascript
+{ id: 'new_tool', label: 'Tool Name', group: 'whatsapp', level: 3, shape: 'box', title: 'Description' },
+```
+
+2. **Add edges** to connect your new node (around line 492):
+```javascript
+{ from: 'wa_tools', to: 'new_tool', arrows: 'to', dashes: true },
+{ from: 'new_tool', to: 'external_api', arrows: 'to', color: { color: '#da3633' } },
+```
+
+3. **Update nodeDetails** if adding a major component (around line 568):
+```javascript
+'new_component': {
+    title: 'Component Name',
+    description: 'What it does',
+    items: ['Feature 1', 'Feature 2', 'File: path/to/file.py']
+},
+```
+
+4. **Update view filters** if needed (showIds arrays around line 760)
+
+**Groups available:** `user`, `desktop`, `whatsapp`, `backend`, `external`, `database`, `auth`
+
+**Levels (top-down):** 0=Users, 1=Entry Points, 2=AI Processing, 3=Tools, 4=External APIs, 5=Databases
+
 ## 🚨 CRITICAL: Shared Database Safety
 
 ### NEVER run `prisma db push` on shared databases
