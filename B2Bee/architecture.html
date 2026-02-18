@@ -855,7 +855,7 @@
 
         async function loadUsageData() {
             try {
-                const response = await fetch(`${API_BASE_URL}/api-usage/summary?days=30`);
+                const response = await fetch(`${API_BASE_URL}/api-usage/public/summary?days=30`);
                 if (response.ok) {
                     usageData = await response.json();
                     updateApiStatus(true);
