@@ -183,6 +183,47 @@ Cloud Build's `gcloud run deploy` uses `--set-secrets` which is a **REPLACEMENT*
 
 **Incident reference:** `aicfo-monorepo/docs/incidents/2026-02-05-db-password-secret-outage.md`
 
+## 🚨 CRITICAL: Deploy Safety - Commit Before Deploy
+
+**BumbleBee Dashboard broke on Feb 18, 2026** because a Claude Code session deployed uncommitted changes. The broken code went to production but was never committed to git, making debugging extremely difficult.
+
+### Why This Happens
+
+`gcloud builds submit` uploads the **ENTIRE current directory** including:
+- Uncommitted changes
+- Staged changes
+- Any modified files
+
+If you modify a file locally, deploy, but don't commit - production has code that doesn't exist in git!
+
+### MANDATORY Protocol Before ANY Cloud Run Deploy
+
+```bash
+# 1. ALWAYS check for uncommitted changes FIRST
+git status
+
+# 2. If there are uncommitted changes in the deploy target (e.g., backend/):
+#    a) Review them with: git diff <directory>/
+#    b) If INTENTIONAL: commit them FIRST, then deploy
+#    c) If UNKNOWN/UNINTENTIONAL: Ask user before deploying
+
+# 3. ONLY deploy from a clean working directory
+git status  # Should show clean for deploy target
+
+# 4. Then deploy
+gcloud builds submit --config=cloudbuild.yaml --project=PROJECT_ID
+```
+
+### If You Find Uncommitted Changes You Didn't Make
+
+1. **DO NOT deploy** until situation is clarified
+2. Run `git diff <directory>/` to see what changed
+3. Ask the user: "I found uncommitted changes in [files]. Did you make these? Should I commit or discard them?"
+4. Another Claude session may have made changes that weren't committed
+5. Document any discarded changes in case they were intentional
+
+**Incident reference:** `bumblebee-monorepo/docs/incidents/2026-02-18-dashboard-api-routing.md`
+
 ## Session Start Checklist
 
 Each session should start with:
